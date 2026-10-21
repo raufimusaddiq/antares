@@ -14,20 +14,30 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The baseline is specification-only: no go.mod, no web/package.json. These
+  # jobs skip cleanly until the first implementation lands, then do real work.
   go:
     name: go
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Detect Go module
+        id: detect
+        run: |
+          if [ -f go.mod ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; echo "no go.mod yet — skipping"; fi
       - uses: actions/setup-go@v5
+        if: steps.detect.outputs.present == 'true'
         with:
           go-version-file: go.mod
           cache: true
       - name: Build
+        if: steps.detect.outputs.present == 'true'
         run: go build ./...
       - name: Vet
+        if: steps.detect.outputs.present == 'true'
         run: go vet ./...
       - name: Test
+        if: steps.detect.outputs.present == 'true'
         run: go test -race -count=1 ./...
 
   web:
@@ -35,39 +45,56 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - name: Detect frontend
+        id: detect
+        run: |
+          if [ -f web/package.json ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; echo "no web/package.json yet — skipping"; fi
       - uses: actions/setup-node@v4
+        if: steps.detect.outputs.present == 'true'
         with:
           node-version: 22
           cache: npm
           cache-dependency-path: web/package-lock.json
       - name: Install
+        if: steps.detect.outputs.present == 'true'
         run: npm ci
         working-directory: web
       - name: Typecheck
+        if: steps.detect.outputs.present == 'true'
         run: npm run typecheck --if-present
         working-directory: web
       - name: Build
+        if: steps.detect.outputs.present == 'true'
         run: npm run build
         working-directory: web
 
+  # These two run from the first commit and never skip: they are the rules in
+  # AGENTS.md that can be checked mechanically.
   security:
     name: security
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: No committed secrets
+      - name: No credential-shaped file is tracked
         run: |
-          if git ls-files | grep -E '(^|/)(\.env$|\.env\.(?!example)|[^/]*\.pem$|[^/]*\.key$)'; then
-            echo "::error::A credential-shaped file is tracked. Remove it and rotate the secret."
+          bad=$(git ls-files | grep -E '(^|/)(\.env|\.env\.[^.e][^/]*|[^/]*\.pem|[^/]*\.key|[^/]*\.p12)$' || true)
+          if [ -n "$bad" ]; then
+            echo "::error::A credential-shaped file is tracked: $bad"
+            echo "Remove it, add it to .gitignore, and rotate the secret."
             exit 1
           fi
           echo "no credential-shaped files tracked"
-      - name: No Docker socket access in code
+      - name: No Docker socket reference in code
         run: |
-          if grep -rn --include='*.go' --include='*.ts' --include='*.tsx' -E '/var/run/docker\.sock' .; then
+          if grep -rn --include='*.go' --include='*.ts' --include='*.tsx' --include='*.js' -E '/var/run/docker\.sock' . ; then
             echo "::error::Antares must never reach the Docker socket (AGENTS.md)."
             exit 1
           fi
           echo "no docker socket references"
+      - name: No real secret in .env.example
+        run: |
+          if [ -f .env.example ] && grep -E '^[A-Z0-9_]+=(?!$|<|changeme|your-|xxx|placeholder)' -P .env.example 2>/dev/null | grep -vE '=(true|false|[0-9]+)$'; then
+            echo "::error::.env.example appears to carry a real value. It lists names only."
+            exit 1
+          fi
+          echo ".env.example carries no value"
