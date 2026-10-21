@@ -1,0 +1,24 @@
+# Go
+/bin/
+*.test
+*.out
+
+# Node
+node_modules/
+web/dist/
+
+# Local data
+*.sqlite
+*.sqlite-journal
+*.sqlite-wal
+*.db
+
+# Env and secrets
+.env
+.env.*
+!.env.example
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
