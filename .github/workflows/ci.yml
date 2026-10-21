@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  go:
+    name: go
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Build
+        run: go build ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Test
+        run: go test -race -count=1 ./...
+
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - name: Install
+        run: npm ci
+        working-directory: web
+      - name: Typecheck
+        run: npm run typecheck --if-present
+        working-directory: web
+      - name: Build
+        run: npm run build
+        working-directory: web
+
+  security:
+    name: security
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: No committed secrets
+        run: |
+          if git ls-files | grep -E '(^|/)(\.env$|\.env\.(?!example)|[^/]*\.pem$|[^/]*\.key$)'; then
+            echo "::error::A credential-shaped file is tracked. Remove it and rotate the secret."
+            exit 1
+          fi
+          echo "no credential-shaped files tracked"
+      - name: No Docker socket access in code
+        run: |
+          if grep -rn --include='*.go' --include='*.ts' --include='*.tsx' -E '/var/run/docker\.sock' .; then
+            echo "::error::Antares must never reach the Docker socket (AGENTS.md)."
+            exit 1
+          fi
+          echo "no docker socket references"
