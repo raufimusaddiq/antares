@@ -7,7 +7,7 @@ bundle into `internal/webui/dist` and stamps the source hash that `go test ./int
 
 All styling lives in `src/styles.css`. The material is CSS only (`backdrop-filter` blur + saturate,
 translucent fills, a 1px specular top edge, layered shadows). It is not refraction; CSS cannot do that.
-It is also not one pane of glass: there are three tiers, each with its own fill, edge, specular
+It is also not one pane of glass: there are four tiers, each with its own fill, edge, specular
 highlight, blur and shadow tokens.
 
 | Tier | Tokens | Used for | Why |
