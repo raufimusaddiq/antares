@@ -32,6 +32,14 @@ func Open(path string) (*sql.DB, error) {
 	if path == "" || strings.ContainsAny(path, "?#%") {
 		return nil, errors.New("store: invalid database path")
 	}
+	// Refuse before touching anything: Open chmods the data directory, so a
+	// relative path would chmod the working directory.
+	if !filepath.IsAbs(path) {
+		return nil, errors.New("store: database path must be absolute")
+	}
+	if filepath.Dir(filepath.Clean(path)) == string(filepath.Separator) {
+		return nil, errors.New("store: database must live in its own directory, not the filesystem root")
+	}
 	// MkdirAll's mode is ignored for an existing directory, so tighten it
 	// explicitly, and resolve symlinks so everything below acts on the real
 	// location (a data dir mounted through a symlink is legitimate).
@@ -42,6 +50,9 @@ func Open(path string) (*sql.DB, error) {
 	realDir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return nil, fmt.Errorf("store: resolve data dir: %w", err)
+	}
+	if realDir == string(filepath.Separator) {
+		return nil, errors.New("store: data directory resolves to the filesystem root")
 	}
 	if err := os.Chmod(realDir, 0o700); err != nil {
 		return nil, fmt.Errorf("store: secure data dir: %w", err)

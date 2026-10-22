@@ -49,3 +49,12 @@ func TestSecretNeverPrints(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadRequiresAbsoluteDBPath(t *testing.T) {
+	for _, p := range []string{"antares.db", "./data/a.db", "../a.db"} {
+		_, err := Load(env(map[string]string{"ANTARES_DB_PATH": p, "ANTARES_SECRET_KEY": goodKey}))
+		if err == nil || !strings.Contains(err.Error(), "absolute") {
+			t.Errorf("%q should be refused as non-absolute: %v", p, err)
+		}
+	}
+}

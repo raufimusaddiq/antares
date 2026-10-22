@@ -58,12 +58,16 @@ func run() error {
 		log.Printf("admin bootstrap: created=%v", created)
 	}
 
+	set, err := store.LoadMigrations(store.Migrations())
+	if err != nil {
+		return err
+	}
 	// Log readiness transitions, not every probe: a proxy health check would
 	// otherwise write a line every few seconds for as long as the DB is down.
 	var wasReady atomic.Bool
 	wasReady.Store(true)
 	ready := func(ctx context.Context) error {
-		err := store.SchemaCurrent(ctx, db, store.Migrations())
+		err := store.SchemaCurrent(ctx, db, set)
 		if ok := err == nil; wasReady.Swap(ok) != ok {
 			if ok {
 				log.Printf("readyz: recovered")

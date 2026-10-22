@@ -5,6 +5,7 @@ package config
 import (
 	"encoding/base64"
 	"errors"
+	"path/filepath"
 	"strings"
 )
 
@@ -41,8 +42,11 @@ func Load(getenv func(string) string) (Config, error) {
 		AdminEmail:  getenv("ANTARES_ADMIN_EMAIL"),
 	}
 	var problems []string
-	if c.DBPath == "" {
+	switch {
+	case c.DBPath == "":
 		problems = append(problems, "ANTARES_DB_PATH is required")
+	case !filepath.IsAbs(c.DBPath):
+		problems = append(problems, "ANTARES_DB_PATH must be an absolute path")
 	}
 	switch raw := getenv("ANTARES_SECRET_KEY"); {
 	case raw == "":

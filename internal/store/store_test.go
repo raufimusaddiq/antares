@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -62,7 +63,7 @@ func TestMigrateFromEmptyThenIdempotent(t *testing.T) {
 		t.Fatalf("second run must apply nothing: %v %v", second, err)
 	}
 	t.Logf("second run applied: %v", second)
-	if err := SchemaCurrent(ctx, db, Migrations()); err != nil {
+	if err := SchemaCurrent(ctx, db, set(t)); err != nil {
 		t.Fatal(err)
 	}
 	for _, tbl := range []string{"users", "approvals", "tenant_bindings", "app_sessions", "chats", "runs", "messages", "audit_log"} {
@@ -265,11 +266,11 @@ func TestSchemaRefusesCrossUserOwnership(t *testing.T) {
 func TestSchemaCurrentFailsWhenDBUnreachable(t *testing.T) {
 	db, _ := migrated(t)
 	ctx := context.Background()
-	if err := SchemaCurrent(ctx, db, Migrations()); err != nil {
+	if err := SchemaCurrent(ctx, db, set(t)); err != nil {
 		t.Fatal(err)
 	}
 	db.Close()
-	if err := SchemaCurrent(ctx, db, Migrations()); err == nil {
+	if err := SchemaCurrent(ctx, db, set(t)); err == nil {
 		t.Fatal("readiness check must fail with the database closed")
 	}
 }
@@ -277,7 +278,7 @@ func TestSchemaCurrentFailsWhenDBUnreachable(t *testing.T) {
 func TestSchemaCurrentFailsOnUnmigratedDB(t *testing.T) {
 	db, _ := openTest(t)
 	db.Exec(`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT, checksum TEXT, applied_at TEXT)`)
-	if err := SchemaCurrent(context.Background(), db, Migrations()); err == nil {
+	if err := SchemaCurrent(context.Background(), db, set(t)); err == nil {
 		t.Fatal("unmigrated database must not be ready")
 	}
 }
@@ -360,7 +361,7 @@ func TestSchemaCurrentFailsOnGap(t *testing.T) {
 	for _, v := range []int{1, 3} { // 2 missing
 		db.Exec(`INSERT INTO schema_migrations VALUES (?,?,?,?)`, v, "x", "y", "t")
 	}
-	if err := SchemaCurrent(ctx, db, m); err == nil {
+	if err := SchemaCurrent(ctx, db, setOf(t, m)); err == nil {
 		t.Fatal("a gap below the maximum must not report ready")
 	}
 }
@@ -471,3 +472,55 @@ func TestChatStatusVocabularyIsConstrained(t *testing.T) {
 		t.Fatal("chats.status accepted an arbitrary string")
 	}
 }
+
+func TestOpenRejectsRelativePathBeforeAnyChmod(t *testing.T) {
+	cwd := t.TempDir()
+	if err := os.Chmod(cwd, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	old, _ := os.Getwd()
+	if err := os.Chdir(cwd); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.Chdir(old) })
+	db, err := Open("antares.db")
+	if err == nil {
+		db.Close()
+		t.Fatal("relative path must be refused")
+	}
+	if !strings.Contains(err.Error(), "absolute") {
+		t.Errorf("error must name the real cause, got: %v", err)
+	}
+	if m := mode(t, cwd); m != 0o755 {
+		t.Fatalf("cwd mode changed to %v: Open chmod-ed a directory it does not own", m)
+	}
+	if entries, _ := os.ReadDir(cwd); len(entries) != 0 {
+		t.Fatalf("files created before refusal: %v", entries)
+	}
+}
+
+func TestOpenRefusesFilesystemRoot(t *testing.T) {
+	before := mode(t, "/")
+	if db, err := Open("/antares-test.db"); err == nil {
+		db.Close()
+		os.Remove("/antares-test.db")
+		t.Fatal("a database directly under / must be refused")
+	}
+	if mode(t, "/") != before {
+		t.Fatal("root directory mode changed")
+	}
+	if _, err := os.Stat("/antares-test.db"); err == nil {
+		t.Fatal("file created under /")
+	}
+}
+
+func setOf(t *testing.T, f fs.FS) Set {
+	t.Helper()
+	s, err := LoadMigrations(f)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return s
+}
+
+func set(t *testing.T) Set { return setOf(t, Migrations()) }

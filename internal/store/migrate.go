@@ -139,22 +139,28 @@ func checkUnknown(ctx context.Context, db *sql.DB, migs []migration) error {
 	return rows.Err()
 }
 
+// Set is a loaded, checksummed migration set. Load it once; the embedded set
+// is immutable, so readiness probes must not re-read and re-hash it.
+type Set []migration
+
+// LoadMigrations reads and checksums every migration in fsys.
+func LoadMigrations(fsys fs.FS) (Set, error) {
+	m, err := load(fsys)
+	return Set(m), err
+}
+
 // SchemaCurrent reports whether the applied set is exactly the migrations in
-// fsys: none missing (a gap below the maximum is not ready) and none unknown.
-func SchemaCurrent(ctx context.Context, db *sql.DB, fsys fs.FS) error {
-	migs, err := load(fsys)
-	if err != nil {
-		return err
-	}
-	if err := checkUnknown(ctx, db, migs); err != nil {
+// set: none missing (a gap below the maximum is not ready) and none unknown.
+func SchemaCurrent(ctx context.Context, db *sql.DB, set Set) error {
+	if err := checkUnknown(ctx, db, set); err != nil {
 		return err
 	}
 	var n int
 	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&n); err != nil {
 		return err
 	}
-	if n != len(migs) {
-		return fmt.Errorf("schema has %d migrations applied, want %d", n, len(migs))
+	if n != len(set) {
+		return fmt.Errorf("schema has %d migrations applied, want %d", n, len(set))
 	}
 	return nil
 }
