@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/raufimusaddiq/antares/internal/auth"
+	"github.com/raufimusaddiq/antares/internal/chat"
 	"github.com/raufimusaddiq/antares/internal/config"
 	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/secrets"
@@ -96,7 +97,25 @@ func run() error {
 	defer tenants.Close()
 	go tenants.Run(ctx)
 
-	// No WriteTimeout: SSE streams (later slices) outlive any fixed write deadline.
+	// A run that was in flight when the last process stopped has no worker now.
+	// Record that before serving: RUNNING becomes DISCONNECTED (resumable),
+	// PENDING becomes FAILED (never replayed).
+	if d, f, err := store.RecoverRuns(ctx, db, time.Now()); err != nil {
+		return err
+	} else if d+f > 0 {
+		log.Printf("runs recovered: disconnected=%d failed=%d", d, f)
+	}
+	hermesClient, err := hermes.NewClient(cfg.HermesURL, hermes.ClientOptions{})
+	if err != nil {
+		return err
+	}
+	chats, err := chat.New(chat.Options{DB: db, Box: box, Hermes: hermesClient})
+	if err != nil {
+		return err
+	}
+	defer chats.Close() // after the server drains (serve returns first), before db.Close
+
+	// No WriteTimeout: SSE run streams outlive any fixed write deadline.
 	identity, err := auth.New(auth.Options{
 		DB:           db,
 		Endpoints:    auth.GoogleEndpoints(),
@@ -104,6 +123,7 @@ func run() error {
 		ClientSecret: string(cfg.GoogleClientSecret),
 		PublicOrigin: cfg.PublicOrigin,
 		Tenants:      tenants,
+		Chat:         chats,
 	})
 	if err != nil {
 		return err
@@ -116,6 +136,10 @@ func run() error {
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 16,
 	}
+	// Open SSE streams never end by themselves: on shutdown, stop the run workers
+	// so the streams close and the drain below can finish. Unfinished runs are
+	// DISCONNECTED on the next start, never reported as completed.
+	srv.RegisterOnShutdown(chats.Close)
 	ln, err := net.Listen("tcp", cfg.Addr)
 	if err != nil {
 		return err

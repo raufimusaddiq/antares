@@ -44,6 +44,17 @@ type Options struct {
 	// Without it the approval endpoints still change status but nothing is
 	// provisioned, which tests of the guards rely on.
 	Tenants Tenants
+	// Chat supplies the handlers for the chat routes. Routes it does not supply
+	// stay behind the guard with the "not available" placeholder.
+	Chat ChatHandlers
+}
+
+// ChatHandlers is what the chat package gives the identity layer to mount:
+// handlers keyed "METHOD /path" exactly as in ChatRoutes. Auth wraps each in
+// the Active guard (and the same-origin check for mutations), so a handler
+// never sees an unauthenticated or ineligible request.
+type ChatHandlers interface {
+	Handlers() map[string]http.Handler
 }
 
 // Auth owns login, logout, sessions and the guards.
@@ -58,6 +69,7 @@ type Auth struct {
 	ver      *verifier
 	flows    *flowStore
 	tenants  Tenants
+	chat     ChatHandlers
 }
 
 func New(o Options) (*Auth, error) {
@@ -72,7 +84,7 @@ func New(o Options) (*Auth, error) {
 		o.Now = time.Now
 	}
 	a := &Auth{db: o.DB, ep: o.Endpoints, clientID: o.ClientID, secret: o.ClientSecret,
-		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants}
+		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat}
 	a.ver = &verifier{ep: o.Endpoints, clientID: o.ClientID, client: o.HTTPClient, now: o.Now}
 	return a, nil
 }
@@ -457,7 +469,7 @@ func forbiddenInput(r *http.Request) string {
 			return "query parameter"
 		}
 	}
-	for _, h := range []string{"Authorization", "Proxy-Authorization", "X-Api-Key", "X-Hermes-Profile", "X-Hermes-Session-Id", "X-Hermes-Session", "X-Hermes-Api-Key"} {
+	for _, h := range []string{"Authorization", "Proxy-Authorization", "X-Api-Key", "X-Hermes-Profile", "X-Hermes-Session-Id", "X-Hermes-Session", "X-Hermes-Session-Key", "X-Hermes-Api-Key"} {
 		if r.Header.Get(h) != "" {
 			return "header"
 		}

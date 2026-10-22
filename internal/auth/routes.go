@@ -59,13 +59,37 @@ func (a *Auth) Register(mux *http.ServeMux) {
 	notBuilt := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		a.apiError(w, r, http.StatusNotImplemented, "CAPABILITY_UNAVAILABLE", "Not available yet")
 	})
+	var built map[string]http.Handler
+	if a.chat != nil {
+		built = a.chat.Handlers()
+	}
 	for _, rt := range ChatRoutes {
-		mux.Handle(rt.Method+" "+rt.Path, a.Active(notBuilt))
+		key := rt.Method + " " + rt.Path
+		var h http.Handler = notBuilt
+		if bh, ok := built[key]; ok {
+			h = a.csrf(rt.Method, bh)
+		}
+		mux.Handle(key, a.Active(h))
 	}
 	// The whole admin tree is guarded. The catch-all answers for anything not
 	// listed below; the specific routes win over it.
 	mux.Handle("/api/admin/", a.Admin(notBuilt))
 	a.registerAdmin(mux)
+}
+
+// csrf requires a same-origin request for a cookie-authenticated mutation
+// (PRD §4.2). Reads pass through.
+func (a *Auth) csrf(method string, next http.Handler) http.Handler {
+	if method == http.MethodGet || method == http.MethodHead {
+		return next
+	}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !a.sameOrigin(r) {
+			a.apiError(w, r, http.StatusForbidden, "FORBIDDEN", "Cross-origin request refused")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
 }
 
 // ---- read models: the only account data the browser receives ----------------
