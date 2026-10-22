@@ -33,17 +33,22 @@ func (s *Server) Routes() http.Handler {
 // can fall through to the SPA shell and look healthy.
 func reserve(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		p := strings.ToLower(r.URL.Path)
+		raw := r.URL.Path
+		lower := strings.ToLower(raw)
 		for _, root := range []string{"/api", "/healthz", "/readyz"} {
-			if p != root && !strings.HasPrefix(p, root+"/") {
+			// Case-insensitive only to decide whether the path is reserved.
+			if lower != root && !strings.HasPrefix(lower, root+"/") {
 				continue
 			}
-			probe := p == "/healthz" || p == "/healthz/" || p == "/readyz" || p == "/readyz/"
-			if root != "/api" && p == r.URL.Path && probe {
-				break // exact probe, case-sensitive: the mux serves it
-			}
-			if root == "/api" && strings.HasPrefix(p, "/api/") && p == r.URL.Path {
-				break // the API mux owns /api/...
+			// Let through only what the mux is meant to own, judged on the raw
+			// path: the exact probes, and /api/... with a lowercase prefix (the
+			// rest, e.g. an opaque id, may be any case).
+			if root == "/api" {
+				if strings.HasPrefix(raw, "/api/") {
+					break
+				}
+			} else if raw == root || raw == root+"/" {
+				break
 			}
 			writeErr(w, http.StatusNotFound, "not found")
 			return

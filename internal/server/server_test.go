@@ -92,3 +92,18 @@ func TestReservedPrefixesNeverServeTheShell(t *testing.T) {
 		t.Errorf("an unrelated client route must still get the shell: %d", rec.Code)
 	}
 }
+
+func TestAPIMixedCaseIDsReachTheMux(t *testing.T) {
+	s := New(nil, t.TempDir())
+	mux := s.routes()
+	mux.HandleFunc("GET /api/chats/{id}", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]string{"id": r.PathValue("id")})
+	})
+	h := reserve(mux)
+	if rec := get(h, "/api/chats/AbC"); rec.Code != 200 || !strings.Contains(rec.Body.String(), "AbC") {
+		t.Fatalf("opaque mixed-case id must reach the route: %d %s", rec.Code, rec.Body)
+	}
+	if rec := get(h, "/API/chats/abc"); rec.Code != 404 {
+		t.Fatalf("uppercase prefix stays reserved: %d", rec.Code)
+	}
+}

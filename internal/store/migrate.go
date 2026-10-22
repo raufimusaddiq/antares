@@ -38,10 +38,12 @@ func load(fsys fs.FS) ([]migration, error) {
 	sort.Strings(names)
 	var out []migration
 	for _, n := range names {
+		// Exactly four digits, so name order IS version order ("10_b" would
+		// otherwise sort before "2_a" and, being forward-only, stay misordered).
 		num, _, ok := strings.Cut(n, "_")
 		v, err := strconv.Atoi(num)
-		if !ok || err != nil || v <= 0 {
-			return nil, fmt.Errorf("migrate: bad file name %q (want NNNN_name.sql)", n)
+		if !ok || len(num) != 4 || err != nil || v <= 0 || strings.Trim(num, "0123456789") != "" {
+			return nil, fmt.Errorf("migrate: bad file name %q (want NNNN_name.sql, exactly four digits)", n)
 		}
 		if len(out) > 0 && out[len(out)-1].version == v {
 			return nil, fmt.Errorf("migrate: duplicate version %d", v)
@@ -160,11 +162,32 @@ func LoadMigrations(fsys fs.FS) (Set, error) {
 // SchemaCurrent reports whether the applied set is exactly the migrations in
 // set: none missing (a gap below the maximum is not ready) and none unknown.
 func SchemaCurrent(ctx context.Context, db *sql.DB, set Set) error {
-	if err := checkUnknown(ctx, db, set); err != nil {
+	want := map[int]migration{}
+	for _, m := range set {
+		want[m.version] = m
+	}
+	rows, err := db.QueryContext(ctx, `SELECT version, name, checksum FROM schema_migrations`)
+	if err != nil {
 		return err
 	}
-	var n int
-	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&n); err != nil {
+	defer rows.Close()
+	n := 0
+	for rows.Next() {
+		var v int
+		var name, sum string
+		if err := rows.Scan(&v, &name, &sum); err != nil {
+			return err
+		}
+		m, ok := want[v]
+		switch {
+		case !ok:
+			return fmt.Errorf("migrate: database has version %d unknown to this binary", v)
+		case m.checksum != sum || m.name != name:
+			return fmt.Errorf("migrate: applied migration %d differs from this binary's", v)
+		}
+		n++
+	}
+	if err := rows.Err(); err != nil {
 		return err
 	}
 	if n != len(set) {

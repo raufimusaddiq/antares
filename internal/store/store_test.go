@@ -736,3 +736,45 @@ func TestMigrateDetectsRenamedMigration(t *testing.T) {
 		t.Fatalf("renamed migration must be refused: %v", err)
 	}
 }
+
+func TestMigrationsMustUseFourDigitVersions(t *testing.T) {
+	db, _ := openTest(t)
+	for _, names := range [][]string{
+		{"1_a.sql", "10_b.sql"}, {"001_a.sql"}, {"00001_a.sql"}, {"+001_a.sql"}, {"0001a.sql"},
+	} {
+		m := fstest.MapFS{}
+		for _, n := range names {
+			m[n] = &fstest.MapFile{Data: []byte(`CREATE TABLE t` + n[:1] + ` (id INTEGER);`)}
+		}
+		applied, err := Migrate(context.Background(), db, m)
+		if err == nil || len(applied) != 0 {
+			t.Errorf("%v: want refusal before applying anything, got applied=%v err=%v", names, applied, err)
+		}
+	}
+	// Name order is version order for well-formed sets.
+	ok := fstest.MapFS{
+		"0002_b.sql": {Data: []byte(`CREATE TABLE b (id INTEGER);`)},
+		"0010_c.sql": {Data: []byte(`CREATE TABLE c (id INTEGER);`)},
+		"0001_a.sql": {Data: []byte(`CREATE TABLE a (id INTEGER);`)},
+	}
+	applied, err := Migrate(context.Background(), db, ok)
+	if err != nil || fmt.Sprint(applied) != "[1 2 10]" {
+		t.Fatalf("applied=%v err=%v, want [1 2 10]", applied, err)
+	}
+}
+
+func TestSchemaCurrentFailsOnEditedMigration(t *testing.T) {
+	db, _ := openTest(t)
+	ctx := context.Background()
+	orig := fstest.MapFS{"0001_a.sql": {Data: []byte(`CREATE TABLE a (id INTEGER);`)}}
+	if _, err := Migrate(ctx, db, orig); err != nil {
+		t.Fatal(err)
+	}
+	if err := SchemaCurrent(ctx, db, setOf(t, orig)); err != nil {
+		t.Fatal(err)
+	}
+	edited := fstest.MapFS{"0001_a.sql": {Data: []byte(`CREATE TABLE a (id INTEGER, x TEXT);`)}}
+	if err := SchemaCurrent(ctx, db, setOf(t, edited)); err == nil {
+		t.Fatal("an edited migration must not report ready")
+	}
+}

@@ -76,3 +76,9 @@ Restore into a 0700 directory.
 Timestamps are fixed-width UTC with nanoseconds so string order is time order. `runs.idempotency_key`
 is unique per user, not globally: a global constraint would let one user probe whether another has
 used a key.
+
+## Backups
+
+Do not leave backup copies (`antares.db.bak`, dumps) in the database directory: it must hold only the
+database and its SQLite sidecars, or `Open` refuses to start (dedicated-directory rule). Keep backups
+in a separate directory.
