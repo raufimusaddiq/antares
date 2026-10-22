@@ -4,8 +4,8 @@
   "data": [
     {
       "name": "web",
-      "label": "\ud83d\udd0d Web Search & Scraping",
-      "description": "web_search, web_extract",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": true,
       "configured": true,
       "tools": [
@@ -15,8 +15,8 @@
     },
     {
       "name": "browser",
-      "label": "\ud83c\udf10 Browser Automation",
-      "description": "navigate, click, type, scroll",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": [
@@ -38,8 +38,8 @@
     },
     {
       "name": "terminal",
-      "label": "\ud83d\udcbb Terminal & Processes",
-      "description": "terminal, process",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": true,
       "configured": true,
       "tools": [
@@ -49,8 +49,8 @@
     },
     {
       "name": "file",
-      "label": "\ud83d\udcc1 File Operations",
-      "description": "read, write, patch, search",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": true,
       "configured": true,
       "tools": [
@@ -62,8 +62,8 @@
     },
     {
       "name": "code_execution",
-      "label": "\u26a1 Code Execution",
-      "description": "execute_code",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": true,
       "configured": true,
       "tools": [
@@ -72,8 +72,8 @@
     },
     {
       "name": "vision",
-      "label": "\ud83d\udc41\ufe0f  Vision / Image Analysis",
-      "description": "vision_analyze",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": true,
       "configured": true,
       "tools": [
@@ -82,8 +82,8 @@
     },
     {
       "name": "video",
-      "label": "\ud83c\udfac Video Analysis",
-      "description": "video_analyze (requires video-capable model)",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": [
@@ -92,8 +92,8 @@
     },
     {
       "name": "image_gen",
-      "label": "\ud83c\udfa8 Image Generation",
-      "description": "image_generate",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": true,
       "configured": true,
       "tools": [
@@ -102,8 +102,8 @@
     },
     {
       "name": "video_gen",
-      "label": "\ud83c\udfac Video Generation",
-      "description": "video_generate (text/image/reference)",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": [
@@ -114,8 +114,8 @@
     },
     {
       "name": "x_search",
-      "label": "\ud83d\udc26 X (Twitter) Search",
-      "description": "x_search (requires xAI OAuth or XAI_API_KEY)",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": [
@@ -124,8 +124,8 @@
     },
     {
       "name": "tts",
-      "label": "\ud83d\udd0a Text-to-Speech",
-      "description": "text_to_speech",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": [
@@ -134,16 +134,16 @@
     },
     {
       "name": "stt",
-      "label": "\ud83c\udf99\ufe0f Speech-to-Text",
-      "description": "voice transcription (gateway voice messages + voice mode)",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": []
     },
     {
       "name": "skills",
-      "label": "\ud83d\udcda Skills",
-      "description": "list, view, manage",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": true,
       "configured": true,
       "tools": [
@@ -154,8 +154,8 @@
     },
     {
       "name": "todo",
-      "label": "\ud83d\udccb Task Planning",
-      "description": "todo_list",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": true,
       "configured": true,
       "tools": [
@@ -164,8 +164,8 @@
     },
     {
       "name": "kanban",
-      "label": "\ud83d\udccc Kanban",
-      "description": "opt-in task board tools for this platform",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": [
@@ -188,8 +188,8 @@
     },
     {
       "name": "memory",
-      "label": "\ud83d\udcbe Memory",
-      "description": "persistent memory across sessions",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": true,
       "configured": true,
       "tools": [
@@ -198,16 +198,16 @@
     },
     {
       "name": "context_engine",
-      "label": "\ud83e\udde9 Context Engine",
-      "description": "runtime tools from the active context engine",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": []
     },
     {
       "name": "session_search",
-      "label": "\ud83d\udd0e Session Search",
-      "description": "search past conversations",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": true,
       "configured": true,
       "tools": [
@@ -216,8 +216,8 @@
     },
     {
       "name": "connections",
-      "label": "\ud83d\udd0c Connections",
-      "description": "remote connector tools and account authorization",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": true,
       "configured": true,
       "tools": [
@@ -226,8 +226,8 @@
     },
     {
       "name": "clarify",
-      "label": "\u2753 Clarifying Questions",
-      "description": "clarify",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": [
@@ -236,8 +236,8 @@
     },
     {
       "name": "delegation",
-      "label": "\ud83d\udc65 Task Delegation",
-      "description": "delegate_task",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": true,
       "configured": true,
       "tools": [
@@ -246,8 +246,8 @@
     },
     {
       "name": "cronjob",
-      "label": "\u23f0 Cron Jobs",
-      "description": "create/list/update/pause/resume/run, with optional attached skills",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": true,
       "configured": true,
       "tools": [
@@ -256,8 +256,8 @@
     },
     {
       "name": "discord",
-      "label": "\ud83d\udcac Discord (read/participate)",
-      "description": "fetch messages, search members, create thread",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": [
@@ -266,8 +266,8 @@
     },
     {
       "name": "discord_admin",
-      "label": "\ud83d\udee1\ufe0f  Discord Server Admin",
-      "description": "list channels/roles, pin, assign roles",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": [
@@ -276,8 +276,8 @@
     },
     {
       "name": "yuanbao",
-      "label": "\ud83e\udd16 Yuanbao",
-      "description": "group info, member queries, DM",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": [
@@ -290,8 +290,8 @@
     },
     {
       "name": "computer_use",
-      "label": "\ud83d\uddb1\ufe0f  Computer Use (macOS/Windows/Linux)",
-      "description": "background desktop control via cua-driver",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": [
@@ -300,8 +300,8 @@
     },
     {
       "name": "a2a",
-      "label": "\ud83d\udd0c A2A",
-      "description": "A2A (Agent-to-Agent) protocol v1.0 support for Hermes Agent \u2014 both directions of the open Linux Foundation standard for inter-agent communication.\nOUTBOUND (client tools): a2a_discover, a2a_call, a2a_list, a2a_history, and a2a_orchestrate let the agent fetch another agent's Agent Card and send it tasks over JSON-RPC \u2014 works with any A2A-compliant peer (Hermes, LangChain, CrewAI, Google ADK, OpenClaw, ...).\nINBOUND (platform adapter): exposes Hermes as an A2A-discoverable agent. An Agent Card is served at /.well-known/agent-card.json (v1.0 canonical path; legacy agent.json also answers) and incoming tasks are routed into the agent's live gateway session like any other platform \u2014 so the agent that replies is the same one talking to its user, with full memory and context, not a throwaway clone.\nSecurity is on by default: no bearer token configured => localhost-only bind. Inbound task text passes through prompt-injection filters; outbound text is scrubbed of credential-shaped strings; every exchange is audit-logged and persisted to disk outside the context-compaction pipeline so conversations survive compaction and restarts.\nPure stdlib transport (http.server + urllib) \u2014 no a2a-sdk dependency required.\n",
+      "label": "<redacted>",
+      "description": "<redacted>",
       "enabled": false,
       "configured": true,
       "tools": [

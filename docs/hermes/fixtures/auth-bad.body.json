@@ -1,6 +1,6 @@
 {
   "error": {
-    "message": "Invalid gateway API key (API_SERVER_KEY)",
+    "message": "<redacted>",
     "type": "gateway_auth_error",
     "code": "gateway_auth_failed"
   }

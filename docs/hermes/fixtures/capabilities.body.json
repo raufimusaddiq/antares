@@ -10,7 +10,7 @@
     "mode": "server_agent",
     "tool_execution": "server",
     "split_runtime": false,
-    "description": "The API server creates a server-side Hermes AIAgent; tools execute on the API-server host unless a future explicit split-runtime mode is enabled."
+    "description": "<redacted>"
   },
   "features": {
     "chat_completions": true,

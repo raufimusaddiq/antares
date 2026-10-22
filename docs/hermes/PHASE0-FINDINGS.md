@@ -42,8 +42,7 @@ an image that is not the one serving. Hermes may update at any time.
 The guard is `scripts/hermes_contract.py check`, built from the captured fixtures. It exits 1 when:
 a status code differs; a key is added or removed; a value changes type (null, bool, int, float,
 string, list, object); a list changes length or an item's shape; a fixture is missing; Hermes is
-unreachable; or a toolset's `enabled` flag in `/v1/toolsets` differs (compared by toolset name, so
-the failure says which). All other values are ignored.
+unreachable; or a toolset's `enabled` flag in `/v1/toolsets` differs (the failure names the toolset, e.g. `toolsets: browser: False -> True`, or `computer_use: added`/`removed`). All other values are ignored.
 
 **What it does not guard — read this before relying on it.** `/v1/toolsets` is read for the profile
 served at the URL called, which is the **default** profile. The `enabled` check therefore guards the
@@ -64,7 +63,7 @@ Observed version at capture: Hermes Agent v0.22.2 (2026.9.24), upstream `d923a5e
 ## 2. Capability snapshot
 
 Fixtures: `docs/hermes/fixtures/` (`*.status` = HTTP status, `*.body.json` = body). **Shapes are real;
-every number, timestamp and URL is fabricated.** They are produced by one script, reproducible with:
+every number, timestamp and URL is fabricated, and every string is redacted unless its key is on the script's allowlist (free text such as titles, descriptions and message bodies is never captured).** They are produced by one script, reproducible with:
 
 ```
 # from a container on hermes_edge; the key comes from the environment and is never written
@@ -78,7 +77,7 @@ The script aborts if any response contains the key.
 |---|---|
 | `GET /health` (no auth), `/health/detailed`, `/v1/capabilities`, `/v1/models`, `/v1/toolsets` | **verified on the wire**, fixture committed |
 | auth matrix on `/v1/capabilities`: no key / wrong key → 401, owner key → 200 | **verified on the wire** |
-| `GET /p/<profile>/…` for an unregistered profile → 404 | **verified on the wire** |
+| `GET /p/<profile>/…` for an unregistered profile → 404 | **verified on the wire, once, prose only** — deliberately **not** a fixture or a guard case: it is expected to change when profile routes are registered, and the guard must not fail on that. |
 | `/v1/chat/completions`, `/v1/responses`, `/v1/runs*` (status, events SSE, approval, steer, stop) | **UNVERIFIED** — listed by `/v1/capabilities` and the route table only; not called |
 | `/api/sessions` CRUD, `/messages`, `/fork`, `/chat`, `/chat/stream`, `/model` | **UNVERIFIED** — route table only; responses carry the owner's real data, so no fixture. Do not code against a guessed shape. |
 | `GET /v1/skills`, `/api/model/options`, `/api/jobs*`, artifacts, browser-control | **UNVERIFIED** — route table only |
@@ -111,7 +110,7 @@ yet). The Antares container must join `hermes_edge`; edge route decision is stil
 - `hermes profile create testA|testB` succeeded (names are lower-cased to `testa`/`testb`; each gets
   its own profile directory with its own `.env`, `config.yaml`, `SOUL.md`, skills, cron).
 - `GET /p/testa/v1/models` with the owner key → **404 `Unknown or unconfigured profile`**, before and
-  after the profiles existed (`fixtures/profile-prefix-unserved.*`). See the discrepancy in the verdict
+  after the profiles existed (observed once on 2026-10-22; no fixture, see section 2). See the discrepancy in the verdict
   about `multiplex_profiles` and `gateway.profile_routes`.
 - Source also shows that a named profile authenticates with its **own** `API_SERVER_KEY` and fails
   closed (401) if it has none, and never inherits the owner's. That is encouraging but **unverified
@@ -141,8 +140,8 @@ hermes 755
 
 So the process that runs tools is `hermes`, the default profile's credential file, state database and
 memory directory belong to `hermes`, and `docker exec -u hermes` (the same user) can read all three.
-The same session also showed, while the test profiles existed (output not preserved verbatim; the
-profiles are deleted), that as that user another profile's credential file and persona file had
+**Recollection, not re-runnable evidence:** earlier in the same session, while the test profiles
+existed, I saw (output not preserved; the profiles are deleted) that as that user another profile's credential file and persona file had
 non-zero size via `wc -c < file`, and that another profile's directory could be listed. That part
 cannot be re-run now.
 

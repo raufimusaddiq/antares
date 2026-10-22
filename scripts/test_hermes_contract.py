@@ -12,7 +12,7 @@ TOOLSETS = {"data": [
 
 
 def check(live, fixture, name="toolsets"):
-    return hc.compare(name, 200, live, 200, hc.sanitize(fixture))
+    return hc.compare(name, 200, live, 200, hc.sanitize(fixture, hc.safe_for(name)))
 
 
 class Contract(unittest.TestCase):
@@ -27,12 +27,12 @@ class Contract(unittest.TestCase):
     def test_toolset_added_is_caught(self):
         live = copy.deepcopy(TOOLSETS)
         live["data"].append({"name": "computer_use", "enabled": True, "tools": ["x"]})
-        self.assertTrue(check(live, TOOLSETS))
+        self.assertIn("computer_use: added (enabled=True)", check(live, TOOLSETS)[0])
 
     def test_toolset_removed_is_caught(self):
         live = copy.deepcopy(TOOLSETS)
         live["data"].pop(1)
-        self.assertTrue(check(live, TOOLSETS))
+        self.assertIn("browser: removed", check(live, TOOLSETS)[0])
 
     def test_toolset_swap_same_shape_is_caught(self):
         live = copy.deepcopy(TOOLSETS)
@@ -43,7 +43,7 @@ class Contract(unittest.TestCase):
     def test_toolset_newly_enabled_is_caught(self):
         live = copy.deepcopy(TOOLSETS)
         live["data"][1]["enabled"] = True
-        self.assertEqual(check(live, TOOLSETS), ["toolsets: enabled set differs from fixture"])
+        self.assertEqual(check(live, TOOLSETS), ["toolsets: browser: False -> True"])
 
     def test_list_item_type_change_is_caught(self):
         live = copy.deepcopy(TOOLSETS)
@@ -58,6 +58,20 @@ class Contract(unittest.TestCase):
 
     def test_status_change_is_caught(self):
         self.assertTrue(hc.compare("models", 500, {}, 200, {}))
+
+    def test_free_text_is_redacted_by_default(self):
+        body = {"title": "my tax return", "content": "/home/alice/secret.txt", "name": "alice",
+                "status": "ok", "tools": ["terminal"]}
+        self.assertEqual(hc.sanitize(body, hc.safe_for("sessions")),
+                         {"title": "<redacted>", "content": "<redacted>", "name": "<redacted>",
+                          "status": "ok", "tools": ["<redacted>"]})
+
+    def test_name_is_kept_only_where_it_is_a_toolset_name(self):
+        self.assertEqual(hc.sanitize({"name": "web"}, hc.safe_for("toolsets")), {"name": "web"})
+        self.assertEqual(hc.sanitize({"name": "web"}, hc.safe_for("models")), {"name": "<redacted>"})
+
+    def test_default_cases_do_not_pin_a_transient_probe(self):
+        self.assertFalse([c for c in hc.CASES if c[2].startswith("/p/")])
 
     def test_sanitize_fabricates_numbers_dates_and_urls(self):
         out = hc.sanitize({"n": 123456, "f": 9.5, "day": "2026-10-22", "ts": "2026-10-22T04:00:00+07:00",
@@ -79,8 +93,9 @@ class Main(unittest.TestCase):
     """Drive main() with the network stubbed out."""
 
     def run_main(self, mode, call, fixtures=None):
-        tmp = Path(tempfile.mkdtemp())
-        fix = fixtures if fixtures is not None else tmp
+        tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmpdir.cleanup)
+        fix = fixtures if fixtures is not None else Path(tmpdir.name)
         env = {"HERMES_API_KEY": "k" * 32, "HERMES_BASE_URL": "http://x"}
         with mock.patch.object(hc, "FIX", fix), mock.patch.object(hc, "call", call), \
                 mock.patch.dict(os.environ, env), mock.patch("sys.argv", ["h", mode]):
@@ -102,10 +117,13 @@ class Main(unittest.TestCase):
         self.assertIn("fixture missing", str(code))
 
     def test_capture_then_check_round_trips(self):
-        tmp = Path(tempfile.mkdtemp())
-        call = lambda *a: (200, json.dumps({"n": 123456, "day": "2026-10-22"}).encode())
+        tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(tmpdir.cleanup)
+        tmp = Path(tmpdir.name)
+        call = lambda *a: (200, json.dumps({"n": 123456, "day": "2026-10-22", "title": "private"}).encode())
         self.assertIsNone(self.run_main("capture", call, tmp))
-        self.assertEqual(json.loads((tmp / "health.body.json").read_text()), {"n": 1, "day": "2026-01-01"})
+        self.assertEqual(json.loads((tmp / "health.body.json").read_text()),
+                         {"n": 1, "day": "2026-01-01", "title": "<redacted>"})
         self.assertIsNone(self.run_main("check", call, tmp))
 
     def test_capture_refuses_a_response_containing_the_key(self):
