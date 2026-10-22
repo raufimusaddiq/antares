@@ -127,3 +127,44 @@ func TestProvisionFailsClosedWhenCreateFails(t *testing.T) {
 		}
 	}
 }
+
+func TestProfileDirIsStrictChildOfRoot(t *testing.T) {
+	for _, s := range []string{"u_abcdefgh", "u_" + strings.Repeat("z", 32)} {
+		dir, err := profileDir(s)
+		if err != nil || dir != profilesDir+"/"+s {
+			t.Errorf("%q: got %q, %v", s, dir, err)
+		}
+	}
+	for _, s := range []string{"default", "..", ".", "", "u_../../x", "u_abcdefgh/../../etc", "/opt/data"} {
+		if dir, err := profileDir(s); err == nil {
+			t.Errorf("%q should be refused, got %q", s, dir)
+		}
+	}
+}
+
+type residueRunner struct{ calls [][]string }
+
+func (f *residueRunner) Run(_ context.Context, _ string, args ...string) (string, string, error) {
+	f.calls = append(f.calls, args)
+	if args[0] == "rmdir" {
+		return "", "not empty", context.DeadlineExceeded
+	}
+	return "", "", nil
+}
+
+func TestDeprovisionRemovesDirAndReportsNonEmpty(t *testing.T) {
+	f := &residueRunner{}
+	rec := do(t, newServer(f, testToken), "/deprovision", "Bearer "+testToken, `{"slug":"u_abcdefgh"}`)
+	if rec.Code != http.StatusBadGateway || !strings.Contains(rec.Body.String(), profilesDir+"/u_abcdefgh") {
+		t.Fatalf("want 502 naming the path, got %d %s", rec.Code, rec.Body)
+	}
+	last := f.calls[len(f.calls)-1]
+	if last[0] != "rmdir" || last[2] != profilesDir+"/u_abcdefgh" {
+		t.Fatalf("unexpected final call %v", last)
+	}
+	for _, c := range f.calls {
+		if c[0] == "rm" {
+			t.Fatal("recursive removal must never be used")
+		}
+	}
+}

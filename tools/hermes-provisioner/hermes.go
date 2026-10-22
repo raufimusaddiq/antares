@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"os/exec"
+	"path"
 	"strings"
 	"time"
 )
@@ -119,6 +120,37 @@ func (h hermes) delete(ctx context.Context, slug string) error {
 			msg += " (delete: " + brief(delErr) + ")"
 		}
 		return fmt.Errorf("%w: purge-identity: %s", errUpstream, msg)
+	}
+	return h.removeResidue(ctx, slug)
+}
+
+// profileDir returns the profile directory, refusing anything that is not a
+// strict child of profilesDir. Callers pass an already validated slug; this is
+// a second, independent guard before a path is handed to a removal command.
+func profileDir(slug string) (string, error) {
+	if err := validateSlug(slug); err != nil {
+		return "", err
+	}
+	dir := path.Join(profilesDir, slug)
+	if path.Dir(dir) != profilesDir || dir == profilesDir {
+		return "", errBadSlug
+	}
+	return dir, nil
+}
+
+// removeResidue deletes the directory left behind by profile delete. rmdir
+// only removes an empty directory, so a directory still in use is reported,
+// never deleted.
+func (h hermes) removeResidue(ctx context.Context, slug string) error {
+	dir, err := profileDir(slug)
+	if err != nil {
+		return err
+	}
+	if _, _, err := h.r.Run(ctx, "", "test", "-e", dir); err != nil {
+		return nil // already gone
+	}
+	if _, _, err := h.r.Run(ctx, "", "rmdir", "--", dir); err != nil {
+		return fmt.Errorf("%w: %s is not empty or cannot be removed", errUpstream, dir)
 	}
 	return nil
 }
