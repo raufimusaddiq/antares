@@ -13,6 +13,14 @@ deployment is for **one trusted user**. Do not describe it as isolating mutually
 Deploy and roll back by the SHA tag; `latest` moves. If the package is private, `docker login ghcr.io`
 on the host with a token that has `read:packages`.
 
+## Bumping the Go build base
+
+The Dockerfile pins `golang:<version>-alpine@sha256:<digest>`. To bump: `docker pull golang:<new>-alpine`,
+read the digest from `docker image inspect golang:<new>-alpine --format '{{index .RepoDigests 0}}'`, confirm
+`docker run --rm golang:<new>-alpine go version` prints the version, then edit both. When a new Go major
+ships, update `SUPPORTED` in `scripts/check_go_base.py`; CI fails if the base leaves that window or falls
+behind `go.mod`.
+
 ## 1. Secret files (outside the repository)
 
 ```sh
