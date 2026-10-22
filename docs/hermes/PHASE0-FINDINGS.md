@@ -67,8 +67,10 @@ every number, timestamp and URL is fabricated, and every string is redacted unle
 
 ```
 # from a container on hermes_edge; the key comes from the environment and is never written
-docker run --rm --network hermes_edge -e HERMES_API_KEY -v "$PWD":/w \
-  python:3.11-slim python3 -I /w/scripts/hermes_contract.py capture     # or: check
+docker run --rm --network hermes_edge -e HERMES_API_KEY -v "$PWD":/w:ro \
+  python:3.11-slim python3 -I /w/scripts/hermes_contract.py check       # the contract test
+# same, with `capture`: prints a diff against the baseline and changes nothing (exit 1 if it differs).
+# Only `capture --accept` (writable mount) replaces the baseline; review the diff before committing it.
 ```
 
 The script aborts if any response contains the key.

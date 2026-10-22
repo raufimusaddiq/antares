@@ -1,23 +1,23 @@
 #!/usr/bin/env python3
 """Capture sanitized Hermes API fixtures, or check the live API against them.
 
-  HERMES_BASE_URL=http://hermes:8642 HERMES_API_KEY=... python3 -I scripts/hermes_contract.py capture
+  HERMES_BASE_URL=http://hermes:8642 HERMES_API_KEY=... python3 -I scripts/hermes_contract.py capture [--accept]
   HERMES_BASE_URL=http://hermes:8642 HERMES_API_KEY=... python3 -I scripts/hermes_contract.py check
 
 The API is only reachable inside the hermes_edge network, e.g.:
   docker run --rm --network hermes_edge -e HERMES_BASE_URL=http://hermes:8642 -e HERMES_API_KEY \
     -v "$PWD":/w:ro python:3.11-slim python3 -I /w/scripts/hermes_contract.py check
-(capture needs the mount writable: drop :ro.) The key is read from the environment, never printed
+(`capture` never touches the baseline; only `capture --accept` does, so it needs a writable mount.) The key is read from the environment, never printed
 or written. Every number and timestamp in a fixture is fabricated; only shapes are real.
 
 `check` is the API contract test. It fails when a status code differs, a key is added or removed, a
-value changes type, a list changes length or an item's shape, or the per-toolset `enabled` flags in
+value changes type, a list changes length or an item's shape (order is ignored), or the per-toolset `enabled` flags in
 `/v1/toolsets` differ. That check sees the profile served at the URL it calls, which is the default
 profile; it says nothing about any tenant profile until a `/p/<profile>/v1/toolsets` case exists.
 Other values are ignored. Captured strings are deny-by-default redacted (SAFE_KEYS). An unreachable Hermes is also a failure. Offline self-test:
   python3 -I -m unittest discover -s scripts -p 'test_*.py'
 """
-import json, os, re, sys, urllib.error, urllib.request
+import difflib, json, os, re, shutil, sys, tempfile, urllib.error, urllib.request
 from pathlib import Path
 
 FIX = Path(__file__).resolve().parent.parent / "docs" / "hermes" / "fixtures"
@@ -36,14 +36,17 @@ CASES = [
 # captured into a public repo. SAFE_KEYS holds keys whose values are API-defined identifiers/enums;
 # SAFE_BY_CASE holds keys that are only safe on one endpoint (e.g. `name` is a toolset name in
 # /v1/toolsets, but could be a user's name elsewhere). A new endpoint starts with no safe keys.
-SAFE_KEYS = frozenset("""allowed_mime_types artifact_capabilities capabilities cloud code
-    developer_capabilities gateway_state local_vps method mode model object owned_by platform
-    session_continuity_header session_key_header state status tool_execution type version""".split())
+SAFE_KEYS = frozenset("object platform status type version".split())
+_AUTH = frozenset({"code"})  # error.code in the 401 bodies; `code` elsewhere can be source code
 SAFE_BY_CASE = {
     "toolsets": frozenset({"name", "tools"}),
-    "models": frozenset({"id", "root"}),
-    "capabilities": frozenset({"path"}),  # route-table paths; a `path` elsewhere may be a user's file
-    "health-detailed": frozenset({"host"}),  # the server's bind address
+    "models": frozenset({"id", "root", "owned_by"}),
+    "capabilities": frozenset("""allowed_mime_types artifact_capabilities capabilities cloud
+        developer_capabilities local_vps method mode model path session_continuity_header
+        session_key_header tool_execution""".split()),  # route table, feature names, header names
+    "health-detailed": frozenset({"gateway_state", "host", "state"}),
+    "auth-none": _AUTH,
+    "auth-bad": _AUTH,
 }
 # The one probe that must never be a default case: it is expected to change once profile routes are
 # registered. Other /p/<profile>/ cases (e.g. /p/<profile>/v1/toolsets) are the way to guard tenants.
@@ -107,7 +110,7 @@ def shape(v):
     if isinstance(v, str):
         return "string"
     if isinstance(v, list):
-        return [shape(x) for x in v]
+        return sorted((shape(x) for x in v), key=json.dumps)  # order is not part of the contract
     return {k: shape(x) for k, x in sorted(v.items())}
 
 
@@ -150,39 +153,74 @@ def parse(body):
         return body.decode("utf-8", "replace")
 
 
+def write_fixtures(directory, name, status, data):
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / (name + ".status")).write_text("%d\n" % status)
+    (directory / (name + ".body.json")).write_text(json.dumps(data, indent=2) + "\n")
+
+
+def diff_fixtures(scratch):
+    """Unified diff of freshly captured fixtures against the committed baseline ('' when equal)."""
+    out = []
+    for f in sorted(scratch.iterdir()):
+        old = FIX / f.name
+        before = old.read_text().splitlines(True) if old.exists() else []
+        out.extend(difflib.unified_diff(before, f.read_text().splitlines(True),
+                                        "baseline/" + f.name, "captured/" + f.name))
+    return "".join(out)
+
+
 def main():
-    mode = sys.argv[1] if len(sys.argv) > 1 else ""
+    args = sys.argv[1:]
+    accept = "--accept" in args
+    args = [a for a in args if a != "--accept"]
+    mode = args[0] if args else ""
     base = os.environ.get("HERMES_BASE_URL", "http://hermes:8642").rstrip("/")
     key = os.environ.get("HERMES_API_KEY", "")
-    if mode not in ("capture", "check") or not key:
+    if mode not in ("capture", "check") or not key or (accept and mode != "capture"):
         sys.exit(__doc__)
     bad = []
-    for name, method, path, auth in CASES:
-        try:
-            status, body = call(base, key, method, path, auth)
-        except Unreachable as e:
-            sys.exit("CONTRACT BROKEN: Hermes unreachable: %s" % e)
-        data = parse(body)
-        if key in json.dumps(data):
-            sys.exit("refusing: response contains the API key (%s)" % name)
+    scratch = Path(tempfile.mkdtemp(prefix="hermes-capture-"))
+    try:
+        for name, method, path, auth in CASES:
+            try:
+                status, body = call(base, key, method, path, auth)
+            except Unreachable as e:
+                sys.exit("CONTRACT BROKEN: Hermes unreachable: %s" % e)
+            data = parse(body)
+            if key in json.dumps(data):
+                sys.exit("refusing: response contains the API key (%s)" % name)
+            if mode == "capture":
+                write_fixtures(scratch, name, status, sanitize(data, safe_for(name)))
+                continue
+            try:
+                want_status = int((FIX / (name + ".status")).read_text())
+                want = json.loads((FIX / (name + ".body.json")).read_text())
+            except (OSError, ValueError) as e:
+                bad.append("%s: fixture missing or unreadable (%s)" % (name, type(e).__name__))
+                continue
+            problems = compare(name, status, data, want_status, want)
+            bad.extend(problems)
+            if not problems:
+                print("ok", name)
+        if bad:
+            sys.exit("CONTRACT BROKEN:\n  " + "\n  ".join(bad))
         if mode == "capture":
-            FIX.mkdir(parents=True, exist_ok=True)
-            (FIX / (name + ".status")).write_text("%d\n" % status)
-            (FIX / (name + ".body.json")).write_text(json.dumps(sanitize(data, safe_for(name)), indent=2) + "\n")
-            print("captured", name, status)
-            continue
-        try:
-            want_status = int((FIX / (name + ".status")).read_text())
-            want = json.loads((FIX / (name + ".body.json")).read_text())
-        except (OSError, ValueError) as e:
-            bad.append("%s: fixture missing or unreadable (%s)" % (name, type(e).__name__))
-            continue
-        problems = compare(name, status, data, want_status, want)
-        bad.extend(problems)
-        if not problems:
-            print("ok", name)
-    if bad:
-        sys.exit("CONTRACT BROKEN:\n  " + "\n  ".join(bad))
+            changes = diff_fixtures(scratch)
+            if not changes:
+                print("captured fixtures are identical to the baseline")
+            elif accept:
+                FIX.mkdir(parents=True, exist_ok=True)
+                for f in scratch.iterdir():
+                    (FIX / f.name).write_text(f.read_text())
+                print(changes)
+                print("baseline REPLACED (--accept). Review the diff above before committing.")
+            else:
+                print(changes)
+                sys.exit("baseline NOT changed. If this API change is intended, review the diff and re-run "
+                         "capture with --accept.")
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
 
 
 if __name__ == "__main__":

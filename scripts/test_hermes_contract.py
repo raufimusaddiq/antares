@@ -77,6 +77,21 @@ class Contract(unittest.TestCase):
         self.assertTrue(hc.TRANSIENT_PROBE.match("/p/testa/v1/models"))
         self.assertFalse(hc.TRANSIENT_PROBE.match("/p/testa/v1/toolsets"))
 
+    def test_list_order_is_not_part_of_the_contract(self):
+        live = copy.deepcopy(TOOLSETS)
+        live["data"].reverse()
+        self.assertEqual(check(live, TOOLSETS), [])
+        self.assertEqual(check({"x": [1, "a"]}, {"x": ["a", 1]}, "models"), [])
+
+    def test_code_owned_by_and_state_are_scoped(self):
+        src = {"code": "open('/home/alice/notes.txt')", "owned_by": "alice", "state": "x"}
+        self.assertEqual(set(hc.sanitize(src, hc.safe_for("sessions")).values()), {"<redacted>"})
+        self.assertEqual(hc.sanitize({"code": "gateway_auth_failed"}, hc.safe_for("auth-bad")),
+                         {"code": "gateway_auth_failed"})
+        self.assertEqual(hc.sanitize({"owned_by": "hermes"}, hc.safe_for("models")), {"owned_by": "hermes"})
+        self.assertEqual(hc.sanitize({"state": "running"}, hc.safe_for("health-detailed")), {"state": "running"})
+        self.assertEqual(hc.sanitize({"state": "running"}, hc.safe_for("models")), {"state": "<redacted>"})
+
     def test_tenant_toolsets_case_would_be_allowed(self):
         cases = list(hc.CASES) + [("toolsets-profile", "GET", "/p/testa/v1/toolsets", "owner")]
         self.assertFalse([c for c in cases if hc.TRANSIENT_PROBE.match(c[2])])
@@ -108,13 +123,13 @@ class Contract(unittest.TestCase):
 class Main(unittest.TestCase):
     """Drive main() with the network stubbed out."""
 
-    def run_main(self, mode, call, fixtures=None):
+    def run_main(self, mode, call, fixtures=None, *extra):
         tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(tmpdir.cleanup)
         fix = fixtures if fixtures is not None else Path(tmpdir.name)
         env = {"HERMES_API_KEY": "k" * 32, "HERMES_BASE_URL": "http://x"}
         with mock.patch.object(hc, "FIX", fix), mock.patch.object(hc, "call", call), \
-                mock.patch.dict(os.environ, env), mock.patch("sys.argv", ["h", mode]):
+                mock.patch.dict(os.environ, env), mock.patch("sys.argv", ["h", mode, *extra]):
             try:
                 hc.main()
             except SystemExit as e:
@@ -132,15 +147,39 @@ class Main(unittest.TestCase):
         self.assertIn("CONTRACT BROKEN", str(code))
         self.assertIn("fixture missing", str(code))
 
-    def test_capture_then_check_round_trips(self):
+    def captured(self, extra=()):
         tmpdir = tempfile.TemporaryDirectory()
         self.addCleanup(tmpdir.cleanup)
         tmp = Path(tmpdir.name)
         call = lambda *a: (200, json.dumps({"n": 123456, "day": "2026-10-22", "title": "private"}).encode())
-        self.assertIsNone(self.run_main("capture", call, tmp))
+        return tmp, call, self.run_main("capture", call, tmp, *extra)
+
+    def test_capture_then_check_round_trips(self):
+        tmp, call, code = self.captured(("--accept",))
+        self.assertIsNone(code)
         self.assertEqual(json.loads((tmp / "health.body.json").read_text()),
                          {"n": 1, "day": "2026-01-01", "title": "<redacted>"})
         self.assertIsNone(self.run_main("check", call, tmp))
+
+    def test_capture_without_accept_never_touches_the_baseline(self):
+        tmp, call, code = self.captured()
+        self.assertIn("baseline NOT changed", str(code))
+        self.assertEqual(list(tmp.iterdir()), [])
+        # an existing baseline survives a capture of a changed API
+        self.run_main("capture", call, tmp, "--accept")
+        before = {f.name: f.read_text() for f in tmp.iterdir()}
+        changed = lambda *a: (200, json.dumps({"n": 1, "new_field": True}).encode())
+        self.assertIn("baseline NOT changed", str(self.run_main("capture", changed, tmp)))
+        self.assertEqual({f.name: f.read_text() for f in tmp.iterdir()}, before)
+        self.assertIn("CONTRACT BROKEN", str(self.run_main("check", changed, tmp)))
+
+    def test_accept_is_only_valid_with_capture(self):
+        self.assertIsNotNone(self.run_main("check", lambda *a: (200, b"{}"), None, "--accept"))
+
+    def test_several_failures_are_all_reported(self):
+        tmp, call, _ = self.captured(("--accept",))
+        code = str(self.run_main("check", lambda *a: (500, b"{}"), tmp))
+        self.assertGreater(code.count("status 500"), 1)
 
     def test_capture_refuses_a_response_containing_the_key(self):
         leak = lambda *a: (200, json.dumps({"echo": "k" * 32}).encode())

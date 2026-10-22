@@ -93,7 +93,7 @@ do not copy its data model, and do not treat "aixell does it this way" as a reas
 - Do not post, message or publish anything outside this machine.
 - Do not rewrite git history, delete branches or tags, or force-push.
 - Do not merge your own PR. The lead does that.
-- Inside the running Hermes container the only authorised mutation is `hermes profile create` / `delete` for disposable test profiles, and only when the ticket's owner authorisation says so. A root-run command (`docker exec` without `-u hermes` that writes), or deleting a profile directory by hand, needs the owner's explicit approval first. If `hermes profile delete` fails, stop and report. (Phase 0 broke this once; see `docs/hermes/PHASE0-FINDINGS.md`.)
+- Inside the running Hermes container, profile create/delete is the only authorised mutation, and only when the ticket says so; root writes and hand-deleting a profile directory need explicit owner approval. Full rule: [`docs/runbooks/deployment.md`](docs/runbooks/deployment.md).
 
 ## Reporting
 
