@@ -1,0 +1,41 @@
+# Antares. Run from this directory: `ANTARES_TAG=<full-sha> docker compose up -d`.
+# Secrets are not in this file: they come from ANTARES_ENV_FILE, outside the repository.
+services:
+  antares:
+    image: ghcr.io/raufimusaddiq/antares:${ANTARES_TAG:?set ANTARES_TAG to a full commit SHA}
+    container_name: antares
+    restart: unless-stopped
+    env_file:
+      - ${ANTARES_ENV_FILE:-/etc/antares/antares.env}
+    environment:
+      ANTARES_ADDR: ":8080"
+      ANTARES_DB_PATH: /data/antares.sqlite
+    volumes:
+      - antares-data:/data
+    networks:
+      - hermes_edge
+    # Loopback only: the edge proxy on this host reaches 127.0.0.1:8080. Never 0.0.0.0.
+    ports:
+      - "127.0.0.1:8080:8080"
+    # Reaches the host-side provisioner (see hermes-provisioner.service).
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    healthcheck:
+      test: ["CMD", "/antares", "healthcheck"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+
+volumes:
+  antares-data:
+
+networks:
+  # The network Hermes is already on, where `hermes:8642` resolves. Created by the Hermes
+  # deployment; Antares joins it and never creates or alters it.
+  hermes_edge:
+    external: true

@@ -41,6 +41,9 @@ API key, the admin bootstrap mechanism, and the public base URL.
 - Rotate a secret, or write one anywhere it could be committed.
 - Run anything against production data.
 
+The concrete artifacts (Dockerfile, compose file, systemd unit, operator sequence) are in `deploy/`;
+see `deploy/README.md`.
+
 ## Health and rollback
 
 The service exposes a health endpoint that reports readiness — including whether it can reach
