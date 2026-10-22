@@ -130,7 +130,7 @@ describe("transcript and composer markup", () => {
 
   it("escapes user and assistant text", () => {
     const html = renderToStaticMarkup(
-      <Transcript {...props} run={null} pending={null} turns={[{ role: "user", text: "<img src=x onerror=1>" }, { role: "assistant", text: "<script>1</script>" }]} />,
+      <Transcript {...props} run={null} pending={null} turns={[{ seq: 0, role: "user", text: "<img src=x onerror=1>" }, { seq: 1, role: "assistant", text: "<script>1</script>" }]} />,
     );
     expect(html).not.toContain("<img");
     expect(html).not.toContain("<script");
@@ -201,9 +201,38 @@ describe("api client", () => {
     expect(await getMessages("c1")).toMatchObject({ ok: false });
   });
 
-  it("keeps only user and assistant turns", async () => {
-    vi.stubGlobal("fetch", reply(200, { messages: [{ role: "user", text: "a" }, { role: "tool", text: "t" }, { role: "assistant", text: "b" }] }));
+  it("keeps only user and assistant turns, with their positions and the next cursor", async () => {
+    vi.stubGlobal("fetch", reply(200, { messages: [{ seq: 4, role: "user", text: "a" }, { seq: 5, role: "tool", text: "t" }, { seq: 6, role: "assistant", text: "b" }], nextCursor: "c2", total: 7 }));
     const r = await getMessages("c1");
-    expect(r).toEqual({ ok: true, value: [{ role: "user", text: "a" }, { role: "assistant", text: "b" }] });
+    expect(r).toEqual({ ok: true, value: { turns: [{ seq: 4, role: "user", text: "a" }, { seq: 6, role: "assistant", text: "b" }], nextCursor: "c2", total: 7 } });
+  });
+
+  it("asks for an older page by cursor and nothing else", async () => {
+    const f = reply(200, { messages: [], nextCursor: "" });
+    vi.stubGlobal("fetch", f);
+    await getMessages("c1", "a b/c+d");
+    expect((f.mock.calls[0] as unknown as [string])[0]).toBe("/api/chats/c1/messages?cursor=a%20b%2Fc%2Bd");
+    await getMessages("c1");
+    expect((f.mock.calls[1] as unknown as [string])[0]).toBe("/api/chats/c1/messages");
+  });
+
+  it("refuses a page whose turns cannot be placed or are out of order, rather than guessing", async () => {
+    for (const messages of [[{ role: "user", text: "no seq" }], [{ seq: -1, role: "user", text: "x" }], [{ seq: 1.5, role: "user", text: "x" }], [{ seq: 3, role: "user", text: "x" }, { seq: 3, role: "assistant", text: "y" }], [{ seq: 5, role: "user", text: "x" }, { seq: 4, role: "assistant", text: "y" }]]) {
+      vi.stubGlobal("fetch", reply(200, { messages, nextCursor: "" }));
+      expect(await getMessages("c1"), JSON.stringify(messages)).toMatchObject({ ok: false });
+    }
+  });
+
+  it("maps a changed history to its own code", async () => {
+    vi.stubGlobal("fetch", reply(409, { error: { code: "HISTORY_CHANGED", message: "x" } }));
+    expect(await getMessages("c1", "stale")).toEqual({ ok: false, code: "HISTORY_CHANGED", status: 409 });
+    expect(describeCode("HISTORY_CHANGED")).toMatch(/changed/);
+  });
+
+  it("lists chats with a cursor", async () => {
+    const f = reply(200, { chats: [{ id: "a", title: "t", createdAt: "", updatedAt: "", activeRunId: "" }], nextCursor: "n1" });
+    vi.stubGlobal("fetch", f);
+    expect(await listChats("p 1")).toMatchObject({ ok: true, value: { nextCursor: "n1" } });
+    expect((f.mock.calls[0] as unknown as [string])[0]).toBe("/api/chats?cursor=p%201");
   });
 });

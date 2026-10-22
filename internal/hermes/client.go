@@ -44,8 +44,10 @@ const (
 	maxEventData       = 128 << 10 // one SSE frame
 	maxOutput          = 1 << 20   // run output kept from a status read
 	maxAPIResponse     = 1 << 20
-	maxMessagesBody    = 8 << 20
+	maxMessagesBody    = 24 << 20 // a long conversation: PRD §14.2 asks for 1,000+ turns
+	maxTranscriptMsgs  = 20000    // beyond this the read fails visibly rather than truncating
 	maxMessagesPerPage = 200
+	maxTranscriptReads = 2 // concurrent full-transcript reads, so memory stays bounded
 	maxMessageText     = 200 << 10
 	maxSessionKeyLen   = 128
 	maxIdempotencyLen  = 128
@@ -106,6 +108,7 @@ type Client struct {
 	idle      time.Duration
 	call      time.Duration
 	maxStream time.Duration
+	transcripts chan struct{} // bounds concurrent full-transcript reads
 }
 
 // ClientOptions tunes timeouts; zero values mean the production defaults.
@@ -132,7 +135,7 @@ func NewClient(baseURL string, o ClientOptions) (*Client, error) {
 	if o.HTTPClient != nil && o.HTTPClient.Transport != nil {
 		tr = o.HTTPClient.Transport
 	}
-	c := &Client{base: &url.URL{Scheme: u.Scheme, Host: u.Host}, idle: o.StreamIdle, maxStream: o.StreamMax}
+	c := &Client{base: &url.URL{Scheme: u.Scheme, Host: u.Host}, idle: o.StreamIdle, maxStream: o.StreamMax, transcripts: make(chan struct{}, maxTranscriptReads)}
 	c.call = o.CallTimeout
 	if c.call <= 0 {
 		c.call = callTimeout
@@ -494,33 +497,59 @@ func readLine(rd *bufio.Reader) (string, error) {
 
 // Message is one transcript turn, reduced to what the chat UI shows.
 type Message struct {
+	// Seq is the message's position in the session transcript (0 = oldest). It
+	// is the stable turn identity the history cursor is built on.
+	Seq       int    `json:"seq"`
 	ID        string `json:"id,omitempty"`
 	Role      string `json:"role"`
 	Text      string `json:"text"`
 	CreatedAt string `json:"createdAt,omitempty"`
 }
 
-// Messages reads the session transcript (GET /api/sessions/{id}/messages) and
-// returns the newest limit user/assistant turns in order. Hermes documents no
-// cursor (PRD HIST-002), so the page is cut here; Truncated says more exist.
-// Tool and system turns are not forwarded in this slice.
+// ErrHistoryTooLarge means the transcript exceeds what the adapter will hold.
+// It is an error, never a silent truncation (PRD HIST-003).
+var ErrHistoryTooLarge = fail(CodeHermesUnavailable)
+
+// Messages returns the newest limit turns of the session (see Transcript).
 func (c *Client) Messages(ctx context.Context, b Binding, sessionID string, limit int) (msgs []Message, truncated bool, err error) {
-	if !ValidID(sessionID) {
-		return nil, false, fail(CodeHermesUnavailable)
-	}
 	if limit <= 0 || limit > maxMessagesPerPage {
 		limit = 50
+	}
+	all, err := c.Transcript(ctx, b, sessionID)
+	if err != nil {
+		return nil, false, err
+	}
+	if len(all) > limit {
+		return all[len(all)-limit:], true, nil
+	}
+	return all, false, nil
+}
+
+// Transcript reads the whole session transcript (GET /api/sessions/{id}/messages)
+// and keeps only user/assistant text, in upstream order, numbered from 0. Hermes
+// has no cursor of its own, so paging is the caller's job, over this bounded
+// read. A body or message count over the limits is an error, not a truncation.
+// At most maxTranscriptReads run at once.
+func (c *Client) Transcript(ctx context.Context, b Binding, sessionID string) ([]Message, error) {
+	if !ValidID(sessionID) {
+		return nil, fail(CodeHermesUnavailable)
+	}
+	select {
+	case c.transcripts <- struct{}{}:
+		defer func() { <-c.transcripts }()
+	case <-ctx.Done():
+		return nil, fail(CodeUpstreamTimeout)
 	}
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
 	resp, err := c.do(ctx, b, http.MethodGet, "/api/sessions/"+url.PathEscape(sessionID)+"/messages?include_compacted=true&inline_images=false", nil, nil)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxMessagesBody+1))
 	resp.Body.Close()
 	if err != nil || len(raw) > maxMessagesBody {
-		return nil, false, fail(CodeHermesUnavailable)
+		return nil, fail(CodeHermesUnavailable)
 	}
 	var list []json.RawMessage
 	var wrapped struct {
@@ -534,8 +563,10 @@ func (c *Client) Messages(ctx context.Context, b Binding, sessionID string, limi
 	case wrapped.Data != nil:
 		list = wrapped.Data
 	default:
-		return nil, false, fail(CodeHermesUnavailable)
+		return nil, fail(CodeHermesUnavailable)
 	}
+	raw = nil
+	var msgs []Message
 	for _, item := range list {
 		var m struct {
 			ID        any    `json:"id"`
@@ -547,7 +578,10 @@ func (c *Client) Messages(ctx context.Context, b Binding, sessionID string, limi
 		if json.Unmarshal(item, &m) != nil || (m.Role != "user" && m.Role != "assistant") {
 			continue
 		}
-		out := Message{Role: m.Role, Text: contentText(m.Content)}
+		if len(msgs) >= maxTranscriptMsgs {
+			return nil, ErrHistoryTooLarge
+		}
+		out := Message{Seq: len(msgs), Role: m.Role, Text: contentText(m.Content)}
 		if s, ok := m.ID.(string); ok && ValidID(s) {
 			out.ID = s
 		}
@@ -559,10 +593,7 @@ func (c *Client) Messages(ctx context.Context, b Binding, sessionID string, limi
 		}
 		msgs = append(msgs, out)
 	}
-	if len(msgs) > limit {
-		msgs, truncated = msgs[len(msgs)-limit:], true
-	}
-	return msgs, truncated, nil
+	return msgs, nil
 }
 
 // contentText takes a plain string, or the text parts of a content array.

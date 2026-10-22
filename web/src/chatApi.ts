@@ -11,6 +11,8 @@ export interface ChatSummary {
 }
 
 export interface Turn {
+  /** Position in the conversation (0 = oldest): the turn's identity across pages. */
+  seq: number;
   role: "user" | "assistant";
   text: string;
 }
@@ -31,6 +33,7 @@ const CODES = [
   "UPSTREAM_TIMEOUT",
   "INVALID_REQUEST",
   "FORBIDDEN",
+  "HISTORY_CHANGED",
 ] as const;
 
 /** Words shown for a code. The server's own message is never displayed. */
@@ -57,6 +60,8 @@ export function describeCode(code: string): string {
       return "This conversation is already working on a reply.";
     case "INVALID_REQUEST":
       return "That message could not be sent.";
+    case "HISTORY_CHANGED":
+      return "This conversation changed while you were reading it.";
     case "NETWORK":
       return "Could not reach Antares. Check your connection.";
     default:
@@ -108,27 +113,46 @@ export function parseChat(v: unknown): ChatSummary | null {
   return { id: str(o.id), title: str(o.title), createdAt: str(o.createdAt), updatedAt: str(o.updatedAt), activeRunId: str(o.activeRunId) };
 }
 
-export function parseTurns(v: unknown): Turn[] | null {
-  const o = obj(v);
-  if (!o || !Array.isArray(o.messages)) return null;
-  const out: Turn[] = [];
-  for (const m of o.messages) {
-    const mo = obj(m);
-    if (mo && (mo.role === "user" || mo.role === "assistant")) out.push({ role: mo.role, text: str(mo.text) });
-  }
-  return out;
+export interface HistoryPage {
+  turns: Turn[];
+  /** Empty when this page reaches the start of the conversation. */
+  nextCursor: string;
+  total: number;
 }
 
-export const listChats = () =>
-  call("GET", "/api/chats", (b) => {
+export function parseHistory(v: unknown): HistoryPage | null {
+  const o = obj(v);
+  if (!o || !Array.isArray(o.messages)) return null;
+  const turns: Turn[] = [];
+  for (const m of o.messages) {
+    const mo = obj(m);
+    if (!mo || (mo.role !== "user" && mo.role !== "assistant")) continue;
+    // A turn without a usable position cannot be placed: the page is refused, not guessed at.
+    if (typeof mo.seq !== "number" || !Number.isInteger(mo.seq) || mo.seq < 0) return null;
+    turns.push({ seq: mo.seq, role: mo.role, text: str(mo.text) });
+  }
+  for (let i = 1; i < turns.length; i++) if (turns[i].seq <= turns[i - 1].seq) return null;
+  return { turns, nextCursor: str(o.nextCursor), total: typeof o.total === "number" ? o.total : turns.length };
+}
+
+export interface ChatList {
+  chats: ChatSummary[];
+  nextCursor: string;
+}
+
+const q = (cursor?: string) => (cursor ? `?cursor=${encodeURIComponent(cursor)}` : "");
+
+export const listChats = (cursor?: string) =>
+  call("GET", `/api/chats${q(cursor)}`, (b): ChatList | null => {
     const o = obj(b);
     if (!o || !Array.isArray(o.chats)) return null;
-    return o.chats.map(parseChat).filter((c): c is ChatSummary => c !== null);
+    return { chats: o.chats.map(parseChat).filter((c): c is ChatSummary => c !== null), nextCursor: str(o.nextCursor) };
   });
 
 export const createChat = () => call("POST", "/api/chats", parseChat, {});
 
-export const getMessages = (chatId: string) => call("GET", `/api/chats/${encodeURIComponent(chatId)}/messages`, parseTurns);
+/** The newest page, or the page before `cursor`. The page size is the server's. */
+export const getMessages = (chatId: string, cursor?: string) => call("GET", `/api/chats/${encodeURIComponent(chatId)}/messages${q(cursor)}`, parseHistory);
 
 export interface RunRef {
   runId: string;

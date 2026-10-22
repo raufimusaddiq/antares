@@ -1,0 +1,166 @@
+import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { anchorAt, atBottom, layout, scrollTopFor, visibleRange, type Layout } from "./virtual";
+
+// A windowed, variable-height list for the conversation (PRD PERF-001 items 1-2).
+//
+//  - Only the items near the viewport are mounted. Up to WINDOW_ABOVE items every
+//    item is mounted, so an ordinary chat keeps native text selection and find.
+//  - Each mounted item is measured in a layout effect, before paint, and the
+//    scroll position is re-derived from an anchor (the item at the viewport top
+//    plus the offset into it). A page prepended above, or an item above the
+//    viewport changing height, therefore never moves what the reader is looking
+//    at. Native scroll anchoring is switched off (CSS) so the two cannot fight.
+//  - While the reader is at the bottom the list follows the newest content,
+//    including a streaming reply in `footer`; once they scroll up it stops.
+
+export const WINDOW_ABOVE = 100;
+const ESTIMATE = 96;
+const OVERSCAN = 600;
+const NEAR_TOP = 320;
+
+interface Props<T> {
+  items: readonly T[];
+  itemKey: (item: T) => string;
+  render: (item: T, index: number) => ReactNode;
+  /** Rendered after the items, inside the scroll area (pending message, live reply). */
+  footer?: ReactNode;
+  label: string;
+  hasMore: boolean;
+  loadingMore: boolean;
+  /** Status for the top edge, e.g. "Loading older messages…"; may hold a Retry button. */
+  topNote: ReactNode;
+  onLoadMore: () => void;
+}
+
+export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore, loadingMore, topNote, onLoadMore }: Props<T>) {
+  const scroller = useRef<HTMLDivElement | null>(null);
+  const content = useRef<HTMLDivElement | null>(null);
+  const heights = useRef(new Map<string, number>());
+  const [, bump] = useState(0);
+  const [viewport, setViewport] = useState(800);
+  const [following, setFollowing] = useState(true);
+  // What the last positioning pass saw. The reader's place is always derived from
+  // these (the previous layout) and the scroller's live scrollTop, never from the
+  // last scroll *event*: a scroll event fires once per frame, so state taken from
+  // it can be a frame stale when a render lands, and acting on it would undo the
+  // reader's own scroll.
+  const placed = useRef<{ keys: readonly string[]; lay: Layout; scrollHeight: number } | null>(null);
+  const remeasured = useRef(false);
+
+  const keys = useMemo(() => items.map(itemKey), [items, itemKey]);
+  const lay = layout(keys, heights.current, ESTIMATE);
+  const total = lay.offsets[keys.length];
+  const windowed = keys.length > WINDOW_ABOVE;
+  // The first paint is the newest end, where a conversation opens.
+  const [top, setTop] = useState(() => Math.max(0, keys.length * ESTIMATE - 800));
+  const [start, end] = windowed ? visibleRange(lay, top, viewport, OVERSCAN) : [0, keys.length];
+
+  const latest = useRef({ keys, lay, hasMore, loadingMore, onLoadMore });
+  latest.current = { keys, lay, hasMore, loadingMore, onLoadMore };
+
+  const maybeLoadMore = useCallback(() => {
+    const el = scroller.current;
+    const c = latest.current;
+    if (el && c.hasMore && !c.loadingMore && el.scrollTop < NEAR_TOP) c.onLoadMore();
+  }, []);
+
+  // Measure what is mounted, before paint. A changed height re-renders at once,
+  // so no frame is painted with estimated heights under real content.
+  useLayoutEffect(() => {
+    const el = content.current;
+    if (!el) return;
+    let changed = false;
+    for (const node of el.querySelectorAll<HTMLElement>("[data-vkey]")) {
+      const key = node.dataset.vkey!;
+      const h = node.getBoundingClientRect().height;
+      if (h > 0 && Math.abs((heights.current.get(key) ?? -1) - h) > 0.5) {
+        heights.current.set(key, h);
+        changed = true;
+      }
+    }
+    remeasured.current = changed;
+    if (changed) bump((v) => v + 1);
+  });
+
+  // Keep the reader where they are: at the newest content, or on the message they
+  // were reading.
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || remeasured.current) return; // heights just changed: this render's layout is stale, the next one decides
+    setViewport((v) => (Math.abs(v - el.clientHeight) > 0.5 && el.clientHeight > 0 ? el.clientHeight : v));
+    const prev = placed.current;
+    // Following the newest content: at the end last time (in last time's coordinates), or just opened.
+    const wasFollowing = prev === null || atBottom(el.scrollTop, el.clientHeight, prev.scrollHeight);
+    if (wasFollowing) {
+      if (el.scrollTop + el.clientHeight < el.scrollHeight - 0.5) el.scrollTop = el.scrollHeight;
+    } else {
+      const a = anchorAt(prev.keys, prev.lay, el.scrollTop);
+      const y = a ? scrollTopFor(keys, lay, a) : null;
+      if (y !== null && Math.abs(el.scrollTop - y) > 0.5) el.scrollTop = Math.max(0, y);
+    }
+    placed.current = { keys, lay, scrollHeight: el.scrollHeight };
+    setTop(el.scrollTop);
+    maybeLoadMore();
+  });
+
+  // Content that grows with no render of ours (images, fonts, a streaming reply).
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    const inner = content.current;
+    if (!el || !inner || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver(() => {
+      const prev = placed.current;
+      if (prev && atBottom(el.scrollTop, el.clientHeight, prev.scrollHeight) && el.scrollTop + el.clientHeight < el.scrollHeight - 0.5) {
+        el.scrollTop = el.scrollHeight;
+        placed.current = { ...prev, scrollHeight: el.scrollHeight };
+      }
+      bump((v) => v + 1);
+    });
+    ro.observe(inner);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  const onScroll = useCallback(() => {
+    const el = scroller.current;
+    if (!el) return;
+    setFollowing(atBottom(el.scrollTop, el.clientHeight, el.scrollHeight));
+    setTop(el.scrollTop);
+    maybeLoadMore();
+  }, [maybeLoadMore]);
+
+  const jumpToLatest = () => {
+    const el = scroller.current;
+    if (!el) return;
+    setFollowing(true);
+    el.scrollTop = el.scrollHeight;
+    placed.current = placed.current && { ...placed.current, scrollHeight: el.scrollHeight };
+  };
+
+  return (
+    <div ref={scroller} className="log" role="feed" aria-label={label} aria-busy={loadingMore} tabIndex={0} onScroll={onScroll}>
+      <div ref={content}>
+        {keys.length > 0 && (
+          <div className="vstatus" aria-live="polite">
+            <span>{topNote}</span>
+          </div>
+        )}
+        <div style={{ height: lay.offsets[start] }} aria-hidden="true" />
+        {items.slice(start, end).map((item, i) => (
+          <div key={keys[start + i]} data-vkey={keys[start + i]} className="vitem" aria-posinset={start + i + 1} aria-setsize={keys.length}>
+            {render(item, start + i)}
+          </div>
+        ))}
+        <div style={{ height: total - lay.offsets[end] }} aria-hidden="true" />
+        <div aria-live="polite">{footer}</div>
+      </div>
+      {!following && (
+        <div className="vjump">
+          <button type="button" onClick={jumpToLatest}>
+            Jump to latest
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}

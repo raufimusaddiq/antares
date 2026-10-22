@@ -9,7 +9,6 @@ import (
 	"log"
 	"net/http"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 	"unicode/utf8"
@@ -153,23 +152,28 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 
 func isEmptyOK(v any) bool { _, ok := v.(*createChatBody); return ok }
 
-func page(r *http.Request) (limit, offset int) {
-	limit, offset = 50, 0
-	if n, err := strconv.Atoi(r.URL.Query().Get("limit")); err == nil && n > 0 && n <= 100 {
-		limit = n
-	}
-	if n, err := strconv.Atoi(r.URL.Query().Get("offset")); err == nil && n > 0 && n < 1_000_000 {
-		offset = n
-	}
-	return
-}
-
 // ---- chats ------------------------------------------------------------------------
 
 func (s *Service) listChats(w http.ResponseWriter, r *http.Request) {
 	uid, _ := user(r)
-	limit, offset := page(r)
-	chats, err := store.ListChats(r.Context(), s.db, uid, limit, offset)
+	q, ok := query(r)
+	if !ok {
+		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "The query string is not valid")
+		return
+	}
+	limit, ok := historyLimit(q)
+	if !ok {
+		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "limit must be a positive number")
+		return
+	}
+	var after *store.ChatCursor
+	if c := q.Get("cursor"); c != "" {
+		if after, ok = decodeChatCursor(c); !ok {
+			apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "The cursor is not valid")
+			return
+		}
+	}
+	chats, more, err := store.ListChats(r.Context(), s.db, uid, limit, after)
 	if err != nil {
 		internalError(w, "list chats", err)
 		return
@@ -178,7 +182,12 @@ func (s *Service) listChats(w http.ResponseWriter, r *http.Request) {
 	for _, c := range chats {
 		out = append(out, viewChat(c))
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"chats": out})
+	next := ""
+	if more && len(chats) > 0 {
+		last := chats[len(chats)-1]
+		next = encodeChatCursor(store.ChatCursor{UpdatedAt: last.UpdatedAt, ID: last.ID})
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"chats": out, "nextCursor": next})
 }
 
 type createChatBody struct {
@@ -251,38 +260,6 @@ func (s *Service) getChat(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeJSON(w, http.StatusOK, viewChat(c))
 	}
-}
-
-func (s *Service) getMessages(w http.ResponseWriter, r *http.Request) {
-	uid, _ := user(r)
-	id, ok := pathID(r, "chatId")
-	if !ok {
-		notFound(w)
-		return
-	}
-	c, err := store.GetChat(r.Context(), s.db, uid, id)
-	if errors.Is(err, store.ErrNoChat) {
-		notFound(w)
-		return
-	} else if err != nil {
-		internalError(w, "get chat", err)
-		return
-	}
-	b, _, err := s.gate(r.Context(), uid)
-	if err != nil {
-		s.gateError(w, err)
-		return
-	}
-	limit, _ := page(r)
-	msgs, truncated, err := s.hx.Messages(r.Context(), b, c.HermesSessionID, limit)
-	if err != nil {
-		upstreamError(w, err)
-		return
-	}
-	if msgs == nil {
-		msgs = []hermes.Message{}
-	}
-	writeJSON(w, http.StatusOK, map[string]any{"messages": msgs, "truncated": truncated})
 }
 
 // ---- runs -------------------------------------------------------------------------

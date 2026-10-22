@@ -65,8 +65,18 @@ func TestChatAndRunQueriesAreOwnerScoped(t *testing.T) {
 	if got, _ := GetRun(ctx, db, u.a, run.ID); got.Status != RunPending {
 		t.Errorf("A's run changed to %s", got.Status)
 	}
-	if list, err := ListChats(ctx, db, u.b, 50, 0); err != nil || len(list) != 1 || list[0].ID != u.chatB.ID {
-		t.Errorf("B's list: %+v %v", list, err)
+	if list, more, err := ListChats(ctx, db, u.b, 50, nil); err != nil || more || len(list) != 1 || list[0].ID != u.chatB.ID {
+		t.Errorf("B's list: %+v more=%v %v", list, more, err)
+	}
+	// A cursor taken from A's list cannot make B's list show A's chats.
+	if list, _, err := ListChats(ctx, db, u.b, 50, &ChatCursor{UpdatedAt: "0000", ID: u.chatA.ID}); err != nil {
+		t.Fatal(err)
+	} else {
+		for _, c := range list {
+			if c.UserID != u.b {
+				t.Errorf("B's list holds %s's chat via a foreign cursor", c.UserID)
+			}
+		}
 	}
 	// A foreign chat id also cannot be created on someone else's binding.
 	if _, err := CreateChat(ctx, db, u.b, u.bindA, "sess-x", "", t0); err == nil {
@@ -236,5 +246,55 @@ func TestActiveBindingIsDefaultDeny(t *testing.T) {
 	}
 	if _, err := ActiveBinding(ctx, db, "nobody"); !errors.Is(err, ErrGate) {
 		t.Errorf("no such user: %v", err)
+	}
+}
+
+func TestListChatsKeysetPagesAreStableWhileChatsAreCreated(t *testing.T) {
+	d, u := setupTwo(t)
+	ctx := context.Background()
+	// Distinct and equal timestamps both occur: ties are broken by id.
+	var want []string
+	for i := 0; i < 7; i++ {
+		c, err := CreateChat(ctx, d.DB, u.a, u.bindA, "sess-page-"+string(rune('a'+i)), "", t0.Add(time.Duration(i/2)*time.Second))
+		if err != nil {
+			t.Fatal(err)
+		}
+		want = append(want, c.ID)
+	}
+	var got []string
+	var cur *ChatCursor
+	for pages := 0; ; pages++ {
+		page, more, err := ListChats(ctx, d.DB, u.a, 3, cur)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range page {
+			got = append(got, c.ID)
+		}
+		if pages == 0 { // a newer chat appears between page 1 and page 2
+			if _, err := CreateChat(ctx, d.DB, u.a, u.bindA, "sess-late", "", t0.Add(time.Hour)); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if !more {
+			break
+		}
+		last := page[len(page)-1]
+		cur = &ChatCursor{UpdatedAt: last.UpdatedAt, ID: last.ID}
+		if pages > 10 {
+			t.Fatal("paging does not terminate")
+		}
+	}
+	seen := map[string]bool{}
+	for _, id := range got {
+		if seen[id] {
+			t.Errorf("chat %s listed twice", id)
+		}
+		seen[id] = true
+	}
+	for _, id := range want {
+		if !seen[id] {
+			t.Errorf("chat %s was skipped", id)
+		}
 	}
 }

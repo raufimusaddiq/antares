@@ -23,6 +23,7 @@ import (
 	"github.com/raufimusaddiq/antares/internal/secrets"
 	"github.com/raufimusaddiq/antares/internal/server"
 	"github.com/raufimusaddiq/antares/internal/store"
+	"github.com/raufimusaddiq/antares/internal/webui"
 )
 
 const testOrigin = "https://chat.example.test"
@@ -58,13 +59,17 @@ type fakeHermes struct {
 	runs map[string]*fakeRun
 	msgs map[string][]map[string]any
 	n    int
+	// mem models Hermes' per-profile memory for the memory-scoping tests: "remember X"
+	// stores X under the calling profile, "recall…" answers with what that profile holds.
+	// It is a model of the property under test, not Hermes itself (docs/runbooks/memory-scoping.md).
+	mem map[string]string
 
 	failNext map[string]int // "METHOD suffix" -> status to return once (sticky when negative)
 	hang     map[string]bool
 }
 
 func newFakeHermes(t *testing.T) *fakeHermes {
-	f := &fakeHermes{t: t, keys: map[string]string{}, runs: map[string]*fakeRun{}, msgs: map[string][]map[string]any{},
+	f := &fakeHermes{t: t, keys: map[string]string{}, runs: map[string]*fakeRun{}, msgs: map[string][]map[string]any{}, mem: map[string]string{},
 		failNext: map[string]int{}, hang: map[string]bool{}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
@@ -191,7 +196,13 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.n++
 		id := fmt.Sprintf("run_%d", f.n)
-		f.runs[id] = &fakeRun{profile: profile, input: in.Input, frames: make(chan string, 64), status: "running",
+		out := ""
+		if rest, ok := strings.CutPrefix(in.Input, "remember "); ok {
+			f.mem[profile] = rest
+		} else if strings.HasPrefix(in.Input, "recall") {
+			out = f.mem[profile]
+		}
+		f.runs[id] = &fakeRun{profile: profile, input: in.Input, output: out, frames: make(chan string, 64), status: "running",
 			opens: make(chan struct{}, 16), ended: make(chan struct{}, 16)}
 		f.mu.Unlock()
 		fmt.Fprintf(w, `{"run_id":%q,"status":"started"}`, id)
@@ -260,6 +271,10 @@ type app struct {
 	hx    *fakeHermes
 	h     http.Handler
 	users map[string]*person
+
+	seenMu  sync.Mutex
+	seen    []string  // every response a browser would have received: headers and body
+	streams []*stream // every SSE stream opened
 }
 
 type person struct {
@@ -269,6 +284,7 @@ type person struct {
 	profile string
 	key     string
 	cookie  string
+	seen    []string // what this person's browser received
 }
 
 type syncBuf struct {
@@ -334,7 +350,7 @@ func rebuild(t *testing.T, a *app, svc *Service) http.Handler {
 	if err != nil {
 		t.Fatal(err)
 	}
-	return server.New(func(context.Context) error { return nil }, "").WithAuth(au).Routes()
+	return server.New(func(context.Context) error { return nil }, "").WithAssets(webui.FS()).WithAuth(au).Routes()
 }
 
 // newHTTPServer is a real net/http server with a ReadTimeout far shorter than
@@ -404,7 +420,30 @@ func (p *person) newRequest(method, path string, hdr map[string]string, body any
 func (p *person) do(method, path string, hdr map[string]string, body any) *httptest.ResponseRecorder {
 	w := httptest.NewRecorder()
 	p.a.h.ServeHTTP(w, p.newRequest(method, path, hdr, body))
+	rec := fmt.Sprintf("%s %s -> %d\n%v\n%s", method, path, w.Code, w.Header(), w.Body.String())
+	p.a.seenMu.Lock()
+	p.a.seen = append(p.a.seen, rec)
+	p.seen = append(p.seen, rec)
+	p.a.seenMu.Unlock()
 	return w
+}
+
+// account creates a signed-in account in any state, with no Hermes binding.
+func (a *app) account(sub, role, approval, tenant string) *person {
+	a.t.Helper()
+	id := store.NewID()
+	if _, err := a.db.Exec(`INSERT INTO users (id, google_issuer, google_sub, email, role, approval_status, tenant_status, created_at)
+		VALUES (?, 'iss', ?, ?, ?, ?, ?, 'x')`, id, sub, sub+"@example.test", role, approval, tenant); err != nil {
+		a.t.Fatal(err)
+	}
+	p := &person{a: a, sub: sub, id: id}
+	p.cookie = "tok-" + sub + "-" + store.NewID()
+	sum := sha256.Sum256([]byte(p.cookie))
+	if err := store.CreateSession(context.Background(), a.db, id, hex.EncodeToString(sum[:]), time.Now(), time.Hour); err != nil {
+		a.t.Fatal(err)
+	}
+	a.users[sub] = p
+	return p
 }
 
 func (p *person) get(path string) *httptest.ResponseRecorder { return p.do("GET", path, nil, nil) }
@@ -546,6 +585,9 @@ func (p *person) open(runID, lastID string) *stream {
 	}
 	r := p.newRequest("GET", "/api/runs/"+runID+"/events", hdr, nil).WithContext(ctx)
 	s := &stream{header: http.Header{}, cancel: cancel, done: make(chan struct{})}
+	p.a.seenMu.Lock()
+	p.a.streams = append(p.a.streams, s)
+	p.a.seenMu.Unlock()
 	go func() {
 		defer close(s.done)
 		p.a.h.ServeHTTP(s, r)
