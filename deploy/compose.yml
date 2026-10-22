@@ -13,8 +13,10 @@ services:
     volumes:
       - antares-data:/data
     networks:
-      - hermes_edge
-    # Loopback only: the edge proxy on this host reaches 127.0.0.1:8080. Never 0.0.0.0.
+      - hermes_edge   # antares -> hermes:8642
+      - idx_default   # Caddy -> antares:8080
+    # Loopback only, for host-side smoke checks. Caddy does not use it: it runs in a container and
+    # reaches antares:8080 over idx_default. Never 0.0.0.0.
     ports:
       - "127.0.0.1:8080:8080"
     # Reaches the host-side provisioner (see hermes-provisioner.service).
@@ -38,4 +40,8 @@ networks:
   # The network Hermes is already on, where `hermes:8642` resolves. Created by the Hermes
   # deployment; Antares joins it and never creates or alters it.
   hermes_edge:
+    external: true
+  # The network Caddy is on, where `antares:8080` resolves for the edge proxy. Owned by the idx
+  # stack; Antares joins it and never creates or alters it.
+  idx_default:
     external: true
