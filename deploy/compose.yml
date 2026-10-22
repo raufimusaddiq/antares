@@ -6,7 +6,7 @@ services:
     container_name: antares
     restart: unless-stopped
     env_file:
-      - ${ANTARES_ENV_FILE:-/etc/antares/antares.env}
+      - ${ANTARES_ENV_FILE:-/opt/antares/antares.env}
     environment:
       ANTARES_ADDR: ":8080"
       ANTARES_DB_PATH: /data/antares.sqlite
