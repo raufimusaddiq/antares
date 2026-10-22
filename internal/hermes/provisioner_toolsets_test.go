@@ -15,9 +15,12 @@ func TestProvisionerDisablesTheWholeFloor(t *testing.T) {
 	}
 	src := string(b)
 	start := strings.Index(src, "var disabledToolsets")
-	end := strings.Index(src[start:], "\n}\n")
-	if start < 0 || end < 0 {
+	if start < 0 {
 		t.Fatal("cannot find disabledToolsets in the provisioner")
+	}
+	end := strings.Index(src[start:], "\n}\n")
+	if end < 0 {
+		t.Fatal("cannot find the end of disabledToolsets in the provisioner")
 	}
 	list := src[start : start+end]
 	for _, d := range DeniedToolsets {

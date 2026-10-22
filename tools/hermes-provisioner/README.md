@@ -40,7 +40,7 @@ All endpoints except `/health` need `Authorization: Bearer $PROVISIONER_TOKEN`.
 
 ## Timeouts and cancellation
 
-Each `docker exec` is bounded at 60s and a whole request at 270s (`opBudget`), detached from the
+Each `docker exec` is bounded at 60s and a whole request at 330s (`opBudget`), detached from the
 client connection; the write deadline is set once the request holds the mutation lock. The server
 therefore never abandons a request after the key is written, even if the caller disconnects.
 

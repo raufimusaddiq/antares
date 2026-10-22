@@ -41,8 +41,8 @@ const profilesDir = "/opt/data/profiles"
 // the HTTP WriteTimeout must exceed opBudget.
 const (
 	callTimeout = 60 * time.Second
-	maxCalls    = 4
-	opBudget    = 270 * time.Second
+	maxCalls    = 5
+	opBudget    = 330 * time.Second
 	writeSlack  = 30 * time.Second
 )
 

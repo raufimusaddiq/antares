@@ -375,3 +375,24 @@ func (f *toolsetFail) Run(ctx context.Context, in string, args ...string) (strin
 	}
 	return f.scripted.Run(ctx, in, args...)
 }
+
+// A request's docker exec calls must stay below maxCalls so opBudget keeps one
+// call of headroom. Adding a call to a handler fails here, before it can
+// silently exceed the budget.
+func TestHandlersStayBelowExecBudget(t *testing.T) {
+	cases := []struct {
+		name, path, slug string
+	}{
+		{"provision new profile (worst case)", "/provision", "u_newuser01"},
+		{"provision existing profile", "/provision", "u_existing1"},
+		{"rotate", "/rotate", "u_existing1"},
+		{"deprovision", "/deprovision", "u_existing1"},
+	}
+	for _, c := range cases {
+		f := &scripted{list: listFixture}
+		do(t, newServer(f, testToken), c.path, "Bearer "+testToken, `{"slug":"`+c.slug+`"}`)
+		if len(f.calls) == 0 || len(f.calls) >= maxCalls {
+			t.Errorf("%s made %d exec calls; want 1..%d (below maxCalls)", c.name, len(f.calls), maxCalls-1)
+		}
+	}
+}

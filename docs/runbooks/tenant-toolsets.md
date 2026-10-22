@@ -72,3 +72,18 @@ the "Enabled" set is exactly as listed. Until that has been done, none of this i
 Not added. Add a `/p/<profile>/v1/toolsets` case, with a fabricated fixture, in the PR that makes the
 route reachable, and show it failing against a profile whose policy was not applied. The
 `/p/<profile>/v1/models` 404 is deliberately not pinned either.
+
+## Unknown names in `agent.disabled_toolsets` (issue #41, PR #42 review)
+
+The provisioner's list names toolsets (`video_gen`, `x_search`, `context_engine`, `yuanbao`,
+`computer_use`, `a2a`, ...) that a given Hermes build may not know. **Not proven live**: the probe
+(`hermes -p <throwaway> config set agent.disabled_toolsets '["terminal","zz_not_a_toolset"]'`) was
+refused by the session's permission classifier, so it was not run. What was read in the deployed
+build (v0.22.2, `/opt/hermes`, read-only):
+
+- `hermes config set` validates the key path and the display-language value; no code in
+  `set_config_value` checks toolset names in the list.
+- The read side (`_get_platform_tools`) subtracts the names and ignores any that are not enabled.
+
+So an unknown name is expected to be accepted and harmless. That is a source reading, not a test.
+Until the probe is run, a rejection would show up as `/provision` returning 502 for every tenant.
