@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net/url"
 	"path/filepath"
 	"strings"
 )
@@ -31,8 +32,14 @@ func (Secret) LogValue() slog.Value         { return slog.StringValue(redacted) 
 type Config struct {
 	Addr      string
 	DBPath    string
-	StaticDir string
+	StaticDir string // development override; empty serves the embedded bundle
 	SecretKey Secret // 32-byte master key for secrets at rest
+
+	// Google OIDC login (AUTH-001). All three are required: there is no
+	// degraded mode without a way to sign in.
+	GoogleClientID     string
+	GoogleClientSecret Secret
+	PublicOrigin       string // https origin the browser reaches Antares on, e.g. https://chat.example.test
 
 	// Admin bootstrap. All three are set, or none (no bootstrap).
 	AdminIssuer string
@@ -47,10 +54,12 @@ func Load(getenv func(string) string) (Config, error) {
 	c := Config{
 		Addr:        orDefault(getenv("ANTARES_ADDR"), ":8080"),
 		DBPath:      getenv("ANTARES_DB_PATH"),
-		StaticDir:   orDefault(getenv("ANTARES_STATIC_DIR"), "web/dist"),
+		StaticDir:   getenv("ANTARES_STATIC_DIR"),
 		AdminIssuer: orDefault(getenv("ANTARES_ADMIN_GOOGLE_ISSUER"), defaultIssuer),
 		AdminSub:    getenv("ANTARES_ADMIN_GOOGLE_SUB"),
 		AdminEmail:  getenv("ANTARES_ADMIN_EMAIL"),
+
+		GoogleClientID: getenv("ANTARES_GOOGLE_CLIENT_ID"),
 	}
 	var problems []string
 	switch {
@@ -70,6 +79,22 @@ func Load(getenv func(string) string) (Config, error) {
 			c.SecretKey = key
 		}
 	}
+	if c.GoogleClientID == "" {
+		problems = append(problems, "ANTARES_GOOGLE_CLIENT_ID is required")
+	}
+	if raw := getenv("ANTARES_GOOGLE_CLIENT_SECRET"); raw == "" {
+		problems = append(problems, "ANTARES_GOOGLE_CLIENT_SECRET is required")
+	} else {
+		c.GoogleClientSecret = Secret(raw)
+	}
+	switch origin, err := normalizeOrigin(getenv("ANTARES_PUBLIC_ORIGIN")); {
+	case getenv("ANTARES_PUBLIC_ORIGIN") == "":
+		problems = append(problems, "ANTARES_PUBLIC_ORIGIN is required (https origin, no path)")
+	case err != nil:
+		problems = append(problems, "ANTARES_PUBLIC_ORIGIN "+err.Error())
+	default:
+		c.PublicOrigin = origin
+	}
 	if (c.AdminSub == "") != (c.AdminEmail == "") {
 		problems = append(problems, "ANTARES_ADMIN_GOOGLE_SUB and ANTARES_ADMIN_EMAIL must be set together")
 	}
@@ -77,6 +102,18 @@ func Load(getenv func(string) string) (Config, error) {
 		return Config{}, errors.New("invalid configuration: " + strings.Join(problems, "; "))
 	}
 	return c, nil
+}
+
+// normalizeOrigin accepts only a bare https origin: the session cookie is
+// Secure and the OAuth redirect URI must match Google's registration exactly,
+// so a path, query or http scheme is a configuration error, not something to fix up.
+func normalizeOrigin(raw string) (string, error) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil ||
+		(u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+		return "", errors.New("must be an https origin with no path, query or credentials")
+	}
+	return "https://" + strings.ToLower(u.Host), nil
 }
 
 // BootstrapAdmin reports whether an admin identity is configured.

@@ -3,12 +3,16 @@ package server
 import (
 	"context"
 	"errors"
+	"github.com/raufimusaddiq/antares/internal/webui"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
+	"testing/fstest"
 )
 
 func get(h http.Handler, path string) *httptest.ResponseRecorder {
@@ -105,5 +109,43 @@ func TestAPIMixedCaseIDsReachTheMux(t *testing.T) {
 	}
 	if rec := get(h, "/API/chats/abc"); rec.Code != 404 {
 		t.Fatalf("uppercase prefix stays reserved: %d", rec.Code)
+	}
+}
+
+// The shell comes from the built bundle. These fail when the bundle is missing
+// instead of falling back to some other page.
+func TestRootServesTheBuiltBundle(t *testing.T) {
+	h := New(nil, "").WithAssets(webui.FS()).Routes()
+	for _, p := range []string{"/", "/pending", "/error", "/login"} {
+		rec := get(h, p)
+		if rec.Code != 200 || !strings.Contains(rec.Body.String(), `<div id="root">`) {
+			t.Fatalf("%s: %d %q", p, rec.Code, rec.Body.String())
+		}
+		if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") || strings.Contains(csp, "unsafe") {
+			t.Errorf("%s csp = %q", p, csp)
+		}
+		if rec.Header().Get("Cache-Control") != "no-store" {
+			t.Errorf("%s shell must not be cached", p)
+		}
+	}
+	shell := get(h, "/").Body.String()
+	m := regexp.MustCompile(`src="(/assets/[^"]+\.js)"`).FindStringSubmatch(shell)
+	if m == nil {
+		t.Fatal("shell has no script")
+	}
+	js := get(h, m[1])
+	if js.Code != 200 || !strings.Contains(js.Header().Get("Content-Type"), "javascript") || !strings.Contains(js.Header().Get("Cache-Control"), "immutable") {
+		t.Fatalf("bundle script: %d %v", js.Code, js.Header())
+	}
+}
+
+func TestMissingBundleIsNotFoundNotAFallback(t *testing.T) {
+	for name, fsys := range map[string]fs.FS{"empty": fstest.MapFS{}, "assets only": fstest.MapFS{"assets/x.js": {Data: []byte("x")}}} {
+		h := New(nil, "").WithAssets(fsys).Routes()
+		for _, p := range []string{"/", "/pending"} {
+			if rec := get(h, p); rec.Code != 404 {
+				t.Errorf("%s %s = %d %q", name, p, rec.Code, rec.Body.String())
+			}
+		}
 	}
 }
