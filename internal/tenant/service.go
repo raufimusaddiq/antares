@@ -25,9 +25,10 @@ const (
 	DefaultMaxAttempts = 5
 	DefaultBaseBackoff = 15 * time.Second
 	maxBackoff         = 10 * time.Minute
-	// lease outlives the helper's own 270s request budget, so a run still in
+	// lease outlives hermes.HelperTimeout (390s, above the helper's 330s budget
+	// plus 30s write slack), so a run still in
 	// flight is never mistaken for an interrupted one.
-	lease        = 6 * time.Minute
+	lease        = 7 * time.Minute
 	sweepEvery   = 10 * time.Second
 	sweepBatch   = 20
 	endpointID   = "hermes-primary"

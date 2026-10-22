@@ -75,15 +75,34 @@ route reachable, and show it failing against a profile whose policy was not appl
 
 ## Unknown names in `agent.disabled_toolsets` (issue #41, PR #42 review)
 
-The provisioner's list names toolsets (`video_gen`, `x_search`, `context_engine`, `yuanbao`,
-`computer_use`, `a2a`, ...) that a given Hermes build may not know. **Not proven live**: the probe
-(`hermes -p <throwaway> config set agent.disabled_toolsets '["terminal","zz_not_a_toolset"]'`) was
-refused by the session's permission classifier, so it was not run. What was read in the deployed
-build (v0.22.2, `/opt/hermes`, read-only):
+Measured on the deployed build (Hermes v0.22.2 (2026.9.24)) on 2026-10-23, against a throwaway profile
+`u_probezz01` (deleted afterwards). The provisioner's exact command, with its full `disabledToolsets`
+list as the JSON value:
 
-- `hermes config set` validates the key path and the display-language value; no code in
-  `set_config_value` checks toolset names in the list.
-- The read side (`_get_platform_tools`) subtracts the names and ignores any that are not enabled.
+```
+$ hermes -p u_probezz01 config set agent.disabled_toolsets '["terminal","file","code_execution","delegation","cronjob","session_search","connections","browser","video","video_gen","x_search","tts","stt","kanban","context_engine","discord","discord_admin","yuanbao","computer_use","a2a"]'
+✓ Set agent.disabled_toolsets = ['terminal', 'file', 'code_execution', 'delegation', 'cronjob', 'session_search', 'connections', 'browser', 'video', 'video_gen', 'x_search', 'tts', 'stt', 'kanban', 'context_engine', 'discord', 'discord_admin', 'yuanbao', 'computer_use', 'a2a'] in /opt/data/profiles/u_probezz01/config.yaml
+exit 0
+```
 
-So an unknown name is expected to be accepted and harmless. That is a source reading, not a test.
-Until the probe is run, a rejection would show up as `/provision` returning 502 for every tenant.
+The same list with `"zz_not_a_toolset"` appended (an invented name):
+
+```
+✓ Set agent.disabled_toolsets = [... 'computer_use', 'zz_not_a_toolset'] in /opt/data/profiles/u_probezz01/config.yaml
+exit 0
+```
+
+Read back with `hermes -p u_probezz01 config get agent.disabled_toolsets` and from the profile's
+`config.yaml`: every name was persisted, the unknown one included, as a YAML list under
+`agent.disabled_toolsets`. **The deployed build does not reject unknown names**, so no filtering is
+needed and `/provision` has no 502 path from a name mismatch.
+
+Effective view, `hermes -p u_probezz01 tools list --platform api_server`, after the full list was set:
+only `web`, `vision`, `image_gen`, `skills`, `todo`, `memory` were reported enabled among the toolsets
+named in this runbook (`clarify` is off for `api_server` by default on this build). None of the denied
+toolsets or `a2a` / `computer_use` was enabled.
+
+Not measured: the gateway's `/p/<slug>/v1/toolsets` for a probe profile (it needs a key and a served
+route). The CLI view above reads the same config through `_get_platform_tools`, which is also what
+`/v1/toolsets` calls; the end-to-end read is still the first thing to check on the first real
+provision.

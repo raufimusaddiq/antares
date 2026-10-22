@@ -685,3 +685,11 @@ func TestNewRequiresEveryDependency(t *testing.T) {
 		t.Fatal("accepted empty options")
 	}
 }
+
+// A claimed run must not be taken for an interrupted one while the helper call
+// it made is still within its timeout.
+func TestLeaseOutlastsHelperTimeout(t *testing.T) {
+	if lease <= hermes.HelperTimeout {
+		t.Fatalf("lease %v must exceed hermes.HelperTimeout %v", lease, hermes.HelperTimeout)
+	}
+}
