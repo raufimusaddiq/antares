@@ -5,30 +5,39 @@ bundle into `internal/webui/dist` and stamps the source hash that `go test ./int
 
 ## Liquid Glass styling
 
-All styling lives in `src/styles.css`. The material is CSS only: `backdrop-filter` blur and saturate,
-a translucent fill, a hairline border that is brighter on its top edge, an inset top highlight and a
-soft lift shadow. It is not refraction; CSS cannot do that.
+All styling lives in `src/styles.css`. The material is CSS only (`backdrop-filter` blur + saturate,
+translucent fills, a 1px specular top edge, layered shadows). It is not refraction; CSS cannot do that.
+It is also not one pane of glass: there are three tiers, each with its own fill, edge, specular
+highlight, blur and shadow tokens.
 
-Tokens (set under `:root`, redefined for `prefers-color-scheme: light` with the same names):
+| Tier | Tokens | Used for | Why |
+| --- | --- | --- | --- |
+| chrome | `--chrome-*` | top bar, sidebar | Thinnest and most transparent; it frames the page and should recede. Almost no shadow. |
+| raised | `--raised-*`, `--control-shadow` | composer, user turns, buttons, status pills, account card | Medium fill, strongest specular edge, contact + mid + wide shadow and an outer rim: these are the things that hover. |
+| solid | `--solid-*` | assistant turns, code, generated-UI cards | Near-opaque on purpose. **This is a design decision:** body copy is read for minutes, so it never depends on what is behind it. Glass here would trade legibility for decoration. |
 
-| Group | Tokens |
-| --- | --- |
-| Background | `--bg-base`, `--bg-glow-a`, `--bg-glow-b` |
-| Glass | `--glass-fill`, `--glass-fill-strong`, `--glass-border`, `--glass-border-top`, `--glass-highlight`, `--lift`, `--blur`, `--saturate` |
-| Solid surfaces | `--solid`, `--solid-raised`, `--solid-border` |
-| Text and accent | `--text`, `--text-2`, `--accent`, `--accent-ink`, `--focus`, `--focus-halo`, `--warn-*` |
-| Shape | `--r-sm`, `--r-md`, `--r-lg`, `--r-pill`, `--gap` |
+The specular edge is a 1px `linear-gradient` background layer on the top edge that fades out towards the
+corners. Elevation is physical: a tight contact shadow, a mid shadow and a wide soft one. Only the
+composer carries the full stack, because it is the one pane that sits above the transcript.
 
-Glass is on the top bar, sidebar, composer, user turns, buttons and the list status pills. Assistant
-turns, code blocks and generated-UI cards are solid surfaces so body text never sits on blur.
+**Ambient layer.** `body::before` holds four large, low-alpha colour fields (teal, steel, amber, slate-violet)
+and `body::after` two soft ring shapes. They are fixed, inert and static, and they are what the glass
+blurs: the same tier looks cooler near the teal and warmer near the amber. Tokens: `--bg-base`, `--amb-*`.
 
-Accessibility fallbacks, each at the end of the file:
+Other tokens, under `:root` and redefined for `prefers-color-scheme: light` with the same names:
+`--text`, `--text-2`, `--accent` (send action and live-run bar only), `--primary` (sign-in action),
+`--focus`, `--focus-halo`, `--warn-*`, `--r-sm|md|lg|pill`, `--gap`.
 
-- `prefers-reduced-transparency: reduce`: every glass surface becomes a solid surface, no blur.
-- `prefers-contrast: more`: solid surfaces, 2px full-contrast borders, no shadows, secondary text promoted to primary.
-- `prefers-reduced-motion: reduce`: transitions and the streaming progress bar animation stop.
+Type is the system sans (the CSP forbids web fonts). Headings are large, light and tight-tracked
+(`h1`, the empty-conversation line, the wordmark); body text stays at 16px/1.55.
+
+Accessibility fallbacks reassign tokens at the end of the file, the selectors do not change:
+
+- `prefers-reduced-transparency: reduce`: every tier becomes a solid surface, no blur or sheen.
+- `prefers-contrast: more`: solid surfaces, 2px full-contrast borders, no shadows, no ambient colour, secondary text promoted to primary.
+- `prefers-reduced-motion: reduce`: transitions and the streaming bar animation stop.
 - `@supports not (backdrop-filter)`: solid surfaces.
 
-Focus uses a two-tone ring (`--focus` outline, `--focus-halo` outer ring) so it shows on glass, on
-solid surfaces and on the accent button. There is no icon package: icons are inline SVG with
-`currentColor` strokes. The CSP forbids inline `style` attributes, so state is expressed with classes.
+Focus uses a two-tone ring (`--focus` outline, `--focus-halo` outer ring) so it shows on every tier and
+on the accent button. Icons are inline SVG with `currentColor` strokes. The CSP forbids inline `style`
+attributes, so state is expressed with classes.

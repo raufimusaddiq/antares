@@ -1,38 +1,72 @@
-/* Liquid Glass material. Every colour, radius and blur below comes from these tokens;
-   light and dark set the same names. Dark is the reference; light is the same material
-   on a pale ambient field. */
+/* Liquid Glass, as a material with thickness.
+   Three tiers, not one pane of glass:
+     chrome  thin, most transparent       top bar, sidebar
+     raised  medium fill, strong specular composer, user turns, buttons, status pills
+     solid   near-opaque, not translucent assistant turns, code, generated-UI cards
+   Light and dark set the same token names. The ambient layer (body::before/::after) is what
+   the glass refracts; without coloured light behind it the blur would be decoration. */
 :root {
   color-scheme: dark;
-  --bg-base: #0b0f16;
-  --bg-glow-a: rgba(56, 189, 208, 0.13);
-  --bg-glow-b: rgba(88, 110, 160, 0.12);
 
-  --glass-fill: rgba(26, 33, 44, 0.66);
-  --glass-fill-strong: rgba(38, 47, 61, 0.78);
-  --glass-border: rgba(255, 255, 255, 0.14);
-  --glass-border-top: rgba(255, 255, 255, 0.34);
-  --glass-highlight: rgba(255, 255, 255, 0.14);
-  --lift: 0 10px 30px rgba(0, 0, 0, 0.38), 0 2px 6px rgba(0, 0, 0, 0.28);
-  --blur: 22px;
-  --saturate: 1.5;
+  /* Ambient: cool deep teal base, one warm amber light, a trace of slate-violet. */
+  --bg-base: #071013;
+  --amb-teal: rgba(46, 112, 122, 0.6);
+  --amb-steel: rgba(32, 72, 96, 0.55);
+  --amb-amber: rgba(200, 142, 78, 0.3);
+  --amb-plum: rgba(92, 72, 128, 0.24);
+  --amb-ring: rgba(140, 205, 214, 0.2);
+  --amb-ring-shade: rgba(4, 12, 15, 0.55);
 
-  --solid: #141a24;
-  --solid-raised: #1b2330;
+  /* chrome tier */
+  --chrome-fill: rgba(22, 40, 46, 0.34);
+  --chrome-edge: rgba(255, 255, 255, 0.09);
+  --chrome-spec: rgba(255, 255, 255, 0.24);
+  --chrome-sheen: rgba(255, 255, 255, 0.03);
+  --chrome-blur: 14px;
+  --chrome-sat: 1.3;
+  --chrome-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 14px 26px -16px rgba(0, 0, 0, 0.55);
+
+  /* raised tier: contact shadow + mid shadow + wide soft shadow + faint outer rim */
+  --raised-fill: rgba(34, 58, 66, 0.5);
+  --raised-fill-hover: rgba(48, 78, 88, 0.62);
+  --raised-edge: rgba(255, 255, 255, 0.16);
+  --raised-spec: rgba(255, 255, 255, 0.55);
+  --raised-sheen: rgba(255, 255, 255, 0.07);
+  --raised-blur: 28px;
+  --raised-sat: 1.8;
+  --raised-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 8px 16px -6px rgba(0, 0, 0, 0.45), 0 30px 60px -18px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --control-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 12px -6px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.03);
+
+  /* solid tier: readable body copy lives here */
+  --solid-fill: rgba(12, 22, 26, 0.94);
+  --solid-edge: rgba(255, 255, 255, 0.1);
+  --solid-spec: rgba(255, 255, 255, 0.2);
+  --solid-sheen: rgba(255, 255, 255, 0.025);
+  --solid-blur: 10px;
+  --solid-sat: 1.2;
+  --solid-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 14px 28px -14px rgba(0, 0, 0, 0.55);
+
+  --edge-w: 1px;
+  --solid: #0c161a;
+  --solid-raised: #14232a;
   --solid-border: rgba(255, 255, 255, 0.12);
 
-  --text: #f2f5f9;
-  --text-2: #b4bfce;
-  --accent: #52d6e8;
-  --accent-ink: #04222a;
+  --text: #f3f7f8;
+  --text-2: #aebdc2;
+  --accent: #6ee7f9;
+  --accent-ink: #03242b;
+  --primary: #f3f7f8;
+  --primary-ink: #0a1418;
   --focus: #ffffff;
-  --focus-halo: #0b0f16;
+  --focus-halo: #071013;
   --warn-fill: #3a2a10;
   --warn-ink: #ffe0ad;
   --warn-border: #c47a1a;
 
+  /* Radii: pill for controls, large for floating panes, medium for chrome, small for code. */
   --r-sm: 0.6rem;
-  --r-md: 1.1rem;
-  --r-lg: 1.6rem;
+  --r-md: 1rem;
+  --r-lg: 1.75rem;
   --r-pill: 999px;
   --gap: 0.75rem;
 }
@@ -40,26 +74,45 @@
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    --bg-base: #e9eef5;
-    --bg-glow-a: rgba(56, 189, 208, 0.22);
-    --bg-glow-b: rgba(120, 140, 190, 0.2);
+    --bg-base: #dbe7e8;
+    --amb-teal: rgba(70, 160, 172, 0.42);
+    --amb-steel: rgba(110, 150, 190, 0.34);
+    --amb-amber: rgba(236, 180, 110, 0.5);
+    --amb-plum: rgba(160, 140, 200, 0.28);
+    --amb-ring: rgba(255, 255, 255, 0.55);
+    --amb-ring-shade: rgba(40, 80, 90, 0.16);
 
-    --glass-fill: rgba(255, 255, 255, 0.66);
-    --glass-fill-strong: rgba(255, 255, 255, 0.82);
-    --glass-border: rgba(15, 23, 42, 0.14);
-    --glass-border-top: rgba(255, 255, 255, 0.95);
-    --glass-highlight: rgba(255, 255, 255, 0.9);
-    --lift: 0 10px 30px rgba(30, 45, 70, 0.16), 0 2px 6px rgba(30, 45, 70, 0.1);
+    --chrome-fill: rgba(255, 255, 255, 0.36);
+    --chrome-edge: rgba(10, 40, 50, 0.1);
+    --chrome-spec: rgba(255, 255, 255, 0.95);
+    --chrome-sheen: rgba(255, 255, 255, 0.3);
+    --chrome-shadow: 0 1px 0 rgba(10, 40, 50, 0.08), 0 14px 26px -16px rgba(10, 50, 60, 0.3);
 
-    --solid: #fbfcfe;
+    --raised-fill: rgba(255, 255, 255, 0.58);
+    --raised-fill-hover: rgba(255, 255, 255, 0.78);
+    --raised-edge: rgba(10, 40, 50, 0.14);
+    --raised-spec: rgba(255, 255, 255, 1);
+    --raised-sheen: rgba(255, 255, 255, 0.4);
+    --raised-shadow: 0 1px 2px rgba(10, 40, 50, 0.22), 0 8px 16px -6px rgba(10, 50, 60, 0.22), 0 30px 60px -18px rgba(10, 50, 60, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.4);
+    --control-shadow: 0 1px 2px rgba(10, 40, 50, 0.2), 0 6px 12px -6px rgba(10, 50, 60, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.35);
+
+    --solid-fill: rgba(250, 253, 253, 0.95);
+    --solid-edge: rgba(10, 40, 50, 0.12);
+    --solid-spec: rgba(255, 255, 255, 1);
+    --solid-sheen: rgba(255, 255, 255, 0.6);
+    --solid-shadow: 0 1px 2px rgba(10, 40, 50, 0.2), 0 14px 28px -14px rgba(10, 50, 60, 0.3);
+
+    --solid: #f7fbfb;
     --solid-raised: #ffffff;
-    --solid-border: rgba(15, 23, 42, 0.14);
+    --solid-border: rgba(10, 40, 50, 0.16);
 
-    --text: #0f1722;
-    --text-2: #46525f;
-    --accent: #0b7d90;
+    --text: #0a1a1e;
+    --text-2: #2f4147;
+    --accent: #0a7a8d;
     --accent-ink: #ffffff;
-    --focus: #0f1722;
+    --primary: #0a1a1e;
+    --primary-ink: #f3f7f8;
+    --focus: #0a1a1e;
     --focus-halo: #ffffff;
     --warn-fill: #fff1dc;
     --warn-ink: #4a2800;
@@ -72,39 +125,54 @@
 body {
   margin: 0;
   min-height: 100vh;
-  font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+  font: 16px/1.55 ui-sans-serif, "SF Pro Text", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
   color: var(--text);
-  background:
-    radial-gradient(60rem 40rem at 12% -10%, var(--bg-glow-a), transparent 70%),
-    radial-gradient(50rem 36rem at 100% 110%, var(--bg-glow-b), transparent 70%),
-    var(--bg-base);
-  background-attachment: fixed;
+  background: var(--bg-base);
   -webkit-font-smoothing: antialiased;
+  isolation: isolate;
 }
 body.chat { height: 100vh; overflow: hidden; }
 
-h1 { font-size: 1.5rem; line-height: 1.25; letter-spacing: -0.01em; margin: 0 0 0.75rem; }
-small { color: var(--text-2); }
-a { color: var(--accent); }
-
-.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
-
-/* Focus: a two-tone ring so it reads on glass, on solid and on the accent fill. */
-:focus-visible {
-  outline: 2px solid var(--focus);
-  outline-offset: 2px;
-  box-shadow: 0 0 0 5px var(--focus-halo);
+/* Ambient layer: fixed, inert, static. Fields differ in hue so the blur behind each pane
+   picks up a different tint; the rings give the glass an edge to bend around. */
+body::before, body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+body::before {
+  background:
+    radial-gradient(72rem 52rem at 88% 4%, var(--amb-teal), transparent 70%),
+    radial-gradient(60rem 46rem at 4% 8%, var(--amb-steel), transparent 70%),
+    radial-gradient(52rem 40rem at 2% 100%, var(--amb-amber), transparent 72%),
+    radial-gradient(46rem 38rem at 62% 78%, var(--amb-plum), transparent 72%);
+}
+body::after {
+  background:
+    radial-gradient(circle at 78% 112%, transparent 38vmax, var(--amb-ring) 39.2vmax, var(--amb-ring-shade) 43vmax, transparent 49vmax),
+    radial-gradient(circle at 8% -18%, transparent 30vmax, var(--amb-ring) 31vmax, var(--amb-ring-shade) 35vmax, transparent 41vmax);
 }
 
-/* ---- the material -------------------------------------------------------------- */
-.screen, .bar, .side, .composer, .turn.user, .vstatus span, .vjump button,
-button, a.btn {
-  background: var(--glass-fill);
-  border: 1px solid var(--glass-border);
-  border-top-color: var(--glass-border-top);
-  box-shadow: inset 0 1px 0 var(--glass-highlight), var(--lift);
-  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
-  backdrop-filter: blur(var(--blur)) saturate(var(--saturate));
+/* Type: system sans (the CSP forbids web fonts). Headings are large, light and tight; body stays 16px/1.55. */
+h1 { font-size: clamp(2.1rem, 5.2vw, 3rem); font-weight: 300; line-height: 1.04; letter-spacing: -0.035em; margin: 0 0 1rem; }
+small { color: var(--text-2); }
+a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Focus: a two-tone ring so it reads on glass, solid surfaces and the accent fill. */
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; box-shadow: 0 0 0 5px var(--focus-halo); }
+
+/* ---- the material: one rule, each tier supplies its own values ------------------ */
+.bar, .side { --fill: var(--chrome-fill); --edge: var(--chrome-edge); --spec: var(--chrome-spec); --sheen: var(--chrome-sheen); --blur: var(--chrome-blur); --sat: var(--chrome-sat); --shadow: var(--chrome-shadow); }
+.composer, .turn.user, .screen dl, .vstatus span, .vjump button, button, a.btn { --fill: var(--raised-fill); --edge: var(--raised-edge); --spec: var(--raised-spec); --sheen: var(--raised-sheen); --blur: var(--raised-blur); --sat: var(--raised-sat); --shadow: var(--raised-shadow); }
+.turn.assistant, .ou-card { --fill: var(--solid-fill); --edge: var(--solid-edge); --spec: var(--solid-spec); --sheen: var(--solid-sheen); --blur: var(--solid-blur); --sat: var(--solid-sat); --shadow: var(--solid-shadow); }
+button, a.btn, .vstatus span { --shadow: var(--control-shadow); }
+
+.bar, .side, .composer, .turn.user, .screen dl, .vstatus span, .vjump button, button, a.btn, .turn.assistant, .ou-card {
+  background:
+    linear-gradient(90deg, transparent, var(--spec) 16%, var(--spec) 84%, transparent) top / 100% 1px no-repeat,
+    linear-gradient(180deg, var(--sheen), transparent 60%),
+    var(--fill);
+  border: var(--edge-w) solid var(--edge);
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--sat));
+  backdrop-filter: blur(var(--blur)) saturate(var(--sat));
 }
 
 /* ---- buttons ------------------------------------------------------------------- */
@@ -114,7 +182,7 @@ a.btn, button {
   justify-content: center;
   gap: 0.45rem;
   min-height: 2.5rem;
-  padding: 0.45rem 1.1rem;
+  padding: 0.45rem 1.15rem;
   white-space: nowrap;
   font: inherit;
   font-weight: 500;
@@ -122,40 +190,37 @@ a.btn, button {
   text-decoration: none;
   cursor: pointer;
   border-radius: var(--r-pill);
-  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 2px 8px rgba(0, 0, 0, 0.18);
   transition: background-color 0.15s, transform 0.15s;
 }
-a.btn:hover, button:hover:not(:disabled) { background: var(--glass-fill-strong); }
+a.btn:hover, button:hover:not(:disabled) { --fill: var(--raised-fill-hover); }
 a.btn:active, button:active:not(:disabled) { transform: scale(0.97); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
-.icon { width: 1.15rem; height: 1.15rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.icon { width: 1.1rem; height: 1.1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
-/* The one accent: the primary action. */
-a.btn, .composer button[type="submit"] {
-  background: var(--accent);
-  border-color: transparent;
-  color: var(--accent-ink);
-  font-weight: 600;
-}
-a.btn:hover, .composer button[type="submit"]:hover:not(:disabled) { background: var(--accent); filter: brightness(1.08); }
-button.quiet { background: var(--glass-fill); color: var(--text); }
+/* Two solid fills only. Cyan is the send action; the sign-in link is the page's single
+   primary action, in the near-white of the reference's play button, so cyan stays rare. */
+.composer button[type="submit"] { --fill: var(--accent); --spec: rgba(255, 255, 255, 0.5); --sheen: transparent; --edge: transparent; color: var(--accent-ink); font-weight: 600; }
+.composer button[type="submit"]:hover:not(:disabled) { --fill: var(--accent); filter: brightness(1.08); }
+a.btn { --fill: var(--primary); --edge: transparent; --spec: rgba(255, 255, 255, 0.6); --sheen: transparent; color: var(--primary-ink); font-weight: 600; }
+a.btn:hover { --fill: var(--primary); filter: brightness(0.94); }
 
-/* ---- status screens ------------------------------------------------------------ */
+/* ---- status screens: the heading sits on the ambient layer, not in a card ------- */
+body:not(.chat) { display: grid; align-items: center; }
 .screen {
-  max-width: 31rem;
-  margin: 1rem;
-  padding: 2rem 2rem 1.75rem;
-  border-radius: var(--r-lg);
-  background: var(--glass-fill-strong);
+  width: min(34rem, 100% - 2rem);
+  margin: 2rem 1rem 2rem clamp(1rem, 9vw, 8rem);
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
 }
-.screen p { color: var(--text-2); margin: 0 0 0.85rem; }
+.screen p { color: var(--text-2); margin: 0 0 1rem; max-width: 32rem; }
 .screen h1 { color: var(--text); }
-dl { margin: 1.25rem 0; padding: 0.75rem 1rem; border-radius: var(--r-md); background: var(--solid); border: 1px solid var(--solid-border); }
-dt { font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-2); }
-dd { margin: 0 0 0.5rem; color: var(--text); overflow-wrap: anywhere; }
+.screen dl { margin: 1.5rem 0; padding: 0.9rem 1.25rem; border-radius: var(--r-lg); }
+dt { font-size: 0.8rem; color: var(--text-2); }
+dd { margin: 0 0 0.6rem; color: var(--text); overflow-wrap: anywhere; }
 dd:last-child { margin-bottom: 0; }
 .screen button, .screen a.btn { margin: 0.25rem 0.5rem 0.25rem 0; }
-body:not(.chat) { display: grid; place-items: center; }
 
 /* ---- chat shell ---------------------------------------------------------------- */
 .chat-app {
@@ -166,28 +231,21 @@ body:not(.chat) { display: grid; place-items: center; }
   height: 100vh;
   padding: var(--gap);
 }
-.bar {
-  grid-column: 1 / -1;
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.4rem 0.5rem 0.4rem 1.25rem;
-  border-radius: var(--r-pill);
-}
-.bar strong { font-size: 1.05rem; letter-spacing: 0.01em; }
+.bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 1rem; padding: 0.4rem 0.5rem 0.4rem 1.25rem; border-radius: var(--r-md); }
+.bar strong { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.03em; }
 .bar .who-am-i { margin-left: auto; min-width: 0; color: var(--text-2); font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar button { margin: 0; }
 
 .side { overflow: auto; padding: 0.75rem; border-radius: var(--r-lg); }
 .side ul { list-style: none; margin: 0.6rem 0 0; padding: 0; }
 .side > button { width: 100%; margin: 0; }
+/* Conversation rows are list items, not panes: flat until hovered or current. */
 .side button.item {
   display: block;
   width: 100%;
-  min-height: 2.5rem;
   margin: 0.15rem 0;
   text-align: left;
-  background: transparent;
+  background: none;
   border-color: transparent;
   box-shadow: none;
   -webkit-backdrop-filter: none;
@@ -196,95 +254,52 @@ body:not(.chat) { display: grid; place-items: center; }
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  color: var(--text-2);
 }
-.side button.item:hover:not(:disabled) { background: var(--glass-fill-strong); }
-.side button.item.current { background: var(--glass-fill-strong); border-color: var(--glass-border); border-left: 3px solid var(--accent); }
+.side button.item:hover:not(:disabled) { background: var(--raised-fill); color: var(--text); }
+.side button.item.current { background: var(--raised-fill); border-color: var(--raised-edge); color: var(--text); font-weight: 600; }
 
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; gap: var(--gap); }
 .log { flex: 1; overflow: auto; padding: 0.5rem 0.25rem; position: relative; overflow-anchor: none; overscroll-behavior: contain; }
+/* First-run state: the empty conversation gets the large type, not a caption. */
+.pane > p.label { margin: auto auto auto clamp(0.5rem, 4vw, 3rem); max-width: 22rem; font-size: clamp(2rem, 4.6vw, 3rem); font-weight: 300; line-height: 1.04; letter-spacing: -0.035em; color: var(--text); }
 
 /* ---- messages ------------------------------------------------------------------ */
-.turn {
-  max-width: 48rem;
-  margin: 0 auto 1rem;
-  padding: 0.75rem 1.1rem 0.85rem;
-  border-radius: var(--r-lg);
-}
-/* Assistant text sits on a near-opaque surface, never straight on glass. */
-.turn.assistant {
-  background: var(--solid);
-  border: 1px solid var(--solid-border);
-  border-top-color: var(--glass-border-top);
-  box-shadow: inset 0 1px 0 var(--glass-highlight), 0 4px 14px rgba(0, 0, 0, 0.18);
-  margin-right: auto;
-  margin-left: 0;
-  max-width: min(48rem, 100%);
-}
-.turn.user { margin-left: auto; margin-right: 0; width: fit-content; max-width: min(40rem, 92%); background: var(--glass-fill-strong); }
-.turn .who { font-size: 0.72rem; margin: 0 0 0.3rem; color: var(--text-2); font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; }
+.turn { max-width: 48rem; margin: 0 auto 1rem; padding: 0.7rem 1.15rem 0.85rem; border-radius: var(--r-lg); }
+/* Assistant text sits on the solid tier: near-opaque by decision, so reading never depends on what scrolls behind. */
+.turn.assistant { margin-left: 0; margin-right: auto; max-width: min(48rem, 100%); }
+.turn.user { margin-left: auto; margin-right: 0; width: fit-content; max-width: min(40rem, 92%); }
+.turn .who { font-size: 0.82rem; margin: 0 0 0.2rem; color: var(--text-2); font-weight: 600; }
 .turn p { margin: 0.3rem 0; }
 .turn .plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .turn pre { overflow: auto; padding: 0.65rem 0.85rem; background: var(--bg-base); border: 1px solid var(--solid-border); border-radius: var(--r-sm); }
 .turn code { font-family: ui-monospace, "SF Mono", monospace; font-size: 0.9em; }
-.turn blockquote { margin: 0.3rem 0; padding-left: 0.85rem; border-left: 3px solid var(--glass-border-top); color: var(--text-2); }
+.turn blockquote { margin: 0.3rem 0; padding-left: 0.85rem; border-left: 2px solid var(--solid-border); color: var(--text-2); }
 pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .label { color: var(--text-2); font-size: 0.85rem; margin: 0.3rem 0; }
 
-/* Streaming/partial: same surface, a thin accent progress bar while a run is live. */
+/* Streaming/partial: same surface; a thin accent bar marks a live run (a real state). */
 .partial { opacity: 0.92; }
 .run-streaming, .run-reconnecting { position: relative; overflow: hidden; }
-.run-streaming::after, .run-reconnecting::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 1.25rem;
-  width: 4.5rem;
-  height: 3px;
-  border-radius: var(--r-pill);
-  background: var(--accent);
-  animation: progress 1.6s ease-in-out infinite alternate;
-}
+.run-streaming::after, .run-reconnecting::after { content: ""; position: absolute; top: 0; left: 1.25rem; width: 4.5rem; height: 2px; border-radius: var(--r-pill); background: var(--accent); animation: progress 1.6s ease-in-out infinite alternate; }
 @keyframes progress { to { transform: translateX(calc(min(48rem, 90vw) - 9rem)); } }
 
 .notice { margin: 0.5rem 0.25rem; padding: 0.5rem 0.85rem; border: 1px solid var(--warn-border); border-radius: var(--r-md); background: var(--warn-fill); color: var(--warn-ink); }
 .turn .notice { margin: 0.5rem 0; }
 .tools { margin: 0.3rem 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--text-2); }
 
-/* ---- composer ------------------------------------------------------------------ */
-.composer {
-  display: flex;
-  align-items: flex-end;
-  gap: 0.5rem;
-  margin: 0 auto;
-  width: 100%;
-  max-width: 48rem;
-  padding: 0.5rem 0.5rem 0.5rem 1.1rem;
-  border-radius: var(--r-lg);
-  background: var(--glass-fill-strong);
-}
-.composer textarea {
-  flex: 1;
-  min-width: 0;
-  font: inherit;
-  padding: 0.55rem 0;
-  color: var(--text);
-  background: transparent;
-  border: 0;
-  border-radius: 0;
-  resize: none;
-  min-height: 2.75rem;
-  max-height: 12rem;
-  field-sizing: content;
-}
+/* ---- composer: the one pane that hovers over the transcript, hence the tallest shadow ---- */
+.composer { display: flex; align-items: flex-end; gap: 0.5rem; margin: 0 auto; width: 100%; max-width: 48rem; padding: 0.5rem 0.5rem 0.5rem 1.25rem; border-radius: var(--r-lg); }
+.composer textarea { flex: 1; min-width: 0; font: inherit; padding: 0.55rem 0; color: var(--text); background: transparent; border: 0; border-radius: 0; resize: none; min-height: 2.75rem; max-height: 12rem; field-sizing: content; }
 .composer textarea::placeholder { color: var(--text-2); }
 .composer textarea:focus-visible { outline: none; box-shadow: none; }
-.composer:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; box-shadow: inset 0 1px 0 var(--glass-highlight), var(--lift), 0 0 0 5px var(--focus-halo); }
+.composer:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
 .composer button { margin: 0; min-height: 2.75rem; }
 
 /* ---- virtual list pills -------------------------------------------------------- */
 .vitem { display: flow-root; }
 .vstatus { position: sticky; top: 0; height: 0; z-index: 1; text-align: center; font-size: 0.8rem; color: var(--text); pointer-events: none; }
-.vstatus span { display: inline-block; margin-top: 0.25rem; padding: 0.2rem 0.75rem; border-radius: var(--r-pill); background: var(--glass-fill-strong); pointer-events: auto; box-shadow: inset 0 1px 0 var(--glass-highlight), 0 2px 8px rgba(0, 0, 0, 0.2); }
+.vstatus span { display: inline-block; margin-top: 0.25rem; padding: 0.2rem 0.8rem; border-radius: var(--r-pill); pointer-events: auto; }
 .vstatus button { min-height: 1.75rem; padding: 0.1rem 0.7rem; margin: 0 0 0 0.25rem; }
 .vjump { position: sticky; bottom: 0.5rem; height: 0; text-align: center; }
 .vjump button { position: relative; top: -2.75rem; margin: 0; }
@@ -292,13 +307,13 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* ---- generative UI blocks (OpenUI) --------------------------------------------- */
 .ou-block, .ou-fallback { max-width: 100%; }
 .ou-stack { display: flex; flex-direction: column; gap: 0.5rem; }
-.ou-card { padding: 0.6rem 0.85rem; border: 1px solid var(--solid-border); border-radius: var(--r-md); background: var(--solid-raised); }
+.ou-card { padding: 0.6rem 0.85rem; border-radius: var(--r-md); --fill: var(--solid-raised); }
 .ou-card > .ou-heading { margin-top: 0; }
 .ou-heading { margin: 0.25rem 0; font-size: 1rem; }
 .ou-text { margin: 0.25rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .ou-badge { display: inline-block; padding: 0 0.6rem; border: 1px solid var(--text-2); border-radius: var(--r-pill); font-size: 0.8rem; }
 .ou-metric { display: inline-flex; flex-direction: column; margin-right: 1rem; }
-.ou-metric-value { font-size: 1.4rem; font-weight: 600; }
+.ou-metric-value { font-size: 1.4rem; font-weight: 600; letter-spacing: -0.02em; }
 .ou-metric-label { font-size: 0.8rem; color: var(--text-2); }
 .ou-list { margin: 0.25rem 0; padding-left: 1.25rem; }
 .ou-table-wrap { overflow: auto; max-width: 100%; }
@@ -310,42 +325,36 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (max-width: 40rem) {
   .chat-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); padding: 0.5rem; gap: 0.5rem; }
   .side { max-height: 7rem; border-radius: var(--r-md); }
-  .screen { padding: 1.5rem 1.25rem; margin: 0.75rem; }
+  .screen { margin: 1.5rem 1rem; }
   .turn.user { max-width: 100%; }
   .bar { padding-left: 1rem; }
 }
 
-/* ---- fallbacks: solid, high-contrast surfaces ---------------------------------- */
+/* ---- fallbacks: solid, high-contrast surfaces. Tokens change, selectors do not. -- */
 @media (prefers-reduced-transparency: reduce) {
-  .screen, .bar, .side, .composer, .turn.user, .vstatus span, .vjump button, button, a.btn {
-    background: var(--solid);
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
+  :root {
+    --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --solid-fill: var(--solid);
+    --chrome-blur: 0px; --raised-blur: 0px; --solid-blur: 0px; --chrome-sat: 1; --raised-sat: 1; --solid-sat: 1;
+    --chrome-sheen: transparent; --raised-sheen: transparent; --solid-sheen: transparent;
   }
-  .composer, .turn.user, .screen { background: var(--solid-raised); }
-  a.btn, .composer button[type="submit"] { background: var(--accent); }
-  .side button.item { background: transparent; }
-  .side button.item.current { background: var(--solid-raised); }
 }
 @media (prefers-contrast: more) {
-  :root { --glass-border: var(--text); --glass-border-top: var(--text); --solid-border: var(--text); --text-2: var(--text); }
-  .screen, .bar, .side, .composer, .turn, .vstatus span, .vjump button, button, a.btn {
-    background: var(--solid);
-    border: 2px solid var(--text);
-    box-shadow: none;
-    -webkit-backdrop-filter: none;
-    backdrop-filter: none;
+  :root {
+    --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --solid-fill: var(--solid);
+    --chrome-blur: 0px; --raised-blur: 0px; --solid-blur: 0px; --chrome-sat: 1; --raised-sat: 1; --solid-sat: 1;
+    --chrome-sheen: transparent; --raised-sheen: transparent; --solid-sheen: transparent;
+    --chrome-edge: var(--text); --raised-edge: var(--text); --solid-edge: var(--text); --solid-border: var(--text);
+    --chrome-spec: transparent; --raised-spec: transparent; --solid-spec: transparent;
+    --chrome-shadow: none; --raised-shadow: none; --control-shadow: none; --solid-shadow: none;
+    --edge-w: 2px; --text-2: var(--text);
+    --amb-teal: transparent; --amb-steel: transparent; --amb-amber: transparent; --amb-plum: transparent; --amb-ring: transparent; --amb-ring-shade: transparent;
   }
-  a.btn, .composer button[type="submit"] { background: var(--accent); }
-  .side button.item { background: transparent; border-color: transparent; }
-  .side button.item.current { border-color: var(--text); }
+  a.btn, .composer button[type="submit"] { --edge: var(--text); }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { transition: none !important; animation: none !important; }
   .run-streaming::after, .run-reconnecting::after { width: calc(100% - 2.5rem); opacity: 0.6; }
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  .screen, .bar, .side, .composer, .turn.user, .vstatus span, .vjump button, button, a.btn { background: var(--solid-raised); }
-  a.btn, .composer button[type="submit"] { background: var(--accent); }
-  .side button.item { background: transparent; }
+  :root { --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --solid-fill: var(--solid); }
 }
