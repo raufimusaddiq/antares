@@ -20,6 +20,7 @@ import (
 
 	"github.com/raufimusaddiq/antares/internal/server"
 	"github.com/raufimusaddiq/antares/internal/store"
+	"github.com/raufimusaddiq/antares/internal/webui"
 )
 
 // All values below are fabricated.
@@ -176,7 +177,7 @@ func newHarness(t *testing.T) *harness {
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := server.New(func(context.Context) error { return nil }, t.TempDir()).WithAuth(a).Routes()
+	h := server.New(func(context.Context) error { return nil }, "").WithAssets(webui.FS()).WithAuth(a).Routes()
 	return &harness{t: t, a: a, db: db, g: g, h: h, clk: clk}
 }
 

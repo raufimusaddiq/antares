@@ -293,10 +293,6 @@ func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
 	}
 	clearCookie(w, sessionCookie)
 	w.Header().Set("Cache-Control", "no-store")
-	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
-		http.Redirect(w, r, "/login", http.StatusSeeOther) // the screens' sign-out form
-		return
-	}
 	w.WriteHeader(http.StatusNoContent)
 }
 

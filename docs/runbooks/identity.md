@@ -39,9 +39,19 @@ is not guarded. Until the slice that implements a route lands, an eligible user 
 
 ## Screens
 
-Server-rendered, script-free pages: `/login`, `/pending`, `/rejected`, `/suspended`, `/setup`,
-`/error`. `/` sends the signed-out to `/login`, the not-yet-eligible to their screen, and only an
-`ACTIVE` user to the app shell. A user on the wrong screen is redirected to the right one.
+The status screens (login, pending, rejected, suspended, setting-up, error, and a placeholder for an
+active account) are React (`web/src`, `Screen.tsx`). The app calls `GET /api/me`: 401 means signed out,
+otherwise `state` picks the screen. An unexpected response is the "could not reach Antares" screen, never
+a guessed state. The server serves the shell for every non-`/api` path; the guards live only on the API.
+
+The bundle is built to `internal/webui/dist` and **committed**, then embedded with `embed.FS`, so
+`go build` needs no Node and production runs none. After changing anything under `web/`:
+
+    cd web && npm ci && npm run build   # also: npm run typecheck && npm test
+
+and commit `internal/webui/dist`. `go test ./internal/webui` fails if the sources and the bundle disagree
+(`dist/source-hash.txt`), and CI rebuilds and fails on any diff. `ANTARES_STATIC_DIR` serves a directory
+instead of the embedded bundle (development only).
 
 ## Not here yet
 

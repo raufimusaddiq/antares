@@ -184,9 +184,6 @@ func TestLogoutInvalidatesSessionServerSide(t *testing.T) {
 			t.Errorf("old cookie on %s after logout = %d", p, w.Code)
 		}
 	}
-	if w := thief.get("/"); w.Header().Get("Location") != "/login" {
-		t.Errorf("landing with a dead cookie: %d %s", w.Code, w.Header().Get("Location"))
-	}
 	if n := h.count(`SELECT COUNT(*) FROM app_sessions WHERE revoked_at IS NOT NULL`); n != 1 {
 		t.Fatalf("revoked sessions = %d", n)
 	}

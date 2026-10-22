@@ -47,7 +47,8 @@ var ChatRoutes = []Route{
 	{"POST", "/api/jobs/{jobId}/run"},
 }
 
-// Register mounts the identity routes, the screens and the guarded placeholders.
+// Register mounts the identity routes and the guarded placeholders. The status
+// screens are the React app (web/); it reads /api/me.
 func (a *Auth) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/auth/google/start", a.start)
 	mux.HandleFunc("GET "+callbackPath, a.callback)
@@ -63,10 +64,6 @@ func (a *Auth) Register(mux *http.ServeMux) {
 	}
 	// The whole admin tree is guarded now; the approval endpoints land in a later slice.
 	mux.Handle("/api/admin/", a.Admin(notBuilt))
-
-	for path, page := range screens {
-		mux.HandleFunc("GET "+path, a.screen(page))
-	}
 }
 
 // ---- read models: the only account data the browser receives ----------------

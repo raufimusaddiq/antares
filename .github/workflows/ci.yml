@@ -63,10 +63,25 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         run: npm run typecheck --if-present
         working-directory: web
+      - name: Test
+        if: steps.detect.outputs.present == 'true'
+        run: npm test
+        working-directory: web
       - name: Build
         if: steps.detect.outputs.present == 'true'
         run: npm run build
         working-directory: web
+      # The bundle is committed so `go build` needs no Node. A bundle that no
+      # longer matches web/ is how stale artifacts come back: fail on any difference.
+      - name: Committed bundle is up to date
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          if [ -n "$(git status --porcelain -- internal/webui)" ]; then
+            git status --short -- internal/webui
+            echo "::error::internal/webui/dist is stale. Run 'npm ci && npm run build' in web/ and commit the result."
+            exit 1
+          fi
+          echo "committed bundle matches a fresh build"
 
   # These two run from the first commit and never skip: they are the rules in
   # AGENTS.md that can be checked mechanically.

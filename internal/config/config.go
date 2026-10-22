@@ -32,7 +32,7 @@ func (Secret) LogValue() slog.Value         { return slog.StringValue(redacted) 
 type Config struct {
 	Addr      string
 	DBPath    string
-	StaticDir string
+	StaticDir string // development override; empty serves the embedded bundle
 	SecretKey Secret // 32-byte master key for secrets at rest
 
 	// Google OIDC login (AUTH-001). All three are required: there is no
@@ -54,7 +54,7 @@ func Load(getenv func(string) string) (Config, error) {
 	c := Config{
 		Addr:        orDefault(getenv("ANTARES_ADDR"), ":8080"),
 		DBPath:      getenv("ANTARES_DB_PATH"),
-		StaticDir:   orDefault(getenv("ANTARES_STATIC_DIR"), "web/dist"),
+		StaticDir:   getenv("ANTARES_STATIC_DIR"),
 		AdminIssuer: orDefault(getenv("ANTARES_ADMIN_GOOGLE_ISSUER"), defaultIssuer),
 		AdminSub:    getenv("ANTARES_ADMIN_GOOGLE_SUB"),
 		AdminEmail:  getenv("ANTARES_ADMIN_EMAIL"),

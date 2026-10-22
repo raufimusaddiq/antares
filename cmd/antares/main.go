@@ -15,7 +15,6 @@ import (
 	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/config"
 	"github.com/raufimusaddiq/antares/internal/secrets"
-	"github.com/raufimusaddiq/antares/internal/server"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -91,7 +90,7 @@ func run() error {
 	}
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           server.New(ready, cfg.StaticDir).WithAuth(identity).Routes(),
+		Handler:           newServer(ready, cfg.StaticDir).WithAuth(identity).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,

@@ -5,9 +5,11 @@ package server
 import (
 	"context"
 	"encoding/json"
+	"io"
+	"io/fs"
 	"net/http"
 	"os"
-	"path/filepath"
+	"path"
 	"strings"
 	"time"
 )
@@ -15,21 +17,27 @@ import (
 // Checker reports whether a dependency is usable right now.
 type Checker func(ctx context.Context) error
 
-// Auth is the identity layer the server mounts: its routes and screens, and a
-// guard for "/" so only an eligible user reaches the app shell.
+// Auth is the identity layer the server mounts: its /api routes.
 type Auth interface {
 	Register(mux *http.ServeMux)
-	Landing(next http.Handler) http.Handler
 }
 
 type Server struct {
-	ready     Checker
-	staticDir string
-	auth      Auth
+	ready  Checker
+	assets fs.FS
+	auth   Auth
 }
 
+// New serves the bundle from staticDir (a development override). Production
+// passes WithAssets(webui.FS()) instead and needs no directory on disk.
 func New(ready Checker, staticDir string) *Server {
-	return &Server{ready: ready, staticDir: staticDir}
+	return &Server{ready: ready, assets: os.DirFS(staticDir)}
+}
+
+// WithAssets serves the SPA from fsys, e.g. the embedded bundle.
+func (s *Server) WithAssets(fsys fs.FS) *Server {
+	s.assets = fsys
+	return s
 }
 
 // WithAuth mounts the identity layer. Without it the server serves no login.
@@ -84,7 +92,6 @@ func (s *Server) routes() *http.ServeMux {
 	})
 	if s.auth != nil {
 		s.auth.Register(mux)
-		mux.Handle("GET /{$}", s.auth.Landing(http.HandlerFunc(s.static)))
 	}
 	mux.HandleFunc("/", s.static)
 	return mux
@@ -109,31 +116,55 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 }
 
 // static serves the built bundle; unknown non-API paths fall back to
-// index.html so client-side routes work. http.Dir rejects path traversal.
+// index.html so client-side routes work. fs.FS rejects path traversal.
 func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		writeErr(w, http.StatusMethodNotAllowed, "method not allowed")
 		return
 	}
-	fs := http.Dir(s.staticDir)
-	p := filepath.ToSlash(filepath.Clean("/" + r.URL.Path))
-	if f, err := fs.Open(p); err == nil {
-		st, serr := f.Stat()
-		f.Close()
-		if serr == nil && !st.IsDir() {
-			http.FileServer(fs).ServeHTTP(w, r)
-			return
-		}
+	p := strings.TrimPrefix(path.Clean("/"+r.URL.Path), "/")
+	if p == "" {
+		p = "index.html"
 	}
-	if strings.Contains(filepath.Base(p), ".") { // a missing asset is a 404, not the app shell
+	if st, err := fs.Stat(s.assets, p); err == nil && !st.IsDir() {
+		s.serveFile(w, r, p)
+		return
+	}
+	if strings.Contains(path.Base(p), ".") { // a missing asset is a 404, not the app shell
 		http.NotFound(w, r)
 		return
 	}
-	if _, err := os.Stat(filepath.Join(s.staticDir, "index.html")); err != nil {
+	if _, err := fs.Stat(s.assets, "index.html"); err != nil {
+		http.NotFound(w, r) // no bundle: say so, never substitute another page
+		return
+	}
+	s.serveFile(w, r, "index.html")
+}
+
+func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, name string) {
+	f, err := s.assets.Open(name)
+	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
-	http.ServeFile(w, r, filepath.Join(s.staticDir, "index.html"))
+	defer f.Close()
+	st, err := f.Stat()
+	rs, ok := f.(io.ReadSeeker)
+	if err != nil || !ok {
+		http.NotFound(w, r)
+		return
+	}
+	h := w.Header()
+	h.Set("X-Content-Type-Options", "nosniff")
+	if name == "index.html" {
+		// The shell is the one document: no scripts but our own bundle, no framing.
+		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		h.Set("Referrer-Policy", "no-referrer")
+		h.Set("Cache-Control", "no-store")
+	} else if strings.HasPrefix(name, "assets/") { // content-hashed by the build
+		h.Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
+	http.ServeContent(w, r, name, st.ModTime(), rs)
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
