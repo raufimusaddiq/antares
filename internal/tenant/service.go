@@ -25,14 +25,27 @@ const (
 	DefaultMaxAttempts = 5
 	DefaultBaseBackoff = 15 * time.Second
 	maxBackoff         = 10 * time.Minute
-	// lease outlives the helper's own 270s request budget, so a run still in
-	// flight is never mistaken for an interrupted one.
-	lease        = 6 * time.Minute
+	// A run is a helper call (hermes.HelperTimeout) plus a verification
+	// (hermes.MaxVerifyProbes requests of hermes.ProbeTimeout). obtainCredential
+	// can make a second helper call, Rotate after ErrKeyExists; that 409 comes
+	// from the helper's fast path (no key written), so the budget covers one call
+	// plus probes, not two calls at their timeout. If both did run long, the run
+	// is cut at runBudget and stays CONFIGURING. The lease outlives runBudget, so
+	// a run still in flight is never mistaken for an interrupted one, and a cut
+	// run is retried, not lost. The two-call path is tight by design: in the
+	// helper's own exec budget (60s each) Provision with an existing key is 3
+	// execs and Rotate 3, so 6x60s + 15x15s probes = 585s worst case, 75s inside
+	// runBudget (660s); a new profile's Provision (4 execs) is never followed by
+	// Rotate. One more exec in either handler eats 60s of that margin. This margin
+	// is stated, not pinned: the exec counts live in the provisioner module (its
+	// TestHandlersStayBelowExecBudget bounds them). TestRunBudgetCoversHelperAndProbes
+	// (single call) and TestLeaseOutlastsRunBudget pin the rest.
+	lease        = 12 * time.Minute
 	sweepEvery   = 10 * time.Second
 	sweepBatch   = 20
 	endpointID   = "hermes-primary"
 	maxSiblings  = 3
-	runBudget    = 10 * time.Minute
+	runBudget    = 11 * time.Minute
 	scopePrefix  = "chatui:user:"
 	slugRandomLn = 12 // bytes -> 24 hex chars, within the helper's 8..32
 )

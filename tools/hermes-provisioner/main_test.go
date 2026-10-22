@@ -313,3 +313,173 @@ func TestSweepRemovesOnlyDeadValidatedSlugs(t *testing.T) {
 		}
 	}
 }
+
+func TestProvisionDisablesToolsetsBeforeIssuingKey(t *testing.T) {
+	f := &scripted{list: listFixture}
+	rec := do(t, newServer(f, testToken), "/provision", "Bearer "+testToken, `{"slug":"u_newuser01"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got %d %s", rec.Code, rec.Body)
+	}
+	cfg, py := -1, -1
+	for i, c := range f.calls {
+		if len(c) == 7 && c[0] == "hermes" && c[1] == "-p" && c[2] == "u_newuser01" && c[3] == "config" && c[4] == "set" && c[5] == "agent.disabled_toolsets" {
+			cfg = i
+			var got []string
+			if err := json.Unmarshal([]byte(c[6]), &got); err != nil {
+				t.Fatalf("value is not a JSON array: %q", c[6])
+			}
+			have := map[string]bool{}
+			for _, n := range got {
+				have[n] = true
+			}
+			for _, n := range []string{"terminal", "file", "code_execution", "delegation", "cronjob", "session_search", "connections", "browser"} {
+				if !have[n] {
+					t.Errorf("%s is not disabled", n)
+				}
+			}
+			for _, n := range []string{"web", "vision", "image_gen", "skills", "memory", "todo", "clarify"} {
+				if have[n] {
+					t.Errorf("allowed toolset %s is disabled", n)
+				}
+			}
+		}
+		if c[0] == "python3" {
+			py = i
+		}
+	}
+	if cfg < 0 {
+		t.Fatal("toolsets were not disabled in the profile's own config")
+	}
+	if py < cfg {
+		t.Fatal("key was written before the toolset policy")
+	}
+}
+
+func TestProvisionFailsClosedWhenToolsetPolicyFails(t *testing.T) {
+	f := &toolsetFail{scripted{list: listFixture}}
+	rec := do(t, newServer(f, testToken), "/provision", "Bearer "+testToken, `{"slug":"u_newuser01"}`)
+	if rec.Code != http.StatusBadGateway || strings.Contains(rec.Body.String(), `"key"`) {
+		t.Fatalf("got %d %s", rec.Code, rec.Body)
+	}
+	if f.called("python3") {
+		t.Fatal("a key was written for a profile without the toolset policy")
+	}
+}
+
+type toolsetFail struct{ scripted }
+
+func (f *toolsetFail) Run(ctx context.Context, in string, args ...string) (string, string, error) {
+	if len(args) > 4 && args[3] == "config" {
+		f.calls = append(f.calls, args)
+		return "", "boom", exitErr(1)
+	}
+	return f.scripted.Run(ctx, in, args...)
+}
+
+// A request's docker exec calls must stay below maxCalls so opBudget keeps one
+// call of headroom. Adding a call to a handler fails here, before it can
+// silently exceed the budget.
+func TestHandlersStayBelowExecBudget(t *testing.T) {
+	cases := []struct {
+		name, path, slug string
+	}{
+		{"provision new profile (worst case)", "/provision", "u_newuser01"},
+		{"provision existing profile", "/provision", "u_existing1"},
+		{"rotate", "/rotate", "u_existing1"},
+		{"deprovision", "/deprovision", "u_existing1"},
+	}
+	for _, c := range cases {
+		f := &scripted{list: listFixture}
+		do(t, newServer(f, testToken), c.path, "Bearer "+testToken, `{"slug":"`+c.slug+`"}`)
+		if len(f.calls) == 0 || len(f.calls) >= maxCalls {
+			t.Errorf("%s made %d exec calls; want 1..%d (below maxCalls)", c.name, len(f.calls), maxCalls-1)
+		}
+	}
+}
+
+func TestPolicyFromEnv(t *testing.T) {
+	def, err := policyFromEnv("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range defaultAllowed {
+		if contains(def, n) {
+			t.Errorf("default policy disables allowed toolset %s", n)
+		}
+	}
+	for _, n := range floorToolsets {
+		if !contains(def, n) {
+			t.Errorf("default policy leaves floor toolset %s on", n)
+		}
+	}
+	if len(def)+len(defaultAllowed) != len(knownToolsets) {
+		t.Errorf("disabled %d + allowed %d != known %d", len(def), len(defaultAllowed), len(knownToolsets))
+	}
+	narrow, err := policyFromEnv(" web, memory ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contains(narrow, "web") || contains(narrow, "memory") || !contains(narrow, "vision") || !contains(narrow, "todo") {
+		t.Errorf("narrowed policy wrong: %v", narrow)
+	}
+	// Whitespace-only is an error, not "unset" (Antares' Load refuses it too).
+	for _, blank := range []string{" ", ",", " , "} {
+		if _, err := policyFromEnv(blank); err == nil || !strings.Contains(err.Error(), "must not be empty") {
+			t.Errorf("%q: %v", blank, err)
+		}
+	}
+	for _, bad := range []string{"web,terminal", "web,nonsense", "browser"} {
+		if _, err := policyFromEnv(bad); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+	// The startup failure names the offending toolset.
+	if _, err := policyFromEnv("web,visoin"); err == nil || !strings.Contains(err.Error(), "visoin") {
+		t.Errorf("error does not name the unknown toolset: %v", err)
+	}
+	if _, err := policyFromEnv(","); err == nil {
+		t.Error("accepted an allow-list with no names")
+	}
+}
+
+func toolsetCall(f *scripted) []string {
+	for _, c := range f.calls {
+		if len(c) == 7 && c[3] == "config" && c[5] == toolsetsConfigKey {
+			return c
+		}
+	}
+	return nil
+}
+
+func TestNarrowedPolicyReachesProvisionAndRotate(t *testing.T) {
+	disabled, err := policyFromEnv("web,memory")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ path, slug string }{{"/provision", "u_newuser01"}, {"/rotate", "u_existing1"}} {
+		f := &scripted{list: listFixture}
+		rec := do(t, newServerWithPolicy(f, testToken, disabled), c.path, "Bearer "+testToken, `{"slug":"`+c.slug+`"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: got %d %s", c.path, rec.Code, rec.Body)
+		}
+		call := toolsetCall(f)
+		if call == nil {
+			t.Fatalf("%s did not apply the toolset policy", c.path)
+		}
+		var got []string
+		if err := json.Unmarshal([]byte(call[6]), &got); err != nil {
+			t.Fatal(err)
+		}
+		if contains(got, "web") || contains(got, "memory") || !contains(got, "vision") {
+			t.Errorf("%s applied %v", c.path, got)
+		}
+	}
+}
+
+func TestRotateFailsClosedWhenToolsetPolicyFails(t *testing.T) {
+	f := &toolsetFail{scripted{list: listFixture}}
+	rec := do(t, newServer(f, testToken), "/rotate", "Bearer "+testToken, `{"slug":"u_existing1"}`)
+	if rec.Code != http.StatusBadGateway || strings.Contains(rec.Body.String(), `"key"`) || f.called("python3") {
+		t.Fatalf("got %d %s", rec.Code, rec.Body)
+	}
+}

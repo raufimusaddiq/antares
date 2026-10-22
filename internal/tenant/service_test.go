@@ -685,3 +685,24 @@ func TestNewRequiresEveryDependency(t *testing.T) {
 		t.Fatal("accepted empty options")
 	}
 }
+
+// A run is a helper call plus a verification; its budget must cover both,
+// derived from the probe count and timeouts in internal/hermes. It covers one
+// helper call, not the Provision-then-Rotate pair at full timeout: the 409 that
+// triggers Rotate is a fast path, and a run cut at runBudget is retried via the
+// lease (TestLeaseOutlastsRunBudget).
+func TestRunBudgetCoversHelperAndProbes(t *testing.T) {
+	need := hermes.HelperTimeout + hermes.MaxVerifyProbes*hermes.ProbeTimeout
+	if runBudget <= need {
+		t.Fatalf("runBudget %v must exceed helper %v + %d probes x %v = %v",
+			runBudget, hermes.HelperTimeout, hermes.MaxVerifyProbes, hermes.ProbeTimeout, need)
+	}
+}
+
+// A claimed run is bounded by runBudget, so a lease longer than that can never
+// expire under a run that is still working.
+func TestLeaseOutlastsRunBudget(t *testing.T) {
+	if lease <= runBudget {
+		t.Fatalf("lease %v must exceed runBudget %v", lease, runBudget)
+	}
+}

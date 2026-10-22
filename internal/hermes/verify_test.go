@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -100,10 +101,6 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 		// A prefix nobody registered. The never-provisioned probe target is modelled
 		// as refusing authentication, the answer verification requires; any other
 		// unknown profile is a 404 (a route that is simply not served).
-		if strings.HasPrefix(r.URL.Path, "/p/"+absentSlug+"/") {
-			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
-			return
-		}
 		http.Error(w, `{"error":"Unknown or unconfigured profile"}`, http.StatusNotFound)
 		return
 	}
@@ -357,11 +354,16 @@ func TestNewVerifierRefusesUnsafeBaseURLs(t *testing.T) {
 	}
 }
 
-// Each probe that must be refused accepts 401 and 403 and nothing else. A broken
-// or misrouted endpoint (404, a redirect, 5xx) is not a refusal, and a 200 is a
-// leak; every one of them fails the check and the reason names the status.
-func TestRefusalProbesRequireExactly401Or403(t *testing.T) {
+// Each probe that must be refused accepts 401 and 403 and nothing else, with one
+// exception: the never-provisioned route also accepts 404 (accepts404 below). A
+// broken or misrouted endpoint (404 elsewhere, a redirect, 5xx) is not a
+// refusal, and a 200 is a leak; every one of them fails the check and the
+// reason names the status.
+func TestRefusalProbesRequire401Or403Except404OnTheUnprovisionedRoute(t *testing.T) {
 	absent := "/p/" + absentSlug + "/v1/models"
+	// The never-provisioned route is the one probe where the deployed Hermes
+	// answers 404, and 404 proves the key opens nothing there.
+	accepts404 := map[string]bool{"unprovisioned route": true}
 	probes := []struct {
 		name  string
 		check string
@@ -389,6 +391,9 @@ func TestRefusalProbesRequireExactly401Or403(t *testing.T) {
 	}
 	for _, p := range probes {
 		for _, code := range []int{200, 201, 204, 301, 302, 307, 400, 404, 405, 429, 500, 502, 503} {
+			if code == 404 && accepts404[p.name] {
+				continue
+			}
 			t.Run(p.name+"/"+strconv.Itoa(code), func(t *testing.T) {
 				f := newFake(t)
 				force(f, p.match, code)
@@ -400,12 +405,16 @@ func TestRefusalProbesRequireExactly401Or403(t *testing.T) {
 				if !strings.Contains(reason, strconv.Itoa(code)) {
 					t.Fatalf("reason %q does not name status %d", reason, code)
 				}
-				if code != 200 && !strings.Contains(reason, "expected 401 or 403") {
+				if code != 200 && !strings.Contains(reason, "expected 401") {
 					t.Fatalf("reason %q does not say what was expected", reason)
 				}
 			})
 		}
-		for _, code := range []int{401, 403} {
+		accepted := []int{401, 403}
+		if accepts404[p.name] {
+			accepted = append(accepted, 404)
+		}
+		for _, code := range accepted {
 			t.Run(p.name+"/"+strconv.Itoa(code), func(t *testing.T) {
 				f := newFake(t)
 				force(f, p.match, code)
@@ -451,4 +460,123 @@ func TestUnreachableIsDistinctFromWrongStatus(t *testing.T) {
 	if wrong == down {
 		t.Fatal("the two diagnoses are indistinguishable")
 	}
+}
+
+// The deployed Hermes (v0.22.2) answers a never-provisioned profile route with
+// 404 (issue #41). That is a refusal for the absent-slug probe only.
+func TestAbsentProfileRoute404IsARefusal(t *testing.T) {
+	f := newFake(t)
+	f.override = func(r *http.Request) int {
+		if r.URL.Path == "/p/"+absentSlug+"/v1/models" {
+			return http.StatusNotFound
+		}
+		return 0
+	}
+	if rep := f.verifier(t).Verify(context.Background(), target()); !rep.OK() {
+		t.Fatalf("404 on the absent slug failed verification: %+v", rep)
+	}
+}
+
+// Shapes captured from the deployed /api/sessions (issue #41). The envelope is
+// the contract; anything else fails closed.
+func TestSessionCountDeployedEnvelope(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+		n    int
+		ok   bool
+	}{
+		{"committed fixture", string(sessionsFixture(t)), 0, true},
+		{"deployed empty", `{"object":"list","data":[],"limit":1,"offset":0,"has_more":false}`, 0, true},
+		{"deployed one", `{"object":"list","data":[{"id":"s1"}],"limit":1,"offset":0,"has_more":true}`, 1, true},
+		{"data without object list", `{"data":[]}`, 0, false},
+		{"wrong object", `{"object":"thing","data":[]}`, 0, false},
+		{"data null", `{"object":"list","data":null}`, 0, false},
+		{"data not an array", `{"object":"list","data":"x"}`, 0, false},
+		{"unrelated object", `{"rows":"x"}`, 0, false},
+		{"not json", `<html>`, 0, false},
+	}
+	for _, c := range cases {
+		n, ok := sessionCount([]byte(c.body))
+		if n != c.n || ok != c.ok {
+			t.Errorf("%s: got %d, %v; want %d, %v", c.name, n, ok, c.n, c.ok)
+		}
+	}
+}
+
+func TestFreshProfileWithDeployedEnvelopeSessions(t *testing.T) {
+	f := newFake(t)
+	f.sessionsBody = `{"object":"list","data":[],"limit":1,"offset":0,"has_more":false}`
+	tg := target()
+	tg.Fresh = true
+	if rep := f.verifier(t).Verify(context.Background(), tg); !rep.OK() {
+		t.Fatalf("deployed empty envelope failed a fresh profile: %+v", rep)
+	}
+	f.sessionsBody = `{"object":"list","data":[{"id":"s"}],"limit":1,"offset":0,"has_more":false}`
+	if rep := f.verifier(t).Verify(context.Background(), tg); rep.OK() {
+		t.Fatal("a fresh profile holding a session passed")
+	}
+}
+
+// The admin-visible reason names exactly what the probe accepts.
+func TestAbsentRouteReasonNamesTheAcceptedStatuses(t *testing.T) {
+	f := newFake(t)
+	f.override = func(r *http.Request) int {
+		if r.URL.Path == "/p/"+absentSlug+"/v1/models" {
+			return http.StatusInternalServerError
+		}
+		return 0
+	}
+	got := failed(f.verifier(t).Verify(context.Background(), target()))[CheckIdentity]
+	if !strings.Contains(got, "expected 401, 403 or 404") {
+		t.Fatalf("reason %q", got)
+	}
+}
+
+// MaxVerifyProbes is the worst-case request count of one Verify (the longest
+// path, with maxSiblingProbes siblings), which the tenant lease is derived from.
+func TestVerifyProbeCount(t *testing.T) {
+	f := newFake(t)
+	sibs := []string{"u_sibling0001", "u_sibling0002", "u_sibling0003"}
+	for _, s := range sibs {
+		f.keys[s] = "k-" + s
+	}
+	tg := target()
+	tg.Siblings = sibs
+	if rep := f.verifier(t).Verify(context.Background(), tg); !rep.OK() {
+		t.Fatalf("%+v", rep)
+	}
+	f.mu.Lock()
+	n := len(f.hits)
+	f.mu.Unlock()
+	if n > MaxVerifyProbes {
+		t.Fatalf("Verify made %d requests, MaxVerifyProbes is %d", n, MaxVerifyProbes)
+	}
+	if n < MaxVerifyProbes-1 {
+		t.Fatalf("Verify made %d requests; lower MaxVerifyProbes (%d) to match", n, MaxVerifyProbes)
+	}
+}
+
+func TestValidateAllowedToolsetsRejectsUnknownAndFloorNames(t *testing.T) {
+	if err := ValidateAllowedToolsets(nil); err == nil || !strings.Contains(err.Error(), "must not be empty") {
+		t.Errorf("empty list accepted: %v", err)
+	}
+	if err := ValidateAllowedToolsets(DefaultAllowedToolsets); err != nil {
+		t.Fatalf("default set rejected: %v", err)
+	}
+	for _, c := range []struct{ name, want string }{{"visoin", "visoin"}, {"terminal", "terminal"}, {"", "toolset"}} {
+		err := ValidateAllowedToolsets([]string{"web", c.name})
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%q: %v", c.name, err)
+		}
+	}
+}
+
+func sessionsFixture(t *testing.T) []byte {
+	t.Helper()
+	b, err := os.ReadFile("../../docs/hermes/fixtures/sessions-empty.body.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }

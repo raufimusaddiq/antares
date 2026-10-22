@@ -26,8 +26,12 @@ var slugRE = regexp.MustCompile(`^u_[a-z0-9]{8,32}$`)
 func ValidSlug(s string) bool { return slugRE.MatchString(s) }
 
 const (
-	maxBody       = 1 << 20
-	helperTimeout = 300 * time.Second // the helper's own budget is 270s
+	maxBody = 1 << 20
+	// HelperTimeout must exceed the helper's request budget plus its write slack
+	// (opBudget 330s + writeSlack 30s in tools/hermes-provisioner/hermes.go), or
+	// this caller gives up while the helper is still creating the profile and
+	// writing a key. TestHelperTimeoutOutlastsProvisionerBudget enforces it.
+	HelperTimeout = 390 * time.Second
 )
 
 // Failure classes. Retryable failures are worth another attempt with backoff;
@@ -107,7 +111,7 @@ func NewHelper(baseURL, token string, client *http.Client) (*Helper, error) {
 		return nil, errors.New("hermes: provisioner token must be at least 32 characters")
 	}
 	if client == nil {
-		client = &http.Client{Timeout: helperTimeout}
+		client = &http.Client{Timeout: HelperTimeout}
 	}
 	c := *client
 	c.CheckRedirect = noRedirect
