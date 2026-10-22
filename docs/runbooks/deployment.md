@@ -53,3 +53,19 @@ Rollback is redeploying the previous image tag. Keep the previous tag until the 
 
 The SQLite database is the only state Antares owns. Back it up before a migration, and verify a
 restore at least once per phase — an untested backup is a hope, not a backup.
+
+## Provisioning helper
+
+Per-user Hermes profiles are created by `tools/hermes-provisioner/`, a small Go service that runs
+**on the host** (not in the `antares` container, which stays Docker-socket-free). It executes
+`hermes profile create/delete/purge-identity` through `docker exec -u hermes` and exposes
+`/provision`, `/rotate`, `/deprovision` and `/health` over HTTP (see its README).
+
+- **Token:** `PROVISIONER_TOKEN` is read from the service's environment, supplied by the host's
+  secret store or a root-owned `EnvironmentFile` outside the repository. The same value is given to
+  Antares as a runtime secret. There is no default; the service will not start without it.
+- **Network:** bind to an address reachable from the `antares` container only (default
+  `127.0.0.1:8750`; change `PROVISIONER_ADDR` for the container bridge) and never expose it at the edge.
+- **User:** a normal host user with Docker access to the Hermes container; nothing more.
+- **Scope:** it refuses `default` and any slug not matching `^u_[a-z0-9]{8,32}$`.
+- Returned keys are stored by Antares in its secret store; the helper keeps none.
