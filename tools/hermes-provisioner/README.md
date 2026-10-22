@@ -32,6 +32,10 @@ All endpoints except `/health` need `Authorization: Bearer $PROVISIONER_TOKEN`.
   gets its own `400` and can never be provisioned, rotated or deprovisioned. Unknown JSON fields
   (`profile`, `key`, ...) are rejected.
 - Fail closed: if `profile create` fails nothing is written.
+- Tenant toolset policy (issue #41): before any key is issued, `/provision` runs
+  `hermes -p <slug> config set agent.disabled_toolsets '[...]'` for the profile, disabling every denied
+  toolset and everything outside the allowed default (`toolsets.go`). Hermes applies that list last,
+  over every platform list. If it fails, no key is written (`502`).
 - Keys travel to the container on stdin (not argv), are never logged, and never appear in errors.
 
 ## Timeouts and cancellation

@@ -110,6 +110,16 @@ func (h hermes) create(ctx context.Context, slug string) error {
 	return nil
 }
 
+// disableToolsets persists the tenant toolset policy in the profile's own
+// config.yaml (never default's): hermes -p <slug> config set.
+func (h hermes) disableToolsets(ctx context.Context, slug string) error {
+	_, stderr, err := h.r.Run(ctx, "", "hermes", "-p", slug, "config", "set", toolsetsConfigKey, disabledToolsetsValue())
+	if err != nil {
+		return fmt.Errorf("%w: disabling toolsets: %s", errUpstream, brief(stderr))
+	}
+	return nil
+}
+
 func (h hermes) writeKey(ctx context.Context, mode, slug, key string) error {
 	path := profilesDir + "/" + slug + "/.env"
 	_, _, err := h.r.Run(ctx, key, "python3", "-c", envScript, mode, path)

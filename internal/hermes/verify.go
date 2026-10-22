@@ -173,11 +173,19 @@ func refused(status int) bool {
 // refusal, otherwise a fixed-vocabulary reason that tells an unreachable
 // endpoint ("did not answer") from a wrong status (the status is named).
 func (v *Verifier) expectRefusal(ctx context.Context, path, key, what string) string {
+	return v.expectRefusalOr(ctx, path, key, what, false)
+}
+
+// expectRefusalOr is expectRefusal; with notFoundOK a 404 also counts. That is
+// only right for a route that was never provisioned: the deployed Hermes answers
+// 404 for it, which proves the tenant key opens nothing there. For the default
+// profile and for sibling routes a 404 would mean a misrouted endpoint.
+func (v *Verifier) expectRefusalOr(ctx context.Context, path, key, what string, notFoundOK bool) string {
 	r, err := v.get(ctx, path, key)
 	switch {
 	case err != nil:
 		return what + " did not answer"
-	case refused(r.status):
+	case refused(r.status), notFoundOK && r.status == http.StatusNotFound:
 		return ""
 	case r.status == http.StatusOK:
 		return what + " accepted the request (status 200)"
@@ -260,7 +268,7 @@ func (v *Verifier) identity(ctx context.Context, t Target) Result {
 	if why := v.expectRefusal(ctx, "/v1/models", t.Key, "the default profile route (tenant key)"); why != "" {
 		return Result{CheckIdentity, false, why}
 	}
-	if why := v.expectRefusal(ctx, route(absentSlug)+"/v1/models", t.Key, "an unprovisioned profile route (tenant key)"); why != "" {
+	if why := v.expectRefusalOr(ctx, route(absentSlug)+"/v1/models", t.Key, "an unprovisioned profile route (tenant key)", true); why != "" {
 		return Result{CheckIdentity, false, why}
 	}
 	return Result{CheckIdentity, true, ""}
@@ -286,9 +294,10 @@ func (v *Verifier) isolation(ctx context.Context, t Target, siblings []string) R
 }
 
 // sessions: the profile lists its own sessions, no other tenant's route lists
-// them for this key, and a new profile owns none. The sessions list shape is
-// documented but UNVERIFIED on the deployed build (docs/hermes/PHASE0-FINDINGS.md);
-// anything this does not recognise fails closed.
+// them for this key, and a new profile owns none. The list shape was captured
+// from the deployed build (Hermes v0.22.2, issue #41) and is pinned by
+// TestSessionCountDeployedEnvelope; anything this does not recognise fails
+// closed.
 func (v *Verifier) sessions(ctx context.Context, t Target, siblings []string) Result {
 	r, err := v.get(ctx, route(t.Profile)+"/api/sessions?limit=1&offset=0", t.Key)
 	if err != nil || r.status != http.StatusOK {
@@ -311,9 +320,18 @@ func (v *Verifier) sessions(ctx context.Context, t Target, siblings []string) Re
 	return Result{CheckSessions, true, ""}
 }
 
-// sessionCount accepts a bare array or an object whose "sessions" member is an
-// array. Anything else is unrecognised.
+// sessionCount accepts the deployed envelope
+// {"object":"list","data":[...],"limit":N,"offset":N,"has_more":bool}, a bare
+// array, or an object whose "sessions" member is an array. Anything else is
+// unrecognised.
 func sessionCount(b []byte) (int, bool) {
+	var env struct {
+		Object string            `json:"object"`
+		Data   []json.RawMessage `json:"data"`
+	}
+	if json.Unmarshal(b, &env) == nil && env.Object == "list" && env.Data != nil {
+		return len(env.Data), true
+	}
 	var arr []json.RawMessage
 	if json.Unmarshal(b, &arr) == nil && arr != nil {
 		return len(arr), true

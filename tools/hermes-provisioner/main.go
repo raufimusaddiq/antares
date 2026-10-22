@@ -121,6 +121,12 @@ func (s *server) provision(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Applied on every provision, existing profile or not, before any key is
+	// issued: a profile that cannot be locked down never gets a key.
+	if err := s.h.disableToolsets(ctx, slug); err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
+		return
+	}
 	key, err := newKey()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "key generation failed")

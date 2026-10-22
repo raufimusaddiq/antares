@@ -57,7 +57,11 @@ new profile should disable it too (not needed for v1 chat). Decide explicitly ra
 Neither is confirmed as an escalation path; neither is cleared. Until checked, treat both as
 unverified.
 
-## How to apply (once routing is delivered; unverified)
+## How to apply
+
+`tools/hermes-provisioner` now applies this on `/provision` with
+`hermes -p <slug> config set agent.disabled_toolsets '[...]'` (issue #41). The paragraph below is the
+manual equivalent.
 
 Set `agent.disabled_toolsets` in the tenant profile's own `config.yaml`, never in `default`'s. Then
 read `/p/<profile>/v1/toolsets` and confirm every toolset under "Disabled" has `enabled: false` and

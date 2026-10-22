@@ -313,3 +313,65 @@ func TestSweepRemovesOnlyDeadValidatedSlugs(t *testing.T) {
 		}
 	}
 }
+
+func TestProvisionDisablesToolsetsBeforeIssuingKey(t *testing.T) {
+	f := &scripted{list: listFixture}
+	rec := do(t, newServer(f, testToken), "/provision", "Bearer "+testToken, `{"slug":"u_newuser01"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got %d %s", rec.Code, rec.Body)
+	}
+	cfg, py := -1, -1
+	for i, c := range f.calls {
+		if len(c) == 7 && c[0] == "hermes" && c[1] == "-p" && c[2] == "u_newuser01" && c[3] == "config" && c[4] == "set" && c[5] == "agent.disabled_toolsets" {
+			cfg = i
+			var got []string
+			if err := json.Unmarshal([]byte(c[6]), &got); err != nil {
+				t.Fatalf("value is not a JSON array: %q", c[6])
+			}
+			have := map[string]bool{}
+			for _, n := range got {
+				have[n] = true
+			}
+			for _, n := range []string{"terminal", "file", "code_execution", "delegation", "cronjob", "session_search", "connections", "browser"} {
+				if !have[n] {
+					t.Errorf("%s is not disabled", n)
+				}
+			}
+			for _, n := range []string{"web", "vision", "image_gen", "skills", "memory", "todo", "clarify"} {
+				if have[n] {
+					t.Errorf("allowed toolset %s is disabled", n)
+				}
+			}
+		}
+		if c[0] == "python3" {
+			py = i
+		}
+	}
+	if cfg < 0 {
+		t.Fatal("toolsets were not disabled in the profile's own config")
+	}
+	if py < cfg {
+		t.Fatal("key was written before the toolset policy")
+	}
+}
+
+func TestProvisionFailsClosedWhenToolsetPolicyFails(t *testing.T) {
+	f := &toolsetFail{scripted{list: listFixture}}
+	rec := do(t, newServer(f, testToken), "/provision", "Bearer "+testToken, `{"slug":"u_newuser01"}`)
+	if rec.Code != http.StatusBadGateway || strings.Contains(rec.Body.String(), `"key"`) {
+		t.Fatalf("got %d %s", rec.Code, rec.Body)
+	}
+	if f.called("python3") {
+		t.Fatal("a key was written for a profile without the toolset policy")
+	}
+}
+
+type toolsetFail struct{ scripted }
+
+func (f *toolsetFail) Run(ctx context.Context, in string, args ...string) (string, string, error) {
+	if len(args) > 4 && args[3] == "config" {
+		f.calls = append(f.calls, args)
+		return "", "boom", exitErr(1)
+	}
+	return f.scripted.Run(ctx, in, args...)
+}
