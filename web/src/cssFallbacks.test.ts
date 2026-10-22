@@ -4,9 +4,10 @@ import { describe, expect, it } from "vitest";
 
 // Each accessibility/support fallback works by reassigning tokens. A fill token left out of a block
 // stays translucent in that mode (a hover fill with no blur behind it, say), so every block must cover
-// every fill token the glass tiers use.
+// every fill token the glass tiers use. This is a forward guard: it passes against the parent stylesheet too, so it prevents
+// the next omission rather than reproducing a past one.
 const css = readFileSync(join(__dirname, "styles.css"), "utf8");
-const FILLS = ["--chrome-fill", "--raised-fill", "--raised-fill-hover", "--rest-fill", "--solid-fill"];
+const FILLS = ["--chrome-fill", "--raised-fill", "--raised-fill-hover", "--rest-fill"];
 const AT_RULES = [
   "@media (prefers-reduced-transparency: reduce)",
   "@media (prefers-contrast: more)",

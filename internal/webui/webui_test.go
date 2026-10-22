@@ -37,16 +37,19 @@ func TestBundleIsEmbeddedAndSelfConsistent(t *testing.T) {
 func TestBundleIsNotStale(t *testing.T) {
 	web := filepath.Join("..", "..", "web")
 	var files []string
-	err := filepath.WalkDir(filepath.Join(web, "src"), func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() || regexp.MustCompile(`\.test\.tsx?$`).MatchString(d.Name()) {
-			return err
+	// src/ and public/ (fonts, icons, the OG card) both ship in the bundle.
+	for _, root := range []string{"src", "public"} {
+		err := filepath.WalkDir(filepath.Join(web, root), func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || regexp.MustCompile(`\.test\.tsx?$`).MatchString(d.Name()) {
+				return err
+			}
+			rel, _ := filepath.Rel(web, p)
+			files = append(files, filepath.ToSlash(rel))
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
 		}
-		rel, _ := filepath.Rel(web, p)
-		files = append(files, filepath.ToSlash(rel))
-		return nil
-	})
-	if err != nil {
-		t.Fatal(err)
 	}
 	files = append(files, "index.html", "package.json", "package-lock.json", "vite.config.ts", "tsconfig.json")
 	sort.Strings(files)

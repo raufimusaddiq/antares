@@ -1,21 +1,15 @@
 <!doctype html><meta charset=utf-8><style>
-body{margin:0;font:13px/1.3 system-ui;display:grid;grid-template-columns:70px repeat(3,minmax(0,1fr));width:1300px}
+body{margin:0;font:13px/1.3 system-ui;display:grid;grid-template-columns:70px minmax(0,1fr);width:560px}
 .h,.r{padding:14px}.h{background:#eceff3;color:#10141a}.cell{display:flex;gap:16px;align-items:flex-end;padding:22px}
 .l{background:#eceff3;color:#10141a}.d{background:#08090b;color:#f4f6f8}
 .cell svg{display:block}.crop{border-radius:50%;display:grid;place-items:center;width:80px;height:80px}
 .l .crop{background:#10141a;color:#f4f6f8}.d .crop{background:#f4f6f8;color:#08090b}
-.cap{font-size:11px;opacity:.7;align-self:flex-start}
 </style><body>
-<div class=h></div><div class=h><b>A · Core</b> — Alpha Scorpii</div><div class=h><b>B · Rival</b> — anti-Ares</div><div class=h><b>C · Tail</b> — scorpion's heart</div>
+<div class=h></div><div class=h><b>B · Rival</b> — the chosen mark</div>
 <script>
-const s=['a-core','b-rival','c-tail'], old=['a-spike','b-tail','c-rival'];
 const sz=(x,n)=>x.replace('<svg ','<svg width="'+n+'" height="'+n+'" ');
-const get=async p=>Promise.all(p.map(n=>fetch(n).then(r=>r.text())));
-(async()=>{const t=await get(s.map(n=>n+'.svg')), o=await get(old.map(n=>'drafts/'+n+'.svg'));
-for(const th of ['l','d']){
- document.body.insertAdjacentHTML('beforeend','<div class="r '+th+'">'+(th=='l'?'light':'dark')+'</div>'+t.map(x=>'<div class="cell '+th+'">'+[16,32,180].map(n=>sz(x,n)).join('')+'<div class=crop>'+sz(x,44)+'</div></div>').join(''));}
- const names=['a-spike','b-tail','c-rival'];
+fetch('b-rival.svg').then(r=>r.text()).then(x=>{
  for(const th of ['l','d'])
- document.body.insertAdjacentHTML('beforeend','<div class="r '+th+'">round-0</div>'+o.map((x,i)=>'<div class="cell '+th+'">'+[16,32,64].map(n=>sz(x,n)).join('')+'<span class=cap>'+names[i]+' (replaced)</span></div>').join(''));
-document.title='ready'})();
+  document.body.insertAdjacentHTML('beforeend','<div class="r '+th+'">'+(th=='l'?'light':'dark')+'</div><div class="cell '+th+'">'+[16,32,180].map(n=>sz(x,n)).join('')+'<div class=crop>'+sz(x,44)+'</div></div>');
+ document.title='ready'});
 </script>

@@ -1,7 +1,10 @@
-"""Regenerate gallery.png: python3 render.py (needs the playwright Python package and a chromium; not an app dependency).
+"""Render the chosen mark at 16 / 32 / 180 px on light and dark plus a circle crop: python3 render.py
 
-The gallery is the record of the round-1 decision (B · Rival was chosen). The rejected concepts were removed in round 2;
-restore a-core.svg, c-tail.svg and drafts/ from commit 2e55ea2 before regenerating.
+Writes selected.png (needs the playwright Python package and a chromium; not an app dependency).
+
+gallery.png is NOT written by this script. It is the frozen round-1 record: all three concepts (A · Core, B · Rival,
+C · Tail) side by side with the round-0 drafts, rendered before the rejected SVGs were removed. Keep it as the record
+of why B was chosen; the concept SVGs are in git history at commit 2e55ea2 if it ever needs redrawing.
 """
 import functools, http.server, pathlib, threading
 from playwright.sync_api import sync_playwright
@@ -18,8 +21,8 @@ srv = http.server.ThreadingHTTPServer(("127.0.0.1", 0), functools.partial(Quiet,
 threading.Thread(target=srv.serve_forever, daemon=True).start()
 with sync_playwright() as pw:
     browser = pw.chromium.launch()
-    page = browser.new_page(viewport={"width": 1300, "height": 710})
+    page = browser.new_page(viewport={"width": 560, "height": 480})
     page.goto(f"http://127.0.0.1:{srv.server_address[1]}/gallery.html")
-    page.wait_for_function("document.title === 'ready'")
-    page.screenshot(path=str(here / "gallery.png"), full_page=True)
+    page.wait_for_function("document.title === 'ready'", timeout=10000)
+    page.screenshot(path=str(here / "selected.png"), full_page=True)
     browser.close()

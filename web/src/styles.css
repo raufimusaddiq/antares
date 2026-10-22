@@ -60,7 +60,6 @@
   --rest-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 
   /* solid tier: code blocks and generated-UI cards */
-  --solid-fill: rgba(14, 16, 19, 0.94);
   --solid-edge: rgba(255, 255, 255, 0.1);
   --solid-spec: rgba(255, 255, 255, 0.2);
   --solid-sheen: rgba(255, 255, 255, 0.025);
@@ -127,8 +126,6 @@
     --rest-spec: rgba(255, 255, 255, 1);
     --rest-sheen: rgba(255, 255, 255, 0.25);
     --rest-shadow: 0 1px 2px rgba(20, 28, 40, 0.12);
-
-    --solid-fill: rgba(255, 255, 255, 0.94);
     --solid-edge: rgba(20, 28, 40, 0.12);
     --solid-spec: rgba(255, 255, 255, 1);
     --solid-sheen: rgba(255, 255, 255, 0.6);
@@ -192,12 +189,12 @@ a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.2em
 
 /* ---- the material: one rule, each tier supplies its own values ------------------ */
 .bar, .side { --fill: var(--chrome-fill); --edge: var(--chrome-edge); --spec: var(--chrome-spec); --sheen: var(--chrome-sheen); --blur: var(--chrome-blur); --sat: var(--chrome-sat); --shadow: var(--chrome-shadow); }
-.composer, .turn.user, .screen dl, .vjump button, button, a.btn { --fill: var(--raised-fill); --edge: var(--raised-edge); --spec: var(--raised-spec); --sheen: var(--raised-sheen); --blur: var(--raised-blur); --sat: var(--raised-sat); --shadow: var(--raised-shadow); }
-.ou-card { --fill: var(--solid-fill); --edge: var(--solid-edge); --spec: var(--solid-spec); --sheen: var(--solid-sheen); --blur: var(--solid-blur); --sat: var(--solid-sat); --shadow: var(--solid-shadow); }
+.composer, .turn.user, .screen dl, .vstatus span, .vjump button, button, a.btn { --fill: var(--raised-fill); --edge: var(--raised-edge); --spec: var(--raised-spec); --sheen: var(--raised-sheen); --blur: var(--raised-blur); --sat: var(--raised-sat); --shadow: var(--raised-shadow); }
+.ou-card { --fill: var(--solid-raised); --edge: var(--solid-edge); --spec: var(--solid-spec); --sheen: var(--solid-sheen); --blur: var(--solid-blur); --sat: var(--solid-sat); --shadow: var(--solid-shadow); }
 .turn.assistant { --fill: var(--rest-fill); --edge: var(--rest-edge); --spec: var(--rest-spec); --sheen: var(--rest-sheen); --blur: var(--rest-blur); --sat: var(--rest-sat); --shadow: var(--rest-shadow); }
-button, a.btn { --shadow: var(--control-shadow); }
+.vstatus span, button, a.btn { --shadow: var(--control-shadow); }
 
-.bar, .side, .composer, .turn.user, .screen dl, .vjump button, button, a.btn, .turn.assistant, .ou-card {
+.bar, .side, .composer, .turn.user, .screen dl, .vstatus span, .vjump button, button, a.btn, .turn.assistant, .ou-card {
   background:
     linear-gradient(90deg, transparent, var(--spec) 16%, var(--spec) 84%, transparent) top / 100% 1px no-repeat,
     linear-gradient(180deg, var(--sheen), transparent 60%),
@@ -303,7 +300,7 @@ dd:last-child { margin-bottom: 0; }
 .side button.item.current { background: var(--raised-fill); border-color: var(--raised-edge); color: var(--text); font-weight: 600; }
 
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; gap: var(--gap); }
-.log { flex: 1; overflow: auto; padding: 3rem 0.25rem 0.5rem; position: relative; overflow-anchor: none; overscroll-behavior: contain; }
+.log { --log-pad: 3rem; flex: 1; overflow: auto; padding: var(--log-pad) 0.25rem 0.5rem; position: relative; overflow-anchor: none; overscroll-behavior: contain; }
 /* First-run state: the empty conversation gets the large type, not a caption. */
 .pane > p.label { font-family: var(--font-display); margin: auto auto auto clamp(0.5rem, 4vw, 3rem); max-width: 22rem; font-size: clamp(2rem, 4.6vw, 3rem); font-weight: 300; line-height: 1.04; letter-spacing: -0.035em; color: var(--text); }
 
@@ -339,10 +336,11 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .composer:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
 .composer button { margin: 0; min-height: 2.75rem; }
 
-/* ---- virtual list: the top note rests in the log's reserved space above the first turn -------------------------------------------------------- */
+/* ---- virtual list: the top note is pinned and centred, resting in the log's reserved space above the first turn -------------------------------------------------------- */
 .vitem { display: flow-root; }
-.vstatus { position: relative; margin-top: -2.4rem; height: 0; z-index: 1; font-size: 0.85rem; color: var(--text-2); pointer-events: none; }
-.vstatus span { display: inline-block; padding: 0 0.5rem; pointer-events: auto; }
+/* Sticky offsets are measured from the log's content box, so both offsets cancel the padding: the note rests and pins 0.5rem below the top edge. */
+.vstatus { position: sticky; top: calc(0.5rem - var(--log-pad)); margin-top: calc(0.5rem - var(--log-pad)); height: 0; z-index: 1; text-align: center; font-size: 0.85rem; color: var(--text); pointer-events: none; }
+.vstatus span { display: inline-block; padding: 0.15rem 0.8rem; border-radius: var(--r-pill); pointer-events: auto; }
 .vstatus button { min-height: 1.75rem; padding: 0.1rem 0.7rem; margin: 0 0 0 0.25rem; }
 .vjump { position: sticky; bottom: 0.5rem; height: 0; text-align: center; }
 .vjump button { position: relative; top: -2.75rem; margin: 0; }
@@ -350,7 +348,7 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* ---- generative UI blocks (OpenUI) --------------------------------------------- */
 .ou-block, .ou-fallback { max-width: 100%; }
 .ou-stack { display: flex; flex-direction: column; gap: 0.5rem; }
-.ou-card { padding: 0.6rem 0.85rem; border-radius: var(--r-md); --fill: var(--solid-raised); }
+.ou-card { padding: 0.6rem 0.85rem; border-radius: var(--r-md); }
 .ou-card > .ou-heading { margin-top: 0; }
 .ou-heading { margin: 0.25rem 0; font-size: 1rem; }
 .ou-text { margin: 0.25rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -373,7 +371,7 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
   .side ul { display: flex; gap: 0.4rem; margin: 0; }
   .side li { flex: none; }
   .side .label { flex: none; margin: 0; white-space: nowrap; }
-  .log { padding-top: 2.75rem; }
+  .log { --log-pad: 2.75rem; }
   .screen { margin: 1.5rem 1rem; }
   .turn.user { max-width: 100%; }
   .bar { padding-left: 1rem; }
@@ -382,14 +380,14 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* ---- fallbacks: solid, high-contrast surfaces. Tokens change, selectors do not. -- */
 @media (prefers-reduced-transparency: reduce) {
   :root {
-    --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --solid-fill: var(--solid); --rest-fill: var(--solid);
+    --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --rest-fill: var(--solid);
     --chrome-blur: 0px; --raised-blur: 0px; --solid-blur: 0px; --rest-blur: 0px; --rest-sat: 1; --rest-sheen: transparent; --chrome-sat: 1; --raised-sat: 1; --solid-sat: 1;
     --chrome-sheen: transparent; --raised-sheen: transparent; --solid-sheen: transparent;
   }
 }
 @media (prefers-contrast: more) {
   :root {
-    --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --solid-fill: var(--solid); --rest-fill: var(--solid);
+    --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --rest-fill: var(--solid);
     --chrome-blur: 0px; --raised-blur: 0px; --solid-blur: 0px; --rest-blur: 0px; --rest-sat: 1; --rest-sheen: transparent; --chrome-sat: 1; --raised-sat: 1; --solid-sat: 1;
     --chrome-sheen: transparent; --raised-sheen: transparent; --solid-sheen: transparent;
     --chrome-edge: var(--text); --raised-edge: var(--text); --solid-edge: var(--text); --solid-border: var(--text);
@@ -405,5 +403,5 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
   .run-streaming::after, .run-reconnecting::after { width: calc(100% - 2.5rem); opacity: 0.6; }
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :root { --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --solid-fill: var(--solid); --rest-fill: var(--solid); }
+  :root { --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --rest-fill: var(--solid); }
 }

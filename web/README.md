@@ -39,9 +39,6 @@ Other tokens, under `:root` and redefined for `prefers-color-scheme: light` with
 `--text`, `--text-2`, `--accent` (send action and live-run bar only), `--primary` (sign-in action),
 `--focus`, `--focus-halo`, `--warn-*`, `--r-sm|md|lg|pill`, `--gap`.
 
-Type is the system sans (the CSP forbids web fonts). Headings are large, light and tight-tracked
-(`h1`, the empty-conversation line, the wordmark); body text stays at 16px/1.55.
-
 Accessibility fallbacks reassign tokens at the end of the file, the selectors do not change:
 
 - `prefers-reduced-transparency: reduce`: every tier becomes a solid surface, no blur or sheen.
@@ -63,5 +60,10 @@ attributes, so state is expressed with classes.
   only), `--font-mono` is the system monospace. Both faces are self-hosted latin subsets under `public/fonts/` (OFL texts
   alongside), `font-display: swap`, each with an Arial-matched fallback face (`size-adjust` and ascent/descent overrides
   measured from the font files). There is no remote font host.
-- **CSP:** the shell's Content-Security-Policy has no `font-src`, and `default-src 'none'` therefore blocks the woff2 files.
-  Until `internal/server/server.go` adds `font-src 'self'`, the app renders in the metric-matched fallback. See the PR.
+- **CSP:** the shell's Content-Security-Policy carries `font-src 'self'` (`internal/server/server.go`, pinned in
+  `server_test.go`), so the two woff2 files and the preload are allowed and nothing is fetched from another origin.
+- **Bundle guard:** `scripts/stamp.mjs` hashes `src/` and `public/` (and `internal/webui/webui_test.go` mirrors both), so
+  editing a font, icon or the OG card without rebuilding fails `go test ./internal/webui`.
+- **Deployment origin:** `index.html` hardcodes `https://antares.investdx.biz.id/` for the canonical link and the
+  Open Graph / Twitter URLs, while the backend takes its origin from `ANTARES_PUBLIC_ORIGIN`. A static host file is fine for
+  a single deployment, but an operator running Antares elsewhere must change them (canonical, `og:url`, `og:image`, `twitter:image`); the OG card image itself contains no URL.
