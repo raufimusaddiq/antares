@@ -18,6 +18,7 @@ const walk = (dir) => {
   }
 };
 walk(join(web, "src"));
+walk(join(web, "public")); // fonts, icons and the OG card ship in the bundle too
 files.push("index.html", "package.json", "package-lock.json", "vite.config.ts", "tsconfig.json");
 files.sort();
 

@@ -1,0 +1,15 @@
+<!doctype html><meta charset=utf-8><style>
+body{margin:0;font:13px/1.3 system-ui;display:grid;grid-template-columns:70px minmax(0,1fr);width:560px}
+.h,.r{padding:14px}.h{background:#eceff3;color:#10141a}.cell{display:flex;gap:16px;align-items:flex-end;padding:22px}
+.l{background:#eceff3;color:#10141a}.d{background:#08090b;color:#f4f6f8}
+.cell svg{display:block}.crop{border-radius:50%;display:grid;place-items:center;width:80px;height:80px}
+.l .crop{background:#10141a;color:#f4f6f8}.d .crop{background:#f4f6f8;color:#08090b}
+</style><body>
+<div class=h></div><div class=h><b>B · Rival</b> — the chosen mark</div>
+<script>
+const sz=(x,n)=>x.replace('<svg ','<svg width="'+n+'" height="'+n+'" ');
+fetch('b-rival.svg').then(r=>r.text()).then(x=>{
+ for(const th of ['l','d'])
+  document.body.insertAdjacentHTML('beforeend','<div class="r '+th+'">'+(th=='l'?'light':'dark')+'</div><div class="cell '+th+'">'+[16,32,180].map(n=>sz(x,n)).join('')+'<div class=crop>'+sz(x,44)+'</div></div>');
+ document.title='ready'});
+</script>

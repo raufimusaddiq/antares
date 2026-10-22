@@ -1,56 +1,407 @@
-body{font:16px/1.5 system-ui,sans-serif;margin:0;display:grid;place-items:center;min-height:100vh;background:#f6f6f4;color:#1c1c1a}
-main{max-width:30rem;margin:1rem;padding:2rem;background:#fff;border:1px solid #d8d8d2;border-radius:.5rem}
-h1{font-size:1.4rem;margin:0 0 .75rem}dl{margin:1rem 0}dt{font-size:.8rem;color:#55554f}dd{margin:0 0 .5rem}
-a.btn,button{display:inline-block;font:inherit;padding:.5rem 1rem;margin:.25rem .5rem .25rem 0;border:1px solid #1c1c1a;border-radius:.3rem;background:#1c1c1a;color:#fff;text-decoration:none;cursor:pointer}
-button.quiet{background:#fff;color:#1c1c1a}small{color:#55554f}
-@media (prefers-color-scheme:dark){body{background:#151513;color:#ecece6}main{background:#1f1f1c;border-color:#3a3a35}dt,small{color:#aaa9a0}a.btn,button{background:#ecece6;color:#151513;border-color:#ecece6}button.quiet{background:#1f1f1c;color:#ecece6}}
-body.chat{display:block;place-items:initial;min-height:0;height:100vh;overflow:hidden}
-.sr{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
-.chat-app{display:grid;grid-template-columns:16rem 1fr;grid-template-rows:auto 1fr;height:100vh}
-.bar{grid-column:1/-1;display:flex;align-items:center;gap:1rem;padding:.5rem 1rem;border-bottom:1px solid #d8d8d2;background:#fff}
-.bar .who-am-i{margin-left:auto;color:#55554f;font-size:.9rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.side{overflow:auto;padding:.75rem;border-right:1px solid #d8d8d2;background:#fff}
-.side ul{list-style:none;margin:.5rem 0 0;padding:0}
-.side button.item{display:block;width:100%;text-align:left;margin:.1rem 0;background:transparent;color:inherit;border-color:transparent;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.side button.item.current{border-color:#1c1c1a}
-.pane{display:flex;flex-direction:column;min-height:0;max-width:none;margin:0;padding:0;border:0;border-radius:0;background:transparent}
-.log{flex:1;overflow:auto;padding:1rem}
-.turn{max-width:48rem;margin:0 auto 1rem;padding:.5rem .75rem;border:1px solid #d8d8d2;border-radius:.5rem;background:#fff}
-.turn.user{background:#efefe9}
-.turn .who{font-size:.75rem;margin:0 0 .25rem;color:#55554f;font-weight:600;text-transform:uppercase;letter-spacing:.04em}
-.turn p{margin:.25rem 0}.turn .plain{white-space:pre-wrap;overflow-wrap:anywhere}
-.turn pre{overflow:auto;padding:.5rem;background:#efefe9;border-radius:.3rem}
-.turn code{font-family:ui-monospace,monospace;font-size:.9em}
-.turn blockquote{margin:.25rem 0;padding-left:.75rem;border-left:3px solid #d8d8d2}
-.turn a{color:inherit}
-pre.plain{white-space:pre-wrap;overflow-wrap:anywhere}
-.partial{opacity:.85}
-.label{color:#55554f;font-size:.85rem;margin:.25rem 0}
-.notice{margin:.5rem 1rem;padding:.4rem .6rem;border:1px solid #b35c00;border-radius:.3rem;background:#fff4e5;color:#4a2800}
-.turn .notice{margin:.5rem 0}
-.tools{margin:.25rem 0;padding-left:1.1rem;font-size:.85rem;color:#55554f}
-.composer{display:flex;gap:.5rem;padding:.75rem 1rem;border-top:1px solid #d8d8d2;background:#fff}
-.composer textarea{flex:1;font:inherit;padding:.5rem;border:1px solid #1c1c1a;border-radius:.3rem;resize:vertical;min-height:2.5rem;max-height:12rem}
-.composer button:disabled{opacity:.5;cursor:not-allowed}
-@media (max-width:40rem){.chat-app{grid-template-columns:1fr;grid-template-rows:auto auto 1fr}.side{border-right:0;border-bottom:1px solid #d8d8d2;max-height:7rem}}
-@media (prefers-color-scheme:dark){.bar,.side,.composer,.turn{background:#1f1f1c;border-color:#3a3a35}.turn.user{background:#2a2a26}.turn pre{background:#151513}.bar .who-am-i,.label,.turn .who,.tools{color:#aaa9a0}.composer textarea{background:#151513;color:#ecece6;border-color:#ecece6}.notice{background:#3a2a10;color:#ffd9a0;border-color:#b35c00}.side button.item.current{border-color:#ecece6}.turn blockquote{border-color:#3a3a35}}
-.log{position:relative;overflow-anchor:none;overscroll-behavior:contain}
-.vitem{display:flow-root}
-.vstatus{position:sticky;top:0;height:0;z-index:1;text-align:center;font-size:.8rem;color:#55554f;pointer-events:none}
-.vstatus span{display:inline-block;margin-top:.25rem;padding:.1rem .6rem;border-radius:1rem;background:rgba(246,246,244,.92);pointer-events:auto}
-.vstatus button{padding:.1rem .5rem;margin:0 0 0 .25rem}
-.vjump{position:sticky;bottom:.5rem;height:0;text-align:center}
-.vjump button{position:relative;top:-2.5rem;margin:0}
-.ou-block,.ou-fallback{max-width:100%}
-.ou-stack{display:flex;flex-direction:column;gap:.5rem}
-.ou-card{padding:.5rem .75rem;border:1px solid #d8d8d2;border-radius:.4rem}
-.ou-card>.ou-heading{margin-top:0}
-.ou-heading{margin:.25rem 0;font-size:1rem}
-.ou-text{margin:.25rem 0;white-space:pre-wrap;overflow-wrap:anywhere}
-.ou-badge{display:inline-block;padding:0 .5rem;border:1px solid #55554f;border-radius:1rem;font-size:.8rem}
-.ou-metric{display:inline-flex;flex-direction:column;margin-right:1rem}.ou-metric-value{font-size:1.4rem;font-weight:600}.ou-metric-label{font-size:.8rem;color:#55554f}
-.ou-list{margin:.25rem 0;padding-left:1.25rem}
-.ou-table-wrap{overflow:auto;max-width:100%}
-.ou-table{border-collapse:collapse;font-size:.9rem}.ou-table th,.ou-table td{padding:.25rem .5rem;border:1px solid #d8d8d2;text-align:left;overflow-wrap:anywhere}
-.ou-divider{border:0;border-top:1px solid #d8d8d2;margin:.5rem 0}
-@media (prefers-color-scheme:dark){.vstatus{color:#aaa9a0}.vstatus span{background:rgba(31,31,28,.92)}.ou-card,.ou-table th,.ou-table td,.ou-divider{border-color:#3a3a35}.ou-badge{border-color:#aaa9a0}.ou-metric-label{color:#aaa9a0}}
+/* Liquid Glass, as a material with thickness. Monochrome, after target-mindful.png.
+   Four tiers, not one pane of glass:
+     chrome  thin, most transparent       top bar, sidebar
+     raised  medium fill, strong specular composer, user turns, buttons, account card
+     rest    light resting surface        assistant turns
+     solid   near-opaque, not translucent code blocks, generated-UI cards
+   Light and dark set the same token names. Both themes have a neutral ambient layer
+   (body::before/::after): glass needs something behind it to refract, and a translucent
+   surface over a uniform background is indistinguishable from an opaque one. */
+/* Self-hosted, latin subset, OFL. No remote font host. The fallback faces are metric-matched to Arial
+   (size-adjust and the ascent/descent overrides measured from the font files) so the swap does not move the layout. */
+@font-face { font-family: "Inter Variable"; src: url("/fonts/inter-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Space Grotesk Variable"; src: url("/fonts/space-grotesk-latin-wght-normal.woff2") format("woff2"); font-weight: 300 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter Fallback"; src: local("Arial"), local("Liberation Sans"), local("Helvetica"); size-adjust: 107%; ascent-override: 90.5%; descent-override: 22.5%; line-gap-override: 0%; }
+@font-face { font-family: "Space Grotesk Fallback"; src: local("Arial"), local("Liberation Sans"), local("Helvetica"); size-adjust: 109.7%; ascent-override: 89.7%; descent-override: 26.6%; line-gap-override: 0%; }
+
+:root {
+  color-scheme: dark;
+
+  --font-ui: "Inter Variable", "Inter Fallback", system-ui, sans-serif;
+  --font-display: "Space Grotesk Variable", "Space Grotesk Fallback", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+
+  /* Ambient: near-black with a cool cast, lit by soft grey and blue-grey fields. */
+  --bg-base: #08090b;
+  --amb-hi: rgba(168, 178, 192, 0.2);
+  --amb-side: rgba(86, 100, 122, 0.3);
+  --amb-lo: rgba(70, 80, 98, 0.26);
+  --amb-mid: rgba(120, 130, 146, 0.12);
+  --amb-ring: rgba(200, 208, 220, 0.16);
+  --amb-ring-shade: rgba(2, 3, 5, 0.6);
+
+  /* chrome tier */
+  --chrome-fill: rgba(30, 34, 41, 0.34);
+  --chrome-edge: rgba(255, 255, 255, 0.09);
+  --chrome-spec: rgba(255, 255, 255, 0.24);
+  --chrome-sheen: rgba(255, 255, 255, 0.03);
+  --chrome-blur: 14px;
+  --chrome-sat: 1.3;
+  --chrome-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 14px 26px -16px rgba(0, 0, 0, 0.55);
+
+  /* raised tier: contact shadow + mid shadow + wide soft shadow + faint outer rim */
+  --raised-fill: rgba(62, 68, 78, 0.46);
+  --raised-fill-hover: rgba(86, 94, 106, 0.6);
+  --raised-edge: rgba(255, 255, 255, 0.16);
+  --raised-spec: rgba(255, 255, 255, 0.55);
+  --raised-sheen: rgba(255, 255, 255, 0.07);
+  --raised-blur: 28px;
+  --raised-sat: 1.8;
+  --raised-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 8px 16px -6px rgba(0, 0, 0, 0.45), 0 30px 60px -18px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
+  --control-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 12px -6px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.03);
+
+  /* rest: the assistant turn. A resting surface the text sits on, lighter than raised, no lift. */
+  --rest-fill: rgba(22, 25, 31, 0.52);
+  --rest-edge: rgba(255, 255, 255, 0.08);
+  --rest-spec: rgba(255, 255, 255, 0.14);
+  --rest-sheen: rgba(255, 255, 255, 0.02);
+  --rest-blur: 18px;
+  --rest-sat: 1.4;
+  --rest-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+
+  /* solid tier: code blocks and generated-UI cards */
+  --solid-edge: rgba(255, 255, 255, 0.1);
+  --solid-spec: rgba(255, 255, 255, 0.2);
+  --solid-sheen: rgba(255, 255, 255, 0.025);
+  --solid-blur: 10px;
+  --solid-sat: 1.2;
+  --solid-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 14px 28px -14px rgba(0, 0, 0, 0.55);
+
+  --edge-w: 1px;
+  --solid: #0e1013;
+  --solid-raised: #171a1f;
+  --solid-border: rgba(255, 255, 255, 0.12);
+
+  --text: #f4f6f8;
+  --text-2: #b6bdc7;
+  /* The one accent is the play-button white of the reference: send, sign-in, live-run bar. */
+  --accent: #f4f6f8;
+  --accent-ink: #0b0e12;
+  --primary: #f4f6f8;
+  --primary-ink: #0b0e12;
+  --focus: #ffffff;
+  --focus-halo: #08090b;
+  /* Notices are inverted, not coloured: unmistakable without adding a hue. */
+  --warn-fill: #e9edf2;
+  --warn-ink: #0b0e12;
+  --warn-border: #ffffff;
+
+  /* Radii: pill for controls, large for floating panes, medium for chrome, small for code. */
+  --r-sm: 0.6rem;
+  --r-md: 1rem;
+  --r-lg: 1.75rem;
+  --r-pill: 999px;
+  --gap: 0.75rem;
+}
+
+@media (prefers-color-scheme: light) {
+  :root {
+    color-scheme: light;
+    /* Paper with depth: an off-white base lit by soft grey and blue-grey fields, low in
+       contrast so it reads as a surface, strong enough that the glass visibly blurs it. */
+    --bg-base: #eceff3;
+    --amb-hi: rgba(255, 255, 255, 0.9);
+    --amb-side: rgba(120, 136, 160, 0.34);
+    --amb-lo: rgba(96, 108, 130, 0.3);
+    --amb-mid: rgba(150, 160, 178, 0.22);
+    --amb-ring: rgba(255, 255, 255, 0.7);
+    --amb-ring-shade: rgba(70, 84, 108, 0.2);
+
+    --chrome-fill: rgba(255, 255, 255, 0.3);
+    --chrome-edge: rgba(20, 28, 40, 0.1);
+    --chrome-spec: rgba(255, 255, 255, 1);
+    --chrome-sheen: rgba(255, 255, 255, 0.3);
+    --chrome-shadow: 0 1px 0 rgba(20, 28, 40, 0.06), 0 14px 26px -16px rgba(20, 28, 40, 0.28);
+
+    --raised-fill: rgba(255, 255, 255, 0.46);
+    --raised-fill-hover: rgba(255, 255, 255, 0.66);
+    --raised-edge: rgba(20, 28, 40, 0.14);
+    --raised-spec: rgba(255, 255, 255, 1);
+    --raised-sheen: rgba(255, 255, 255, 0.4);
+    --raised-shadow: 0 1px 2px rgba(20, 28, 40, 0.2), 0 8px 16px -6px rgba(20, 28, 40, 0.16), 0 30px 60px -18px rgba(20, 28, 40, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.5);
+    --control-shadow: 0 1px 2px rgba(20, 28, 40, 0.18), 0 6px 12px -6px rgba(20, 28, 40, 0.16), 0 0 0 1px rgba(255, 255, 255, 0.45);
+
+    --rest-fill: rgba(255, 255, 255, 0.4);
+    --rest-edge: rgba(20, 28, 40, 0.1);
+    --rest-spec: rgba(255, 255, 255, 1);
+    --rest-sheen: rgba(255, 255, 255, 0.25);
+    --rest-shadow: 0 1px 2px rgba(20, 28, 40, 0.12);
+    --solid-edge: rgba(20, 28, 40, 0.12);
+    --solid-spec: rgba(255, 255, 255, 1);
+    --solid-sheen: rgba(255, 255, 255, 0.6);
+    --solid-shadow: 0 1px 2px rgba(20, 28, 40, 0.16), 0 14px 28px -14px rgba(20, 28, 40, 0.22);
+
+    --solid: #f8f9fb;
+    --solid-raised: #ffffff;
+    --solid-border: rgba(20, 28, 40, 0.18);
+
+    --text: #10141a;
+    --text-2: #2e353e;
+    --accent: #10141a;
+    --accent-ink: #f8f9fb;
+    --primary: #10141a;
+    --primary-ink: #f8f9fb;
+    --focus: #10141a;
+    --focus-halo: #ffffff;
+    --warn-fill: #10141a;
+    --warn-ink: #f8f9fb;
+    --warn-border: #10141a;
+  }
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  font: 16px/1.55 var(--font-ui);
+  color: var(--text);
+  background: var(--bg-base);
+  -webkit-font-smoothing: antialiased;
+  isolation: isolate;
+}
+body.chat { height: 100vh; overflow: hidden; }
+
+/* Ambient layer: fixed, inert, static. Fields differ in hue so the blur behind each pane
+   picks up a different tint; the rings give the glass an edge to bend around. */
+body::before, body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; }
+body::before {
+  background:
+    radial-gradient(95vmax 70vmax at 92% 0%, var(--amb-hi) 0%, color-mix(in srgb, var(--amb-hi) 55%, transparent) 20%, color-mix(in srgb, var(--amb-hi) 24%, transparent) 45%, color-mix(in srgb, var(--amb-hi) 7%, transparent) 72%, transparent 100%),
+    radial-gradient(105vmax 80vmax at 0% 6%, var(--amb-side) 0%, color-mix(in srgb, var(--amb-side) 55%, transparent) 20%, color-mix(in srgb, var(--amb-side) 24%, transparent) 45%, color-mix(in srgb, var(--amb-side) 7%, transparent) 72%, transparent 100%),
+    radial-gradient(95vmax 70vmax at 0% 104%, var(--amb-lo) 0%, color-mix(in srgb, var(--amb-lo) 55%, transparent) 20%, color-mix(in srgb, var(--amb-lo) 24%, transparent) 45%, color-mix(in srgb, var(--amb-lo) 7%, transparent) 72%, transparent 100%),
+    radial-gradient(80vmax 60vmax at 64% 84%, var(--amb-mid) 0%, color-mix(in srgb, var(--amb-mid) 55%, transparent) 20%, color-mix(in srgb, var(--amb-mid) 24%, transparent) 45%, color-mix(in srgb, var(--amb-mid) 7%, transparent) 72%, transparent 100%);
+}
+body::after {
+  background:
+    radial-gradient(circle at 78% 112%, transparent 38vmax, var(--amb-ring) 39.2vmax, var(--amb-ring-shade) 43vmax, transparent 49vmax),
+    radial-gradient(circle at 8% -18%, transparent 30vmax, var(--amb-ring) 31vmax, var(--amb-ring-shade) 35vmax, transparent 41vmax);
+}
+
+/* Type: Inter for UI and body, Space Grotesk only for the large tight headings (status headline, empty-state note). */
+h1 { font-family: var(--font-display); font-size: clamp(2.1rem, 5.2vw, 3rem); font-weight: 300; line-height: 1.04; letter-spacing: -0.035em; margin: 0 0 1rem; }
+small { color: var(--text-2); }
+a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+/* Focus: a two-tone ring so it reads on glass, solid surfaces and the accent fill. */
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; box-shadow: 0 0 0 5px var(--focus-halo); }
+
+/* ---- the material: one rule, each tier supplies its own values ------------------ */
+.bar, .side { --fill: var(--chrome-fill); --edge: var(--chrome-edge); --spec: var(--chrome-spec); --sheen: var(--chrome-sheen); --blur: var(--chrome-blur); --sat: var(--chrome-sat); --shadow: var(--chrome-shadow); }
+.composer, .turn.user, .screen dl, .vstatus span, .vjump button, button, a.btn { --fill: var(--raised-fill); --edge: var(--raised-edge); --spec: var(--raised-spec); --sheen: var(--raised-sheen); --blur: var(--raised-blur); --sat: var(--raised-sat); --shadow: var(--raised-shadow); }
+.ou-card { --fill: var(--solid-raised); --edge: var(--solid-edge); --spec: var(--solid-spec); --sheen: var(--solid-sheen); --blur: var(--solid-blur); --sat: var(--solid-sat); --shadow: var(--solid-shadow); }
+.turn.assistant { --fill: var(--rest-fill); --edge: var(--rest-edge); --spec: var(--rest-spec); --sheen: var(--rest-sheen); --blur: var(--rest-blur); --sat: var(--rest-sat); --shadow: var(--rest-shadow); }
+.vstatus span, button, a.btn { --shadow: var(--control-shadow); }
+
+.bar, .side, .composer, .turn.user, .screen dl, .vstatus span, .vjump button, button, a.btn, .turn.assistant, .ou-card {
+  background:
+    linear-gradient(90deg, transparent, var(--spec) 16%, var(--spec) 84%, transparent) top / 100% 1px no-repeat,
+    linear-gradient(180deg, var(--sheen), transparent 60%),
+    var(--fill);
+  border: var(--edge-w) solid var(--edge);
+  box-shadow: var(--shadow);
+  -webkit-backdrop-filter: blur(var(--blur)) saturate(var(--sat));
+  backdrop-filter: blur(var(--blur)) saturate(var(--sat));
+}
+
+/* ---- buttons ------------------------------------------------------------------- */
+a.btn, button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  padding: 0.45rem 1.15rem;
+  white-space: nowrap;
+  font: inherit;
+  font-weight: 500;
+  color: var(--text);
+  text-decoration: none;
+  cursor: pointer;
+  border-radius: var(--r-pill);
+  transition: background-color 0.15s, transform 0.15s;
+}
+a.btn:hover, button:hover:not(:disabled) { --fill: var(--raised-fill-hover); }
+a.btn:active, button:active:not(:disabled) { transform: scale(0.97); }
+button:disabled { opacity: 0.5; cursor: not-allowed; }
+.icon { width: 1.1rem; height: 1.1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+
+/* Secondary actions (Cancel, Try again, Send again, Show more, Refresh, Sign out): an outline, no fill, no blur.
+   Inside a notice the surface is inverted, so the ink and the outline follow --warn-ink, not --text. */
+button.quiet { --fill: transparent; --sheen: transparent; --spec: transparent; --shadow: none; --blur: 0px; --sat: 1; --edge: var(--text-2); color: var(--text); font-weight: 400; }
+button.quiet:hover:not(:disabled) { --fill: var(--raised-fill); }
+.notice button.quiet { --edge: var(--warn-ink); color: var(--warn-ink); }
+.notice button.quiet:hover:not(:disabled) { --fill: color-mix(in srgb, var(--warn-ink) 16%, transparent); }
+
+/* Two solid fills only: the send action and the sign-in link, both the reference's play-button
+   white (near-black in light). Nothing else is filled, so the accent stays rare. */
+.composer button[type="submit"] { --fill: var(--accent); --spec: rgba(255, 255, 255, 0.5); --sheen: transparent; --edge: transparent; color: var(--accent-ink); font-weight: 600; }
+.composer button[type="submit"]:hover:not(:disabled) { --fill: var(--accent); filter: brightness(1.08); }
+a.btn { --fill: var(--primary); --edge: transparent; --spec: rgba(255, 255, 255, 0.6); --sheen: transparent; color: var(--primary-ink); font-weight: 600; }
+a.btn:hover { --fill: var(--primary); filter: brightness(0.94); }
+
+/* ---- status screens: the heading sits on the ambient layer, not in a card ------- */
+body:not(.chat) { display: grid; align-items: center; }
+.screen {
+  width: min(34rem, 100% - 2rem);
+  margin: 2rem 1rem 2rem clamp(1rem, 9vw, 8rem);
+  padding: 0;
+  background: none;
+  border: 0;
+  box-shadow: none;
+}
+.screen p { color: var(--text-2); margin: 0 0 1rem; max-width: 32rem; }
+.screen h1 { color: var(--text); }
+.screen dl { margin: 1.5rem 0; padding: 0.9rem 1.25rem; border-radius: var(--r-lg); }
+dt { font-size: 0.8rem; color: var(--text-2); }
+dd { margin: 0 0 0.6rem; color: var(--text); overflow-wrap: anywhere; }
+dd:last-child { margin-bottom: 0; }
+.screen button, .screen a.btn { margin: 0.25rem 0.5rem 0.25rem 0; }
+
+/* ---- chat shell ---------------------------------------------------------------- */
+.chat-app {
+  display: grid;
+  grid-template-columns: 16rem minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: var(--gap);
+  height: 100vh;
+  padding: var(--gap);
+}
+.bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 1rem; padding: 0.4rem 0.5rem 0.4rem 1.25rem; border-radius: var(--r-md); }
+.bar .brand { display: inline-flex; align-items: center; gap: 0.5rem; }
+/* Measured at 3x: the mark's centre sat 1.2px below the wordmark's cap-centre, so it is lifted to match. */
+.bar .brand svg { transform: translateY(-0.075rem); }
+.bar strong { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.03em; }
+.bar .who-am-i { margin-left: auto; min-width: 0; color: var(--text-2); font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar button { margin: 0; }
+
+.side { overflow: auto; padding: 0.75rem; border-radius: var(--r-lg); }
+.side ul { list-style: none; margin: 0.6rem 0 0; padding: 0; }
+.side > button { width: 100%; margin: 0; }
+/* Conversation rows are list items, not panes: flat until hovered or current. */
+.side button.item {
+  display: block;
+  width: 100%;
+  margin: 0.15rem 0;
+  text-align: left;
+  background: none;
+  border-color: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-radius: var(--r-md);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-2);
+}
+.side button.item:hover:not(:disabled) { background: var(--raised-fill); color: var(--text); }
+.side button.item.current { background: var(--raised-fill); border-color: var(--raised-edge); color: var(--text); font-weight: 600; }
+
+.pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; gap: var(--gap); }
+.log { --log-pad: 3rem; flex: 1; overflow: auto; padding: var(--log-pad) 0.25rem 0.5rem; position: relative; overflow-anchor: none; overscroll-behavior: contain; }
+/* First-run state: the empty conversation gets the large type, not a caption. */
+.pane > p.label { font-family: var(--font-display); margin: auto auto auto clamp(0.5rem, 4vw, 3rem); max-width: 22rem; font-size: clamp(2rem, 4.6vw, 3rem); font-weight: 300; line-height: 1.04; letter-spacing: -0.035em; color: var(--text); }
+
+/* ---- messages ------------------------------------------------------------------ */
+.turn { max-width: 48rem; margin: 0 auto 1rem; padding: 0.7rem 1.15rem 0.85rem; border-radius: var(--r-lg); }
+/* Assistant text sits on the rest surface, capped at a 68ch measure. Contrast is measured against the real backdrop, not assumed. */
+.turn.assistant { margin-left: 0; margin-right: auto; max-width: min(calc(68ch + 2.3rem), 100%); }
+.turn.user { margin-left: auto; margin-right: 0; width: fit-content; max-width: min(40rem, 92%); }
+.turn .who { font-size: 0.82rem; margin: 0 0 0.2rem; color: var(--text-2); font-weight: 600; }
+.turn p { margin: 0.3rem 0; }
+.turn .plain { white-space: pre-wrap; overflow-wrap: anywhere; }
+.turn pre { overflow: auto; padding: 0.65rem 0.85rem; background: var(--bg-base); border: 1px solid var(--solid-border); border-radius: var(--r-sm); }
+.turn code { font-family: var(--font-mono); font-size: 0.9em; }
+.turn blockquote { margin: 0.3rem 0; padding-left: 0.85rem; border-left: 2px solid var(--solid-border); color: var(--text-2); }
+pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
+.label { color: var(--text-2); font-size: 0.85rem; margin: 0.3rem 0; }
+
+/* Streaming/partial: same surface; a thin accent bar marks a live run (a real state). */
+.partial { opacity: 0.92; }
+.run-streaming, .run-reconnecting { position: relative; overflow: hidden; }
+.run-streaming::after, .run-reconnecting::after { content: ""; position: absolute; top: 0; left: 1.25rem; width: 4.5rem; height: 2px; border-radius: var(--r-pill); background: var(--accent); animation: progress 1.6s ease-in-out infinite alternate; }
+@keyframes progress { to { transform: translateX(calc(min(48rem, 90vw) - 9rem)); } }
+
+.notice { margin: 0.5rem 0.25rem; padding: 0.5rem 0.85rem; border: 1px solid var(--warn-border); border-radius: var(--r-md); background: var(--warn-fill); color: var(--warn-ink); }
+.turn .notice { margin: 0.5rem 0; }
+.tools { margin: 0.3rem 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--text-2); }
+
+/* ---- composer: the one pane that hovers over the transcript, hence the tallest shadow ---- */
+.composer { display: flex; align-items: flex-end; gap: 0.5rem; margin: 0 auto; width: 100%; max-width: 48rem; padding: 0.5rem 0.5rem 0.5rem 1.25rem; border-radius: var(--r-lg); }
+.composer textarea { flex: 1; min-width: 0; font: inherit; padding: 0.55rem 0; color: var(--text); background: transparent; border: 0; border-radius: 0; resize: vertical; min-height: 2.75rem; max-height: 12rem; field-sizing: content; }
+.composer textarea::placeholder { color: var(--text-2); }
+.composer textarea:focus-visible { outline: none; box-shadow: none; }
+.composer:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.composer button { margin: 0; min-height: 2.75rem; }
+
+/* ---- virtual list: the top note is pinned and centred, resting in the log's reserved space above the first turn -------------------------------------------------------- */
+.vitem { display: flow-root; }
+/* Sticky offsets are measured from the log's content box, so both offsets cancel the padding: the note rests and pins 0.5rem below the top edge. */
+.vstatus { position: sticky; top: calc(0.5rem - var(--log-pad)); margin-top: calc(0.5rem - var(--log-pad)); height: 0; z-index: 1; text-align: center; font-size: 0.85rem; color: var(--text); pointer-events: none; }
+.vstatus span { display: inline-block; padding: 0.15rem 0.8rem; border-radius: var(--r-pill); pointer-events: auto; }
+.vstatus button { min-height: 1.75rem; padding: 0.1rem 0.7rem; margin: 0 0 0 0.25rem; }
+.vjump { position: sticky; bottom: 0.5rem; height: 0; text-align: center; }
+.vjump button { position: relative; top: -2.75rem; margin: 0; }
+
+/* ---- generative UI blocks (OpenUI) --------------------------------------------- */
+.ou-block, .ou-fallback { max-width: 100%; }
+.ou-stack { display: flex; flex-direction: column; gap: 0.5rem; }
+.ou-card { padding: 0.6rem 0.85rem; border-radius: var(--r-md); }
+.ou-card > .ou-heading { margin-top: 0; }
+.ou-heading { margin: 0.25rem 0; font-size: 1rem; }
+.ou-text { margin: 0.25rem 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.ou-badge { display: inline-block; padding: 0 0.6rem; border: 1px solid var(--text-2); border-radius: var(--r-pill); font-size: 0.8rem; }
+.ou-metric { display: inline-flex; flex-direction: column; margin-right: 1rem; }
+.ou-metric-value { font-size: 1.4rem; font-weight: 600; letter-spacing: -0.02em; }
+.ou-metric-label { font-size: 0.8rem; color: var(--text-2); }
+.ou-list { margin: 0.25rem 0; padding-left: 1.25rem; }
+.ou-table-wrap { overflow: auto; max-width: 100%; }
+.ou-table { border-collapse: collapse; font-size: 0.9rem; }
+.ou-table th, .ou-table td { padding: 0.3rem 0.55rem; border: 1px solid var(--solid-border); text-align: left; overflow-wrap: anywhere; }
+.ou-divider { border: 0; border-top: 1px solid var(--solid-border); margin: 0.5rem 0; }
+
+/* ---- narrow screens: the sidebar becomes a short strip above the log ----------- */
+@media (max-width: 40rem) {
+  .chat-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); padding: 0.5rem; gap: 0.25rem; }
+  /* The conversation list is one scrolling line of chips, not a card: it has no surface of its own. */
+  .side { display: flex; align-items: center; gap: 0.4rem; overflow-x: auto; overflow-y: hidden; padding: 0.15rem 0.25rem; background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .side > button, .side button.item { width: auto; flex: none; margin: 0; max-width: 11rem; min-height: 2.25rem; padding: 0.3rem 0.9rem; }
+  .side ul { display: flex; gap: 0.4rem; margin: 0; }
+  .side li { flex: none; }
+  .side .label { flex: none; margin: 0; white-space: nowrap; }
+  .log { --log-pad: 2.75rem; }
+  .screen { margin: 1.5rem 1rem; }
+  .turn.user { max-width: 100%; }
+  .bar { padding-left: 1rem; }
+}
+
+/* ---- fallbacks: solid, high-contrast surfaces. Tokens change, selectors do not. -- */
+@media (prefers-reduced-transparency: reduce) {
+  :root {
+    --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --rest-fill: var(--solid);
+    --chrome-blur: 0px; --raised-blur: 0px; --solid-blur: 0px; --rest-blur: 0px; --rest-sat: 1; --rest-sheen: transparent; --chrome-sat: 1; --raised-sat: 1; --solid-sat: 1;
+    --chrome-sheen: transparent; --raised-sheen: transparent; --solid-sheen: transparent;
+  }
+}
+@media (prefers-contrast: more) {
+  :root {
+    --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --rest-fill: var(--solid);
+    --chrome-blur: 0px; --raised-blur: 0px; --solid-blur: 0px; --rest-blur: 0px; --rest-sat: 1; --rest-sheen: transparent; --chrome-sat: 1; --raised-sat: 1; --solid-sat: 1;
+    --chrome-sheen: transparent; --raised-sheen: transparent; --solid-sheen: transparent;
+    --chrome-edge: var(--text); --raised-edge: var(--text); --solid-edge: var(--text); --solid-border: var(--text);
+    --chrome-spec: transparent; --raised-spec: transparent; --solid-spec: transparent; --rest-spec: transparent; --rest-edge: var(--text); --rest-shadow: none;
+    --chrome-shadow: none; --raised-shadow: none; --control-shadow: none; --solid-shadow: none;
+    --edge-w: 2px; --text-2: var(--text);
+    --amb-hi: transparent; --amb-lo: transparent; --amb-mid: transparent; --amb-side: transparent; --amb-ring: transparent; --amb-ring-shade: transparent;
+  }
+  a.btn, .composer button[type="submit"] { --edge: var(--text); }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+  .run-streaming::after, .run-reconnecting::after { width: calc(100% - 2.5rem); opacity: 0.6; }
+}
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  :root { --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --rest-fill: var(--solid); }
+}
