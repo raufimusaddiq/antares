@@ -71,7 +71,11 @@ from the host confirms it answers.
 
 ## 4. Start Antares
 
-The Hermes network (`hermes_edge`) must already exist.
+Both external networks must already exist; `antares` joins both and creates neither:
+
+- `hermes_edge`: lets `antares` reach `hermes:8642`.
+- `idx_default`: lets Caddy (which is on `idx_default`, not `hermes_edge`) resolve `antares:8080`.
+  Without it the route answers 502.
 
 ```sh
 cd deploy
@@ -95,8 +99,10 @@ antares.example.com {
 }
 ```
 
-If Caddy runs in a container rather than on the host, join it to a network shared with `antares` and
-proxy to `antares:8080` instead; the published loopback port is then unused.
+Caddy runs in a container on `idx_default`, so on this host proxy to `antares:8080` (the compose file
+joins `antares` to that network) rather than `127.0.0.1:8080`, which inside Caddy's container is
+Caddy itself. The loopback publish is kept only for host-side checks such as `/readyz` above; it is
+never `0.0.0.0`.
 
 ## Roll back
 
@@ -114,7 +120,7 @@ read the migrated schema.
 ## Unverified here (operator must check)
 
 - Pulling from ghcr.io (needs the first workflow run on `main`, and package visibility).
-- `hermes_edge` exists and `hermes:8642` resolves from the `antares` container.
+- `hermes_edge` and `idx_default` exist, `antares:8080` resolves from Caddy, and `hermes:8642` resolves from the `antares` container.
 - The provisioner address is reachable from the container as `host.docker.internal:8750`, and
   host firewall rules allow it from the bridge but not from outside.
 - The `antares-prov` user can `docker exec -u hermes hermes …`.
