@@ -323,7 +323,8 @@ func (v *Verifier) sessions(ctx context.Context, t Target, siblings []string) Re
 // sessionCount accepts the deployed envelope
 // {"object":"list","data":[...],"limit":N,"offset":N,"has_more":bool}, a bare
 // array, or an object whose "sessions" member is an array. Anything else is
-// unrecognised.
+// unrecognised, including {"data":[]} without "object":"list" (the shape a
+// naive client sends).
 func sessionCount(b []byte) (int, bool) {
 	var env struct {
 		Object string            `json:"object"`
