@@ -10,10 +10,10 @@
 
   /* Ambient: deep warm-black base lit by amber, plum, rust and sand fields. */
   --bg-base: #0e0a0c;
-  --amb-amber: rgba(214, 140, 60, 0.42);
-  --amb-rust: rgba(150, 64, 40, 0.4);
+  --amb-amber: rgba(214, 140, 60, 0.34);
+  --amb-rust: rgba(150, 64, 40, 0.32);
   --amb-sand: rgba(190, 150, 100, 0.2);
-  --amb-plum: rgba(112, 52, 98, 0.46);
+  --amb-plum: rgba(112, 52, 98, 0.34);
   --amb-ring: rgba(236, 176, 120, 0.2);
   --amb-ring-shade: rgba(10, 4, 6, 0.55);
 
@@ -37,7 +37,16 @@
   --raised-shadow: 0 1px 2px rgba(0, 0, 0, 0.55), 0 8px 16px -6px rgba(0, 0, 0, 0.45), 0 30px 60px -18px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.04);
   --control-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 12px -6px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.03);
 
-  /* solid tier: readable body copy lives here */
+  /* rest: the assistant turn. A resting surface the text sits on, lighter than raised, no lift. */
+  --rest-fill: rgba(30, 20, 22, 0.56);
+  --rest-edge: rgba(255, 255, 255, 0.08);
+  --rest-spec: rgba(255, 255, 255, 0.14);
+  --rest-sheen: rgba(255, 255, 255, 0.02);
+  --rest-blur: 18px;
+  --rest-sat: 1.4;
+  --rest-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+
+  /* solid tier: code blocks and generated-UI cards */
   --solid-fill: rgba(20, 14, 16, 0.94);
   --solid-edge: rgba(255, 255, 255, 0.1);
   --solid-spec: rgba(255, 255, 255, 0.2);
@@ -74,45 +83,48 @@
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    --bg-base: #efe3dc;
-    --amb-amber: rgba(240, 170, 90, 0.55);
-    --amb-rust: rgba(220, 120, 90, 0.34);
-    --amb-sand: rgba(230, 200, 150, 0.4);
-    --amb-plum: rgba(176, 110, 160, 0.36);
-    --amb-ring: rgba(255, 255, 255, 0.55);
-    --amb-ring-shade: rgba(90, 40, 40, 0.14);
+    /* Paper, not sunset: a neutral near-white base, no ambient colour. Elevation does the work. */
+    --bg-base: #f3f4f5;
+    --amb-amber: transparent; --amb-rust: transparent; --amb-sand: transparent; --amb-plum: transparent;
+    --amb-ring: transparent; --amb-ring-shade: transparent;
 
-    --chrome-fill: rgba(255, 250, 246, 0.38);
-    --chrome-edge: rgba(60, 30, 25, 0.1);
-    --chrome-spec: rgba(255, 255, 255, 0.95);
-    --chrome-sheen: rgba(255, 255, 255, 0.3);
-    --chrome-shadow: 0 1px 0 rgba(60, 30, 25, 0.08), 0 14px 26px -16px rgba(70, 35, 25, 0.3);
+    --chrome-fill: rgba(255, 255, 255, 0.6);
+    --chrome-edge: rgba(20, 24, 30, 0.1);
+    --chrome-spec: rgba(255, 255, 255, 1);
+    --chrome-sheen: rgba(255, 255, 255, 0.4);
+    --chrome-shadow: 0 1px 0 rgba(20, 24, 30, 0.06), 0 14px 26px -16px rgba(20, 24, 30, 0.22);
 
-    --raised-fill: rgba(255, 250, 246, 0.6);
-    --raised-fill-hover: rgba(255, 255, 255, 0.78);
-    --raised-edge: rgba(60, 30, 25, 0.14);
+    --raised-fill: rgba(255, 255, 255, 0.86);
+    --raised-fill-hover: #ffffff;
+    --raised-edge: rgba(20, 24, 30, 0.14);
     --raised-spec: rgba(255, 255, 255, 1);
-    --raised-sheen: rgba(255, 255, 255, 0.4);
-    --raised-shadow: 0 1px 2px rgba(60, 30, 25, 0.22), 0 8px 16px -6px rgba(70, 35, 25, 0.22), 0 30px 60px -18px rgba(70, 35, 25, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.4);
-    --control-shadow: 0 1px 2px rgba(60, 30, 25, 0.2), 0 6px 12px -6px rgba(70, 35, 25, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.35);
+    --raised-sheen: rgba(255, 255, 255, 0.5);
+    --raised-shadow: 0 1px 2px rgba(20, 24, 30, 0.18), 0 8px 16px -6px rgba(20, 24, 30, 0.14), 0 30px 60px -18px rgba(20, 24, 30, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.6);
+    --control-shadow: 0 1px 2px rgba(20, 24, 30, 0.16), 0 6px 12px -6px rgba(20, 24, 30, 0.14), 0 0 0 1px rgba(255, 255, 255, 0.5);
 
-    --solid-fill: rgba(253, 249, 246, 0.95);
-    --solid-edge: rgba(60, 30, 25, 0.12);
+    --rest-fill: rgba(255, 255, 255, 0.72);
+    --rest-edge: rgba(20, 24, 30, 0.1);
+    --rest-spec: rgba(255, 255, 255, 1);
+    --rest-sheen: transparent;
+    --rest-shadow: 0 1px 2px rgba(20, 24, 30, 0.1);
+
+    --solid-fill: rgba(255, 255, 255, 0.96);
+    --solid-edge: rgba(20, 24, 30, 0.12);
     --solid-spec: rgba(255, 255, 255, 1);
     --solid-sheen: rgba(255, 255, 255, 0.6);
-    --solid-shadow: 0 1px 2px rgba(60, 30, 25, 0.2), 0 14px 28px -14px rgba(70, 35, 25, 0.3);
+    --solid-shadow: 0 1px 2px rgba(20, 24, 30, 0.16), 0 14px 28px -14px rgba(20, 24, 30, 0.2);
 
-    --solid: #fcf8f5;
+    --solid: #fafafa;
     --solid-raised: #ffffff;
-    --solid-border: rgba(60, 30, 25, 0.16);
+    --solid-border: rgba(20, 24, 30, 0.18);
 
-    --text: #1c1210;
-    --text-2: #4a3733;
+    --text: #14171a;
+    --text-2: #444a51;
     --accent: #9a4f00;
     --accent-ink: #ffffff;
-    --primary: #1c1210;
-    --primary-ink: #f8f2ee;
-    --focus: #1c1210;
+    --primary: #14171a;
+    --primary-ink: #fafafa;
+    --focus: #14171a;
     --focus-halo: #ffffff;
     --warn-fill: #fff1dc;
     --warn-ink: #4a2800;
@@ -138,10 +150,10 @@ body.chat { height: 100vh; overflow: hidden; }
 body::before, body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; }
 body::before {
   background:
-    radial-gradient(72rem 52rem at 88% 4%, var(--amb-amber), transparent 70%),
-    radial-gradient(60rem 46rem at 4% 8%, var(--amb-plum), transparent 70%),
-    radial-gradient(52rem 40rem at 2% 100%, var(--amb-rust), transparent 72%),
-    radial-gradient(46rem 38rem at 62% 78%, var(--amb-sand), transparent 72%);
+    radial-gradient(95vmax 70vmax at 92% 0%, var(--amb-amber) 0%, color-mix(in srgb, var(--amb-amber) 55%, transparent) 20%, color-mix(in srgb, var(--amb-amber) 24%, transparent) 45%, color-mix(in srgb, var(--amb-amber) 7%, transparent) 72%, transparent 100%),
+    radial-gradient(105vmax 80vmax at 0% 6%, var(--amb-plum) 0%, color-mix(in srgb, var(--amb-plum) 55%, transparent) 20%, color-mix(in srgb, var(--amb-plum) 24%, transparent) 45%, color-mix(in srgb, var(--amb-plum) 7%, transparent) 72%, transparent 100%),
+    radial-gradient(95vmax 70vmax at 0% 104%, var(--amb-rust) 0%, color-mix(in srgb, var(--amb-rust) 55%, transparent) 20%, color-mix(in srgb, var(--amb-rust) 24%, transparent) 45%, color-mix(in srgb, var(--amb-rust) 7%, transparent) 72%, transparent 100%),
+    radial-gradient(80vmax 60vmax at 64% 84%, var(--amb-sand) 0%, color-mix(in srgb, var(--amb-sand) 55%, transparent) 20%, color-mix(in srgb, var(--amb-sand) 24%, transparent) 45%, color-mix(in srgb, var(--amb-sand) 7%, transparent) 72%, transparent 100%);
 }
 body::after {
   background:
@@ -160,11 +172,12 @@ a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.2em
 
 /* ---- the material: one rule, each tier supplies its own values ------------------ */
 .bar, .side { --fill: var(--chrome-fill); --edge: var(--chrome-edge); --spec: var(--chrome-spec); --sheen: var(--chrome-sheen); --blur: var(--chrome-blur); --sat: var(--chrome-sat); --shadow: var(--chrome-shadow); }
-.composer, .turn.user, .screen dl, .vstatus span, .vjump button, button, a.btn { --fill: var(--raised-fill); --edge: var(--raised-edge); --spec: var(--raised-spec); --sheen: var(--raised-sheen); --blur: var(--raised-blur); --sat: var(--raised-sat); --shadow: var(--raised-shadow); }
-.turn.assistant, .ou-card { --fill: var(--solid-fill); --edge: var(--solid-edge); --spec: var(--solid-spec); --sheen: var(--solid-sheen); --blur: var(--solid-blur); --sat: var(--solid-sat); --shadow: var(--solid-shadow); }
-button, a.btn, .vstatus span { --shadow: var(--control-shadow); }
+.composer, .turn.user, .screen dl, .vjump button, button, a.btn { --fill: var(--raised-fill); --edge: var(--raised-edge); --spec: var(--raised-spec); --sheen: var(--raised-sheen); --blur: var(--raised-blur); --sat: var(--raised-sat); --shadow: var(--raised-shadow); }
+.ou-card { --fill: var(--solid-fill); --edge: var(--solid-edge); --spec: var(--solid-spec); --sheen: var(--solid-sheen); --blur: var(--solid-blur); --sat: var(--solid-sat); --shadow: var(--solid-shadow); }
+.turn.assistant { --fill: var(--rest-fill); --edge: var(--rest-edge); --spec: var(--rest-spec); --sheen: var(--rest-sheen); --blur: var(--rest-blur); --sat: var(--rest-sat); --shadow: var(--rest-shadow); }
+button, a.btn { --shadow: var(--control-shadow); }
 
-.bar, .side, .composer, .turn.user, .screen dl, .vstatus span, .vjump button, button, a.btn, .turn.assistant, .ou-card {
+.bar, .side, .composer, .turn.user, .screen dl, .vjump button, button, a.btn, .turn.assistant, .ou-card {
   background:
     linear-gradient(90deg, transparent, var(--spec) 16%, var(--spec) 84%, transparent) top / 100% 1px no-repeat,
     linear-gradient(180deg, var(--sheen), transparent 60%),
@@ -260,14 +273,14 @@ dd:last-child { margin-bottom: 0; }
 .side button.item.current { background: var(--raised-fill); border-color: var(--raised-edge); color: var(--text); font-weight: 600; }
 
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; gap: var(--gap); }
-.log { flex: 1; overflow: auto; padding: 0.5rem 0.25rem; position: relative; overflow-anchor: none; overscroll-behavior: contain; }
+.log { flex: 1; overflow: auto; padding: 3rem 0.25rem 0.5rem; position: relative; overflow-anchor: none; overscroll-behavior: contain; }
 /* First-run state: the empty conversation gets the large type, not a caption. */
 .pane > p.label { margin: auto auto auto clamp(0.5rem, 4vw, 3rem); max-width: 22rem; font-size: clamp(2rem, 4.6vw, 3rem); font-weight: 300; line-height: 1.04; letter-spacing: -0.035em; color: var(--text); }
 
 /* ---- messages ------------------------------------------------------------------ */
 .turn { max-width: 48rem; margin: 0 auto 1rem; padding: 0.7rem 1.15rem 0.85rem; border-radius: var(--r-lg); }
-/* Assistant text sits on the solid tier: near-opaque by decision, so reading never depends on what scrolls behind. */
-.turn.assistant { margin-left: 0; margin-right: auto; max-width: min(48rem, 100%); }
+/* Assistant text sits on the rest surface, capped at a 68ch measure. Contrast is measured against the real backdrop, not assumed. */
+.turn.assistant { margin-left: 0; margin-right: auto; max-width: min(calc(68ch + 2.3rem), 100%); }
 .turn.user { margin-left: auto; margin-right: 0; width: fit-content; max-width: min(40rem, 92%); }
 .turn .who { font-size: 0.82rem; margin: 0 0 0.2rem; color: var(--text-2); font-weight: 600; }
 .turn p { margin: 0.3rem 0; }
@@ -296,10 +309,10 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .composer:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
 .composer button { margin: 0; min-height: 2.75rem; }
 
-/* ---- virtual list pills -------------------------------------------------------- */
+/* ---- virtual list: the top note rests in the log's reserved space above the first turn -------------------------------------------------------- */
 .vitem { display: flow-root; }
-.vstatus { position: sticky; top: 0; height: 0; z-index: 1; text-align: center; font-size: 0.8rem; color: var(--text); pointer-events: none; }
-.vstatus span { display: inline-block; margin-top: 0.25rem; padding: 0.2rem 0.8rem; border-radius: var(--r-pill); pointer-events: auto; }
+.vstatus { position: relative; margin-top: -2.4rem; height: 0; z-index: 1; font-size: 0.85rem; color: var(--text-2); pointer-events: none; }
+.vstatus span { display: inline-block; padding: 0 0.5rem; pointer-events: auto; }
 .vstatus button { min-height: 1.75rem; padding: 0.1rem 0.7rem; margin: 0 0 0 0.25rem; }
 .vjump { position: sticky; bottom: 0.5rem; height: 0; text-align: center; }
 .vjump button { position: relative; top: -2.75rem; margin: 0; }
@@ -323,8 +336,14 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* ---- narrow screens: the sidebar becomes a short strip above the log ----------- */
 @media (max-width: 40rem) {
-  .chat-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); padding: 0.5rem; gap: 0.5rem; }
-  .side { max-height: 7rem; border-radius: var(--r-md); }
+  .chat-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); padding: 0.5rem; gap: 0.25rem; }
+  /* The conversation list is one scrolling line of chips, not a card: it has no surface of its own. */
+  .side { display: flex; align-items: center; gap: 0.4rem; overflow-x: auto; overflow-y: hidden; padding: 0.15rem 0.25rem; background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .side > button, .side button.item { width: auto; flex: none; margin: 0; max-width: 11rem; min-height: 2.25rem; padding: 0.3rem 0.9rem; }
+  .side ul { display: flex; gap: 0.4rem; margin: 0; }
+  .side li { flex: none; }
+  .side .label { flex: none; margin: 0; white-space: nowrap; }
+  .log { padding-top: 2.75rem; }
   .screen { margin: 1.5rem 1rem; }
   .turn.user { max-width: 100%; }
   .bar { padding-left: 1rem; }
@@ -333,18 +352,18 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* ---- fallbacks: solid, high-contrast surfaces. Tokens change, selectors do not. -- */
 @media (prefers-reduced-transparency: reduce) {
   :root {
-    --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --solid-fill: var(--solid);
-    --chrome-blur: 0px; --raised-blur: 0px; --solid-blur: 0px; --chrome-sat: 1; --raised-sat: 1; --solid-sat: 1;
+    --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --solid-fill: var(--solid); --rest-fill: var(--solid);
+    --chrome-blur: 0px; --raised-blur: 0px; --solid-blur: 0px; --rest-blur: 0px; --rest-sat: 1; --rest-sheen: transparent; --chrome-sat: 1; --raised-sat: 1; --solid-sat: 1;
     --chrome-sheen: transparent; --raised-sheen: transparent; --solid-sheen: transparent;
   }
 }
 @media (prefers-contrast: more) {
   :root {
-    --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --solid-fill: var(--solid);
-    --chrome-blur: 0px; --raised-blur: 0px; --solid-blur: 0px; --chrome-sat: 1; --raised-sat: 1; --solid-sat: 1;
+    --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --solid-fill: var(--solid); --rest-fill: var(--solid);
+    --chrome-blur: 0px; --raised-blur: 0px; --solid-blur: 0px; --rest-blur: 0px; --rest-sat: 1; --rest-sheen: transparent; --chrome-sat: 1; --raised-sat: 1; --solid-sat: 1;
     --chrome-sheen: transparent; --raised-sheen: transparent; --solid-sheen: transparent;
     --chrome-edge: var(--text); --raised-edge: var(--text); --solid-edge: var(--text); --solid-border: var(--text);
-    --chrome-spec: transparent; --raised-spec: transparent; --solid-spec: transparent;
+    --chrome-spec: transparent; --raised-spec: transparent; --solid-spec: transparent; --rest-spec: transparent; --rest-edge: var(--text); --rest-shadow: none;
     --chrome-shadow: none; --raised-shadow: none; --control-shadow: none; --solid-shadow: none;
     --edge-w: 2px; --text-2: var(--text);
     --amb-amber: transparent; --amb-rust: transparent; --amb-sand: transparent; --amb-plum: transparent; --amb-ring: transparent; --amb-ring-shade: transparent;
@@ -356,5 +375,5 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
   .run-streaming::after, .run-reconnecting::after { width: calc(100% - 2.5rem); opacity: 0.6; }
 }
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
-  :root { --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --solid-fill: var(--solid); }
+  :root { --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --solid-fill: var(--solid); --rest-fill: var(--solid); }
 }
