@@ -62,8 +62,10 @@ func (a *Auth) Register(mux *http.ServeMux) {
 	for _, rt := range ChatRoutes {
 		mux.Handle(rt.Method+" "+rt.Path, a.Active(notBuilt))
 	}
-	// The whole admin tree is guarded now; the approval endpoints land in a later slice.
+	// The whole admin tree is guarded. The catch-all answers for anything not
+	// listed below; the specific routes win over it.
 	mux.Handle("/api/admin/", a.Admin(notBuilt))
+	a.registerAdmin(mux)
 }
 
 // ---- read models: the only account data the browser receives ----------------

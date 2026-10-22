@@ -80,8 +80,11 @@ func TestEligibleUserPassesTheGuardAndAdminTreeIsAdminOnly(t *testing.T) {
 		t.Errorf("anonymous on admin tree: %d", w.Code)
 	}
 	admin := h.userIn("s-a", "APPROVED", "READY", "ADMIN", true)
-	if w := admin.get("/api/admin/users"); w.Code != http.StatusNotImplemented {
+	if w := admin.get("/api/admin/users"); w.Code != http.StatusOK {
 		t.Errorf("active admin on admin tree: %d", w.Code)
+	}
+	if w := admin.get("/api/admin/system"); w.Code != http.StatusNotImplemented {
+		t.Errorf("active admin on the unbuilt admin route: %d", w.Code)
 	}
 	// Role decides what is shown; the login path is the same one.
 	var v AccountView
@@ -132,11 +135,21 @@ func TestAdminTreeRequiresAnActiveMappedAdmin(t *testing.T) {
 			t.Errorf("%s: /api/me advertises canAdmin for an admin the guard refuses", c.name)
 		}
 	}
-	// Every refusal above must be the guard's, not a placeholder 501 slipping through.
+	// Every refusal above must be the guard's. An active admin passes the guard:
+	// the one admin route still unbuilt answers with the placeholder, and the
+	// built ones answer from their handlers (none of the guard's refusals).
 	active := h.userIn("adm-ok", "APPROVED", "READY", "ADMIN", true)
 	for _, p := range paths {
-		if w := active.do(p.method, p.path, nil); w.Code != http.StatusNotImplemented {
-			t.Errorf("active admin %s %s = %d", p.method, p.path, w.Code)
+		w := active.do(p.method, p.path, nil)
+		if p.path == "/api/admin/system" {
+			if w.Code != http.StatusNotImplemented {
+				t.Errorf("active admin %s %s = %d, want the placeholder", p.method, p.path, w.Code)
+			}
+			continue
+		}
+		if w.Code == http.StatusUnauthorized || w.Code == http.StatusNotImplemented || w.Code == http.StatusConflict && has(w.Body.String(), "TENANT_NOT_READY") ||
+			has(w.Body.String(), "ACCOUNT_") || has(w.Body.String(), "Administrator access required") {
+			t.Errorf("active admin %s %s = %d %s: the guard refused an eligible admin", p.method, p.path, w.Code, w.Body.String())
 		}
 	}
 }

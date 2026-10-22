@@ -17,6 +17,9 @@ var googleOK = map[string]string{
 	"ANTARES_GOOGLE_CLIENT_ID":     "client-id.example.test",
 	"ANTARES_GOOGLE_CLIENT_SECRET": "fabricated-client-secret",
 	"ANTARES_PUBLIC_ORIGIN":        "https://chat.example.test",
+	"ANTARES_HERMES_URL":           "http://hermes.example.test:8642",
+	"ANTARES_PROVISIONER_URL":      "http://provisioner.example.test:8750",
+	"ANTARES_PROVISIONER_TOKEN":    "fabricated-provisioner-token-0123456789",
 }
 
 // env layers m over a valid Google configuration; raw is for tests of its absence.
@@ -149,6 +152,67 @@ func TestGoogleClientSecretNeverPrints(t *testing.T) {
 	for _, out := range []string{fmt.Sprintf("%v %+v %#v %s %q", c, c, c, c.GoogleClientSecret, c.GoogleClientSecret)} {
 		if strings.Contains(out, googleOK["ANTARES_GOOGLE_CLIENT_SECRET"]) {
 			t.Fatalf("client secret leaked: %s", out)
+		}
+	}
+}
+
+func TestLoadHermesAndProvisionerSettings(t *testing.T) {
+	base := map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey}
+	c, err := Load(env(base))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.HermesURL != "http://hermes.example.test:8642" || c.ProvisionerURL != "http://provisioner.example.test:8750" || len(c.TenantToolsets) == 0 {
+		t.Fatalf("config = %+v", c)
+	}
+	for _, name := range []string{"ANTARES_HERMES_URL", "ANTARES_PROVISIONER_URL", "ANTARES_PROVISIONER_TOKEN"} {
+		m := map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey}
+		for k, v := range googleOK {
+			m[k] = v
+		}
+		m[name] = ""
+		if _, err := Load(raw(m)); err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("missing %s: %v", name, err)
+		}
+	}
+	for name, v := range map[string]string{
+		"ANTARES_HERMES_URL":        "http://hermes:8642/p/x",
+		"ANTARES_PROVISIONER_URL":   "http://user:pw@host:8750",
+		"ANTARES_PROVISIONER_TOKEN": "too-short",
+	} {
+		m := map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey, name: v}
+		if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("%s=%q accepted: %v", name, v, err)
+		}
+	}
+}
+
+func TestProvisionerTokenNeverPrints(t *testing.T) {
+	c, err := Load(env(map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tok := "fabricated-provisioner-token-0123456789"
+	b, _ := json.Marshal(c)
+	var out bytes.Buffer
+	slog.New(slog.NewTextHandler(&out, nil)).Info("cfg", "c", c)
+	for _, s := range []string{fmt.Sprintf("%v %+v %#v %s", c, c, c, c.ProvisionerToken), string(b), out.String()} {
+		if strings.Contains(s, tok) {
+			t.Fatalf("provisioner token leaked: %s", s)
+		}
+	}
+}
+
+func TestTenantToolsetPolicyIsConfigurableButNotPastTheFloor(t *testing.T) {
+	m := map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey, "ANTARES_TENANT_ALLOWED_TOOLSETS": "web, memory ,todo"}
+	c, err := Load(env(m))
+	if err != nil || strings.Join(c.TenantToolsets, ",") != "web,memory,todo" {
+		t.Fatalf("narrowed policy: %v %v", c.TenantToolsets, err)
+	}
+	for _, bad := range []string{"web,terminal", "file", "delegation", "cronjob", "session_search", "code_execution", "connections", "browser"} {
+		m["ANTARES_TENANT_ALLOWED_TOOLSETS"] = bad
+		if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "ANTARES_TENANT_ALLOWED_TOOLSETS") {
+			t.Errorf("%q accepted: %v", bad, err)
 		}
 	}
 }

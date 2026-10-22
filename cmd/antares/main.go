@@ -14,8 +14,10 @@ import (
 
 	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/config"
+	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/secrets"
 	"github.com/raufimusaddiq/antares/internal/store"
+	"github.com/raufimusaddiq/antares/internal/tenant"
 )
 
 func main() {
@@ -29,10 +31,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	// Prove the master key is usable now, not when slice 2 first seals a key.
-	// A bad key refuses startup: running without it would only defer the failure
-	// to the first credential write.
-	if _, err := secrets.New(cfg.SecretKey); err != nil {
+	// Prove the master key is usable now, not at the first credential write.
+	// A bad key refuses startup: running without it would only defer the failure.
+	box, err := secrets.New(cfg.SecretKey)
+	if err != nil {
 		return err
 	}
 	db, err := store.Open(cfg.DBPath)
@@ -77,6 +79,23 @@ func run() error {
 		}
 		return err
 	}
+	helper, err := hermes.NewHelper(cfg.ProvisionerURL, string(cfg.ProvisionerToken), nil)
+	if err != nil {
+		return err
+	}
+	verifier, err := hermes.NewVerifier(cfg.HermesURL, cfg.TenantToolsets, nil)
+	if err != nil {
+		return err
+	}
+	tenants, err := tenant.New(tenant.Options{DB: db, Box: box, Helper: helper, Verifier: verifier})
+	if err != nil {
+		return err
+	}
+	// Deferred after db.Close above, so it runs first: in-flight provisioning
+	// is cancelled and drained before the database closes.
+	defer tenants.Close()
+	go tenants.Run(ctx)
+
 	// No WriteTimeout: SSE streams (later slices) outlive any fixed write deadline.
 	identity, err := auth.New(auth.Options{
 		DB:           db,
@@ -84,6 +103,7 @@ func run() error {
 		ClientID:     cfg.GoogleClientID,
 		ClientSecret: string(cfg.GoogleClientSecret),
 		PublicOrigin: cfg.PublicOrigin,
+		Tenants:      tenants,
 	})
 	if err != nil {
 		return err

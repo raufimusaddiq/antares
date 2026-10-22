@@ -10,6 +10,8 @@ import (
 	"net/url"
 	"path/filepath"
 	"strings"
+
+	"github.com/raufimusaddiq/antares/internal/hermes"
 )
 
 // Secret holds key material. Every way of rendering it is redacted: fmt verbs
@@ -40,6 +42,15 @@ type Config struct {
 	GoogleClientID     string
 	GoogleClientSecret Secret
 	PublicOrigin       string // https origin the browser reaches Antares on, e.g. https://chat.example.test
+
+	// Hermes and its host-side provisioning helper (PRD §5.3). Required: without
+	// them no approved account could ever reach READY.
+	HermesURL        string // private origin of the Hermes API, e.g. http://hermes:8642
+	ProvisionerURL   string // origin of tools/hermes-provisioner as reachable from this container
+	ProvisionerToken Secret // its bearer token
+	// TenantToolsets are the toolsets a tenant profile may have enabled. The
+	// floor in hermes.DeniedToolsets cannot be allowed by configuration.
+	TenantToolsets []string
 
 	// Admin bootstrap. All three are set, or none (no bootstrap).
 	AdminIssuer string
@@ -94,6 +105,42 @@ func Load(getenv func(string) string) (Config, error) {
 		problems = append(problems, "ANTARES_PUBLIC_ORIGIN "+err.Error())
 	default:
 		c.PublicOrigin = origin
+	}
+	for _, u := range []struct {
+		name, raw string
+		dst       *string
+	}{
+		{"ANTARES_HERMES_URL", getenv("ANTARES_HERMES_URL"), &c.HermesURL},
+		{"ANTARES_PROVISIONER_URL", getenv("ANTARES_PROVISIONER_URL"), &c.ProvisionerURL},
+	} {
+		switch err := hermes.ValidateOrigin(u.raw); {
+		case u.raw == "":
+			problems = append(problems, u.name+" is required (http(s) origin, no path)")
+		case err != nil:
+			problems = append(problems, u.name+" "+err.Error())
+		default:
+			*u.dst = strings.TrimRight(u.raw, "/")
+		}
+	}
+	switch tok := getenv("ANTARES_PROVISIONER_TOKEN"); {
+	case tok == "":
+		problems = append(problems, "ANTARES_PROVISIONER_TOKEN is required")
+	case len(tok) < hermes.MinTokenLen:
+		problems = append(problems, fmt.Sprintf("ANTARES_PROVISIONER_TOKEN must be at least %d characters", hermes.MinTokenLen))
+	default:
+		c.ProvisionerToken = Secret(tok)
+	}
+	c.TenantToolsets = hermes.DefaultAllowedToolsets
+	if raw := getenv("ANTARES_TENANT_ALLOWED_TOOLSETS"); raw != "" {
+		c.TenantToolsets = nil
+		for _, n := range strings.Split(raw, ",") {
+			if n = strings.TrimSpace(n); n != "" {
+				c.TenantToolsets = append(c.TenantToolsets, n)
+			}
+		}
+	}
+	if err := hermes.ValidateAllowedToolsets(c.TenantToolsets); err != nil {
+		problems = append(problems, "ANTARES_TENANT_ALLOWED_TOOLSETS: "+err.Error())
 	}
 	if (c.AdminSub == "") != (c.AdminEmail == "") {
 		problems = append(problems, "ANTARES_ADMIN_GOOGLE_SUB and ANTARES_ADMIN_EMAIL must be set together")
