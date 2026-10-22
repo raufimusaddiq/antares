@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/config"
 	"github.com/raufimusaddiq/antares/internal/secrets"
 	"github.com/raufimusaddiq/antares/internal/server"
@@ -78,9 +79,19 @@ func run() error {
 		return err
 	}
 	// No WriteTimeout: SSE streams (later slices) outlive any fixed write deadline.
+	identity, err := auth.New(auth.Options{
+		DB:           db,
+		Endpoints:    auth.GoogleEndpoints(),
+		ClientID:     cfg.GoogleClientID,
+		ClientSecret: string(cfg.GoogleClientSecret),
+		PublicOrigin: cfg.PublicOrigin,
+	})
+	if err != nil {
+		return err
+	}
 	srv := &http.Server{
 		Addr:              cfg.Addr,
-		Handler:           server.New(ready, cfg.StaticDir).Routes(),
+		Handler:           server.New(ready, cfg.StaticDir).WithAuth(identity).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,

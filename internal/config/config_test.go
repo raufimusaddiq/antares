@@ -12,7 +12,24 @@ import (
 
 var goodKey = base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
 
-func env(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
+// googleOK is the fabricated Google/origin configuration every valid fixture needs.
+var googleOK = map[string]string{
+	"ANTARES_GOOGLE_CLIENT_ID":     "client-id.example.test",
+	"ANTARES_GOOGLE_CLIENT_SECRET": "fabricated-client-secret",
+	"ANTARES_PUBLIC_ORIGIN":        "https://chat.example.test",
+}
+
+// env layers m over a valid Google configuration; raw is for tests of its absence.
+func env(m map[string]string) func(string) string {
+	return func(k string) string {
+		if v, ok := m[k]; ok {
+			return v
+		}
+		return googleOK[k]
+	}
+}
+
+func raw(m map[string]string) func(string) string { return func(k string) string { return m[k] } }
 
 func TestLoadRefusesMissingRequired(t *testing.T) {
 	_, err := Load(env(nil))
@@ -85,6 +102,53 @@ func TestSecretNeverLeaksThroughAnyVerbOrEncoder(t *testing.T) {
 			if strings.Contains(s, bad) {
 				t.Errorf("secret leaked as %q in %q", bad, s)
 			}
+		}
+	}
+}
+
+func TestLoadRefusesMissingGoogleConfig(t *testing.T) {
+	base := map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey}
+	_, err := Load(raw(base))
+	if err == nil {
+		t.Fatal("startup without Google configuration must fail; there is no degraded mode")
+	}
+	for _, name := range []string{"ANTARES_GOOGLE_CLIENT_ID", "ANTARES_GOOGLE_CLIENT_SECRET", "ANTARES_PUBLIC_ORIGIN"} {
+		if !strings.Contains(err.Error(), name) {
+			t.Errorf("error should name %s: %v", name, err)
+		}
+		one := map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey}
+		for k, v := range googleOK {
+			if k != name {
+				one[k] = v
+			}
+		}
+		if _, err := Load(raw(one)); err == nil || !strings.Contains(err.Error(), name) {
+			t.Errorf("missing %s alone must refuse startup, got %v", name, err)
+		}
+	}
+}
+
+func TestLoadPublicOriginMustBeBareHTTPS(t *testing.T) {
+	for _, bad := range []string{"http://chat.example.test", "https://chat.example.test/app", "https://chat.example.test?x=1",
+		"https://u:p@chat.example.test", "chat.example.test", "https://"} {
+		if _, err := Load(env(map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey, "ANTARES_PUBLIC_ORIGIN": bad})); err == nil {
+			t.Errorf("origin %q accepted", bad)
+		}
+	}
+	c, err := Load(env(map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey, "ANTARES_PUBLIC_ORIGIN": "https://Chat.Example.test/"}))
+	if err != nil || c.PublicOrigin != "https://chat.example.test" {
+		t.Fatalf("origin = %q, err %v", c.PublicOrigin, err)
+	}
+}
+
+func TestGoogleClientSecretNeverPrints(t *testing.T) {
+	c, err := Load(env(map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, out := range []string{fmt.Sprintf("%v %+v %#v %s %q", c, c, c, c.GoogleClientSecret, c.GoogleClientSecret)} {
+		if strings.Contains(out, googleOK["ANTARES_GOOGLE_CLIENT_SECRET"]) {
+			t.Fatalf("client secret leaked: %s", out)
 		}
 	}
 }

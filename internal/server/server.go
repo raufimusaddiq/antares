@@ -15,13 +15,27 @@ import (
 // Checker reports whether a dependency is usable right now.
 type Checker func(ctx context.Context) error
 
+// Auth is the identity layer the server mounts: its routes and screens, and a
+// guard for "/" so only an eligible user reaches the app shell.
+type Auth interface {
+	Register(mux *http.ServeMux)
+	Landing(next http.Handler) http.Handler
+}
+
 type Server struct {
 	ready     Checker
 	staticDir string
+	auth      Auth
 }
 
 func New(ready Checker, staticDir string) *Server {
 	return &Server{ready: ready, staticDir: staticDir}
+}
+
+// WithAuth mounts the identity layer. Without it the server serves no login.
+func (s *Server) WithAuth(a Auth) *Server {
+	s.auth = a
+	return s
 }
 
 func (s *Server) Routes() http.Handler {
@@ -68,6 +82,10 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not found")
 	})
+	if s.auth != nil {
+		s.auth.Register(mux)
+		mux.Handle("GET /{$}", s.auth.Landing(http.HandlerFunc(s.static)))
+	}
 	mux.HandleFunc("/", s.static)
 	return mux
 }
