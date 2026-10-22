@@ -102,11 +102,14 @@ func applyOne(ctx context.Context, db *sql.DB, m migration) (bool, error) {
 		return false, err
 	}
 	defer tx.Rollback()
-	var sum string
-	switch err := tx.QueryRowContext(ctx, `SELECT checksum FROM schema_migrations WHERE version = ?`, m.version).Scan(&sum); {
+	var sum, name string
+	switch err := tx.QueryRowContext(ctx, `SELECT checksum, name FROM schema_migrations WHERE version = ?`, m.version).Scan(&sum, &name); {
 	case err == nil:
 		if sum != m.checksum {
 			return false, fmt.Errorf("checksum mismatch: applied migration was edited")
+		}
+		if name != m.name {
+			return false, fmt.Errorf("name mismatch: applied migration %q is now %q", name, m.name)
 		}
 		return false, nil
 	case err != sql.ErrNoRows:

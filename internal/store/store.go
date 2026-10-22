@@ -169,7 +169,7 @@ func requireDedicated(dir, base string) error {
 // descriptor, so a symlinked or non-regular file is refused rather than
 // followed to whatever it points at (no check-then-chmod race either).
 func secureFiles(path string) error {
-	for _, suf := range []string{"", "-wal", "-shm"} {
+	for _, suf := range []string{"", "-wal", "-shm", "-journal"} {
 		f, err := os.OpenFile(path+suf, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
 		if err != nil {
 			if suf != "" && errors.Is(err, os.ErrNotExist) {

@@ -3,8 +3,8 @@ package main
 
 import (
 	"context"
-	"errors"
 	"log"
+	"net"
 	"net/http"
 	"os"
 	"os/signal"
@@ -86,15 +86,10 @@ func run() error {
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 16,
 	}
-	go func() {
-		<-ctx.Done()
-		sctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-		defer cancel()
-		_ = srv.Shutdown(sctx)
-	}()
-	log.Printf("antares listening on %s", cfg.Addr)
-	if err := srv.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
+	ln, err := net.Listen("tcp", cfg.Addr)
+	if err != nil {
 		return err
 	}
-	return nil
+	log.Printf("antares listening on %s", cfg.Addr)
+	return serve(ctx, srv, ln, 10*time.Second)
 }

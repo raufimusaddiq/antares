@@ -42,7 +42,7 @@ func reserve(next http.Handler) http.Handler {
 			if root != "/api" && p == r.URL.Path && probe {
 				break // exact probe, case-sensitive: the mux serves it
 			}
-			if root == "/api" && p == r.URL.Path {
+			if root == "/api" && strings.HasPrefix(p, "/api/") && p == r.URL.Path {
 				break // the API mux owns /api/...
 			}
 			writeErr(w, http.StatusNotFound, "not found")

@@ -701,3 +701,38 @@ func TestMigrateRefusesUnknownVersionBeforeTouchingAnything(t *testing.T) {
 		t.Fatal("version 2 recorded")
 	}
 }
+
+func TestSecureFilesCoversRollbackJournal(t *testing.T) {
+	// SQLite removes a rollback journal when it opens a WAL database, so the
+	// exposure is the window before that; secureFiles runs first and must
+	// cover every suffix requireDedicated allowlists.
+	dir := t.TempDir()
+	p := filepath.Join(dir, "antares.db")
+	for _, suf := range []string{"", "-journal"} {
+		os.WriteFile(p+suf, nil, 0o644)
+		os.Chmod(p+suf, 0o644)
+	}
+	if err := secureFiles(p); err != nil {
+		t.Fatal(err)
+	}
+	if m := mode(t, p+"-journal"); m != 0o600 {
+		t.Fatalf("restored -journal kept mode %v, want 0600", m)
+	}
+	os.Remove(p + "-journal")
+	os.Symlink(p, p+"-journal")
+	if err := secureFiles(p); err == nil {
+		t.Fatal("a symlinked -journal must be refused")
+	}
+}
+
+func TestMigrateDetectsRenamedMigration(t *testing.T) {
+	db, _ := openTest(t)
+	ctx := context.Background()
+	if _, err := Migrate(ctx, db, fstest.MapFS{"0001_a.sql": {Data: []byte(`CREATE TABLE a (id INTEGER);`)}}); err != nil {
+		t.Fatal(err)
+	}
+	renamed := fstest.MapFS{"0001_other.sql": {Data: []byte(`CREATE TABLE a (id INTEGER);`)}}
+	if _, err := Migrate(ctx, db, renamed); err == nil || !strings.Contains(err.Error(), "name") {
+		t.Fatalf("renamed migration must be refused: %v", err)
+	}
+}
