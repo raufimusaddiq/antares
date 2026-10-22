@@ -14,25 +14,29 @@ highlight, blur and shadow tokens.
 | --- | --- | --- | --- |
 | chrome | `--chrome-*` | top bar, sidebar (a chip strip on narrow screens) | Thinnest and most transparent; it frames the page and should recede. Almost no shadow. |
 | raised | `--raised-*`, `--control-shadow` | composer, user turns, buttons, account card | Medium fill, strongest specular edge, contact + mid + wide shadow and an outer rim: these are the things that hover. |
-| rest | `--rest-*` | assistant turns | A resting surface the text sits on: lighter and less opaque than raised, one contact shadow, no lift. Its text column is capped at 68ch. Contrast is measured against the real backdrop (amber field and ring) rather than assumed; if a change breaks AA, opacity goes back here. |
+| rest | `--rest-*` | assistant turns | A resting surface the text sits on: lighter and less opaque than raised, one contact shadow, no lift. Its text column is capped at 68ch. Contrast is measured against the real backdrop (the ambient fields and rings) rather than assumed; if a change breaks AA, opacity goes back here. |
 | solid | `--solid-*` | code blocks, generated-UI cards | Near-opaque on purpose: dense or structured content never depends on what is behind it. |
 
 The specular edge is a 1px `linear-gradient` background layer on the top edge that fades out towards the
 corners. Elevation is physical: a tight contact shadow, a mid shadow and a wide soft one. Only the
 composer carries the full stack, because it is the one pane that sits above the transcript.
 
-**Ambient layer (dark).** `body::before` holds four large, low-alpha colour fields (amber, plum, rust, sand) and
-`body::after` two soft rings. They are fixed, inert and static, and they are what the glass blurs. Each field
-is an eased multi-stop falloff sized in `vmax`, so its edge always lies beyond the viewport and you cannot point
-at where a light ends. Tokens: `--bg-base`, `--amb-*`.
+**Ambient layer, both themes.** Glass needs something behind it to refract: a translucent surface over a
+uniform background is indistinguishable from an opaque one. `body::before` holds four large, low-alpha neutral
+fields (`--amb-hi|side|lo|mid`) and `body::after` two soft rings. They are fixed, inert and static. Each field is
+an eased multi-stop falloff sized in `vmax`, so its edge always lies beyond the viewport.
 
-**Light mode is a different base, the same material.** A neutral near-white (`--bg-base: #f3f4f5`), no ambient
-colour at all (the `--amb-*` tokens are transparent), neutral white translucency, neutral shadows. Warmth lives
-only in the accent. Elevation, not colour, separates the surfaces. Secondary text `--text-2: #444a51` measures
-8.1:1 on the base and 9.0:1 on white.
+- Dark: `--bg-base: #08090b` (near-black, cool cast) lit by grey and blue-grey fields.
+- Light: `--bg-base: #eceff3` (off-white) with soft blue-grey fields and one white highlight, low in contrast so it
+  reads as paper with depth. Light glass fills are real translucency (0.3 chrome, 0.46 raised, 0.4 rest), not
+  near-opaque, so the blur does visible work.
+
+The palette is monochrome after `target-mindful.png`. The one accent is the reference's play-button white
+(near-black in light) on the send action, the sign-in action and the live-run bar. Notices are inverted
+(light on dark, dark on light) instead of coloured.
 
 Other tokens, under `:root` and redefined for `prefers-color-scheme: light` with the same names:
-`--text`, `--text-2`, `--accent` (amber; send action and live-run bar only), `--primary` (sign-in action),
+`--text`, `--text-2`, `--accent` (send action and live-run bar only), `--primary` (sign-in action),
 `--focus`, `--focus-halo`, `--warn-*`, `--r-sm|md|lg|pill`, `--gap`.
 
 Type is the system sans (the CSP forbids web fonts). Headings are large, light and tight-tracked

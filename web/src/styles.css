@@ -1,24 +1,26 @@
-/* Liquid Glass, as a material with thickness.
-   Three tiers, not one pane of glass:
+/* Liquid Glass, as a material with thickness. Monochrome, after target-mindful.png.
+   Four tiers, not one pane of glass:
      chrome  thin, most transparent       top bar, sidebar
-     raised  medium fill, strong specular composer, user turns, buttons, status pills
-     solid   near-opaque, not translucent assistant turns, code, generated-UI cards
-   Light and dark set the same token names. The ambient layer (body::before/::after) is what
-   the glass refracts; without coloured light behind it the blur would be decoration. */
+     raised  medium fill, strong specular composer, user turns, buttons, account card
+     rest    light resting surface        assistant turns
+     solid   near-opaque, not translucent code blocks, generated-UI cards
+   Light and dark set the same token names. Both themes have a neutral ambient layer
+   (body::before/::after): glass needs something behind it to refract, and a translucent
+   surface over a uniform background is indistinguishable from an opaque one. */
 :root {
   color-scheme: dark;
 
-  /* Ambient: deep warm-black base lit by amber, plum, rust and sand fields. */
-  --bg-base: #0e0a0c;
-  --amb-amber: rgba(214, 140, 60, 0.34);
-  --amb-rust: rgba(150, 64, 40, 0.32);
-  --amb-sand: rgba(190, 150, 100, 0.2);
-  --amb-plum: rgba(112, 52, 98, 0.34);
-  --amb-ring: rgba(236, 176, 120, 0.2);
-  --amb-ring-shade: rgba(10, 4, 6, 0.55);
+  /* Ambient: near-black with a cool cast, lit by soft grey and blue-grey fields. */
+  --bg-base: #08090b;
+  --amb-hi: rgba(168, 178, 192, 0.2);
+  --amb-side: rgba(86, 100, 122, 0.3);
+  --amb-lo: rgba(70, 80, 98, 0.26);
+  --amb-mid: rgba(120, 130, 146, 0.12);
+  --amb-ring: rgba(200, 208, 220, 0.16);
+  --amb-ring-shade: rgba(2, 3, 5, 0.6);
 
   /* chrome tier */
-  --chrome-fill: rgba(52, 32, 34, 0.36);
+  --chrome-fill: rgba(30, 34, 41, 0.34);
   --chrome-edge: rgba(255, 255, 255, 0.09);
   --chrome-spec: rgba(255, 255, 255, 0.24);
   --chrome-sheen: rgba(255, 255, 255, 0.03);
@@ -27,8 +29,8 @@
   --chrome-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 14px 26px -16px rgba(0, 0, 0, 0.55);
 
   /* raised tier: contact shadow + mid shadow + wide soft shadow + faint outer rim */
-  --raised-fill: rgba(78, 52, 50, 0.5);
-  --raised-fill-hover: rgba(104, 70, 64, 0.62);
+  --raised-fill: rgba(62, 68, 78, 0.46);
+  --raised-fill-hover: rgba(86, 94, 106, 0.6);
   --raised-edge: rgba(255, 255, 255, 0.16);
   --raised-spec: rgba(255, 255, 255, 0.55);
   --raised-sheen: rgba(255, 255, 255, 0.07);
@@ -38,7 +40,7 @@
   --control-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 12px -6px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.03);
 
   /* rest: the assistant turn. A resting surface the text sits on, lighter than raised, no lift. */
-  --rest-fill: rgba(30, 20, 22, 0.56);
+  --rest-fill: rgba(22, 25, 31, 0.52);
   --rest-edge: rgba(255, 255, 255, 0.08);
   --rest-spec: rgba(255, 255, 255, 0.14);
   --rest-sheen: rgba(255, 255, 255, 0.02);
@@ -47,7 +49,7 @@
   --rest-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
 
   /* solid tier: code blocks and generated-UI cards */
-  --solid-fill: rgba(20, 14, 16, 0.94);
+  --solid-fill: rgba(14, 16, 19, 0.94);
   --solid-edge: rgba(255, 255, 255, 0.1);
   --solid-spec: rgba(255, 255, 255, 0.2);
   --solid-sheen: rgba(255, 255, 255, 0.025);
@@ -56,21 +58,23 @@
   --solid-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 14px 28px -14px rgba(0, 0, 0, 0.55);
 
   --edge-w: 1px;
-  --solid: #150f11;
-  --solid-raised: #231819;
+  --solid: #0e1013;
+  --solid-raised: #171a1f;
   --solid-border: rgba(255, 255, 255, 0.12);
 
-  --text: #f8f2ee;
-  --text-2: #c7b8b1;
-  --accent: #f2a950;
-  --accent-ink: #2a1500;
-  --primary: #f8f2ee;
-  --primary-ink: #170f10;
+  --text: #f4f6f8;
+  --text-2: #b6bdc7;
+  /* The one accent is the play-button white of the reference: send, sign-in, live-run bar. */
+  --accent: #f4f6f8;
+  --accent-ink: #0b0e12;
+  --primary: #f4f6f8;
+  --primary-ink: #0b0e12;
   --focus: #ffffff;
-  --focus-halo: #0e0a0c;
-  --warn-fill: #3a2a10;
-  --warn-ink: #ffe0ad;
-  --warn-border: #c47a1a;
+  --focus-halo: #08090b;
+  /* Notices are inverted, not coloured: unmistakable without adding a hue. */
+  --warn-fill: #e9edf2;
+  --warn-ink: #0b0e12;
+  --warn-border: #ffffff;
 
   /* Radii: pill for controls, large for floating panes, medium for chrome, small for code. */
   --r-sm: 0.6rem;
@@ -83,52 +87,57 @@
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    /* Paper, not sunset: a neutral near-white base, no ambient colour. Elevation does the work. */
-    --bg-base: #f3f4f5;
-    --amb-amber: transparent; --amb-rust: transparent; --amb-sand: transparent; --amb-plum: transparent;
-    --amb-ring: transparent; --amb-ring-shade: transparent;
+    /* Paper with depth: an off-white base lit by soft grey and blue-grey fields, low in
+       contrast so it reads as a surface, strong enough that the glass visibly blurs it. */
+    --bg-base: #eceff3;
+    --amb-hi: rgba(255, 255, 255, 0.9);
+    --amb-side: rgba(120, 136, 160, 0.34);
+    --amb-lo: rgba(96, 108, 130, 0.3);
+    --amb-mid: rgba(150, 160, 178, 0.22);
+    --amb-ring: rgba(255, 255, 255, 0.7);
+    --amb-ring-shade: rgba(70, 84, 108, 0.2);
 
-    --chrome-fill: rgba(255, 255, 255, 0.6);
-    --chrome-edge: rgba(20, 24, 30, 0.1);
+    --chrome-fill: rgba(255, 255, 255, 0.3);
+    --chrome-edge: rgba(20, 28, 40, 0.1);
     --chrome-spec: rgba(255, 255, 255, 1);
-    --chrome-sheen: rgba(255, 255, 255, 0.4);
-    --chrome-shadow: 0 1px 0 rgba(20, 24, 30, 0.06), 0 14px 26px -16px rgba(20, 24, 30, 0.22);
+    --chrome-sheen: rgba(255, 255, 255, 0.3);
+    --chrome-shadow: 0 1px 0 rgba(20, 28, 40, 0.06), 0 14px 26px -16px rgba(20, 28, 40, 0.28);
 
-    --raised-fill: rgba(255, 255, 255, 0.86);
-    --raised-fill-hover: #ffffff;
-    --raised-edge: rgba(20, 24, 30, 0.14);
+    --raised-fill: rgba(255, 255, 255, 0.46);
+    --raised-fill-hover: rgba(255, 255, 255, 0.66);
+    --raised-edge: rgba(20, 28, 40, 0.14);
     --raised-spec: rgba(255, 255, 255, 1);
-    --raised-sheen: rgba(255, 255, 255, 0.5);
-    --raised-shadow: 0 1px 2px rgba(20, 24, 30, 0.18), 0 8px 16px -6px rgba(20, 24, 30, 0.14), 0 30px 60px -18px rgba(20, 24, 30, 0.22), 0 0 0 1px rgba(255, 255, 255, 0.6);
-    --control-shadow: 0 1px 2px rgba(20, 24, 30, 0.16), 0 6px 12px -6px rgba(20, 24, 30, 0.14), 0 0 0 1px rgba(255, 255, 255, 0.5);
+    --raised-sheen: rgba(255, 255, 255, 0.4);
+    --raised-shadow: 0 1px 2px rgba(20, 28, 40, 0.2), 0 8px 16px -6px rgba(20, 28, 40, 0.16), 0 30px 60px -18px rgba(20, 28, 40, 0.28), 0 0 0 1px rgba(255, 255, 255, 0.5);
+    --control-shadow: 0 1px 2px rgba(20, 28, 40, 0.18), 0 6px 12px -6px rgba(20, 28, 40, 0.16), 0 0 0 1px rgba(255, 255, 255, 0.45);
 
-    --rest-fill: rgba(255, 255, 255, 0.72);
-    --rest-edge: rgba(20, 24, 30, 0.1);
+    --rest-fill: rgba(255, 255, 255, 0.4);
+    --rest-edge: rgba(20, 28, 40, 0.1);
     --rest-spec: rgba(255, 255, 255, 1);
-    --rest-sheen: transparent;
-    --rest-shadow: 0 1px 2px rgba(20, 24, 30, 0.1);
+    --rest-sheen: rgba(255, 255, 255, 0.25);
+    --rest-shadow: 0 1px 2px rgba(20, 28, 40, 0.12);
 
-    --solid-fill: rgba(255, 255, 255, 0.96);
-    --solid-edge: rgba(20, 24, 30, 0.12);
+    --solid-fill: rgba(255, 255, 255, 0.94);
+    --solid-edge: rgba(20, 28, 40, 0.12);
     --solid-spec: rgba(255, 255, 255, 1);
     --solid-sheen: rgba(255, 255, 255, 0.6);
-    --solid-shadow: 0 1px 2px rgba(20, 24, 30, 0.16), 0 14px 28px -14px rgba(20, 24, 30, 0.2);
+    --solid-shadow: 0 1px 2px rgba(20, 28, 40, 0.16), 0 14px 28px -14px rgba(20, 28, 40, 0.22);
 
-    --solid: #fafafa;
+    --solid: #f8f9fb;
     --solid-raised: #ffffff;
-    --solid-border: rgba(20, 24, 30, 0.18);
+    --solid-border: rgba(20, 28, 40, 0.18);
 
-    --text: #14171a;
-    --text-2: #444a51;
-    --accent: #9a4f00;
-    --accent-ink: #ffffff;
-    --primary: #14171a;
-    --primary-ink: #fafafa;
-    --focus: #14171a;
+    --text: #10141a;
+    --text-2: #2e353e;
+    --accent: #10141a;
+    --accent-ink: #f8f9fb;
+    --primary: #10141a;
+    --primary-ink: #f8f9fb;
+    --focus: #10141a;
     --focus-halo: #ffffff;
-    --warn-fill: #fff1dc;
-    --warn-ink: #4a2800;
-    --warn-border: #b35c00;
+    --warn-fill: #10141a;
+    --warn-ink: #f8f9fb;
+    --warn-border: #10141a;
   }
 }
 
@@ -150,10 +159,10 @@ body.chat { height: 100vh; overflow: hidden; }
 body::before, body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; }
 body::before {
   background:
-    radial-gradient(95vmax 70vmax at 92% 0%, var(--amb-amber) 0%, color-mix(in srgb, var(--amb-amber) 55%, transparent) 20%, color-mix(in srgb, var(--amb-amber) 24%, transparent) 45%, color-mix(in srgb, var(--amb-amber) 7%, transparent) 72%, transparent 100%),
-    radial-gradient(105vmax 80vmax at 0% 6%, var(--amb-plum) 0%, color-mix(in srgb, var(--amb-plum) 55%, transparent) 20%, color-mix(in srgb, var(--amb-plum) 24%, transparent) 45%, color-mix(in srgb, var(--amb-plum) 7%, transparent) 72%, transparent 100%),
-    radial-gradient(95vmax 70vmax at 0% 104%, var(--amb-rust) 0%, color-mix(in srgb, var(--amb-rust) 55%, transparent) 20%, color-mix(in srgb, var(--amb-rust) 24%, transparent) 45%, color-mix(in srgb, var(--amb-rust) 7%, transparent) 72%, transparent 100%),
-    radial-gradient(80vmax 60vmax at 64% 84%, var(--amb-sand) 0%, color-mix(in srgb, var(--amb-sand) 55%, transparent) 20%, color-mix(in srgb, var(--amb-sand) 24%, transparent) 45%, color-mix(in srgb, var(--amb-sand) 7%, transparent) 72%, transparent 100%);
+    radial-gradient(95vmax 70vmax at 92% 0%, var(--amb-hi) 0%, color-mix(in srgb, var(--amb-hi) 55%, transparent) 20%, color-mix(in srgb, var(--amb-hi) 24%, transparent) 45%, color-mix(in srgb, var(--amb-hi) 7%, transparent) 72%, transparent 100%),
+    radial-gradient(105vmax 80vmax at 0% 6%, var(--amb-side) 0%, color-mix(in srgb, var(--amb-side) 55%, transparent) 20%, color-mix(in srgb, var(--amb-side) 24%, transparent) 45%, color-mix(in srgb, var(--amb-side) 7%, transparent) 72%, transparent 100%),
+    radial-gradient(95vmax 70vmax at 0% 104%, var(--amb-lo) 0%, color-mix(in srgb, var(--amb-lo) 55%, transparent) 20%, color-mix(in srgb, var(--amb-lo) 24%, transparent) 45%, color-mix(in srgb, var(--amb-lo) 7%, transparent) 72%, transparent 100%),
+    radial-gradient(80vmax 60vmax at 64% 84%, var(--amb-mid) 0%, color-mix(in srgb, var(--amb-mid) 55%, transparent) 20%, color-mix(in srgb, var(--amb-mid) 24%, transparent) 45%, color-mix(in srgb, var(--amb-mid) 7%, transparent) 72%, transparent 100%);
 }
 body::after {
   background:
@@ -210,8 +219,8 @@ a.btn:active, button:active:not(:disabled) { transform: scale(0.97); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 .icon { width: 1.1rem; height: 1.1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
-/* Two solid fills only. Amber is the send action; the sign-in link is the page's single
-   primary action, in the near-white of the reference's play button, so amber stays rare. */
+/* Two solid fills only: the send action and the sign-in link, both the reference's play-button
+   white (near-black in light). Nothing else is filled, so the accent stays rare. */
 .composer button[type="submit"] { --fill: var(--accent); --spec: rgba(255, 255, 255, 0.5); --sheen: transparent; --edge: transparent; color: var(--accent-ink); font-weight: 600; }
 .composer button[type="submit"]:hover:not(:disabled) { --fill: var(--accent); filter: brightness(1.08); }
 a.btn { --fill: var(--primary); --edge: transparent; --spec: rgba(255, 255, 255, 0.6); --sheen: transparent; color: var(--primary-ink); font-weight: 600; }
@@ -366,7 +375,7 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
     --chrome-spec: transparent; --raised-spec: transparent; --solid-spec: transparent; --rest-spec: transparent; --rest-edge: var(--text); --rest-shadow: none;
     --chrome-shadow: none; --raised-shadow: none; --control-shadow: none; --solid-shadow: none;
     --edge-w: 2px; --text-2: var(--text);
-    --amb-amber: transparent; --amb-rust: transparent; --amb-sand: transparent; --amb-plum: transparent; --amb-ring: transparent; --amb-ring-shade: transparent;
+    --amb-hi: transparent; --amb-lo: transparent; --amb-mid: transparent; --amb-side: transparent; --amb-ring: transparent; --amb-ring-shade: transparent;
   }
   a.btn, .composer button[type="submit"] { --edge: var(--text); }
 }
