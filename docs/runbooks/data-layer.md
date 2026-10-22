@@ -47,6 +47,17 @@ writes only `audit_log` because it has no actor and is not an approval decision.
 
 ## File and path safety
 
-`store.Open` rejects database paths containing `?`, `#` or `%` (the driver would rewrite them), forces
-mode 0600 on the file even if it already existed (restored backup), and verifies via
-`PRAGMA database_list` that the file the driver opened is the file it secured.
+`store.Open` guarantees, on every start:
+
+- The data directory is forced to 0700 (even if it existed as 0755), after resolving symlinks, so a
+  data dir mounted through a symlink works and the chmod hits the real directory.
+- The database file and any existing `-wal`/`-shm` sidecars are forced to 0600 before the first
+  connection, and again after the pragmas run (SQLite creates sidecars lazily and only copies the db
+  file's mode when it creates them). Sidecars from a restore are chmod-ed, never deleted: deleting a
+  WAL loses committed rows.
+- Paths containing `?`, `#` or `%` are rejected (the driver would rewrite them), and
+  `PRAGMA database_list` proves the file the driver opened is the file that was secured.
+
+Not guaranteed: files are readable with their old mode between the restore and the next start, and a
+sidecar SQLite creates later (after a checkpoint removes the old one) takes the db file's mode, 0600.
+Restore into a 0700 directory.

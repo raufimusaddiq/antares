@@ -75,7 +75,7 @@ CREATE TABLE chats (
   hermes_binding_id TEXT NOT NULL,
   hermes_session_id TEXT NOT NULL,
   title             TEXT,
-  status            TEXT NOT NULL,
+  status            TEXT NOT NULL CHECK (status IN ('ACTIVE','ARCHIVED','PENDING_DELETE','DELETE_FAILED')),
   created_at        TEXT NOT NULL,
   updated_at        TEXT NOT NULL,
   UNIQUE (hermes_binding_id, hermes_session_id),

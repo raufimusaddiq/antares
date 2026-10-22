@@ -32,20 +32,32 @@ func Open(path string) (*sql.DB, error) {
 	if path == "" || strings.ContainsAny(path, "?#%") {
 		return nil, errors.New("store: invalid database path")
 	}
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+	// MkdirAll's mode is ignored for an existing directory, so tighten it
+	// explicitly, and resolve symlinks so everything below acts on the real
+	// location (a data dir mounted through a symlink is legitimate).
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("store: create data dir: %w", err)
 	}
+	realDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return nil, fmt.Errorf("store: resolve data dir: %w", err)
+	}
+	if err := os.Chmod(realDir, 0o700); err != nil {
+		return nil, fmt.Errorf("store: secure data dir: %w", err)
+	}
+	path = filepath.Join(realDir, filepath.Base(path))
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("store: create database file: %w", err)
 	}
-	// The mode argument above is ignored for an existing file (a restored
-	// backup, a copied volume), so tighten it explicitly.
-	if err := f.Chmod(0o600); err != nil {
-		f.Close()
-		return nil, fmt.Errorf("store: secure database file: %w", err)
-	}
 	f.Close()
+	if path, err = filepath.EvalSymlinks(path); err != nil { // a symlinked db file
+		return nil, fmt.Errorf("store: resolve database file: %w", err)
+	}
+	if err := secureFiles(path); err != nil {
+		return nil, err
+	}
 
 	dsn := fmt.Sprintf("file:%s?_txlock=immediate&_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)"+
 		"&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)", path, busyTimeout.Milliseconds())
@@ -77,8 +89,7 @@ func Open(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("store: read database list: %w", err)
 	}
-	want, err := filepath.Abs(path)
-	if err != nil || opened != want {
+	if real, err := filepath.EvalSymlinks(opened); err != nil || real != path {
 		db.Close()
 		return nil, errors.New("store: driver opened a different file than the one secured")
 	}
@@ -86,7 +97,27 @@ func Open(path string) (*sql.DB, error) {
 		db.Close()
 		return nil, fmt.Errorf("store: pragmas not applied (journal_mode=%s foreign_keys=%d)", mode, fk)
 	}
+	// SQLite creates -wal/-shm lazily and only copies the db file's mode when it
+	// creates them; one that came along with a restore keeps its old mode.
+	// Never delete them (that would lose committed rows): chmod, and repeat now
+	// that the pragmas have created whatever was missing.
+	if err := secureFiles(path); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
+}
+
+// secureFiles forces 0600 on the database file and its WAL sidecars. Missing
+// sidecars are fine. The mode of the database file itself is not inherited by
+// one that already exists (a restored backup), hence the explicit chmod.
+func secureFiles(path string) error {
+	for _, suf := range []string{"", "-wal", "-shm"} {
+		if err := os.Chmod(path+suf, 0o600); err != nil && !(suf != "" && errors.Is(err, os.ErrNotExist)) {
+			return fmt.Errorf("store: secure database file%s: %w", suf, err)
+		}
+	}
+	return nil
 }
 
 // NewID returns a random 128-bit identifier.

@@ -240,10 +240,10 @@ func TestSchemaRefusesCrossUserOwnership(t *testing.T) {
 			VALUES (?,?,?,'MUX_PREFIX','ep',x'00',1,?,?,'READY','t')`, "b"+u, u, "u_profile"+u, "fp"+u, "mem"+u)
 	}
 	mustExec(`INSERT INTO chats (id, user_id, hermes_binding_id, hermes_session_id, status, created_at, updated_at)
-		VALUES ('chatA','A','bA','s1','open','t','t')`)
+		VALUES ('chatA','A','bA','s1','ACTIVE','t','t')`)
 	// B cannot hang a chat on A's binding, nor a run on A's chat.
 	if _, err := db.Exec(`INSERT INTO chats (id, user_id, hermes_binding_id, hermes_session_id, status, created_at, updated_at)
-		VALUES ('chatX','B','bA','s2','open','t','t')`); err == nil {
+		VALUES ('chatX','B','bA','s2','ACTIVE','t','t')`); err == nil {
 		t.Fatal("chat of B on A's binding was accepted")
 	}
 	if _, err := db.Exec(`INSERT INTO runs (id, user_id, chat_id, idempotency_key, status, created_at, updated_at)
@@ -362,5 +362,112 @@ func TestSchemaCurrentFailsOnGap(t *testing.T) {
 	}
 	if err := SchemaCurrent(ctx, db, m); err == nil {
 		t.Fatal("a gap below the maximum must not report ready")
+	}
+}
+
+func mode(t *testing.T, p string) os.FileMode {
+	t.Helper()
+	st, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return st.Mode().Perm()
+}
+
+func TestOpenSecuresPreExistingSidecars(t *testing.T) {
+	// Simulate a restore of a crashed/hot-copied database: while a first handle
+	// is live (so its -wal and -shm hold committed rows), copy all three files
+	// to a fresh directory with loose modes, then Open the copy.
+	src, sp := migrated(t)
+	if _, err := src.Exec(`INSERT INTO users (id, google_issuer, google_sub, email, role, approval_status, tenant_status, created_at)
+		VALUES ('u','i','s','plaintext-probe@example.test','USER','PENDING','UNPROVISIONED','t')`); err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(t.TempDir(), "antares.db")
+	for _, suf := range []string{"", "-wal", "-shm"} {
+		b, err := os.ReadFile(sp + suf)
+		if err != nil {
+			t.Fatalf("source %s missing: %v", suf, err)
+		}
+		if err := os.WriteFile(p+suf, b, 0o644); err != nil {
+			t.Fatal(err)
+		}
+		os.Chmod(p+suf, 0o644)
+	}
+	db, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var email string
+	if err := db.QueryRow(`SELECT email FROM users WHERE id = 'u'`).Scan(&email); err != nil {
+		t.Fatalf("committed row must survive Open (no WAL deletion): %v", err)
+	}
+	if _, err := db.Exec(`UPDATE users SET display_name = 'x' WHERE id = 'u'`); err != nil {
+		t.Fatal(err)
+	}
+	for _, suf := range []string{"", "-wal", "-shm"} {
+		if m := mode(t, p+suf); m != 0o600 {
+			t.Errorf("antares.db%s has mode %v after Open and a write, want 0600", suf, m)
+		}
+	}
+}
+
+func TestOpenTightensExistingDataDir(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "data")
+	os.Mkdir(dir, 0o755)
+	os.Chmod(dir, 0o755)
+	db, err := Open(filepath.Join(dir, "antares.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if m := mode(t, dir); m != 0o700 {
+		t.Fatalf("data dir mode %v, want 0700", m)
+	}
+}
+
+func TestOpenThroughSymlinks(t *testing.T) {
+	root := t.TempDir()
+	real := filepath.Join(root, "real")
+	os.Mkdir(real, 0o700)
+	linkDir := filepath.Join(root, "linkdir")
+	os.Symlink(real, linkDir)
+
+	// symlinked parent directory
+	db, err := Open(filepath.Join(linkDir, "a.db"))
+	if err != nil {
+		t.Fatalf("symlinked data dir must start: %v", err)
+	}
+	db.Close()
+
+	// symlinked db file
+	os.WriteFile(filepath.Join(real, "b.db"), nil, 0o644)
+	os.Chmod(filepath.Join(real, "b.db"), 0o644)
+	os.Symlink(filepath.Join(real, "b.db"), filepath.Join(root, "b-link.db"))
+	db, err = Open(filepath.Join(root, "b-link.db"))
+	if err != nil {
+		t.Fatalf("symlinked db file must start: %v", err)
+	}
+	db.Close()
+	if m := mode(t, filepath.Join(real, "b.db")); m != 0o600 {
+		t.Fatalf("symlink target mode %v, want 0600", m)
+	}
+}
+
+func TestChatStatusVocabularyIsConstrained(t *testing.T) {
+	db, _ := migrated(t)
+	db.Exec(`INSERT INTO users (id, google_issuer, google_sub, email, role, approval_status, tenant_status, created_at) VALUES ('A','i','s','a@example.test','USER','APPROVED','READY','t')`)
+	db.Exec(`INSERT INTO tenant_bindings (id, user_id, profile_name, routing_mode, upstream_endpoint_id, credential_ciphertext, credential_key_version, credential_fingerprint, memory_scope_key, status, created_at) VALUES ('bA','A','u_pa','MUX_PREFIX','ep',x'00',1,'fp','mem','READY','t')`)
+	ins := func(status string) error {
+		_, err := db.Exec(`INSERT INTO chats (id, user_id, hermes_binding_id, hermes_session_id, status, created_at, updated_at) VALUES (?,?,?,?,?,'t','t')`,
+			"c"+status, "A", "bA", "s"+status, status)
+		return err
+	}
+	if err := ins("ACTIVE"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ins("whatever"); err == nil {
+		t.Fatal("chats.status accepted an arbitrary string")
 	}
 }
