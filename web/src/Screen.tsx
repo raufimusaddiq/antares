@@ -99,7 +99,7 @@ export function Screen({ view, onRefresh, onSignOut, signOutFailed }: Props) {
   const account = view.screen === "account" ? view.account : null;
   const showLogin = view.screen === "login" || view.screen === "login-failed";
   return (
-    <main>
+    <main className="screen">
       <h1>{c.heading}</h1>
       <p>{c.message}</p>
       {account && (

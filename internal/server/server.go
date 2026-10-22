@@ -191,7 +191,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, name string) 
 	h.Set("X-Content-Type-Options", "nosniff")
 	if name == "index.html" {
 		// The shell is the one document: no scripts but our own bundle, no framing.
-		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' "+openUIStyleHash+"; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' "+openUIStyleHash+"; connect-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cache-Control", "no-store")
 	} else if strings.HasPrefix(name, "assets/") { // content-hashed by the build

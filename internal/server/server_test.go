@@ -122,7 +122,8 @@ func TestRootServesTheBuiltBundle(t *testing.T) {
 			t.Fatalf("%s: %d %q", p, rec.Code, rec.Body.String())
 		}
 		if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "script-src 'self'") || strings.Contains(csp, "unsafe") ||
-			!strings.Contains(csp, "style-src 'self' 'sha256-") || strings.Count(csp, "sha256-") != 1 {
+			!strings.Contains(csp, "style-src 'self' 'sha256-") || strings.Count(csp, "sha256-") != 1 ||
+			!strings.Contains(csp, "font-src 'self';") {
 			t.Errorf("%s csp = %q", p, csp)
 		}
 		if rec.Header().Get("Cache-Control") != "no-store" {
