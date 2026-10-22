@@ -139,18 +139,22 @@ func checkUnknown(ctx context.Context, db *sql.DB, migs []migration) error {
 	return rows.Err()
 }
 
-// SchemaCurrent reports whether the database is at the latest migration in fsys.
+// SchemaCurrent reports whether the applied set is exactly the migrations in
+// fsys: none missing (a gap below the maximum is not ready) and none unknown.
 func SchemaCurrent(ctx context.Context, db *sql.DB, fsys fs.FS) error {
 	migs, err := load(fsys)
 	if err != nil {
 		return err
 	}
-	var max sql.NullInt64
-	if err := db.QueryRowContext(ctx, `SELECT MAX(version) FROM schema_migrations`).Scan(&max); err != nil {
+	if err := checkUnknown(ctx, db, migs); err != nil {
 		return err
 	}
-	if len(migs) > 0 && (!max.Valid || int(max.Int64) != migs[len(migs)-1].version) {
-		return fmt.Errorf("schema at version %d, want %d", max.Int64, migs[len(migs)-1].version)
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&n); err != nil {
+		return err
+	}
+	if n != len(migs) {
+		return fmt.Errorf("schema has %d migrations applied, want %d", n, len(migs))
 	}
 	return nil
 }

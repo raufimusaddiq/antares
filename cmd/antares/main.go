@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"sync/atomic"
 	"syscall"
 	"time"
 
 	"github.com/raufimusaddiq/antares/internal/config"
+	"github.com/raufimusaddiq/antares/internal/secrets"
 	"github.com/raufimusaddiq/antares/internal/server"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
@@ -25,6 +27,12 @@ func main() {
 func run() error {
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
+		return err
+	}
+	// Prove the master key is usable now, not when slice 2 first seals a key.
+	// A bad key refuses startup: running without it would only defer the failure
+	// to the first credential write.
+	if _, err := secrets.New(cfg.SecretKey); err != nil {
 		return err
 	}
 	db, err := store.Open(cfg.DBPath)
@@ -50,10 +58,18 @@ func run() error {
 		log.Printf("admin bootstrap: created=%v", created)
 	}
 
+	// Log readiness transitions, not every probe: a proxy health check would
+	// otherwise write a line every few seconds for as long as the DB is down.
+	var wasReady atomic.Bool
+	wasReady.Store(true)
 	ready := func(ctx context.Context) error {
 		err := store.SchemaCurrent(ctx, db, store.Migrations())
-		if err != nil {
-			log.Printf("readyz: %v", err)
+		if ok := err == nil; wasReady.Swap(ok) != ok {
+			if ok {
+				log.Printf("readyz: recovered")
+			} else {
+				log.Printf("readyz: not ready: %v", err)
+			}
 		}
 		return err
 	}

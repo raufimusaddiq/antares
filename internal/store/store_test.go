@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"database/sql"
+	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -277,5 +279,88 @@ func TestSchemaCurrentFailsOnUnmigratedDB(t *testing.T) {
 	db.Exec(`CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT, checksum TEXT, applied_at TEXT)`)
 	if err := SchemaCurrent(context.Background(), db, Migrations()); err == nil {
 		t.Fatal("unmigrated database must not be ready")
+	}
+}
+
+func TestOpenTightensExistingFileMode(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "restored.db")
+	if err := os.WriteFile(p, nil, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(p, 0o644); err != nil { // defeat umask
+		t.Fatal(err)
+	}
+	db, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	st, err := os.Stat(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if st.Mode().Perm() != 0o600 {
+		t.Fatalf("existing database kept mode %v, want 0600", st.Mode().Perm())
+	}
+}
+
+func TestOpenRejectsPathsTheDriverWouldRewrite(t *testing.T) {
+	dir := t.TempDir()
+	for _, name := range []string{"a%20b.db", "a?b.db", "a#b.db"} {
+		p := filepath.Join(dir, name)
+		if db, err := Open(p); err == nil {
+			db.Close()
+			t.Errorf("%q should be rejected", name)
+		}
+		if _, err := os.Stat(p); err == nil {
+			t.Errorf("%q: a file was created before rejection", name)
+		}
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("rejected paths left files behind: %v", entries)
+	}
+}
+
+func TestOpenedFileIsTheSecuredFile(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "with space.db")
+	db, err := Open(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	var seq int
+	var name, file string
+	if err := db.QueryRow(`PRAGMA database_list`).Scan(&seq, &name, &file); err != nil {
+		t.Fatal(err)
+	}
+	if file != p {
+		t.Fatalf("driver opened %q, pre-flight secured %q", file, p)
+	}
+	entries, _ := os.ReadDir(dir)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), "-wal") || strings.HasSuffix(e.Name(), "-shm") {
+			continue
+		}
+		st, _ := e.Info()
+		if e.Name() != "with space.db" || st.Mode().Perm() != 0o600 {
+			t.Errorf("unexpected or loose file %s %v", e.Name(), st.Mode().Perm())
+		}
+	}
+}
+
+func TestSchemaCurrentFailsOnGap(t *testing.T) {
+	db, _ := migrated(t)
+	ctx := context.Background()
+	m := fstest.MapFS{}
+	for i, n := range []string{"0001_a.sql", "0002_b.sql", "0003_c.sql"} {
+		m[n] = &fstest.MapFile{Data: []byte(fmt.Sprintf("-- %d", i))}
+	}
+	db.Exec(`DELETE FROM schema_migrations`)
+	for _, v := range []int{1, 3} { // 2 missing
+		db.Exec(`INSERT INTO schema_migrations VALUES (?,?,?,?)`, v, "x", "y", "t")
+	}
+	if err := SchemaCurrent(ctx, db, m); err == nil {
+		t.Fatal("a gap below the maximum must not report ready")
 	}
 }

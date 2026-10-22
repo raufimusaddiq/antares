@@ -34,3 +34,19 @@ refuses to start. A recorded migration whose checksum differs from its file, or 
 the binary does not know, also refuses startup. Recovery: restore the pre-migration backup or deploy
 the matching binary; there are no down-migrations. `/readyz` is 503 unless the DB answers and is at
 the latest version.
+
+## `approvals` vs `audit_log`
+
+- `approvals`: per-user lifecycle transitions made by an actor — approve, reject, suspend, reactivate —
+  with `from_status`, `to_status` and `reason`. It backs the admin user-detail history (AUTH-005).
+- `audit_log`: everything else that is security- or system-relevant — admin bootstrap, logins, binding
+  changes, key rotation, policy changes, denied requests. It never carries status transitions.
+
+A status change writes `approvals`; it may also write `audit_log` for the request outcome. Bootstrap
+writes only `audit_log` because it has no actor and is not an approval decision.
+
+## File and path safety
+
+`store.Open` rejects database paths containing `?`, `#` or `%` (the driver would rewrite them), forces
+mode 0600 on the file even if it already existed (restored backup), and verifies via
+`PRAGMA database_list` that the file the driver opened is the file it secured.

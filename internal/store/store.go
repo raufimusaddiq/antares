@@ -29,7 +29,7 @@ const (
 // two processes contend on the write lock up front, honouring busy_timeout,
 // instead of failing on a lock upgrade mid-transaction.
 func Open(path string) (*sql.DB, error) {
-	if path == "" || strings.ContainsAny(path, "?#") {
+	if path == "" || strings.ContainsAny(path, "?#%") {
 		return nil, errors.New("store: invalid database path")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
@@ -38,6 +38,12 @@ func Open(path string) (*sql.DB, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("store: create database file: %w", err)
+	}
+	// The mode argument above is ignored for an existing file (a restored
+	// backup, a copied volume), so tighten it explicitly.
+	if err := f.Chmod(0o600); err != nil {
+		f.Close()
+		return nil, fmt.Errorf("store: secure database file: %w", err)
 	}
 	f.Close()
 
@@ -62,6 +68,19 @@ func Open(path string) (*sql.DB, error) {
 	if err := db.QueryRowContext(ctx, `PRAGMA foreign_keys`).Scan(&fk); err != nil {
 		db.Close()
 		return nil, fmt.Errorf("store: read foreign_keys: %w", err)
+	}
+	// The file the driver opened must be the file secured above. '?', '#' and
+	// '%' are rejected because the driver would rewrite them; this proves it.
+	var seq int
+	var schema, opened string
+	if err := db.QueryRowContext(ctx, `PRAGMA database_list`).Scan(&seq, &schema, &opened); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("store: read database list: %w", err)
+	}
+	want, err := filepath.Abs(path)
+	if err != nil || opened != want {
+		db.Close()
+		return nil, errors.New("store: driver opened a different file than the one secured")
 	}
 	if mode != "wal" || fk != 1 {
 		db.Close()
