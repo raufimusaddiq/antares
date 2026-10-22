@@ -554,6 +554,9 @@ func TestVerifyProbeCount(t *testing.T) {
 }
 
 func TestValidateAllowedToolsetsRejectsUnknownAndFloorNames(t *testing.T) {
+	if err := ValidateAllowedToolsets(nil); err == nil || !strings.Contains(err.Error(), "must not be empty") {
+		t.Errorf("empty list accepted: %v", err)
+	}
 	if err := ValidateAllowedToolsets(DefaultAllowedToolsets); err != nil {
 		t.Fatalf("default set rejected: %v", err)
 	}

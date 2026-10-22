@@ -211,6 +211,13 @@ func TestTenantToolsetPolicyRejectsUnknownNames(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "ANTARES_TENANT_ALLOWED_TOOLSETS") || !strings.Contains(err.Error(), "visoin") {
 		t.Fatalf("unknown toolset accepted or unnamed: %v", err)
 	}
+	// An allow-list with no names is refused too, as the provisioner refuses it.
+	for _, empty := range []string{",", " ", " , "} {
+		m["ANTARES_TENANT_ALLOWED_TOOLSETS"] = empty
+		if _, err := Load(env(m)); err == nil || !strings.Contains(err.Error(), "must not be empty") {
+			t.Errorf("%q accepted: %v", empty, err)
+		}
+	}
 }
 
 func TestTenantToolsetPolicyIsConfigurableButNotPastTheFloor(t *testing.T) {

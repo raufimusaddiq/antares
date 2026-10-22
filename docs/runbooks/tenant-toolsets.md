@@ -12,11 +12,12 @@ the next provision or rotate. Narrowing a single profile by hand is not durable;
 
 ## Status
 
-- **Enforced and demonstrated on a live profile** (Hermes v0.22.2, 2026-10-23, throwaway profile, since
-  deleted): after the provisioner's `config set`, `GET /p/<profile>/v1/toolsets` with that profile's key
-  returned 200 with `web, vision, image_gen, skills, todo, memory` enabled and every denied toolset
+- **Demonstrated on a live profile** (Hermes v0.22.2, 2026-10-23, throwaway profile, since deleted).
+  The provisioner's exact `config set` command was run by hand, not through a running provisioner. Then
+  `GET /p/<profile>/v1/toolsets` with that profile's key returned 200 with
+  `web, vision, image_gen, skills, todo, memory` enabled and every denied toolset
   (`terminal, file, code_execution, delegation, cronjob, session_search, connections, browser`) reported
-  `enabled: false`; the rest of the 27 reported toolsets were also off. The `config set` was the provisioner's exact command, run by hand (not through a running provisioner). Output below.
+  `enabled: false`; the rest of the 27 reported toolsets were also off. Output below.
 - Phase 0's filesystem-isolation FAIL stands. This policy is a gate on which tools exist, not a sandbox.
 - The two open questions below (`web_extract`, `skill_manage`) are still unverified.
 

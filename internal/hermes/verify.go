@@ -67,6 +67,9 @@ var DefaultAllowedToolsets = []string{"web", "vision", "image_gen", "skills", "m
 // not at verification time, so a bad policy never starts. It is the same rule
 // the provisioner applies to PROVISIONER_ALLOWED_TOOLSETS.
 func ValidateAllowedToolsets(names []string) error {
+	if len(names) == 0 {
+		return errors.New("allowed toolsets must not be empty")
+	}
 	for _, n := range names {
 		for _, d := range DeniedToolsets {
 			if n == d {
