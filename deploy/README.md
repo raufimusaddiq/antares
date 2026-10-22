@@ -24,26 +24,30 @@ behind `go.mod`.
 ## 1. Secret files (outside the repository)
 
 ```sh
-sudo install -d -m 0700 -o "$USER" -g "$USER" /opt/antares
-sudo install -d -m 0755 -o root -g root /opt/antares/bin
+sudo install -d -m 0755 -o root -g root /opt/antares /opt/antares/bin
 sudo install -m 0600 -o root -g root /dev/null /opt/antares/antares.env        # variables: see ../.env.example
 sudo install -m 0600 -o root -g root /dev/null /opt/antares/provisioner.env
 ```
 
-This is the layout the live host runs:
+Layout:
 
 | Path | Mode | Owner |
 |---|---|---|
-| `/opt/antares` | `700` | the deploying user |
+| `/opt/antares`, `/opt/antares/bin` | `755` | `root:root` |
 | `/opt/antares/antares.env`, `/opt/antares/provisioner.env` | `600` | `root:root` |
 | `/opt/antares/bin/hermes-provisioner` | `755` | `root:root` |
 
-Why they differ: the secrets are readable only by root. systemd reads `EnvironmentFile` as root before
-dropping to `antares-prov`, so the helper never needs read access, and neither does any other local
-user. Edit them with `sudo`. The binary is root-owned and not writable by the deploying user or by
-`antares-prov`, so a compromise of either cannot swap the code that runs with the Docker group. Compose
-reads `antares.env` as the invoking user's `docker compose` client, so run it with `sudo` or point
-`ANTARES_ENV_FILE` at a readable copy.
+Why: everything is root-owned, so only root can create, rename or unlink anything in the tree. The
+directories are world-searchable (`755`) because the unit runs as `antares-prov`, and `execve` of
+`ExecStart` needs search on every parent directory. The secrets stay unreadable to everyone but root
+(`600`): systemd reads `EnvironmentFile` as root before dropping privileges, so the helper needs no
+read access. The deploying user and `antares-prov` cannot replace the binary, which runs with the
+Docker group. Edit the env files with `sudo`. Compose also reads `antares.env` as the invoking user,
+so run `docker compose` with `sudo` (or point `ANTARES_ENV_FILE` at a readable copy).
+
+Note: the current live host has `/opt/antares` as `700` owned by the deploying user. That makes the
+binary's directory replaceable by that user, and it only starts because of how systemd opens the
+binary; do not copy it. Align the host to the table above at the owner's convenience.
 
 `provisioner.env`:
 
@@ -74,7 +78,7 @@ git -C <checkout> checkout $ANTARES_TAG
 (cd <checkout>/tools/hermes-provisioner && go build -o /tmp/hermes-provisioner .)
 sudo useradd --system --create-home --shell /usr/sbin/nologin antares-prov   # skip if it exists
 sudo usermod -aG docker antares-prov
-sudo install -d /opt/antares/bin && sudo install /tmp/hermes-provisioner /opt/antares/bin/
+sudo install -d -m 0755 -o root -g root /opt/antares/bin && sudo install -m 0755 -o root -g root /tmp/hermes-provisioner /opt/antares/bin/
 sudo cp deploy/hermes-provisioner.service /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now hermes-provisioner
 ```
@@ -95,8 +99,9 @@ Both external networks must already exist; `antares` joins both and creates neit
 
 ```sh
 cd deploy
-ANTARES_TAG=$ANTARES_TAG docker compose up -d
-docker compose ps                 # antares: healthy
+# env_file is /opt/antares/antares.env (0600 root:root): run compose with sudo (keep ANTARES_TAG), or set ANTARES_ENV_FILE
+sudo ANTARES_TAG=$ANTARES_TAG docker compose up -d
+sudo docker compose ps                 # antares: healthy
 curl -fsS http://127.0.0.1:8080/readyz     # {"status":"ready"}
 ```
 
@@ -125,7 +130,7 @@ never `0.0.0.0`.
 Keep the previous tag until the new one is verified.
 
 ```sh
-ANTARES_TAG=<previous full sha> docker compose up -d
+sudo ANTARES_TAG=<previous full sha> docker compose up -d
 ```
 
 Migrations are forward-only: back up the volume first
