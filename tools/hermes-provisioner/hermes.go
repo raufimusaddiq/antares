@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os/exec"
 	"path"
 	"strings"
@@ -21,7 +22,7 @@ type Runner interface {
 type dockerRunner struct{ container string }
 
 func (d dockerRunner) Run(ctx context.Context, stdin string, args ...string) (string, string, error) {
-	ctx, cancel := context.WithTimeout(ctx, 60*time.Second)
+	ctx, cancel := context.WithTimeout(ctx, callTimeout)
 	defer cancel()
 	full := append([]string{"exec", "-i", "-u", "hermes", d.container}, args...)
 	cmd := exec.CommandContext(ctx, "docker", full...)
@@ -33,6 +34,17 @@ func (d dockerRunner) Run(ctx context.Context, stdin string, args ...string) (st
 }
 
 const profilesDir = "/opt/data/profiles"
+
+// callTimeout bounds one docker exec. A request runs at most maxCalls of them
+// in sequence (/deprovision: delete, purge-identity, test, rmdir), so
+// opBudget, the whole-request deadline, must exceed maxCalls*callTimeout and
+// the HTTP WriteTimeout must exceed opBudget.
+const (
+	callTimeout = 60 * time.Second
+	maxCalls    = 4
+	opBudget    = 270 * time.Second
+	writeSlack  = 30 * time.Second
+)
 
 // envScript sets API_SERVER_KEY in a profile .env. The path is argv[2], the
 // mode argv[1]; the key arrives on stdin. mode "init" refuses to overwrite an
@@ -59,7 +71,7 @@ os.replace(tmp, path)
 `
 
 var (
-	errKeyExists = errors.New("profile already has a key; use /rotate")
+	errKeyExists = errors.New("profile already has a key; if the key was never received, call /rotate")
 	errNoProfile = errors.New("profile does not exist")
 	errNoKey     = errors.New("profile has no key; use /provision")
 	errUpstream  = errors.New("hermes command failed")
@@ -72,13 +84,22 @@ func (h hermes) exists(ctx context.Context, slug string) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("%w: profile list: %s", errUpstream, brief(stderr))
 	}
+	found, sawDefault := false, false
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), "◆"))
+		if len(f) > 0 && f[0] == "default" {
+			sawDefault = true
+		}
 		if len(f) > 0 && f[0] == slug {
-			return true, nil
+			found = true
 		}
 	}
-	return false, nil
+	if !sawDefault {
+		// default always exists; not seeing it means the output format changed
+		// and "absent" would be a guess.
+		return false, fmt.Errorf("%w: profile list output not recognised", errUpstream)
+	}
+	return found, nil
 }
 
 func (h hermes) create(ctx context.Context, slug string) error {
@@ -92,7 +113,7 @@ func (h hermes) create(ctx context.Context, slug string) error {
 func (h hermes) writeKey(ctx context.Context, mode, slug, key string) error {
 	path := profilesDir + "/" + slug + "/.env"
 	_, _, err := h.r.Run(ctx, key, "python3", "-c", envScript, mode, path)
-	var ee *exec.ExitError
+	var ee interface{ ExitCode() int } // *exec.ExitError satisfies this
 	if errors.As(err, &ee) {
 		switch ee.ExitCode() {
 		case 3:
@@ -153,6 +174,36 @@ func (h hermes) removeResidue(ctx context.Context, slug string) error {
 		return fmt.Errorf("%w: %s is not empty or cannot be removed", errUpstream, dir)
 	}
 	return nil
+}
+
+// sweep removes empty leftover directories of deleted u_ profiles. Hermes'
+// gateway recreates the empty profile directory about 30s after a delete, when
+// it unserves the profile, so removal at /deprovision time alone is not
+// enough. Only validated slugs that are not live profiles are touched, and
+// rmdir refuses non-empty directories. It returns the directories removed.
+func (h hermes) sweep(ctx context.Context) (removed []string, err error) {
+	out, stderr, err := h.r.Run(ctx, "", "ls", "-A1", profilesDir)
+	if err != nil {
+		return nil, fmt.Errorf("%w: listing profiles dir: %s", errUpstream, brief(stderr))
+	}
+	for _, name := range strings.Split(out, "\n") {
+		if validateSlug(name) != nil {
+			continue
+		}
+		live, err := h.exists(ctx, name)
+		if err != nil {
+			return removed, err
+		}
+		if live {
+			continue
+		}
+		if err := h.removeResidue(ctx, name); err != nil {
+			log.Printf("sweep: %v", err)
+			continue
+		}
+		removed = append(removed, name)
+	}
+	return removed, nil
 }
 
 func (h hermes) reachable(ctx context.Context) bool {

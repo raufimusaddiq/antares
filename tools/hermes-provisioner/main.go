@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/hex"
@@ -21,6 +22,24 @@ type server struct {
 	h     hermes
 	token string
 	mu    sync.Mutex // one profile mutation at a time
+}
+
+// opCtx returns the context for a whole request. It is detached from the
+// client connection and bounded by opBudget, so a disconnecting caller cannot
+// cancel an operation midway (e.g. after the key is written).
+func opCtx(r *http.Request) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(r.Context()), opBudget)
+}
+
+// begin takes the mutation lock, then starts the clock: the write deadline is
+// set only after the lock is held, so time spent queued cannot expire the
+// response while the operation runs. The server-level WriteTimeout is
+// therefore unset.
+func (s *server) begin(w http.ResponseWriter, r *http.Request) (context.Context, func()) {
+	s.mu.Lock()
+	ctx, cancel := opCtx(r)
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Now().Add(opBudget + writeSlack))
+	return ctx, func() { cancel(); s.mu.Unlock() }
 }
 
 func newServer(r Runner, token string) *server {
@@ -89,9 +108,8 @@ func (s *server) provision(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ctx := r.Context()
+	ctx, done := s.begin(w, r)
+	defer done()
 	exists, err := s.h.exists(ctx, slug)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
@@ -126,9 +144,8 @@ func (s *server) rotate(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	ctx := r.Context()
+	ctx, done := s.begin(w, r)
+	defer done()
 	exists, err := s.h.exists(ctx, slug)
 	if err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
@@ -161,13 +178,31 @@ func (s *server) deprovision(w http.ResponseWriter, r *http.Request) {
 	if !ok {
 		return
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	if err := s.h.delete(r.Context(), slug); err != nil {
+	ctx, done := s.begin(w, r)
+	defer done()
+	if err := s.h.delete(ctx, slug); err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"profile": slug, "status": "deprovisioned"})
+}
+
+// sweepLoop periodically removes residue directories (see hermes.sweep). It
+// takes the same lock as the mutating handlers so it never races a create.
+func (s *server) sweepLoop(every time.Duration) {
+	for range time.Tick(every) {
+		s.mu.Lock()
+		ctx, cancel := context.WithTimeout(context.Background(), opBudget)
+		removed, err := s.h.sweep(ctx)
+		cancel()
+		s.mu.Unlock()
+		if err != nil {
+			log.Printf("sweep: %v", err)
+		}
+		for _, name := range removed {
+			log.Printf("sweep: removed residue directory for %s", name)
+		}
+	}
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -195,7 +230,8 @@ func main() {
 		addr = "127.0.0.1:8750"
 	}
 	s := newServer(dockerRunner{container}, token)
-	srv := &http.Server{Addr: addr, Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second, WriteTimeout: 120 * time.Second}
+	go s.sweepLoop(20 * time.Second)
+	srv := &http.Server{Addr: addr, Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second}
 	log.Printf("hermes-provisioner listening on %s", addr)
 	log.Fatal(srv.ListenAndServe())
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -106,6 +107,9 @@ type failCreate struct{ calls [][]string }
 
 func (f *failCreate) Run(_ context.Context, _ string, args ...string) (string, string, error) {
 	f.calls = append(f.calls, args)
+	if len(args) > 2 && args[2] == "list" {
+		return listFixture, "", nil
+	}
 	if len(args) > 2 && args[2] == "create" {
 		return "", "boom", context.DeadlineExceeded
 	}
@@ -121,10 +125,15 @@ func TestProvisionFailsClosedWhenCreateFails(t *testing.T) {
 	if strings.Contains(rec.Body.String(), `"key"`) {
 		t.Fatal("response carries a key")
 	}
+	created := false
 	for _, c := range f.calls {
+		created = created || (len(c) > 2 && c[2] == "create")
 		if c[0] == "python3" {
 			t.Fatal("a key write was attempted after create failed")
 		}
+	}
+	if !created {
+		t.Fatal("create was never attempted; test proves nothing")
 	}
 }
 
@@ -165,6 +174,142 @@ func TestDeprovisionRemovesDirAndReportsNonEmpty(t *testing.T) {
 	for _, c := range f.calls {
 		if c[0] == "rm" {
 			t.Fatal("recursive removal must never be used")
+		}
+	}
+}
+
+const listFixture = ` Profile          Model                        Gateway      Alias        Distribution
+ ───────────────    ───────────────────────────    ───────────    ───────────    ────────────────────
+ ◆default         model-x          running      —            —
+  u_existing1    model-x          stopped      —            —
+`
+
+type exitErr int
+
+func (e exitErr) Error() string { return "exit" }
+func (e exitErr) ExitCode() int { return int(e) }
+
+// scripted answers `profile list` with list and fails python3 with writeErr.
+type scripted struct {
+	list     string
+	writeErr error
+	onCreate func()
+	calls    [][]string
+}
+
+func (f *scripted) Run(ctx context.Context, _ string, args ...string) (string, string, error) {
+	f.calls = append(f.calls, args)
+	if ctx.Err() != nil { // like exec.CommandContext: a cancelled context kills the call
+		return "", "", ctx.Err()
+	}
+	switch {
+	case len(args) > 2 && args[2] == "list":
+		return f.list, "", nil
+	case len(args) > 2 && args[2] == "create" && f.onCreate != nil:
+		f.onCreate()
+	case args[0] == "python3":
+		return "", "", f.writeErr
+	}
+	return "", "", nil
+}
+
+func (f *scripted) called(name string) bool {
+	for _, c := range f.calls {
+		if c[0] == name || (len(c) > 2 && c[2] == name) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestExistsParsesRealListOutput(t *testing.T) {
+	h := hermes{&scripted{list: listFixture}}
+	for slug, want := range map[string]bool{"u_existing1": true, "u_missing01": false, "default": true} {
+		got, err := h.exists(context.Background(), slug)
+		if err != nil || got != want {
+			t.Errorf("%s: got %v, %v", slug, got, err)
+		}
+	}
+	// unrecognised output must be an error, never "absent"
+	if _, err := (hermes{&scripted{list: "something else entirely"}}).exists(context.Background(), "u_x"); err == nil {
+		t.Error("unrecognised list output must fail closed")
+	}
+}
+
+func TestProvisionHappyPathReturnsKey(t *testing.T) {
+	f := &scripted{list: listFixture}
+	rec := do(t, newServer(f, testToken), "/provision", "Bearer "+testToken, `{"slug":"u_newuser01"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("got %d %s", rec.Code, rec.Body)
+	}
+	var out map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &out); err != nil {
+		t.Fatal(err)
+	}
+	if out["profile"] != "u_newuser01" || len(out["key"]) != 64 || out["created_at"] == "" {
+		t.Fatalf("bad body %v", out)
+	}
+	if !f.called("create") {
+		t.Fatal("profile was not created")
+	}
+}
+
+func TestProvisionExistingKeyIs409(t *testing.T) {
+	f := &scripted{list: listFixture, writeErr: exitErr(3)}
+	rec := do(t, newServer(f, testToken), "/provision", "Bearer "+testToken, `{"slug":"u_existing1"}`)
+	if rec.Code != http.StatusConflict || strings.Contains(rec.Body.String(), `"key"`) {
+		t.Fatalf("want 409 without key, got %d %s", rec.Code, rec.Body)
+	}
+	if f.called("create") {
+		t.Fatal("existing profile must not be re-created")
+	}
+}
+
+// The server must finish a request whose client has gone away: cancelling the
+// request context after create must not stop the key write.
+func TestClientCancelDoesNotAbandonRequest(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	f := &scripted{list: listFixture, onCreate: cancel}
+	req := httptest.NewRequest(http.MethodPost, "/provision", strings.NewReader(`{"slug":"u_newuser01"}`)).WithContext(ctx)
+	req.Header.Set("Authorization", "Bearer "+testToken)
+	rec := httptest.NewRecorder()
+	newServer(f, testToken).routes().ServeHTTP(rec, req)
+	if !f.called("python3") || rec.Code != http.StatusOK {
+		t.Fatalf("request abandoned after cancel: wrote key=%v code=%d", f.called("python3"), rec.Code)
+	}
+}
+
+func TestTimeoutBudgetsAreOrdered(t *testing.T) {
+	if maxCalls*callTimeout >= opBudget {
+		t.Fatalf("opBudget %v must exceed %d calls of %v", opBudget, maxCalls, callTimeout)
+	}
+	if writeSlack <= 0 {
+		t.Fatal("write deadline must exceed opBudget")
+	}
+}
+
+type sweepRunner struct{ calls [][]string }
+
+func (f *sweepRunner) Run(_ context.Context, _ string, args ...string) (string, string, error) {
+	f.calls = append(f.calls, args)
+	switch {
+	case args[0] == "ls":
+		return ".deleted\nprobe2\nu_existing1\nu_goneuser1\n../x\n", "", nil
+	case len(args) > 2 && args[2] == "list":
+		return listFixture, "", nil
+	}
+	return "", "", nil
+}
+
+func TestSweepRemovesOnlyDeadValidatedSlugs(t *testing.T) {
+	f := &sweepRunner{}
+	removed, err := (hermes{f}).sweep(context.Background())
+	if err != nil || len(removed) != 1 || removed[0] != "u_goneuser1" {
+		t.Fatalf("removed %v, %v", removed, err)
+	}
+	for _, c := range f.calls {
+		if c[0] == "rmdir" && c[2] != profilesDir+"/u_goneuser1" {
+			t.Fatalf("rmdir on %v", c)
 		}
 	}
 }

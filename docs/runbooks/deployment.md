@@ -69,3 +69,7 @@ Per-user Hermes profiles are created by `tools/hermes-provisioner/`, a small Go 
 - **User:** a normal host user with Docker access to the Hermes container; nothing more.
 - **Scope:** it refuses `default` and any slug not matching `^u_[a-z0-9]{8,32}$`.
 - Returned keys are stored by Antares in its secret store; the helper keeps none.
+- **Failure handling:** a `/deprovision` `502` naming a `/opt/data/profiles/<slug>` path means a
+  non-empty residue directory the helper will not delete; investigate, then `rmdir` it manually
+  (owner approval applies). A lost `/provision` response is recovered with `/rotate`. Details in the
+  helper README.
