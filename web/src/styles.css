@@ -161,6 +161,7 @@ body {
   isolation: isolate;
 }
 body.chat { height: 100vh; overflow: hidden; }
+body.admin { display: block; }
 
 /* Ambient layer: fixed, inert, static. Fields differ in hue so the blur behind each pane
    picks up a different tint; the rings give the glass an edge to bend around. */
@@ -361,6 +362,48 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .ou-table { border-collapse: collapse; font-size: 0.9rem; }
 .ou-table th, .ou-table td { padding: 0.3rem 0.55rem; border: 1px solid var(--solid-border); text-align: left; overflow-wrap: anywhere; }
 .ou-divider { border: 0; border-top: 1px solid var(--solid-border); margin: 0.5rem 0; }
+
+/* ---- admin: the same shell, bar and tiers; no second visual language ---------------- */
+.admin-app { display: grid; grid-template-rows: auto minmax(0, 1fr); gap: var(--gap); min-height: 100vh; padding: var(--gap); }
+.admin-main { min-width: 0; width: min(64rem, 100%); margin: 0 auto; padding: 0.5rem 0.5rem 2rem; }
+.admin-main h1 { font-family: var(--font-display); font-size: clamp(1.8rem, 4vw, 2.6rem); font-weight: 300; letter-spacing: -0.035em; line-height: 1.05; margin: 1rem 0 1rem; }
+.admin-main h2 { font-size: 1rem; font-weight: 600; margin: 1.75rem 0 0.5rem; color: var(--text); }
+.admin-main > section > p { max-width: 40rem; }
+.admin-nav { display: flex; align-items: center; gap: 0.25rem; margin-left: 0.5rem; }
+.admin-nav a.navlink { padding: 0.3rem 0.8rem; border: 1px solid transparent; border-radius: var(--r-pill); color: var(--text-2); text-decoration: none; }
+.admin-nav a.navlink:hover { color: var(--text); }
+.admin-nav a.navlink.current { color: var(--text); font-weight: 600; border-color: var(--raised-edge); background: var(--raised-fill); }
+.filters { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.75rem; }
+button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 600; }
+.table-wrap { overflow-x: auto; max-width: 100%; margin: 0.5rem 0 1rem; border: 1px solid var(--solid-border); border-radius: var(--r-lg); background: var(--solid); }
+.admin-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+.admin-table th, .admin-table td { padding: 0.55rem 0.8rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--solid-border); overflow-wrap: anywhere; }
+.admin-table thead th { font-size: 0.8rem; font-weight: 600; color: var(--text-2); white-space: nowrap; }
+.admin-table tbody th { font-weight: 500; }
+.admin-table tr:last-child > * { border-bottom: 0; }
+.admin-table a { color: var(--text); }
+.admin-table .sub { display: block; font-size: 0.8rem; color: var(--text-2); font-weight: 400; }
+.mono { font-family: var(--font-mono); font-size: 0.8rem; }
+.badge { display: inline-block; padding: 0.05rem 0.6rem; border: 1px solid var(--text-2); border-radius: var(--r-pill); font-size: 0.8rem; white-space: nowrap; }
+.badge.bad { border-color: var(--warn-border); background: var(--warn-fill); color: var(--warn-ink); font-weight: 600; }
+.facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.25rem 1.5rem; margin: 0.5rem 0; padding: 0.9rem 1.25rem; max-width: 40rem; border: 1px solid var(--rest-edge); border-radius: var(--r-lg); background: var(--rest-fill); box-shadow: var(--rest-shadow); }
+.facts dd { margin: 0; }
+.failure pre { max-width: 40rem; margin: 0.25rem 0 0; padding: 0.65rem 0.85rem; overflow: auto; font-family: var(--font-mono); font-size: 0.85rem; background: var(--solid); border: 1px solid var(--solid-border); border-radius: var(--r-sm); }
+.actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
+.confirm { max-width: 40rem; margin: 1rem 0; padding: 0.9rem 1.25rem; border: 1px solid var(--solid-edge); border-radius: var(--r-lg); background: var(--solid-raised); box-shadow: var(--solid-shadow); }
+.confirm h3 { margin: 0 0 0.4rem; font-size: 1rem; }
+.confirm p { color: var(--text); }
+.confirm label { display: block; margin: 0.5rem 0 0.25rem; font-size: 0.85rem; color: var(--text-2); }
+.confirm textarea { width: 100%; box-sizing: border-box; padding: 0.5rem 0.7rem; font: inherit; color: var(--text); background: var(--bg-base); border: 1px solid var(--solid-border); border-radius: var(--r-sm); resize: vertical; }
+.confirm button { margin: 0.5rem 0.5rem 0 0; }
+.pager { display: flex; align-items: center; gap: 0.75rem; }
+@media (max-width: 40rem) {
+  .admin-app { padding: 0.5rem; }
+  .admin-app .bar { flex-wrap: wrap; row-gap: 0.25rem; }
+  .admin-nav { order: 3; flex-basis: 100%; margin-left: 0; overflow-x: auto; }
+  .facts { grid-template-columns: minmax(0, 1fr); }
+  .facts dd { margin-bottom: 0.5rem; }
+}
 
 /* ---- narrow screens: the sidebar becomes a short strip above the log ----------- */
 @media (max-width: 40rem) {

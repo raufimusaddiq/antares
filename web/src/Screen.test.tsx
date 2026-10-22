@@ -7,7 +7,7 @@ const noop = () => {};
 const render = (view: View) => renderToStaticMarkup(<Screen view={view} onRefresh={noop} onSignOut={noop} />);
 const account = (state: AccountState, over: Partial<Account> = {}): View => ({
   screen: "account",
-  account: { email: "person@example.test", displayName: "Test Person", requestedAt: "2026-01-02T03:04:05Z", state, ...over },
+  account: { email: "person@example.test", displayName: "Test Person", requestedAt: "2026-01-02T03:04:05Z", state, canAdmin: false, ...over },
 });
 
 const EXPECT: Record<Exclude<AccountState, "ACTIVE">, string> = {
@@ -72,6 +72,6 @@ describe("parseAccount", () => {
   });
   it("keeps only the fields the screens use", () => {
     const a = parseAccount({ state: "PENDING", email: "a@example.test", id: "u1", role: "ADMIN", tenantStatus: "READY" });
-    expect(Object.keys(a!).sort()).toEqual(["displayName", "email", "requestedAt", "state"]);
+    expect(Object.keys(a!).sort()).toEqual(["canAdmin", "displayName", "email", "requestedAt", "state"]);
   });
 });

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { loadSession, signOut, type Session } from "./api";
+import { AdminScreens, AdminShell, Forbidden } from "./Admin";
 import { Chat } from "./Chat";
+import { isAdminPath, parseAdminPath } from "./route";
 import { Screen, documentTitle, type View } from "./Screen";
 
 const SCREEN_PATH = {
@@ -32,6 +34,18 @@ export function App() {
   const [session, setSession] = useState<Session>({ kind: "loading" });
   const [failedSignOut, setFailedSignOut] = useState(false);
   const [failed] = useState(loginFailed);
+  const [path, setPath] = useState(() => window.location.pathname);
+
+  useEffect(() => {
+    const onPop = () => setPath(window.location.pathname);
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
+  const navigate = useCallback((to: string) => {
+    window.history.pushState(null, "", to);
+    setPath(to);
+  }, []);
 
   const refresh = useCallback(() => {
     const ctl = new AbortController();
@@ -52,7 +66,12 @@ export function App() {
 
   // Keep the address bar on the screen that is showing, so a reload lands on it.
   useEffect(() => {
-    if (session.kind === "account") window.history.replaceState(null, "", SCREEN_PATH[session.account.state]);
+    // An active account may be on an admin screen: keep that address instead of resetting it to "/".
+    if (session.kind === "account") {
+      if (session.account.state === "ACTIVE" && isAdminPath(window.location.pathname)) return;
+      window.history.replaceState(null, "", SCREEN_PATH[session.account.state]);
+      setPath(SCREEN_PATH[session.account.state]);
+    }
     else if (session.kind === "anonymous" && !session.loginFailed) window.history.replaceState(null, "", "/login");
   }, [session]);
 
@@ -62,7 +81,16 @@ export function App() {
 
   if (!view) return <main className="screen" aria-busy="true"><p>Loading…</p></main>;
   if (session.kind === "account" && session.account.state === "ACTIVE") {
-    return <Chat email={session.account.email} onSignOut={onSignOut} />;
+    if (isAdminPath(path)) {
+      const route = parseAdminPath(path);
+      return (
+        <AdminShell email={session.account.email} route={route} onNavigate={navigate} onSignOut={onSignOut}>
+          {/* canAdmin only spares a non-admin a round of failing calls; the server guards each one. */}
+          {session.account.canAdmin ? <AdminScreens route={route} onNavigate={navigate} /> : <Forbidden />}
+        </AdminShell>
+      );
+    }
+    return <Chat email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onSignOut={onSignOut} />;
   }
   return (
     <Screen

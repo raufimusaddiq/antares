@@ -11,6 +11,8 @@ export interface Account {
   displayName: string;
   requestedAt: string;
   state: AccountState;
+  /** The server's verdict (GET /api/me canAdmin). It only decides whether to show a link; every admin call is authorised again. */
+  canAdmin: boolean;
 }
 
 export type Session =
@@ -42,6 +44,7 @@ export function parseAccount(body: unknown): Account | null {
     displayName: typeof b.displayName === "string" ? b.displayName : "",
     requestedAt: typeof b.requestedAt === "string" ? b.requestedAt : "",
     state: b.state as AccountState,
+    canAdmin: b.canAdmin === true,
   };
 }
 
