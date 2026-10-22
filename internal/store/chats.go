@@ -109,24 +109,43 @@ func GetChat(ctx context.Context, db *sql.DB, userID, chatID string) (Chat, erro
 	return c, err
 }
 
-// ListChats returns the user's chats, newest activity first.
-func ListChats(ctx context.Context, db *sql.DB, userID string, limit, offset int) ([]Chat, error) {
-	rows, err := db.QueryContext(ctx, `SELECT `+chatCols+` FROM chats c
-		WHERE c.user_id = ? AND c.status = 'ACTIVE'
-		ORDER BY c.updated_at DESC, c.id LIMIT ? OFFSET ?`, userID, limit, offset)
+// ChatCursor is the keyset position after the last chat of a page.
+type ChatCursor struct{ UpdatedAt, ID string }
+
+// ListChats returns up to limit of the user's chats, newest activity first,
+// starting after the cursor (nil = the first page). It asks for one extra row
+// so the caller knows whether another page exists; that row is returned last
+// and is not part of the page. Ordering is (updated_at DESC, id), so a page
+// boundary is a position, not a count: a chat created meanwhile cannot shift
+// later pages the way an offset would.
+func ListChats(ctx context.Context, db *sql.DB, userID string, limit int, after *ChatCursor) (page []Chat, more bool, err error) {
+	q := `SELECT ` + chatCols + ` FROM chats c WHERE c.user_id = ? AND c.status = 'ACTIVE'`
+	args := []any{userID}
+	if after != nil {
+		q += ` AND (c.updated_at < ? OR (c.updated_at = ? AND c.id > ?))`
+		args = append(args, after.UpdatedAt, after.UpdatedAt, after.ID)
+	}
+	q += ` ORDER BY c.updated_at DESC, c.id LIMIT ?`
+	args = append(args, limit+1)
+	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
-	var out []Chat
 	for rows.Next() {
 		c, err := scanChat(rows)
 		if err != nil {
-			return nil, err
+			return nil, false, err
 		}
-		out = append(out, c)
+		page = append(page, c)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	if len(page) > limit {
+		return page[:limit], true, nil
+	}
+	return page, false, nil
 }
 
 // Run is one admitted turn.

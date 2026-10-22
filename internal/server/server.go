@@ -163,6 +163,13 @@ func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 	s.serveFile(w, r, "index.html")
 }
 
+// openUIStyleHash allows exactly one inline stylesheet: the @keyframes rule that
+// @openuidev/react-lang@1.0.1 injects into <head> when its Renderer mounts (a
+// spinner animation we never show). It is a hash of that fixed text, not
+// 'unsafe-inline': any other inline style is still refused. web/src/openui/csp.test.ts
+// fails if the pinned library's text stops matching this value.
+const openUIStyleHash = "'sha256-vai9tBS1dbqDlLt2vYYQwJl16j1hMfOCO5KhCK8LRBg='"
+
 func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, name string) {
 	f, err := s.assets.Open(name)
 	if err != nil {
@@ -180,7 +187,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, name string) 
 	h.Set("X-Content-Type-Options", "nosniff")
 	if name == "index.html" {
 		// The shell is the one document: no scripts but our own bundle, no framing.
-		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' "+openUIStyleHash+"; connect-src 'self'; img-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cache-Control", "no-store")
 	} else if strings.HasPrefix(name, "assets/") { // content-hashed by the build

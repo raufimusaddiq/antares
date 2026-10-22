@@ -12,7 +12,9 @@ import {
   type ChatSummary,
   type Turn,
 } from "./chatApi";
-import { Markdown } from "./Markdown";
+import { mergeNewest, prependOlder } from "./history";
+import { MessageBody } from "./MessageBody";
+import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 
 const MAX_INPUT = 32_000;
@@ -59,7 +61,7 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
       {run.text !== "" && (
         <div className={run.phase === "completed" ? "" : "partial"}>
           {run.phase !== "completed" && !live && <p className="label">Partial response</p>}
-          <Markdown text={run.text} />
+          <MessageBody text={run.text} streaming={live} />
         </div>
       )}
       {live && run.text === "" && <p className="label">Working…</p>}
@@ -87,24 +89,54 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
   );
 }
 
-export function Transcript(props: {
+const turnKey = (t: Turn) => String(t.seq);
+
+export interface TranscriptProps {
   turns: Turn[];
   pending: Pending | null;
   run: LiveRun | null;
+  /** More (older) turns exist on the server. */
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  olderError?: string;
+  onLoadMore?: () => void;
   onCancel: () => void;
   onRetry: () => void;
   onReconnect: () => void;
   onResend: () => void;
-}) {
-  const { turns, pending, run } = props;
-  return (
-    <div className="log" role="log" aria-live="polite" aria-label="Conversation">
-      {turns.map((t, i) => (
-        <article key={i} className={`turn ${t.role}`}>
-          <h2 className="who">{t.role === "user" ? "You" : "Assistant"}</h2>
-          {t.role === "user" ? <p className="plain">{t.text}</p> : <Markdown text={t.text} />}
-        </article>
-      ))}
+}
+
+const never = () => {};
+
+export function Transcript(props: TranscriptProps) {
+  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never } = props;
+  const renderTurn = useCallback(
+    (t: Turn) => (
+      <article className={`turn ${t.role}`}>
+        <h2 className="who">{t.role === "user" ? "You" : "Assistant"}</h2>
+        {t.role === "user" ? <p className="plain">{t.text}</p> : <MessageBody text={t.text} streaming={false} />}
+      </article>
+    ),
+    [],
+  );
+  const note = loadingMore ? (
+    "Loading older messages…"
+  ) : olderError ? (
+    <>
+      Older messages unavailable: {olderError}{" "}
+      <button type="button" className="quiet" onClick={onLoadMore}>
+        Retry
+      </button>
+    </>
+  ) : hasMore ? (
+    "Scroll up for older messages"
+  ) : turns.length > 0 ? (
+    "Start of the conversation"
+  ) : (
+    ""
+  );
+  const footer = (
+    <>
       {pending && (
         <article className="turn user pending">
           <h2 className="who">You</h2>
@@ -122,7 +154,20 @@ export function Transcript(props: {
         </article>
       )}
       {run && <RunView run={run} onCancel={props.onCancel} onRetry={props.onRetry} onReconnect={props.onReconnect} />}
-    </div>
+    </>
+  );
+  return (
+    <VirtualList
+      items={turns}
+      itemKey={turnKey}
+      render={renderTurn}
+      footer={footer}
+      label="Conversation"
+      hasMore={hasMore && !olderError}
+      loadingMore={loadingMore}
+      topNote={note}
+      onLoadMore={onLoadMore}
+    />
   );
 }
 
@@ -169,6 +214,11 @@ export function Chat({ email, onSignOut }: { email: string; onSignOut: () => voi
   const [current, setCurrent] = useState<string | null>(null);
   const [turns, setTurns] = useState<Turn[]>([]);
   const [turnsError, setTurnsError] = useState("");
+  const [cursor, setCursor] = useState(""); // where the next older page starts; "" = start of the conversation
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [olderError, setOlderError] = useState("");
+  const [chatsCursor, setChatsCursor] = useState("");
+  const [loadingChats, setLoadingChats] = useState(false);
   const [run, dispatch] = useReducer(runReducer, null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [draft, setDraft] = useState("");
@@ -179,7 +229,12 @@ export function Chat({ email, onSignOut }: { email: string; onSignOut: () => voi
   const attempts = useRef(0);
   const currentRef = useRef<string | null>(null);
   const lastInput = useRef("");
+  const turnsRef = useRef<Turn[]>([]);
+  const cursorRef = useRef("");
+  const olderInflight = useRef(""); // "chat|cursor" of the older-page request in flight: one at a time, never twice
   currentRef.current = current;
+  turnsRef.current = turns;
+  cursorRef.current = cursor;
 
   const detach = useCallback(() => {
     es.current?.close();
@@ -195,17 +250,53 @@ export function Chat({ email, onSignOut }: { email: string; onSignOut: () => voi
     };
   }, [detach]);
 
-  const loadTurns = useCallback(async (chatId: string): Promise<boolean> => {
+  // The newest page. "replace" opens a chat; "merge" refreshes the tail (after a
+  // run) without throwing away older pages the reader already scrolled back to.
+  const loadTurns = useCallback(async (chatId: string, mode: "replace" | "merge" = "merge"): Promise<boolean> => {
     const r = await getMessages(chatId);
     if (currentRef.current !== chatId) return false;
-    if (r.ok) {
-      setTurns(r.value);
-      setTurnsError("");
+    if (!r.ok) {
+      setTurnsError(describeCode(r.code));
+      return false;
+    }
+    setTurnsError("");
+    const page = r.value;
+    if (mode === "replace") {
+      setTurns(page.turns);
+      setCursor(page.nextCursor);
       return true;
     }
-    setTurnsError(describeCode(r.code));
-    return false;
+    const m = mergeNewest(turnsRef.current, page.turns);
+    setTurns(m.turns);
+    // The held list begins after this page's start only when nothing older was held.
+    if (m.reset || m.turns.length === 0 || m.turns[0].seq >= (page.turns[0]?.seq ?? 0)) setCursor(page.nextCursor);
+    return true;
   }, []);
+
+  const loadOlder = useCallback(async () => {
+    const chatId = currentRef.current;
+    const at = cursorRef.current;
+    if (!chatId || !at) return;
+    const key = `${chatId}|${at}`;
+    if (olderInflight.current === key || olderInflight.current !== "") return;
+    olderInflight.current = key;
+    setLoadingOlder(true);
+    setOlderError("");
+    const r = await getMessages(chatId, at);
+    if (olderInflight.current === key) olderInflight.current = "";
+    if (currentRef.current !== chatId) return;
+    setLoadingOlder(false);
+    if (!r.ok) {
+      if (r.code === "HISTORY_CHANGED") {
+        // The transcript no longer lines up with what is on screen: start again from the newest page.
+        setBanner(describeCode(r.code) + " It has been reloaded.");
+        void loadTurns(chatId, "replace");
+      } else setOlderError(describeCode(r.code));
+      return;
+    }
+    setTurns((held) => prependOlder(held, r.value.turns));
+    setCursor(r.value.nextCursor);
+  }, [loadTurns]);
 
   const attach = useCallback(
     (runId: string, chatId: string) => {
@@ -276,11 +367,15 @@ export function Chat({ email, onSignOut }: { email: string; onSignOut: () => voi
       setCurrent(c.id);
       currentRef.current = c.id;
       setTurns([]);
+      setCursor("");
+      setLoadingOlder(false);
+      setOlderError("");
+      olderInflight.current = "";
       setTurnsError("");
       setPending(null);
       setBanner("");
       dispatch({ k: "clear" });
-      void loadTurns(c.id);
+      void loadTurns(c.id, "replace");
       if (c.activeRunId) attach(c.activeRunId, c.id);
     },
     [attach, detach, loadTurns],
@@ -295,15 +390,29 @@ export function Chat({ email, onSignOut }: { email: string; onSignOut: () => voi
         setBanner(describeCode(r.code));
         return;
       }
-      setChats(r.value);
+      setChats(r.value.chats);
+      setChatsCursor(r.value.nextCursor);
       setListState("ready");
-      if (r.value.length > 0) open(r.value[0]);
+      if (r.value.chats.length > 0) open(r.value.chats[0]);
     });
     return () => {
       live = false;
     };
     // open is stable; this runs once on mount.
   }, []);
+
+  const moreChats = useCallback(async () => {
+    if (!chatsCursor || loadingChats) return;
+    setLoadingChats(true);
+    const r = await listChats(chatsCursor);
+    setLoadingChats(false);
+    if (!r.ok) {
+      setBanner(describeCode(r.code));
+      return;
+    }
+    setChats((l) => [...l, ...r.value.chats.filter((c) => !l.some((x) => x.id === c.id))]);
+    setChatsCursor(r.value.nextCursor);
+  }, [chatsCursor, loadingChats]);
 
   const newChat = useCallback(async (): Promise<ChatSummary | null> => {
     const r = await createChat();
@@ -326,6 +435,7 @@ export function Chat({ email, onSignOut }: { email: string; onSignOut: () => voi
         setCurrent(c.id);
         currentRef.current = c.id;
         setTurns([]);
+        setCursor("");
         chat = c.id;
       }
       lastInput.current = input;
@@ -339,7 +449,7 @@ export function Chat({ email, onSignOut }: { email: string; onSignOut: () => voi
         return;
       }
       setPending(null);
-      setTurns((t) => [...t, { role: "user", text: input }]);
+      setTurns((t) => [...t, { seq: t.length > 0 ? t[t.length - 1].seq + 1 : 0, role: "user", text: input }]);
       attach(r.value.runId, chat);
     },
     [attach, current, detach, newChat],
@@ -387,6 +497,8 @@ export function Chat({ email, onSignOut }: { email: string; onSignOut: () => voi
             setCurrent(null);
             currentRef.current = null;
             setTurns([]);
+            setCursor("");
+            olderInflight.current = "";
             setPending(null);
             dispatch({ k: "clear" });
           }}
@@ -404,6 +516,11 @@ export function Chat({ email, onSignOut }: { email: string; onSignOut: () => voi
             </li>
           ))}
         </ul>
+        {chatsCursor && (
+          <button type="button" className="quiet" disabled={loadingChats} onClick={() => void moreChats()}>
+            {loadingChats ? "Loading…" : "Show more"}
+          </button>
+        )}
       </nav>
       <main className="pane">
         {banner && (
@@ -418,9 +535,14 @@ export function Chat({ email, onSignOut }: { email: string; onSignOut: () => voi
         )}
         {current === null && turns.length === 0 && !pending && !run && <p className="label">Start a conversation below.</p>}
         <Transcript
+          key={current ?? "new"}
           turns={turns}
           pending={pending}
           run={run}
+          hasMore={cursor !== ""}
+          loadingMore={loadingOlder}
+          olderError={olderError}
+          onLoadMore={() => void loadOlder()}
           onCancel={onCancel}
           onRetry={() => {
             const last = [...turns].reverse().find((t) => t.role === "user");

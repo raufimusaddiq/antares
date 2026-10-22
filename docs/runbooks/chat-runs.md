@@ -49,8 +49,41 @@ Every Hermes call runs `Service.gate` → `store.ActiveBinding`: APPROVED + tena
 verified, read from the database each time. Open SSE streams re-check every heartbeat (15 s) and close on
 suspension. One active run per chat (partial unique index), 4 active runs and 30 sends/minute per user.
 
+## History paging (slice 5, `HIST-002`/`HIST-003`, `PERF-001`)
+
+`GET /api/chats/{chatId}/messages?cursor=<opaque>&limit=<n>` — an **app contract**; Hermes has no cursor.
+
+- No `cursor`: the **newest** page. Default `limit=50`; the server ceiling is 100 and wins over a larger ask.
+  `limit` below 1, a malformed query string or a malformed cursor is `400 INVALID_REQUEST` (a damaged
+  cursor is never read as "no cursor").
+- Answer: `{messages:[{seq,id,role,text,createdAt}], nextCursor, total}`. `seq` is the turn's position in the
+  transcript (0 = oldest) and is its identity across pages; `nextCursor` is empty at the start of the
+  conversation.
+- A cursor carries the position it stops at and a hash of the turn there (bound to the chat). Appending newer
+  turns does not move older positions, so pages never overlap or skip. If the turn at that position changed or
+  vanished (compaction, rewind) the answer is `409 HISTORY_CHANGED` and the UI reloads the newest page.
+- Cost: every page is one bounded full-transcript read from Hermes (`include_compacted=true`), then sliced.
+  Limits: 24 MiB body, 20,000 messages, 2 concurrent transcript reads per process. **Over a limit the call
+  fails (`HERMES_UNAVAILABLE`) — it never returns a shortened conversation as if it were complete.** There is
+  no transcript cache: a stale page after a run would be worse than the extra read. Measured (local fake Hermes,
+  1,000 messages): p50 ≈ 4 ms, 4.4 KB per page — `go test -run Measure500 -v -count=1 ./internal/chat`.
+- `GET /api/chats` pages by keyset `(updated_at DESC, id)` with an opaque cursor, default 50, ceiling 100. A
+  chat that gets a new message while the reader pages moves to the top; that is a navigation list, not a
+  transcript, and no chat is listed twice within one pass.
+
+Browser side (`web/src/VirtualList.tsx`, `virtual.ts`, `history.ts`): the first paint is the newest page;
+older pages load when the reader is within ~320 px of the top, one at a time, never twice (`seq` merge drops
+duplicates). Up to 100 turns are all mounted (text selection and find work); beyond that only the turns near
+the viewport are. Each mounted turn is measured before paint and the scroll position is re-derived from the
+turn at the top of the viewport, so a prepended page or a late height change above does not move what is being
+read. Native scroll anchoring is off (`overflow-anchor:none`). While the reader is at the bottom the list
+follows the newest content (including a streaming reply); once they scroll up it stops and "Jump to latest"
+appears. `scripts/browser-check.mjs` measures all of this in a real browser.
+
 ## Not in this slice
 
 Rename/delete chat, model picker, approvals, clarify, steer, assets, jobs (still `CAPABILITY_UNAVAILABLE`
-behind the guard). Transcript paging beyond "newest 50". Journals are in memory: after a restart the text
-streamed so far is rebuilt from Hermes' transcript when the run completes.
+behind the guard). Attaching the versioned OpenUI instruction to a run (PRD §7.2): the renderer is here, the
+per-request instruction mechanism has no verified Hermes shape, so nothing is sent (`docs/runbooks/openui.md`).
+Journals are in memory: after a restart the text streamed so far is rebuilt from Hermes' transcript when the
+run completes.
