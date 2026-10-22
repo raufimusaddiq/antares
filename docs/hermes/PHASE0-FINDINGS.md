@@ -121,7 +121,7 @@ yet). The Antares container must join `hermes_edge`; edge route decision is stil
 ## 6. Profile-vs-tool filesystem isolation — NOT ISOLATED
 
 Evidence. All checks are read-only (`test -r`, `stat`, `ps`); no file content was read. Output is
-verbatim except the numeric uid/gid, which are redacted. `<data>` is the Hermes data root inside the
+verbatim. `<data>` is the Hermes data root inside the
 container. Re-run on 2026-10-22 against the live container:
 
 ```

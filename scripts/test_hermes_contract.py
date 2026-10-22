@@ -70,8 +70,24 @@ class Contract(unittest.TestCase):
         self.assertEqual(hc.sanitize({"name": "web"}, hc.safe_for("toolsets")), {"name": "web"})
         self.assertEqual(hc.sanitize({"name": "web"}, hc.safe_for("models")), {"name": "<redacted>"})
 
-    def test_default_cases_do_not_pin_a_transient_probe(self):
-        self.assertFalse([c for c in hc.CASES if c[2].startswith("/p/")])
+    def test_default_cases_do_not_pin_the_transient_probe(self):
+        self.assertFalse([c for c in hc.CASES if hc.TRANSIENT_PROBE.match(c[2])])
+
+    def test_transient_probe_matcher_is_exact(self):
+        self.assertTrue(hc.TRANSIENT_PROBE.match("/p/testa/v1/models"))
+        self.assertFalse(hc.TRANSIENT_PROBE.match("/p/testa/v1/toolsets"))
+
+    def test_tenant_toolsets_case_would_be_allowed(self):
+        cases = list(hc.CASES) + [("toolsets-profile", "GET", "/p/testa/v1/toolsets", "owner")]
+        self.assertFalse([c for c in cases if hc.TRANSIENT_PROBE.match(c[2])])
+
+    def test_path_and_host_are_redacted_outside_their_cases(self):
+        body = {"artifact": {"path": "/home/alice/2026-tax-return.pdf"}, "host": "10.1.2.3"}
+        self.assertEqual(hc.sanitize(body, hc.safe_for("sessions")),
+                         {"artifact": {"path": "<redacted>"}, "host": "<redacted>"})
+        self.assertEqual(hc.sanitize({"path": "/v1/models"}, hc.safe_for("capabilities")), {"path": "/v1/models"})
+        self.assertEqual(hc.sanitize({"host": "0.0.0.0"}, hc.safe_for("health-detailed")), {"host": "0.0.0.0"})
+        self.assertEqual(hc.sanitize({"host": "0.0.0.0"}, hc.safe_for("capabilities")), {"host": "<redacted>"})
 
     def test_sanitize_fabricates_numbers_dates_and_urls(self):
         out = hc.sanitize({"n": 123456, "f": 9.5, "day": "2026-10-22", "ts": "2026-10-22T04:00:00+07:00",

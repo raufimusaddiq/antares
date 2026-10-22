@@ -37,7 +37,7 @@ API key, the admin bootstrap mechanism, and the public base URL.
 ## What a coding agent may not do — ask the owner first
 
 - Deploy to any environment, restart any service, or change a Caddy route.
-- Touch the Hermes container, its config, its profiles or its data directory.
+- Touch the Hermes container, its config, its profiles or its data directory. Inside the running Hermes container the only authorised mutation is `hermes profile create` / `delete` for disposable test profiles, and only when the ticket's owner authorisation says so. A root-run command (`docker exec` without `-u hermes` that writes), or deleting a profile directory by hand, needs the owner's explicit approval first. If `hermes profile delete` fails, stop and report.
 - Rotate a secret, or write one anywhere it could be committed.
 - Run anything against production data.
 

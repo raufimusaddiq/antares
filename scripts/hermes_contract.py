@@ -37,9 +37,17 @@ CASES = [
 # SAFE_BY_CASE holds keys that are only safe on one endpoint (e.g. `name` is a toolset name in
 # /v1/toolsets, but could be a user's name elsewhere). A new endpoint starts with no safe keys.
 SAFE_KEYS = frozenset("""allowed_mime_types artifact_capabilities capabilities cloud code
-    developer_capabilities gateway_state host local_vps method mode model object owned_by path platform
+    developer_capabilities gateway_state local_vps method mode model object owned_by platform
     session_continuity_header session_key_header state status tool_execution type version""".split())
-SAFE_BY_CASE = {"toolsets": frozenset({"name", "tools"}), "models": frozenset({"id", "root"})}
+SAFE_BY_CASE = {
+    "toolsets": frozenset({"name", "tools"}),
+    "models": frozenset({"id", "root"}),
+    "capabilities": frozenset({"path"}),  # route-table paths; a `path` elsewhere may be a user's file
+    "health-detailed": frozenset({"host"}),  # the server's bind address
+}
+# The one probe that must never be a default case: it is expected to change once profile routes are
+# registered. Other /p/<profile>/ cases (e.g. /p/<profile>/v1/toolsets) are the way to guard tenants.
+TRANSIENT_PROBE = re.compile(r"^/p/[^/]+/v1/models$")
 TS = re.compile(r"^\d{4}-\d\d-\d\d(T\d\d:\d\d:\d\d)?")
 
 
