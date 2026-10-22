@@ -114,6 +114,9 @@ func TestProvisionerToolsetListsMatchAntares(t *testing.T) {
 	if got := stringsVar(t, "knownToolsets"); !sameSet(got, reported) {
 		t.Errorf("knownToolsets %v != fixture %v", got, reported)
 	}
+	if !sameSet(KnownToolsets, reported) {
+		t.Errorf("KnownToolsets %v != fixture %v", KnownToolsets, reported)
+	}
 }
 
 // What the provisioner leaves enabled for an allow-list, as /v1/toolsets would

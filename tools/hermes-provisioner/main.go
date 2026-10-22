@@ -43,6 +43,8 @@ func (s *server) begin(w http.ResponseWriter, r *http.Request) (context.Context,
 	return ctx, func() { cancel(); s.mu.Unlock() }
 }
 
+// newServer is for tests: it applies the default policy. main() builds its
+// policy from PROVISIONER_ALLOWED_TOOLSETS and calls newServerWithPolicy.
 func newServer(r Runner, token string) *server {
 	disabled, err := disabledFor(defaultAllowed)
 	if err != nil {

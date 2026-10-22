@@ -203,6 +203,16 @@ func TestProvisionerTokenNeverPrints(t *testing.T) {
 	}
 }
 
+// A typo must stop Antares at startup and name the offender, not start cleanly
+// and crashloop the provisioner (which refuses the same names).
+func TestTenantToolsetPolicyRejectsUnknownNames(t *testing.T) {
+	m := map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey, "ANTARES_TENANT_ALLOWED_TOOLSETS": "web,visoin"}
+	_, err := Load(env(m))
+	if err == nil || !strings.Contains(err.Error(), "ANTARES_TENANT_ALLOWED_TOOLSETS") || !strings.Contains(err.Error(), "visoin") {
+		t.Fatalf("unknown toolset accepted or unnamed: %v", err)
+	}
+}
+
 func TestTenantToolsetPolicyIsConfigurableButNotPastTheFloor(t *testing.T) {
 	m := map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey, "ANTARES_TENANT_ALLOWED_TOOLSETS": "web, memory ,todo"}
 	c, err := Load(env(m))

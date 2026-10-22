@@ -64,7 +64,7 @@ func disabledFor(allowed []string) ([]string, error) {
 			return nil, errors.New("toolset " + n + " crosses the profile boundary and cannot be allowed")
 		}
 		if !contains(knownToolsets, n) {
-			return nil, errors.New("toolset " + n + " is not a known toolset")
+			return nil, errors.New("toolset " + n + " is not a known toolset (check for a typo; it must also be valid in ANTARES_TENANT_ALLOWED_TOOLSETS)")
 		}
 	}
 	var out []string

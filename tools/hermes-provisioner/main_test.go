@@ -427,6 +427,10 @@ func TestPolicyFromEnv(t *testing.T) {
 			t.Errorf("accepted %q", bad)
 		}
 	}
+	// The startup failure names the offending toolset.
+	if _, err := policyFromEnv("web,visoin"); err == nil || !strings.Contains(err.Error(), "visoin") {
+		t.Errorf("error does not name the unknown toolset: %v", err)
+	}
 	if _, err := policyFromEnv(","); err == nil {
 		t.Error("accepted an allow-list with no names")
 	}

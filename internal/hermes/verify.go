@@ -44,19 +44,41 @@ var DeniedToolsets = []string{
 	"browser",        // cookies and logged-in sessions
 }
 
+// KnownToolsets is every toolset the deployed Hermes (v0.22.2) reports from
+// /v1/toolsets. ValidateAllowedToolsets rejects names outside it, so Antares
+// and the provisioner (which mirrors this list, pinned by
+// TestProvisionerToolsetListsMatchAntares) agree on what a valid name is: a
+// typo in ANTARES_TENANT_ALLOWED_TOOLSETS stops Antares at startup instead of
+// crashlooping the helper.
+var KnownToolsets = []string{
+	"web", "browser", "terminal", "file", "code_execution", "vision", "video",
+	"image_gen", "video_gen", "x_search", "tts", "stt", "skills", "todo",
+	"kanban", "memory", "context_engine", "session_search", "connections",
+	"clarify", "delegation", "cronjob", "discord", "discord_admin", "yuanbao",
+	"computer_use", "a2a",
+}
+
 // DefaultAllowedToolsets is the documented default tenant set. It is data, not
 // policy: the admin owns it (docs/runbooks/tenant-toolsets.md).
 var DefaultAllowedToolsets = []string{"web", "vision", "image_gen", "skills", "memory", "todo", "clarify"}
 
 // ValidateAllowedToolsets refuses a configured allow-list that includes a
-// floor toolset. It is checked at startup, not at verification time, so a bad
-// policy never starts.
+// floor toolset or a name Hermes does not report. It is checked at startup,
+// not at verification time, so a bad policy never starts. It is the same rule
+// the provisioner applies to PROVISIONER_ALLOWED_TOOLSETS.
 func ValidateAllowedToolsets(names []string) error {
 	for _, n := range names {
 		for _, d := range DeniedToolsets {
 			if n == d {
-				return errors.New("toolset " + n + " crosses the profile boundary and cannot be allowed for tenants")
+				return errors.New("toolset " + safeName(n) + " crosses the profile boundary and cannot be allowed for tenants")
 			}
+		}
+		known := false
+		for _, k := range KnownToolsets {
+			known = known || n == k
+		}
+		if !known {
+			return errors.New("toolset " + safeName(n) + " is not a known toolset")
 		}
 	}
 	return nil

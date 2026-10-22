@@ -49,7 +49,7 @@ Helper failures are classified. *Transient* (unreachable, 5xx, unreadable respon
 failures retry with backoff 15 s, 30 s, 1 m, … capped at 10 m, for 5 attempts, then stay `FAILED` with
 the reason. *Permanent* (the helper refuses our token, rejects the request, answers for another
 profile) stop at once. An admin `tenant-binding` resets the budget. A run interrupted by a restart is
-resumed when its 6-minute lease expires. If the helper's response was lost (it has a key we never
+resumed when its 12-minute lease expires. If the helper's response was lost (it has a key we never
 stored), `/provision` returns `409` and the pipeline recovers with `/rotate`, as the helper README says.
 
 ## What `READY` requires (`internal/hermes/verify.go`)

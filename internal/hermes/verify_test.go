@@ -552,3 +552,15 @@ func TestVerifyProbeCount(t *testing.T) {
 		t.Fatalf("Verify made %d requests; lower MaxVerifyProbes (%d) to match", n, MaxVerifyProbes)
 	}
 }
+
+func TestValidateAllowedToolsetsRejectsUnknownAndFloorNames(t *testing.T) {
+	if err := ValidateAllowedToolsets(DefaultAllowedToolsets); err != nil {
+		t.Fatalf("default set rejected: %v", err)
+	}
+	for _, c := range []struct{ name, want string }{{"visoin", "visoin"}, {"terminal", "terminal"}, {"", "toolset"}} {
+		err := ValidateAllowedToolsets([]string{"web", c.name})
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%q: %v", c.name, err)
+		}
+	}
+}
