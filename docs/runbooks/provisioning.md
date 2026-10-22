@@ -60,8 +60,8 @@ check does not recognise, is a failure.
 | Check | Passes when |
 |---|---|
 | `endpoint` | `/v1/capabilities` (object `hermes.api_server.capabilities`) and `/v1/models` (`object: list`) answer 200 |
-| `profile_identity` | the **default** profile's route and a never-provisioned route refuse the tenant key. Hermes' verified API has no profile-name field, so identity is shown by what accepts the key |
-| `credential_isolation` | no key, a wrong key and every other tenant's route (up to 3) get 401/403 |
+| `profile_identity` | the **default** profile's route and a never-provisioned route answer the tenant key with **401 or 403**, and nothing else (a 404, a redirect or a 5xx proves a broken or misrouted endpoint, not a refusal). Hermes' verified API has no profile-name field, so identity is shown by what refuses the key |
+| `credential_isolation` | no key, a wrong key and every other tenant's route (up to 3) get exactly 401/403 |
 | `session_ownership` | `/api/sessions` answers 200 for the profile, is empty on first verification, and other tenants' session routes refuse the key |
 | `toolset_policy` | no toolset in `hermes.DeniedToolsets` is enabled, nothing outside the allow-list is enabled, and every denied toolset is reported |
 | `memory_boundary` | capabilities report `memory_write_api: false`, `admin_config_rw: false`, `auth.required: true` |
@@ -80,6 +80,12 @@ refuses to start.
   fails at `endpoint` (and then `toolset_policy`): users end `FAILED`, never `READY`. That is the
   intended fail-closed result, not a bug to work around. It also means the admin surface cannot open,
   because the bootstrap admin's own tenant cannot verify.
+- Every refusal probe requires **401 or 403 exactly**. Phase 0 saw an unregistered profile prefix answer
+  `404 Unknown or unconfigured profile`; if the gateway still does that for the never-provisioned
+  probe route, `profile_identity` fails with `…answered status 404, expected 401 or 403` even on a
+  correct deployment. That is deliberate (the check was not loosened to fit); it needs an owner decision
+  on a different probe, not an allow-list entry. A failed reason says "did not answer" when nothing
+  answered and names the status when something did.
 - The `/api/sessions` response shape is documented but **unverified** on the deployed build
   (`PHASE0-FINDINGS.md` §2). The check accepts a bare array or `{"sessions": [...]}` and fails on
   anything else. Capture a sanitized fixture once a profile is routable and replace the guess.

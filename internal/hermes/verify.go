@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -166,6 +167,25 @@ func refused(status int) bool {
 	return status == http.StatusUnauthorized || status == http.StatusForbidden
 }
 
+// expectRefusal probes path and requires the authentication refusal, 401 or 403,
+// and nothing else: a 200 is a leak, but a 404, a redirect or a 5xx is a broken
+// or misrouted endpoint, which proves nothing about the key. It returns "" on a
+// refusal, otherwise a fixed-vocabulary reason that tells an unreachable
+// endpoint ("did not answer") from a wrong status (the status is named).
+func (v *Verifier) expectRefusal(ctx context.Context, path, key, what string) string {
+	r, err := v.get(ctx, path, key)
+	switch {
+	case err != nil:
+		return what + " did not answer"
+	case refused(r.status):
+		return ""
+	case r.status == http.StatusOK:
+		return what + " accepted the request (status 200)"
+	default:
+		return what + " answered status " + strconv.Itoa(r.status) + ", expected 401 or 403"
+	}
+}
+
 // Verify runs every check. It never stops at the first failure, so the admin
 // sees everything that is wrong at once; it never returns OK on partial data.
 func (v *Verifier) Verify(ctx context.Context, t Target) Report {
@@ -237,19 +257,11 @@ func (v *Verifier) endpoint(ctx context.Context, t Target, capsOK bool) Result {
 // accepts this profile's key and nothing that is not it. The default profile's
 // route and a never-provisioned route must not accept the tenant's key.
 func (v *Verifier) identity(ctx context.Context, t Target) Result {
-	r, err := v.get(ctx, "/v1/models", t.Key)
-	if err != nil {
-		return Result{CheckIdentity, false, "default route did not answer"}
+	if why := v.expectRefusal(ctx, "/v1/models", t.Key, "the default profile route (tenant key)"); why != "" {
+		return Result{CheckIdentity, false, why}
 	}
-	if !refused(r.status) {
-		return Result{CheckIdentity, false, "tenant key is accepted by the default profile"}
-	}
-	r, err = v.get(ctx, route(absentSlug)+"/v1/models", t.Key)
-	if err != nil {
-		return Result{CheckIdentity, false, "unprovisioned route did not answer"}
-	}
-	if r.status == http.StatusOK {
-		return Result{CheckIdentity, false, "tenant key is accepted by an unprovisioned profile"}
+	if why := v.expectRefusal(ctx, route(absentSlug)+"/v1/models", t.Key, "an unprovisioned profile route (tenant key)"); why != "" {
+		return Result{CheckIdentity, false, why}
 	}
 	return Result{CheckIdentity, true, ""}
 }
@@ -258,19 +270,16 @@ func (v *Verifier) identity(ctx context.Context, t Target) Result {
 // tenant's key.
 func (v *Verifier) isolation(ctx context.Context, t Target, siblings []string) Result {
 	own := route(t.Profile) + "/v1/models"
-	r, err := v.get(ctx, own, "")
-	if err != nil || !refused(r.status) {
-		return Result{CheckIsolation, false, "route accepts a request with no key"}
+	if why := v.expectRefusal(ctx, own, "", "the profile route (no key)"); why != "" {
+		return Result{CheckIsolation, false, why}
 	}
 	sum := sha256.Sum256([]byte("antares-verify-wrong-key:" + t.Key))
-	r, err = v.get(ctx, own, hex.EncodeToString(sum[:]))
-	if err != nil || !refused(r.status) {
-		return Result{CheckIsolation, false, "route accepts a wrong key"}
+	if why := v.expectRefusal(ctx, own, hex.EncodeToString(sum[:]), "the profile route (wrong key)"); why != "" {
+		return Result{CheckIsolation, false, why}
 	}
-	for _, s := range siblings {
-		r, err = v.get(ctx, route(s)+"/v1/models", t.Key)
-		if err != nil || !refused(r.status) {
-			return Result{CheckIsolation, false, "tenant key is accepted by another tenant's profile"}
+	for _, sib := range siblings {
+		if why := v.expectRefusal(ctx, route(sib)+"/v1/models", t.Key, "another tenant's route (tenant key)"); why != "" {
+			return Result{CheckIsolation, false, why}
 		}
 	}
 	return Result{CheckIsolation, true, ""}
@@ -294,10 +303,9 @@ func (v *Verifier) sessions(ctx context.Context, t Target, siblings []string) Re
 			return Result{CheckSessions, false, "new profile already holds sessions"}
 		}
 	}
-	for _, s := range siblings {
-		r, err = v.get(ctx, route(s)+"/api/sessions?limit=1&offset=0", t.Key)
-		if err != nil || !refused(r.status) {
-			return Result{CheckSessions, false, "another tenant's sessions are reachable with this key"}
+	for _, sib := range siblings {
+		if why := v.expectRefusal(ctx, route(sib)+"/api/sessions?limit=1&offset=0", t.Key, "another tenant's sessions (tenant key)"); why != "" {
+			return Result{CheckSessions, false, why}
 		}
 	}
 	return Result{CheckSessions, true, ""}

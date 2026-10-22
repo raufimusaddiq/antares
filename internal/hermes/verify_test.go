@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -46,6 +47,8 @@ type fakeHermes struct {
 	memWrite, adminRW   *bool
 	authRequired        *bool
 	hits                []string
+	// override forces a status for matching requests, before any auth logic.
+	override func(r *http.Request) int
 }
 
 func bp(b bool) *bool { return &b }
@@ -70,6 +73,12 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.hits = append(f.hits, r.URL.Path)
+	if f.override != nil {
+		if code := f.override(r); code != 0 {
+			w.WriteHeader(code)
+			return
+		}
+	}
 	rest := r.URL.Path
 	var want string
 	known := true
@@ -88,6 +97,13 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
 	if !known {
+		// A prefix nobody registered. The never-provisioned probe target is modelled
+		// as refusing authentication, the answer verification requires; any other
+		// unknown profile is a 404 (a route that is simply not served).
+		if strings.HasPrefix(r.URL.Path, "/p/"+absentSlug+"/") {
+			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
+			return
+		}
 		http.Error(w, `{"error":"Unknown or unconfigured profile"}`, http.StatusNotFound)
 		return
 	}
@@ -338,5 +354,101 @@ func TestNewVerifierRefusesUnsafeBaseURLs(t *testing.T) {
 		if _, err := NewVerifier(u, DefaultAllowedToolsets, nil); err == nil {
 			t.Errorf("accepted %q", u)
 		}
+	}
+}
+
+// Each probe that must be refused accepts 401 and 403 and nothing else. A broken
+// or misrouted endpoint (404, a redirect, 5xx) is not a refusal, and a 200 is a
+// leak; every one of them fails the check and the reason names the status.
+func TestRefusalProbesRequireExactly401Or403(t *testing.T) {
+	absent := "/p/" + absentSlug + "/v1/models"
+	probes := []struct {
+		name  string
+		check string
+		match func(r *http.Request) bool
+	}{
+		{"default profile route", CheckIdentity, func(r *http.Request) bool { return r.URL.Path == "/v1/models" }},
+		{"unprovisioned route", CheckIdentity, func(r *http.Request) bool { return r.URL.Path == absent }},
+		{"own route, no key", CheckIsolation, func(r *http.Request) bool {
+			return r.URL.Path == "/p/"+slA+"/v1/models" && r.Header.Get("Authorization") == ""
+		}},
+		{"own route, wrong key", CheckIsolation, func(r *http.Request) bool {
+			a := r.Header.Get("Authorization")
+			return r.URL.Path == "/p/"+slA+"/v1/models" && a != "" && a != "Bearer "+keyA
+		}},
+		{"sibling models route", CheckIsolation, func(r *http.Request) bool { return r.URL.Path == "/p/"+slB+"/v1/models" }},
+		{"sibling sessions route", CheckSessions, func(r *http.Request) bool { return r.URL.Path == "/p/"+slB+"/api/sessions" }},
+	}
+	force := func(f *fakeHermes, match func(*http.Request) bool, code int) {
+		f.override = func(r *http.Request) int {
+			if match(r) {
+				return code
+			}
+			return 0
+		}
+	}
+	for _, p := range probes {
+		for _, code := range []int{200, 201, 204, 301, 302, 307, 400, 404, 405, 429, 500, 502, 503} {
+			t.Run(p.name+"/"+strconv.Itoa(code), func(t *testing.T) {
+				f := newFake(t)
+				force(f, p.match, code)
+				rep := f.verifier(t).Verify(context.Background(), target())
+				reason, bad := failed(rep)[p.check]
+				if rep.OK() || !bad {
+					t.Fatalf("status %d on %s passed %s: %+v", code, p.name, p.check, rep)
+				}
+				if !strings.Contains(reason, strconv.Itoa(code)) {
+					t.Fatalf("reason %q does not name status %d", reason, code)
+				}
+				if code != 200 && !strings.Contains(reason, "expected 401 or 403") {
+					t.Fatalf("reason %q does not say what was expected", reason)
+				}
+			})
+		}
+		for _, code := range []int{401, 403} {
+			t.Run(p.name+"/"+strconv.Itoa(code), func(t *testing.T) {
+				f := newFake(t)
+				force(f, p.match, code)
+				if rep := f.verifier(t).Verify(context.Background(), target()); !rep.OK() {
+					t.Fatalf("a %d refusal on %s failed verification: %+v", code, p.name, rep)
+				}
+			})
+		}
+	}
+}
+
+// An endpoint that does not answer at all is a different diagnosis from one that
+// answers with the wrong status, and the reason says which.
+func TestUnreachableIsDistinctFromWrongStatus(t *testing.T) {
+	f := newFake(t)
+	f.override = func(r *http.Request) int {
+		if r.URL.Path == "/p/"+absentSlug+"/v1/models" {
+			return 500
+		}
+		return 0
+	}
+	wrong := failed(f.verifier(t).Verify(context.Background(), target()))[CheckIdentity]
+
+	g := newFake(t)
+	v := g.verifier(t)
+	g.srv.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/p/"+absentSlug+"/v1/models" {
+			hj, _ := w.(http.Hijacker)
+			c, _, _ := hj.Hijack()
+			c.Close() // the connection drops: no HTTP answer at all
+			return
+		}
+		g.serve(w, r)
+	})
+	down := failed(v.Verify(context.Background(), target()))[CheckIdentity]
+
+	if !strings.Contains(wrong, "status 500") || strings.Contains(wrong, "did not answer") {
+		t.Fatalf("wrong-status reason = %q", wrong)
+	}
+	if !strings.Contains(down, "did not answer") || strings.Contains(down, "status") {
+		t.Fatalf("unreachable reason = %q", down)
+	}
+	if wrong == down {
+		t.Fatal("the two diagnoses are indistinguishable")
 	}
 }
