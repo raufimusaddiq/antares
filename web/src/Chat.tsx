@@ -16,6 +16,7 @@ import { mergeNewest, prependOlder } from "./history";
 import { MessageBody } from "./MessageBody";
 import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
+import { AntaresMark } from "./brand/AntaresMark";
 
 const MAX_INPUT = 32_000;
 const RECONNECT_TRIES = 5;
@@ -486,7 +487,10 @@ export function Chat({ email, onSignOut }: { email: string; onSignOut: () => voi
   return (
     <div className="chat-app">
       <header className="bar">
-        <strong>Antares</strong>
+        <strong className="brand">
+          <AntaresMark size={20} />
+          Antares
+        </strong>
         <span className="who-am-i">{email}</span>
         <button type="button" className="quiet" onClick={onSignOut}>
           Sign out

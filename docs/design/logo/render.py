@@ -1,4 +1,8 @@
-"""Regenerate gallery.png: python3 render.py (needs the playwright Python package and a chromium; not an app dependency)."""
+"""Regenerate gallery.png: python3 render.py (needs the playwright Python package and a chromium; not an app dependency).
+
+The gallery is the record of the round-1 decision (B · Rival was chosen). The rejected concepts were removed in round 2;
+restore a-core.svg, c-tail.svg and drafts/ from commit 2e55ea2 before regenerating.
+"""
 import functools, http.server, pathlib, threading
 from playwright.sync_api import sync_playwright
 

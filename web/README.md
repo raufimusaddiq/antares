@@ -52,3 +52,16 @@ Accessibility fallbacks reassign tokens at the end of the file, the selectors do
 Focus uses a two-tone ring (`--focus` outline, `--focus-halo` outer ring) so it shows on every tier and
 on the accent button. Icons are inline SVG with `currentColor` strokes. The CSP forbids inline `style`
 attributes, so state is expressed with classes.
+
+## Brand, type and social card
+
+- **Mark:** `src/brand/AntaresMark.tsx` (B · Rival), generated from `docs/design/logo/b-rival.svg`, `currentColor`, `size` prop.
+  The top bar lifts it 1.2px so its centre matches the wordmark's cap-centre (measured at 3x).
+- **Assets:** `public/` holds the favicon set, `og.png` (1200x630) and the fonts. Regenerate the icons and card with
+  `python3 docs/design/logo/assets.py` (one-shot, needs the Python `playwright` package; not an app dependency).
+- **Type:** `--font-ui` is Inter Variable, `--font-display` is Space Grotesk Variable (status headline and empty-state note
+  only), `--font-mono` is the system monospace. Both faces are self-hosted latin subsets under `public/fonts/` (OFL texts
+  alongside), `font-display: swap`, each with an Arial-matched fallback face (`size-adjust` and ascent/descent overrides
+  measured from the font files). There is no remote font host.
+- **CSP:** the shell's Content-Security-Policy has no `font-src`, and `default-src 'none'` therefore blocks the woff2 files.
+  Until `internal/server/server.go` adds `font-src 'self'`, the app renders in the metric-matched fallback. See the PR.

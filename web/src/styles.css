@@ -7,8 +7,19 @@
    Light and dark set the same token names. Both themes have a neutral ambient layer
    (body::before/::after): glass needs something behind it to refract, and a translucent
    surface over a uniform background is indistinguishable from an opaque one. */
+/* Self-hosted, latin subset, OFL. No remote font host. The fallback faces are metric-matched to Arial
+   (size-adjust and the ascent/descent overrides measured from the font files) so the swap does not move the layout. */
+@font-face { font-family: "Inter Variable"; src: url("/fonts/inter-latin-wght-normal.woff2") format("woff2"); font-weight: 100 900; font-style: normal; font-display: swap; }
+@font-face { font-family: "Space Grotesk Variable"; src: url("/fonts/space-grotesk-latin-wght-normal.woff2") format("woff2"); font-weight: 300 700; font-style: normal; font-display: swap; }
+@font-face { font-family: "Inter Fallback"; src: local("Arial"), local("Liberation Sans"), local("Helvetica"); size-adjust: 107%; ascent-override: 90.5%; descent-override: 22.5%; line-gap-override: 0%; }
+@font-face { font-family: "Space Grotesk Fallback"; src: local("Arial"), local("Liberation Sans"), local("Helvetica"); size-adjust: 109.7%; ascent-override: 89.7%; descent-override: 26.6%; line-gap-override: 0%; }
+
 :root {
   color-scheme: dark;
+
+  --font-ui: "Inter Variable", "Inter Fallback", system-ui, sans-serif;
+  --font-display: "Space Grotesk Variable", "Space Grotesk Fallback", system-ui, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
   /* Ambient: near-black with a cool cast, lit by soft grey and blue-grey fields. */
   --bg-base: #08090b;
@@ -146,7 +157,7 @@
 body {
   margin: 0;
   min-height: 100vh;
-  font: 16px/1.55 ui-sans-serif, "SF Pro Text", "Helvetica Neue", "Segoe UI", Arial, sans-serif;
+  font: 16px/1.55 var(--font-ui);
   color: var(--text);
   background: var(--bg-base);
   -webkit-font-smoothing: antialiased;
@@ -170,8 +181,8 @@ body::after {
     radial-gradient(circle at 8% -18%, transparent 30vmax, var(--amb-ring) 31vmax, var(--amb-ring-shade) 35vmax, transparent 41vmax);
 }
 
-/* Type: system sans (the CSP forbids web fonts). Headings are large, light and tight; body stays 16px/1.55. */
-h1 { font-size: clamp(2.1rem, 5.2vw, 3rem); font-weight: 300; line-height: 1.04; letter-spacing: -0.035em; margin: 0 0 1rem; }
+/* Type: Inter for UI and body, Space Grotesk only for the large tight headings (status headline, empty-state note). */
+h1 { font-family: var(--font-display); font-size: clamp(2.1rem, 5.2vw, 3rem); font-weight: 300; line-height: 1.04; letter-spacing: -0.035em; margin: 0 0 1rem; }
 small { color: var(--text-2); }
 a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.2em; }
 .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -254,6 +265,9 @@ dd:last-child { margin-bottom: 0; }
   padding: var(--gap);
 }
 .bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 1rem; padding: 0.4rem 0.5rem 0.4rem 1.25rem; border-radius: var(--r-md); }
+.bar .brand { display: inline-flex; align-items: center; gap: 0.5rem; }
+/* Measured at 3x: the mark's centre sat 1.2px below the wordmark's cap-centre, so it is lifted to match. */
+.bar .brand svg { transform: translateY(-0.075rem); }
 .bar strong { font-size: 1.25rem; font-weight: 600; letter-spacing: -0.03em; }
 .bar .who-am-i { margin-left: auto; min-width: 0; color: var(--text-2); font-size: 0.9rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .bar button { margin: 0; }
@@ -284,7 +298,7 @@ dd:last-child { margin-bottom: 0; }
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; gap: var(--gap); }
 .log { flex: 1; overflow: auto; padding: 3rem 0.25rem 0.5rem; position: relative; overflow-anchor: none; overscroll-behavior: contain; }
 /* First-run state: the empty conversation gets the large type, not a caption. */
-.pane > p.label { margin: auto auto auto clamp(0.5rem, 4vw, 3rem); max-width: 22rem; font-size: clamp(2rem, 4.6vw, 3rem); font-weight: 300; line-height: 1.04; letter-spacing: -0.035em; color: var(--text); }
+.pane > p.label { font-family: var(--font-display); margin: auto auto auto clamp(0.5rem, 4vw, 3rem); max-width: 22rem; font-size: clamp(2rem, 4.6vw, 3rem); font-weight: 300; line-height: 1.04; letter-spacing: -0.035em; color: var(--text); }
 
 /* ---- messages ------------------------------------------------------------------ */
 .turn { max-width: 48rem; margin: 0 auto 1rem; padding: 0.7rem 1.15rem 0.85rem; border-radius: var(--r-lg); }
@@ -295,7 +309,7 @@ dd:last-child { margin-bottom: 0; }
 .turn p { margin: 0.3rem 0; }
 .turn .plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .turn pre { overflow: auto; padding: 0.65rem 0.85rem; background: var(--bg-base); border: 1px solid var(--solid-border); border-radius: var(--r-sm); }
-.turn code { font-family: ui-monospace, "SF Mono", monospace; font-size: 0.9em; }
+.turn code { font-family: var(--font-mono); font-size: 0.9em; }
 .turn blockquote { margin: 0.3rem 0; padding-left: 0.85rem; border-left: 2px solid var(--solid-border); color: var(--text-2); }
 pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .label { color: var(--text-2); font-size: 0.85rem; margin: 0.3rem 0; }
