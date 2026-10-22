@@ -1,0 +1,525 @@
+package store
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"reflect"
+	"strings"
+	"sync"
+	"testing"
+	"time"
+)
+
+var t0 = time.Date(2026, 3, 4, 5, 6, 7, 0, time.UTC)
+
+func mkUser(t *testing.T, db *sql.DB, id, role, approval, tenant string) string {
+	t.Helper()
+	if _, err := db.Exec(`INSERT INTO users (id, google_issuer, google_sub, email, role, approval_status, tenant_status, created_at)
+		VALUES (?, 'iss', ?, ?, ?, ?, ?, ?)`, id, "sub-"+id, id+"@example.test", role, approval, tenant, ts(t0)); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func mkBinding(t *testing.T, db *sql.DB, user, profile, status string) string {
+	t.Helper()
+	id := NewID()
+	if _, err := db.Exec(`INSERT INTO tenant_bindings (id,user_id,profile_name,routing_mode,upstream_endpoint_id,credential_ciphertext,
+		credential_key_version,credential_fingerprint,memory_scope_key,status,created_at)
+		VALUES (?,?,?,'MUX_PREFIX','ep',?,1,?,?,?,?)`, id, user, profile, []byte("sealed-"+user), "fp-"+user, "mem-"+user, status, ts(t0)); err != nil {
+		t.Fatal(err)
+	}
+	return id
+}
+
+func mkSession(t *testing.T, db *sql.DB, user, hash string) {
+	t.Helper()
+	if err := CreateSession(context.Background(), db, user, hash, t0, time.Hour); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func count(t *testing.T, db *sql.DB, q string, args ...any) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(q, args...).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func adminAndUser(t *testing.T, approval string) (db *sql.DB, admin, user string) {
+	db, _ = migrated(t)
+	admin = mkUser(t, db, "a1", "ADMIN", "APPROVED", "READY")
+	user = mkUser(t, db, "u1", "USER", approval, "UNPROVISIONED")
+	return
+}
+
+func status(t *testing.T, db *sql.DB, id string) (approval, tenant string) {
+	t.Helper()
+	if err := db.QueryRow(`SELECT approval_status, tenant_status FROM users WHERE id = ?`, id).Scan(&approval, &tenant); err != nil {
+		t.Fatal(err)
+	}
+	return
+}
+
+func TestDecideApproveRecordsActorTimeAndAudit(t *testing.T) {
+	db, admin, user := adminAndUser(t, "PENDING")
+	got, err := Decide(context.Background(), db, admin, user, ActionApprove, "welcome", "req_1", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.ApprovalStatus != "APPROVED" || got.TenantStatus != "UNPROVISIONED" || got.ApprovedAt == "" {
+		t.Fatalf("got %+v", got)
+	}
+	var a, from, to, reason, at string
+	if err := db.QueryRow(`SELECT actor_user_id, from_status, to_status, reason, created_at FROM approvals WHERE target_user_id = ?`, user).
+		Scan(&a, &from, &to, &reason, &at); err != nil {
+		t.Fatal(err)
+	}
+	if a != admin || from != "PENDING" || to != "APPROVED" || reason != "welcome" || at != ts(t0) {
+		t.Fatalf("approvals row = %s %s %s %q %s", a, from, to, reason, at)
+	}
+	var actor, action, outcome, req string
+	if err := db.QueryRow(`SELECT actor_user_id, action, outcome, request_id FROM audit_log WHERE target_id = ?`, user).Scan(&actor, &action, &outcome, &req); err != nil {
+		t.Fatal(err)
+	}
+	if actor != admin || action != "admin.approve" || outcome != "ok" || req != "req_1" {
+		t.Fatalf("audit row = %s %s %s %s", actor, action, outcome, req)
+	}
+	var by string
+	db.QueryRow(`SELECT approved_by FROM users WHERE id = ?`, user).Scan(&by)
+	if by != admin {
+		t.Fatalf("approved_by = %q", by)
+	}
+}
+
+func TestDecideRejectAndSuspendNeedAReasonAndChangeNothingWithout(t *testing.T) {
+	for _, tc := range []struct{ action, approval string }{{ActionReject, "PENDING"}, {ActionSuspend, "APPROVED"}} {
+		for _, reason := range []string{"", "   \t "} {
+			db, admin, user := adminAndUser(t, tc.approval)
+			if _, err := Decide(context.Background(), db, admin, user, tc.action, reason, "r", t0); !errors.Is(err, ErrReason) {
+				t.Fatalf("%s with reason %q: %v", tc.action, reason, err)
+			}
+			if a, _ := status(t, db, user); a != tc.approval {
+				t.Fatalf("status changed to %s without a reason", a)
+			}
+			if count(t, db, `SELECT COUNT(*) FROM approvals`)+count(t, db, `SELECT COUNT(*) FROM audit_log`) != 0 {
+				t.Fatal("a refused action left history rows")
+			}
+		}
+	}
+	db, admin, user := adminAndUser(t, "PENDING")
+	for _, bad := range []string{strings.Repeat("x", 501), "line\nbreak", "nul\x00byte"} {
+		if _, err := Decide(context.Background(), db, admin, user, ActionReject, bad, "r", t0); !errors.Is(err, ErrReasonInvalid) {
+			t.Fatalf("reason %q: %v", bad, err)
+		}
+	}
+}
+
+func TestDecideTransitionTable(t *testing.T) {
+	type tc struct {
+		from, action, to string
+		ok               bool
+	}
+	cases := []tc{
+		{"PENDING", ActionApprove, "APPROVED", true}, {"REJECTED", ActionApprove, "APPROVED", true},
+		{"PENDING", ActionReject, "REJECTED", true}, {"APPROVED", ActionSuspend, "SUSPENDED", true},
+		{"SUSPENDED", ActionReactivate, "APPROVED", true},
+		{"APPROVED", ActionApprove, "", false}, {"SUSPENDED", ActionApprove, "", false},
+		{"APPROVED", ActionReject, "", false}, {"REJECTED", ActionReject, "", false}, {"SUSPENDED", ActionReject, "", false},
+		{"PENDING", ActionSuspend, "", false}, {"REJECTED", ActionSuspend, "", false}, {"SUSPENDED", ActionSuspend, "", false},
+		{"PENDING", ActionReactivate, "", false}, {"APPROVED", ActionReactivate, "", false}, {"REJECTED", ActionReactivate, "", false},
+		{"APPROVED", "promote", "", false},
+	}
+	for _, c := range cases {
+		db, admin, user := adminAndUser(t, c.from)
+		_, err := Decide(context.Background(), db, admin, user, c.action, "because", "r", t0)
+		got, _ := status(t, db, user)
+		if c.ok {
+			if err != nil || got != c.to {
+				t.Errorf("%s --%s--> %s: err=%v got=%s", c.from, c.action, c.to, err, got)
+			}
+			continue
+		}
+		if !errors.Is(err, ErrConflict) || got != c.from {
+			t.Errorf("%s --%s-->: err=%v status=%s (want conflict, unchanged)", c.from, c.action, err, got)
+		}
+		if count(t, db, `SELECT COUNT(*) FROM approvals`) != 0 {
+			t.Errorf("%s --%s--> wrote history on a refusal", c.from, c.action)
+		}
+	}
+}
+
+func TestDecideAuthorizationIsEnforcedInTheDataLayer(t *testing.T) {
+	db, _, user := adminAndUser(t, "PENDING")
+	plain := mkUser(t, db, "u2", "USER", "APPROVED", "READY")
+	suspendedAdmin := mkUser(t, db, "a2", "ADMIN", "SUSPENDED", "DISABLED")
+	for name, actor := range map[string]string{"plain user": plain, "suspended admin": suspendedAdmin, "unknown actor": "nobody"} {
+		if _, err := Decide(context.Background(), db, actor, user, ActionApprove, "", "r", t0); !errors.Is(err, ErrNotAdmin) {
+			t.Errorf("%s: %v", name, err)
+		}
+	}
+	if a, _ := status(t, db, user); a != "PENDING" {
+		t.Fatal("an unauthorised actor changed a status")
+	}
+	if _, err := Decide(context.Background(), db, "a1", "a1", ActionSuspend, "x", "r", t0); !errors.Is(err, ErrSelf) {
+		t.Fatalf("self suspend: %v", err)
+	}
+	if _, err := Decide(context.Background(), db, "a1", "ghost", ActionApprove, "", "r", t0); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("unknown target: %v", err)
+	}
+}
+
+func TestSuspendRevokesSessionsAndDisablesTheBinding(t *testing.T) {
+	db, admin, user := adminAndUser(t, "APPROVED")
+	db.Exec(`UPDATE users SET tenant_status = 'READY' WHERE id = ?`, user)
+	mkBinding(t, db, user, "u_aaaaaaaaaaaa", "READY")
+	mkSession(t, db, user, "h1")
+	mkSession(t, db, user, "h2")
+	mkSession(t, db, admin, "adm")
+	if _, err := Decide(context.Background(), db, admin, user, ActionSuspend, "abuse", "r", t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SessionUser(context.Background(), db, "h1", t0); !errors.Is(err, ErrNoSession) {
+		t.Fatalf("suspended user's session still valid: %v", err)
+	}
+	if _, err := SessionUser(context.Background(), db, "adm", t0); err != nil {
+		t.Fatalf("the admin's own session was revoked: %v", err)
+	}
+	if _, tenant := status(t, db, user); tenant != "DISABLED" {
+		t.Fatalf("tenant = %s", tenant)
+	}
+	if n := count(t, db, `SELECT COUNT(*) FROM tenant_bindings WHERE user_id = ? AND status = 'DISABLED'`, user); n != 1 {
+		t.Fatal("binding not disabled")
+	}
+	u, _ := SessionUser(context.Background(), db, "adm", t0)
+	_ = u
+	// Reactivation keeps the credential but demands re-verification.
+	got, err := Decide(context.Background(), db, admin, user, ActionReactivate, "", "r", t0)
+	if err != nil || got.TenantStatus != "CONFIGURING" {
+		t.Fatalf("reactivate: %+v %v", got, err)
+	}
+	// The binding is not usable until verified again: CONFIGURING, never READY.
+	if n := count(t, db, `SELECT COUNT(*) FROM tenant_bindings WHERE user_id = ? AND status = 'READY'`, user); n != 0 {
+		t.Fatal("reactivation made the binding READY without verification")
+	}
+}
+
+func TestRejectRevokesSessionsAndReapprovalProvisions(t *testing.T) {
+	db, admin, user := adminAndUser(t, "PENDING")
+	mkSession(t, db, user, "h1")
+	if _, err := Decide(context.Background(), db, admin, user, ActionReject, "not a member", "r", t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SessionUser(context.Background(), db, "h1", t0); !errors.Is(err, ErrNoSession) {
+		t.Fatal("rejected user's session still valid")
+	}
+	got, err := Decide(context.Background(), db, admin, user, ActionApprove, "", "r", t0)
+	if err != nil || got.TenantStatus != "UNPROVISIONED" {
+		t.Fatalf("re-approve: %+v %v", got, err)
+	}
+}
+
+// race runs two Decide calls at the same instant and returns their errors.
+func race(db *sql.DB, user string, x, y struct{ actor, action string }) [2]error {
+	var wg sync.WaitGroup
+	start := make(chan struct{})
+	var out [2]error
+	for i, c := range []struct{ actor, action string }{x, y} {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			_, out[i] = Decide(context.Background(), db, c.actor, user, c.action, "because", "r", t0)
+		}()
+	}
+	close(start)
+	wg.Wait()
+	return out
+}
+
+type act = struct{ actor, action string }
+
+// Two admins making the same decision: exactly one wins, the other is told the
+// state moved, and history holds the winner's row only (PRD §3.5).
+func TestTwoAdminsDecidingTheSameThingYieldOneWinner(t *testing.T) {
+	for _, action := range []string{ActionApprove, ActionReject} {
+		for i := 0; i < 15; i++ {
+			db, a1, user := adminAndUser(t, "PENDING")
+			a2 := mkUser(t, db, "a2", "ADMIN", "APPROVED", "READY")
+			res := race(db, user, act{a1, action}, act{a2, action})
+			wins := 0
+			for _, e := range res {
+				switch {
+				case e == nil:
+					wins++
+				case !errors.Is(e, ErrConflict):
+					t.Fatalf("%s: loser got %v, want ErrConflict", action, e)
+				}
+			}
+			if wins != 1 {
+				t.Fatalf("%s: %d winners: %v", action, wins, res)
+			}
+			if n := count(t, db, `SELECT COUNT(*) FROM approvals WHERE target_user_id = ?`, user); n != 1 {
+				t.Fatalf("%s: %d history rows, want the winner's only", action, n)
+			}
+			if n := count(t, db, `SELECT COUNT(*) FROM audit_log WHERE target_id = ? AND action LIKE 'admin.%'`, user); n != 1 {
+				t.Fatalf("%s: %d audit rows", action, n)
+			}
+		}
+	}
+}
+
+// Approve and reject racing may serialise either way (a rejected user can be
+// re-approved), but the history must always be a valid chain from PENDING that
+// ends at the stored status: no lost update, no history that disagrees with state.
+func TestRacingApproveAndRejectLeavesAConsistentChain(t *testing.T) {
+	for i := 0; i < 20; i++ {
+		db, a1, user := adminAndUser(t, "PENDING")
+		a2 := mkUser(t, db, "a2", "ADMIN", "APPROVED", "READY")
+		race(db, user, act{a1, ActionApprove}, act{a2, ActionReject})
+		rows, err := db.Query(`SELECT from_status, to_status FROM approvals WHERE target_user_id = ? ORDER BY created_at, rowid`, user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cur := "PENDING"
+		n := 0
+		for rows.Next() {
+			var f, to string
+			rows.Scan(&f, &to)
+			if f != cur {
+				t.Fatalf("broken chain: at %s but a row says from %s", cur, f)
+			}
+			cur = to
+			n++
+		}
+		rows.Close()
+		if got, _ := status(t, db, user); got != cur || n == 0 {
+			t.Fatalf("stored status %s, history ends at %s after %d rows", got, cur, n)
+		}
+	}
+}
+
+func TestClaimLeaseAndStableSlug(t *testing.T) {
+	db, _, user := adminAndUser(t, "APPROVED")
+	ctx := context.Background()
+	c, err := ClaimTenant(ctx, db, user, "u_firstslug00001", t0, time.Minute, 5)
+	if err != nil || c.Profile != "u_firstslug00001" || c.BindingID != "" {
+		t.Fatalf("claim: %+v %v", c, err)
+	}
+	if _, err := ClaimTenant(ctx, db, user, "u_otherslug00002", t0.Add(30*time.Second), time.Minute, 5); !errors.Is(err, ErrNotClaimable) {
+		t.Fatalf("a leased run was claimed twice: %v", err)
+	}
+	c2, err := ClaimTenant(ctx, db, user, "u_otherslug00002", t0.Add(2*time.Minute), time.Minute, 5)
+	if err != nil || c2.Profile != "u_firstslug00001" {
+		t.Fatalf("expired lease: %+v %v (the slug must not change)", c2, err)
+	}
+	if ids, _ := DueTenants(ctx, db, t0.Add(2*time.Minute), 5, 10); len(ids) != 0 {
+		t.Fatalf("a leased user is due: %v", ids)
+	}
+	if ids, _ := DueTenants(ctx, db, t0.Add(10*time.Minute), 5, 10); len(ids) != 1 {
+		t.Fatalf("an expired lease is not due: %v", ids)
+	}
+}
+
+func TestOnlyApprovedUsersAreClaimable(t *testing.T) {
+	for _, ap := range []string{"PENDING", "REJECTED", "SUSPENDED"} {
+		db, _, user := adminAndUser(t, ap)
+		if _, err := ClaimTenant(context.Background(), db, user, "u_slug000000001", t0, time.Minute, 5); !errors.Is(err, ErrNotClaimable) {
+			t.Errorf("%s user claimable: %v", ap, err)
+		}
+		if ids, _ := DueTenants(context.Background(), db, t0, 5, 10); len(ids) != 0 {
+			t.Errorf("%s user is due: %v", ap, ids)
+		}
+	}
+}
+
+func TestFailedBacksOffAndStopsAfterTheBudget(t *testing.T) {
+	db, _, user := adminAndUser(t, "APPROVED")
+	ctx := context.Background()
+	c, _ := ClaimTenant(ctx, db, user, "u_slug000000001", t0, time.Minute, 3)
+	if err := MarkFailed(ctx, db, c, "provisioning helper unreachable", 1, t0.Add(15*time.Second), t0); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := GetAdminUser(ctx, db, user)
+	if got.TenantStatus != "FAILED" || got.TenantDetail != "provisioning helper unreachable" || got.TenantAttempts != 1 {
+		t.Fatalf("got %+v", got)
+	}
+	if ids, _ := DueTenants(ctx, db, t0.Add(5*time.Second), 3, 10); len(ids) != 0 {
+		t.Fatal("retried before the backoff elapsed")
+	}
+	if _, err := ClaimTenant(ctx, db, user, "x", t0.Add(5*time.Second), time.Minute, 3); !errors.Is(err, ErrNotClaimable) {
+		t.Fatalf("claimed before backoff: %v", err)
+	}
+	if ids, _ := DueTenants(ctx, db, t0.Add(20*time.Second), 3, 10); len(ids) != 1 {
+		t.Fatal("not retried after the backoff")
+	}
+	c, err := ClaimTenant(ctx, db, user, "x", t0.Add(20*time.Second), time.Minute, 3)
+	if err != nil || c.Attempts != 1 {
+		t.Fatalf("reclaim: %+v %v", c, err)
+	}
+	MarkFailed(ctx, db, c, "again", 3, t0.Add(time.Hour), t0.Add(20*time.Second))
+	if ids, _ := DueTenants(ctx, db, t0.Add(48*time.Hour), 3, 10); len(ids) != 0 {
+		t.Fatal("kept retrying past the attempt budget")
+	}
+	if _, err := ClaimTenant(ctx, db, user, "x", t0.Add(48*time.Hour), time.Minute, 3); !errors.Is(err, ErrNotClaimable) {
+		t.Fatalf("claimed past the budget: %v", err)
+	}
+	// An admin requeue resets the budget.
+	admin := "a1"
+	if _, err := RequeueTenant(ctx, db, admin, user, RequeueProvision, "r", t0); err != nil {
+		t.Fatal(err)
+	}
+	if ids, _ := DueTenants(ctx, db, t0, 3, 10); len(ids) != 1 {
+		t.Fatal("requeue did not make the user due")
+	}
+}
+
+func TestSuspensionDuringARunSupersedesIt(t *testing.T) {
+	ctx := context.Background()
+	db, admin, user := adminAndUser(t, "APPROVED")
+	c, _ := ClaimTenant(ctx, db, user, "u_slug000000001", t0, time.Minute, 5)
+	if _, err := Decide(ctx, db, admin, user, ActionSuspend, "abuse", "r", t0); err != nil {
+		t.Fatal(err)
+	}
+	// The helper answered after the suspension: the credential is kept, disabled.
+	b := NewBinding{ID: NewID(), Endpoint: "ep", Ciphertext: []byte("x"), KeyVersion: 1, Fingerprint: "fp1", MemoryScopeKey: "m1"}
+	if err := AttachBinding(ctx, db, c, b, t0); !errors.Is(err, ErrSuperseded) {
+		t.Fatalf("attach: %v", err)
+	}
+	if n := count(t, db, `SELECT COUNT(*) FROM tenant_bindings WHERE user_id = ? AND status = 'DISABLED'`, user); n != 1 {
+		t.Fatal("late credential was not stored DISABLED")
+	}
+	if err := MarkReady(ctx, db, c, t0); !errors.Is(err, ErrSuperseded) {
+		t.Fatalf("MarkReady after suspend: %v", err)
+	}
+	if err := MarkFailed(ctx, db, c, "x", 1, t0, t0); !errors.Is(err, ErrSuperseded) {
+		t.Fatalf("MarkFailed after suspend: %v", err)
+	}
+	if _, tenant := status(t, db, user); tenant != "DISABLED" {
+		t.Fatalf("tenant = %s", tenant)
+	}
+}
+
+func TestMarkReadyIsTheOnlyPathToReadyAndNeedsTheBinding(t *testing.T) {
+	ctx := context.Background()
+	db, _, user := adminAndUser(t, "APPROVED")
+	c, _ := ClaimTenant(ctx, db, user, "u_slug000000001", t0, time.Minute, 5)
+	// No binding row yet: READY must be refused and nothing may change.
+	if err := MarkReady(ctx, db, c, t0); !errors.Is(err, ErrSuperseded) {
+		t.Fatalf("MarkReady with no binding: %v", err)
+	}
+	if _, tenant := status(t, db, user); tenant != "CONFIGURING" {
+		t.Fatalf("tenant = %s after a refused MarkReady", tenant)
+	}
+	b := NewBinding{ID: NewID(), Endpoint: "ep", Ciphertext: []byte("x"), KeyVersion: 1, Fingerprint: "fp1", MemoryScopeKey: "m1"}
+	if err := AttachBinding(ctx, db, c, b, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := MarkReady(ctx, db, c, t0); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := GetAdminUser(ctx, db, user)
+	if got.TenantStatus != "READY" || got.BindingStatus != "READY" || got.BindingVerifiedAt == "" {
+		t.Fatalf("got %+v", got)
+	}
+	// The same run cannot mark READY twice.
+	if err := MarkReady(ctx, db, c, t0); !errors.Is(err, ErrSuperseded) {
+		t.Fatalf("second MarkReady: %v", err)
+	}
+}
+
+func TestDuplicateCredentialAcrossUsersIsRefused(t *testing.T) {
+	ctx := context.Background()
+	db, _, u1 := adminAndUser(t, "APPROVED")
+	u2 := mkUser(t, db, "u2", "USER", "APPROVED", "UNPROVISIONED")
+	c1, _ := ClaimTenant(ctx, db, u1, "u_slug000000001", t0, time.Minute, 5)
+	c2, _ := ClaimTenant(ctx, db, u2, "u_slug000000002", t0, time.Minute, 5)
+	mk := func() NewBinding {
+		return NewBinding{ID: NewID(), Endpoint: "ep", Ciphertext: []byte("x"), KeyVersion: 1, Fingerprint: "same-key", MemoryScopeKey: NewID()}
+	}
+	if err := AttachBinding(ctx, db, c1, mk(), t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := AttachBinding(ctx, db, c2, mk(), t0); err == nil || errors.Is(err, ErrSuperseded) {
+		t.Fatalf("the same key was bound to two users: %v", err)
+	}
+}
+
+func TestRequeueRules(t *testing.T) {
+	ctx := context.Background()
+	db, admin, user := adminAndUser(t, "APPROVED")
+	if _, err := RequeueTenant(ctx, db, admin, user, RequeueVerify, "r", t0); !errors.Is(err, ErrNoBinding) {
+		t.Fatalf("verify without binding: %v", err)
+	}
+	mkBinding(t, db, user, "u_aaaaaaaaaaaa", "READY")
+	db.Exec(`UPDATE users SET tenant_status = 'READY' WHERE id = ?`, user)
+	got, err := RequeueTenant(ctx, db, admin, user, RequeueVerify, "r", t0)
+	if err != nil || got.TenantStatus != "CONFIGURING" || got.BindingStatus != "CONFIGURING" {
+		t.Fatalf("verify: %+v %v", got, err)
+	}
+	for _, ap := range []string{"PENDING", "REJECTED", "SUSPENDED"} {
+		db.Exec(`UPDATE users SET approval_status = ? WHERE id = ?`, ap, user)
+		if _, err := RequeueTenant(ctx, db, admin, user, RequeueProvision, "r", t0); !errors.Is(err, ErrConflict) {
+			t.Errorf("requeue of a %s user: %v", ap, err)
+		}
+	}
+	db.Exec(`UPDATE users SET approval_status = 'APPROVED', tenant_status = 'DISABLED' WHERE id = ?`, user)
+	if _, err := RequeueTenant(ctx, db, admin, user, RequeueProvision, "r", t0); !errors.Is(err, ErrConflict) {
+		t.Fatalf("requeue of a DISABLED tenant: %v", err)
+	}
+	plain := mkUser(t, db, "u9", "USER", "APPROVED", "READY")
+	if _, err := RequeueTenant(ctx, db, plain, user, RequeueProvision, "r", t0); !errors.Is(err, ErrNotAdmin) {
+		t.Fatalf("non-admin requeue: %v", err)
+	}
+}
+
+func TestOtherReadyProfilesExcludesTheCallerAndUnreadyBindings(t *testing.T) {
+	ctx := context.Background()
+	db, _, u1 := adminAndUser(t, "APPROVED")
+	u2 := mkUser(t, db, "u2", "USER", "APPROVED", "READY")
+	u3 := mkUser(t, db, "u3", "USER", "APPROVED", "CONFIGURING")
+	mkBinding(t, db, u1, "u_own000000001", "READY")
+	mkBinding(t, db, u2, "u_peer00000002", "READY")
+	mkBinding(t, db, u3, "u_peer00000003", "CONFIGURING")
+	got, err := OtherReadyProfiles(ctx, db, u1, 3)
+	if err != nil || !reflect.DeepEqual(got, []string{"u_peer00000002"}) {
+		t.Fatalf("got %v %v", got, err)
+	}
+}
+
+// The admin read model has no field that could carry a profile, credential or
+// content: the guard is structural, so a later edit that adds one fails here.
+func TestAdminUserHasNoSecretOrContentFields(t *testing.T) {
+	typ := reflect.TypeOf(AdminUser{})
+	for i := 0; i < typ.NumField(); i++ {
+		n := strings.ToLower(typ.Field(i).Name)
+		for _, bad := range []string{"profile", "credential", "key", "secret", "token", "cipher", "memory", "chat", "message", "content", "slug"} {
+			if strings.Contains(n, bad) {
+				t.Errorf("AdminUser.%s looks like a secret or content field", typ.Field(i).Name)
+			}
+		}
+	}
+}
+
+func TestListAdminUsersFiltersAndPages(t *testing.T) {
+	ctx := context.Background()
+	db, _ := migrated(t)
+	for i, ap := range []string{"PENDING", "APPROVED", "PENDING", "REJECTED"} {
+		id := mkUser(t, db, "u"+string(rune('a'+i)), "USER", ap, "UNPROVISIONED")
+		db.Exec(`UPDATE users SET created_at = ? WHERE id = ?`, ts(t0.Add(time.Duration(i)*time.Minute)), id)
+	}
+	pend, err := ListAdminUsers(ctx, db, "PENDING", 50, 0)
+	if err != nil || len(pend) != 2 || pend[0].ID != "ua" || pend[1].ID != "uc" {
+		t.Fatalf("pending = %+v %v", pend, err)
+	}
+	all, _ := ListAdminUsers(ctx, db, "", 2, 1)
+	if len(all) != 2 || all[0].ID != "ub" {
+		t.Fatalf("page = %+v", all)
+	}
+	if _, err := GetAdminUser(ctx, db, "nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatal(err)
+	}
+}

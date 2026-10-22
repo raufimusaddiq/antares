@@ -40,6 +40,10 @@ type Options struct {
 	PublicOrigin string // https origin, no trailing slash
 	HTTPClient   *http.Client
 	Now          func() time.Time
+	// Tenants starts provisioning when an admin approves or requeues an account.
+	// Without it the approval endpoints still change status but nothing is
+	// provisioned, which tests of the guards rely on.
+	Tenants Tenants
 }
 
 // Auth owns login, logout, sessions and the guards.
@@ -53,6 +57,7 @@ type Auth struct {
 	now      func() time.Time
 	ver      *verifier
 	flows    *flowStore
+	tenants  Tenants
 }
 
 func New(o Options) (*Auth, error) {
@@ -67,7 +72,7 @@ func New(o Options) (*Auth, error) {
 		o.Now = time.Now
 	}
 	a := &Auth{db: o.DB, ep: o.Endpoints, clientID: o.ClientID, secret: o.ClientSecret,
-		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore()}
+		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants}
 	a.ver = &verifier{ep: o.Endpoints, clientID: o.ClientID, client: o.HTTPClient, now: o.Now}
 	return a, nil
 }

@@ -62,6 +62,13 @@ func reserve(next http.Handler) http.Handler {
 			if lower != root && !strings.HasPrefix(lower, root+"/") {
 				continue
 			}
+			// The mux would redirect a path with dot or empty segments to its
+			// cleaned form, so a client that follows redirects lands on a route it did
+			// not ask for. Under a reserved root such a path is simply not found.
+			if uncleanSegments(raw) {
+				writeErr(w, http.StatusNotFound, "not found")
+				return
+			}
 			// Let through only what the mux is meant to own, judged on the raw
 			// path: the exact probes, and /api/... with a lowercase prefix (the
 			// rest, e.g. an opaque id, may be any case).
@@ -77,6 +84,21 @@ func reserve(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+// uncleanSegments reports a "." or ".." segment, or an empty segment other than
+// a single trailing slash. The path is already percent-decoded, so %2e%2e counts.
+func uncleanSegments(p string) bool {
+	segs := strings.Split(strings.TrimPrefix(p, "/"), "/")
+	for i, seg := range segs {
+		switch {
+		case seg == "." || seg == "..":
+			return true
+		case seg == "" && i != len(segs)-1:
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Server) routes() *http.ServeMux {
