@@ -364,3 +364,55 @@ func TestStateIsSingleUseEvenWithValidCookieAndFreshCode(t *testing.T) {
 		t.Fatalf("sessions = %d", n)
 	}
 }
+
+// Rotation must be all or nothing. Force RevokeSession to fail (a trigger that
+// aborts any write to revoked_at) and check that the login fails, nothing new is
+// issued, and the old session is still the only valid one.
+func TestLoginFailsWhenTheOldSessionCannotBeRevoked(t *testing.T) {
+	h := newHarness(t)
+	b := h.browser()
+	b.login("sub-rot", "rot@example.test")
+	old := b.cookies[sessionCookie]
+	h.exec(`CREATE TRIGGER force_revoke_failure BEFORE UPDATE OF revoked_at ON app_sessions
+		BEGIN SELECT RAISE(ABORT, 'forced failure'); END`)
+
+	h.g.claims = func(n string) map[string]any { return h.g.goodClaims("sub-rot", "rot@example.test", n) }
+	state, code := b.begin()
+	res := wrap(b.callback(state, code))
+	if res.loc != "/error?code=login_failed" || res.hasSession {
+		t.Fatalf("login completed although rotation failed: %d %s session=%v", res.code, res.loc, res.hasSession)
+	}
+	if b.cookies[sessionCookie] != old {
+		t.Fatal("the browser's session cookie was replaced or cleared")
+	}
+	if n := h.count(`SELECT COUNT(*) FROM app_sessions`); n != 1 {
+		t.Fatalf("sessions = %d; a failed rotation must not issue a new one", n)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM app_sessions WHERE revoked_at IS NULL`); n != 1 {
+		t.Fatalf("live sessions = %d", n)
+	}
+	if w := b.get("/api/me"); w.Code != 200 {
+		t.Fatalf("old session should be the one valid session: %d", w.Code)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM audit_log WHERE action='auth.login' AND outcome='rejected:rotation'`); n != 1 {
+		t.Fatalf("failed rotation not audited: %d", n)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM audit_log WHERE action='auth.login' AND outcome='ok' AND created_at IS NOT NULL`); n != 1 {
+		t.Fatalf("only the first login may be audited ok, got %d", n)
+	}
+
+	// With the fault gone, rotation works and retires the old session.
+	h.exec(`DROP TRIGGER force_revoke_failure`)
+	b.login("sub-rot", "rot@example.test")
+	if b.cookies[sessionCookie] == old {
+		t.Fatal("token reused after successful rotation")
+	}
+	stale := h.browser()
+	stale.cookies[sessionCookie] = old
+	if w := stale.get("/api/me"); w.Code != http.StatusUnauthorized {
+		t.Fatalf("old session survived a successful rotation: %d", w.Code)
+	}
+	if w := b.get("/api/me"); w.Code != 200 {
+		t.Fatalf("new session rejected: %d", w.Code)
+	}
+}

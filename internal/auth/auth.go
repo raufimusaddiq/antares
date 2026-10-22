@@ -232,9 +232,15 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 		fail("store")
 		return
 	}
-	// Rotate: whatever session this browser held is retired, a fresh token is issued.
+	// Rotate: whatever session this browser held is retired before a fresh token
+	// is issued. If it cannot be retired the login fails and nothing new is
+	// issued: a rotation that silently leaves the old session valid is no rotation.
 	if old, err := r.Cookie(sessionCookie); err == nil {
-		_ = store.RevokeSession(ctx, a.db, hashToken(old.Value), now)
+		if err := store.RevokeSession(ctx, a.db, hashToken(old.Value), now); err != nil {
+			log.Printf("auth: session rotation failed: %v", err)
+			fail("rotation")
+			return
+		}
 	}
 	token := randomToken()
 	if err := store.CreateSession(ctx, a.db, u.ID, hashToken(token), now, sessionTTL); err != nil {
@@ -245,7 +251,10 @@ func (a *Auth) callback(w http.ResponseWriter, r *http.Request) {
 	if err := store.Audit(ctx, a.db, u.ID, "auth.login", "user", u.ID, "ok", reqID, now); err != nil {
 		// An unaudited login is not allowed to stand.
 		log.Printf("auth: audit write failed: %v", err)
-		_ = store.RevokeSession(ctx, a.db, hashToken(token), now)
+		if err := store.RevokeSession(ctx, a.db, hashToken(token), now); err != nil {
+			// The token was never sent to the browser, so it cannot be presented.
+			log.Printf("auth: could not revoke unsent session: %v", err)
+		}
 		fail("store")
 		return
 	}
