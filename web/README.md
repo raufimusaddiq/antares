@@ -20,12 +20,12 @@ The specular edge is a 1px `linear-gradient` background layer on the top edge th
 corners. Elevation is physical: a tight contact shadow, a mid shadow and a wide soft one. Only the
 composer carries the full stack, because it is the one pane that sits above the transcript.
 
-**Ambient layer.** `body::before` holds four large, low-alpha colour fields (teal, steel, amber, slate-violet)
+**Ambient layer.** `body::before` holds four large, low-alpha colour fields (amber, plum, rust, sand)
 and `body::after` two soft ring shapes. They are fixed, inert and static, and they are what the glass
-blurs: the same tier looks cooler near the teal and warmer near the amber. Tokens: `--bg-base`, `--amb-*`.
+blurs: the same tier looks plum-warm near the plum field and amber-warm near the amber one. Tokens: `--bg-base`, `--amb-*`.
 
 Other tokens, under `:root` and redefined for `prefers-color-scheme: light` with the same names:
-`--text`, `--text-2`, `--accent` (send action and live-run bar only), `--primary` (sign-in action),
+`--text`, `--text-2`, `--accent` (amber; send action and live-run bar only), `--primary` (sign-in action),
 `--focus`, `--focus-halo`, `--warn-*`, `--r-sm|md|lg|pill`, `--gap`.
 
 Type is the system sans (the CSP forbids web fonts). Headings are large, light and tight-tracked

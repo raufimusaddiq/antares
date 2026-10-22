@@ -8,17 +8,17 @@
 :root {
   color-scheme: dark;
 
-  /* Ambient: cool deep teal base, one warm amber light, a trace of slate-violet. */
-  --bg-base: #071013;
-  --amb-teal: rgba(46, 112, 122, 0.6);
-  --amb-steel: rgba(32, 72, 96, 0.55);
-  --amb-amber: rgba(200, 142, 78, 0.3);
-  --amb-plum: rgba(92, 72, 128, 0.24);
-  --amb-ring: rgba(140, 205, 214, 0.2);
-  --amb-ring-shade: rgba(4, 12, 15, 0.55);
+  /* Ambient: deep warm-black base lit by amber, plum, rust and sand fields. */
+  --bg-base: #0e0a0c;
+  --amb-amber: rgba(214, 140, 60, 0.42);
+  --amb-rust: rgba(150, 64, 40, 0.4);
+  --amb-sand: rgba(190, 150, 100, 0.2);
+  --amb-plum: rgba(112, 52, 98, 0.46);
+  --amb-ring: rgba(236, 176, 120, 0.2);
+  --amb-ring-shade: rgba(10, 4, 6, 0.55);
 
   /* chrome tier */
-  --chrome-fill: rgba(22, 40, 46, 0.34);
+  --chrome-fill: rgba(52, 32, 34, 0.36);
   --chrome-edge: rgba(255, 255, 255, 0.09);
   --chrome-spec: rgba(255, 255, 255, 0.24);
   --chrome-sheen: rgba(255, 255, 255, 0.03);
@@ -27,8 +27,8 @@
   --chrome-shadow: 0 1px 0 rgba(0, 0, 0, 0.35), 0 14px 26px -16px rgba(0, 0, 0, 0.55);
 
   /* raised tier: contact shadow + mid shadow + wide soft shadow + faint outer rim */
-  --raised-fill: rgba(34, 58, 66, 0.5);
-  --raised-fill-hover: rgba(48, 78, 88, 0.62);
+  --raised-fill: rgba(78, 52, 50, 0.5);
+  --raised-fill-hover: rgba(104, 70, 64, 0.62);
   --raised-edge: rgba(255, 255, 255, 0.16);
   --raised-spec: rgba(255, 255, 255, 0.55);
   --raised-sheen: rgba(255, 255, 255, 0.07);
@@ -38,7 +38,7 @@
   --control-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 6px 12px -6px rgba(0, 0, 0, 0.45), 0 0 0 1px rgba(255, 255, 255, 0.03);
 
   /* solid tier: readable body copy lives here */
-  --solid-fill: rgba(12, 22, 26, 0.94);
+  --solid-fill: rgba(20, 14, 16, 0.94);
   --solid-edge: rgba(255, 255, 255, 0.1);
   --solid-spec: rgba(255, 255, 255, 0.2);
   --solid-sheen: rgba(255, 255, 255, 0.025);
@@ -47,18 +47,18 @@
   --solid-shadow: 0 1px 2px rgba(0, 0, 0, 0.5), 0 14px 28px -14px rgba(0, 0, 0, 0.55);
 
   --edge-w: 1px;
-  --solid: #0c161a;
-  --solid-raised: #14232a;
+  --solid: #150f11;
+  --solid-raised: #231819;
   --solid-border: rgba(255, 255, 255, 0.12);
 
-  --text: #f3f7f8;
-  --text-2: #aebdc2;
-  --accent: #6ee7f9;
-  --accent-ink: #03242b;
-  --primary: #f3f7f8;
-  --primary-ink: #0a1418;
+  --text: #f8f2ee;
+  --text-2: #c7b8b1;
+  --accent: #f2a950;
+  --accent-ink: #2a1500;
+  --primary: #f8f2ee;
+  --primary-ink: #170f10;
   --focus: #ffffff;
-  --focus-halo: #071013;
+  --focus-halo: #0e0a0c;
   --warn-fill: #3a2a10;
   --warn-ink: #ffe0ad;
   --warn-border: #c47a1a;
@@ -74,45 +74,45 @@
 @media (prefers-color-scheme: light) {
   :root {
     color-scheme: light;
-    --bg-base: #dbe7e8;
-    --amb-teal: rgba(70, 160, 172, 0.42);
-    --amb-steel: rgba(110, 150, 190, 0.34);
-    --amb-amber: rgba(236, 180, 110, 0.5);
-    --amb-plum: rgba(160, 140, 200, 0.28);
+    --bg-base: #efe3dc;
+    --amb-amber: rgba(240, 170, 90, 0.55);
+    --amb-rust: rgba(220, 120, 90, 0.34);
+    --amb-sand: rgba(230, 200, 150, 0.4);
+    --amb-plum: rgba(176, 110, 160, 0.36);
     --amb-ring: rgba(255, 255, 255, 0.55);
-    --amb-ring-shade: rgba(40, 80, 90, 0.16);
+    --amb-ring-shade: rgba(90, 40, 40, 0.14);
 
-    --chrome-fill: rgba(255, 255, 255, 0.36);
-    --chrome-edge: rgba(10, 40, 50, 0.1);
+    --chrome-fill: rgba(255, 250, 246, 0.38);
+    --chrome-edge: rgba(60, 30, 25, 0.1);
     --chrome-spec: rgba(255, 255, 255, 0.95);
     --chrome-sheen: rgba(255, 255, 255, 0.3);
-    --chrome-shadow: 0 1px 0 rgba(10, 40, 50, 0.08), 0 14px 26px -16px rgba(10, 50, 60, 0.3);
+    --chrome-shadow: 0 1px 0 rgba(60, 30, 25, 0.08), 0 14px 26px -16px rgba(70, 35, 25, 0.3);
 
-    --raised-fill: rgba(255, 255, 255, 0.58);
+    --raised-fill: rgba(255, 250, 246, 0.6);
     --raised-fill-hover: rgba(255, 255, 255, 0.78);
-    --raised-edge: rgba(10, 40, 50, 0.14);
+    --raised-edge: rgba(60, 30, 25, 0.14);
     --raised-spec: rgba(255, 255, 255, 1);
     --raised-sheen: rgba(255, 255, 255, 0.4);
-    --raised-shadow: 0 1px 2px rgba(10, 40, 50, 0.22), 0 8px 16px -6px rgba(10, 50, 60, 0.22), 0 30px 60px -18px rgba(10, 50, 60, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.4);
-    --control-shadow: 0 1px 2px rgba(10, 40, 50, 0.2), 0 6px 12px -6px rgba(10, 50, 60, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.35);
+    --raised-shadow: 0 1px 2px rgba(60, 30, 25, 0.22), 0 8px 16px -6px rgba(70, 35, 25, 0.22), 0 30px 60px -18px rgba(70, 35, 25, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.4);
+    --control-shadow: 0 1px 2px rgba(60, 30, 25, 0.2), 0 6px 12px -6px rgba(70, 35, 25, 0.2), 0 0 0 1px rgba(255, 255, 255, 0.35);
 
-    --solid-fill: rgba(250, 253, 253, 0.95);
-    --solid-edge: rgba(10, 40, 50, 0.12);
+    --solid-fill: rgba(253, 249, 246, 0.95);
+    --solid-edge: rgba(60, 30, 25, 0.12);
     --solid-spec: rgba(255, 255, 255, 1);
     --solid-sheen: rgba(255, 255, 255, 0.6);
-    --solid-shadow: 0 1px 2px rgba(10, 40, 50, 0.2), 0 14px 28px -14px rgba(10, 50, 60, 0.3);
+    --solid-shadow: 0 1px 2px rgba(60, 30, 25, 0.2), 0 14px 28px -14px rgba(70, 35, 25, 0.3);
 
-    --solid: #f7fbfb;
+    --solid: #fcf8f5;
     --solid-raised: #ffffff;
-    --solid-border: rgba(10, 40, 50, 0.16);
+    --solid-border: rgba(60, 30, 25, 0.16);
 
-    --text: #0a1a1e;
-    --text-2: #2f4147;
-    --accent: #0a7a8d;
+    --text: #1c1210;
+    --text-2: #4a3733;
+    --accent: #9a4f00;
     --accent-ink: #ffffff;
-    --primary: #0a1a1e;
-    --primary-ink: #f3f7f8;
-    --focus: #0a1a1e;
+    --primary: #1c1210;
+    --primary-ink: #f8f2ee;
+    --focus: #1c1210;
     --focus-halo: #ffffff;
     --warn-fill: #fff1dc;
     --warn-ink: #4a2800;
@@ -138,10 +138,10 @@ body.chat { height: 100vh; overflow: hidden; }
 body::before, body::after { content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none; }
 body::before {
   background:
-    radial-gradient(72rem 52rem at 88% 4%, var(--amb-teal), transparent 70%),
-    radial-gradient(60rem 46rem at 4% 8%, var(--amb-steel), transparent 70%),
-    radial-gradient(52rem 40rem at 2% 100%, var(--amb-amber), transparent 72%),
-    radial-gradient(46rem 38rem at 62% 78%, var(--amb-plum), transparent 72%);
+    radial-gradient(72rem 52rem at 88% 4%, var(--amb-amber), transparent 70%),
+    radial-gradient(60rem 46rem at 4% 8%, var(--amb-plum), transparent 70%),
+    radial-gradient(52rem 40rem at 2% 100%, var(--amb-rust), transparent 72%),
+    radial-gradient(46rem 38rem at 62% 78%, var(--amb-sand), transparent 72%);
 }
 body::after {
   background:
@@ -197,8 +197,8 @@ a.btn:active, button:active:not(:disabled) { transform: scale(0.97); }
 button:disabled { opacity: 0.5; cursor: not-allowed; }
 .icon { width: 1.1rem; height: 1.1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
-/* Two solid fills only. Cyan is the send action; the sign-in link is the page's single
-   primary action, in the near-white of the reference's play button, so cyan stays rare. */
+/* Two solid fills only. Amber is the send action; the sign-in link is the page's single
+   primary action, in the near-white of the reference's play button, so amber stays rare. */
 .composer button[type="submit"] { --fill: var(--accent); --spec: rgba(255, 255, 255, 0.5); --sheen: transparent; --edge: transparent; color: var(--accent-ink); font-weight: 600; }
 .composer button[type="submit"]:hover:not(:disabled) { --fill: var(--accent); filter: brightness(1.08); }
 a.btn { --fill: var(--primary); --edge: transparent; --spec: rgba(255, 255, 255, 0.6); --sheen: transparent; color: var(--primary-ink); font-weight: 600; }
@@ -347,7 +347,7 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
     --chrome-spec: transparent; --raised-spec: transparent; --solid-spec: transparent;
     --chrome-shadow: none; --raised-shadow: none; --control-shadow: none; --solid-shadow: none;
     --edge-w: 2px; --text-2: var(--text);
-    --amb-teal: transparent; --amb-steel: transparent; --amb-amber: transparent; --amb-plum: transparent; --amb-ring: transparent; --amb-ring-shade: transparent;
+    --amb-amber: transparent; --amb-rust: transparent; --amb-sand: transparent; --amb-plum: transparent; --amb-ring: transparent; --amb-ring-shade: transparent;
   }
   a.btn, .composer button[type="submit"] { --edge: var(--text); }
 }
