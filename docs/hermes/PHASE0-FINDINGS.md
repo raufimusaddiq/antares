@@ -199,9 +199,9 @@ small tombstone files in a hidden `.deleted` directory under the profiles direct
 
 ## Update — issue #13 (2026-10-22)
 
-Per-profile routing is **still not demonstrated**. Source reading shows `gateway.profile_routes` is chat
-routing and does not open `/p/<profile>/`; the HTTP prefix is served only when more than one profile
-exists at gateway boot, so it needs a second profile and a gateway restart (owner's call). The
-`disabled_toolsets` gap above therefore **remains open**: no automated check exists. The tenant toolset
-policy is documented in `docs/runbooks/tenant-toolsets.md`, **unverified on the wire**. The Phase 0
-FAIL verdict and the isolation finding in section 6 stand unchanged.
+Per-profile routing is **not delivered**. With a second profile present the gateway's `api_server`
+adapter did not start, so `/p/<profile>/v1/...` was unreachable (see
+[issue #13 comment 6333799116](https://github.com/raufimusaddiq/antares/issues/13#issuecomment-6333799116)).
+The `disabled_toolsets` gap above therefore **remains open**: no automated check exists. A tenant
+toolset policy is proposed in `docs/runbooks/tenant-toolsets.md`, **unverified**. The Phase 0 FAIL
+verdict and the isolation finding in section 6 stand unchanged.

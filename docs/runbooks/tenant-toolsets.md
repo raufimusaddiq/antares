@@ -3,16 +3,21 @@
 Issue #13. This is a **documented default** for each tenant profile's `agent.disabled_toolsets`. The
 admin owns it and may change it per profile; it is not a constant in Antares code.
 
-**Status: UNVERIFIED on the wire.** Nothing below has been read back through
-`/p/<profile>/v1/toolsets`. That route does not exist yet: `/p/<profile>/` 404s while `default` is the
-only profile (`hermes_cli/gateway_multiplex_mode.py`: "only one profile exists (nothing to
-multiplex)"), so it needs a second profile **and a gateway restart**, which is the owner's decision.
-`gateway.profile_routes` is chat routing (platform chats to profiles); it does not open the HTTP
-prefix, and `gateway.multiplex_profiles` is retired as a topology switch. Do not use either for this.
-The toolset names and tool lists below come from the committed `/v1/toolsets` fixture (the default
-profile); the reasons come from the Phase 0 findings (section 6), not from a tenant test.
+## Status
 
-Until it is verified, Antares may serve **one trusted user** only (AGENTS.md).
+- **Per-profile routing is NOT delivered.** With a second profile present the gateway's `api_server`
+  adapter did not start, so `/p/<profile>/v1/...` could not be reached at all. Diagnosis:
+  [issue #13 comment 6333799116](https://github.com/raufimusaddiq/antares/issues/13#issuecomment-6333799116).
+  It is a separate ticket.
+- **Everything below is UNVERIFIED.** Nothing was read back through `/p/<profile>/v1/toolsets`,
+  because that route could not be reached. The policy is **not enforced or demonstrated on any
+  profile**; it is a proposal. Toolset names and tool lists come from the committed `/v1/toolsets`
+  fixture (the `default` profile). The reasons come from the Phase 0 findings (section 6), not from a
+  tenant test.
+- No guard case exists for `/p/<profile>/...`. A check against a route that cannot be served cannot
+  pass, so none is pinned.
+
+Until a tenant policy is verified end to end, Antares may serve **one trusted user** only (AGENTS.md).
 
 ## Enabled for a tenant
 
@@ -52,16 +57,14 @@ new profile should disable it too (not needed for v1 chat). Decide explicitly ra
 Neither is confirmed as an escalation path; neither is cleared. Until checked, treat both as
 unverified.
 
-## How to apply (once routing is available; owner-gated)
+## How to apply (once routing is delivered; unverified)
 
-Set `agent.disabled_toolsets` in the tenant profile's own `config.yaml` (for example
-`hermes -p <profile> config set agent.disabled_toolsets '[...]'`), never in `default`'s. Then read
-`/p/<profile>/v1/toolsets` and confirm every toolset above under "Disabled" has `enabled: false` and
-the "Enabled" set is exactly as listed.
+Set `agent.disabled_toolsets` in the tenant profile's own `config.yaml`, never in `default`'s. Then
+read `/p/<profile>/v1/toolsets` and confirm every toolset under "Disabled" has `enabled: false` and
+the "Enabled" set is exactly as listed. Until that has been done, none of this is verified.
 
 ## Guard case
 
-Not added. A `/p/<profile>/v1/toolsets` case cannot pass until the route serves, and a check that
-cannot pass is not a guard. Add it, with a fabricated fixture, in the PR that makes the route serve,
-and show it failing against a profile whose policy was not applied. The `/p/<profile>/v1/models` 404
-is deliberately not pinned either.
+Not added. Add a `/p/<profile>/v1/toolsets` case, with a fabricated fixture, in the PR that makes the
+route reachable, and show it failing against a profile whose policy was not applied. The
+`/p/<profile>/v1/models` 404 is deliberately not pinned either.
