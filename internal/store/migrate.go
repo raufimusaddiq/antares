@@ -78,6 +78,11 @@ func Migrate(ctx context.Context, db *sql.DB, fsys fs.FS) ([]int, error) {
 		version INTEGER PRIMARY KEY, name TEXT NOT NULL, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)`); err != nil {
 		return nil, fmt.Errorf("migrate: create schema_migrations: %w", err)
 	}
+	// Pre-flight: a database that records a version this binary does not know is
+	// a different lineage (newer deploy or downgrade). Refuse before any DDL.
+	if err := checkUnknown(ctx, db, migs); err != nil {
+		return nil, err
+	}
 	var applied []int
 	for _, m := range migs {
 		did, err := applyOne(ctx, db, m)
@@ -88,7 +93,7 @@ func Migrate(ctx context.Context, db *sql.DB, fsys fs.FS) ([]int, error) {
 			applied = append(applied, m.version)
 		}
 	}
-	return applied, checkUnknown(ctx, db, migs)
+	return applied, nil
 }
 
 func applyOne(ctx context.Context, db *sql.DB, m migration) (bool, error) {

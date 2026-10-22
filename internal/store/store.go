@@ -34,16 +34,28 @@ func Open(path string) (*sql.DB, error) {
 		return nil, errors.New("store: invalid database path")
 	}
 	// Refuse before touching anything: Open chmods the data directory, so a
-	// relative path would chmod the working directory.
+	// relative path would chmod the working directory, and a trailing
+	// separator would nest the database one level down.
 	if !filepath.IsAbs(path) {
 		return nil, errors.New("store: database path must be absolute")
 	}
-	if filepath.Dir(filepath.Clean(path)) == string(filepath.Separator) {
+	if strings.HasSuffix(path, "/") || filepath.Base(path) == "." {
+		return nil, errors.New("store: database path must name a file, not a directory")
+	}
+	path = filepath.Clean(path)
+	// Everything below checks and acts on the RESOLVED location: a symlinked
+	// database file must not let the configured directory stand in for the one
+	// SQLite will really use.
+	if fi, err := os.Lstat(path); err == nil && fi.Mode()&os.ModeSymlink != 0 {
+		if path, err = filepath.EvalSymlinks(path); err != nil {
+			return nil, fmt.Errorf("store: resolve database symlink: %w", err)
+		}
+	}
+	if filepath.Dir(path) == string(filepath.Separator) {
 		return nil, errors.New("store: database must live in its own directory, not the filesystem root")
 	}
 	// MkdirAll's mode is ignored for an existing directory, so tighten it
-	// explicitly, and resolve symlinks so everything below acts on the real
-	// location (a data dir mounted through a symlink is legitimate).
+	// explicitly (a data dir mounted through a symlink is legitimate).
 	dir := filepath.Dir(path)
 	_, statErr := os.Stat(dir)
 	created := errors.Is(statErr, os.ErrNotExist)
@@ -69,14 +81,11 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("store: secure data dir: %w", err)
 	}
 	path = filepath.Join(realDir, filepath.Base(path))
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("store: create database file: %w", err)
 	}
 	f.Close()
-	if path, err = filepath.EvalSymlinks(path); err != nil { // a symlinked db file
-		return nil, fmt.Errorf("store: resolve database file: %w", err)
-	}
 	if err := secureFiles(path); err != nil {
 		return nil, err
 	}
@@ -156,11 +165,27 @@ func requireDedicated(dir, base string) error {
 }
 
 // secureFiles forces 0600 on the database file and its WAL sidecars. Missing
-// sidecars are fine. The mode of the database file itself is not inherited by
-// one that already exists (a restored backup), hence the explicit chmod.
+// sidecars are fine. Each file is opened O_NOFOLLOW and chmod-ed through the
+// descriptor, so a symlinked or non-regular file is refused rather than
+// followed to whatever it points at (no check-then-chmod race either).
 func secureFiles(path string) error {
 	for _, suf := range []string{"", "-wal", "-shm"} {
-		if err := os.Chmod(path+suf, 0o600); err != nil && !(suf != "" && errors.Is(err, os.ErrNotExist)) {
+		f, err := os.OpenFile(path+suf, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+		if err != nil {
+			if suf != "" && errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("store: database file%s must be a regular file: %w", suf, err)
+		}
+		st, err := f.Stat()
+		if err == nil && !st.Mode().IsRegular() {
+			err = errors.New("not a regular file")
+		}
+		if err == nil {
+			err = f.Chmod(0o600)
+		}
+		f.Close()
+		if err != nil {
 			return fmt.Errorf("store: secure database file%s: %w", suf, err)
 		}
 	}

@@ -25,6 +25,34 @@ func New(ready Checker, staticDir string) *Server {
 }
 
 func (s *Server) Routes() http.Handler {
+	return reserve(s.routes())
+}
+
+// reserve answers 404 JSON for the whole /api tree (any case) and for every
+// path under /healthz or /readyz other than the exact probes, so none of them
+// can fall through to the SPA shell and look healthy.
+func reserve(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := strings.ToLower(r.URL.Path)
+		for _, root := range []string{"/api", "/healthz", "/readyz"} {
+			if p != root && !strings.HasPrefix(p, root+"/") {
+				continue
+			}
+			probe := p == "/healthz" || p == "/healthz/" || p == "/readyz" || p == "/readyz/"
+			if root != "/api" && p == r.URL.Path && probe {
+				break // exact probe, case-sensitive: the mux serves it
+			}
+			if root == "/api" && p == r.URL.Path {
+				break // the API mux owns /api/...
+			}
+			writeErr(w, http.StatusNotFound, "not found")
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /readyz", s.readyz)

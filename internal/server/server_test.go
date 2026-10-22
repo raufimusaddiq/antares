@@ -77,3 +77,18 @@ func TestTrailingSlashProbesDoNotServeTheShell(t *testing.T) {
 		t.Errorf("/healthz/ = %d, want 200", rec.Code)
 	}
 }
+
+func TestReservedPrefixesNeverServeTheShell(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html>shell"), 0o644)
+	h := New(func(context.Context) error { return errors.New("db down") }, dir).Routes()
+	for _, p := range []string{"/API/x", "/Api/x", "/api", "/readyz/x", "/readyz/health", "/healthz/x", "/READYZ", "/readyz//", "/readyz/./x"} {
+		rec := get(h, p)
+		if strings.Contains(rec.Body.String(), "<!doctype") || rec.Code == 200 {
+			t.Errorf("%s -> %d %q", p, rec.Code, rec.Body.String())
+		}
+	}
+	if rec := get(h, "/chats/readyz"); rec.Code != 200 {
+		t.Errorf("an unrelated client route must still get the shell: %d", rec.Code)
+	}
+}

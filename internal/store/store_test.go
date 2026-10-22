@@ -443,17 +443,19 @@ func TestOpenThroughSymlinks(t *testing.T) {
 	db.Close()
 
 	// symlinked db file
-	os.WriteFile(filepath.Join(real, "b.db"), nil, 0o644)
-	os.Chmod(filepath.Join(real, "b.db"), 0o644)
+	tgt := filepath.Join(root, "dedicated")
+	os.Mkdir(tgt, 0o700)
+	os.WriteFile(filepath.Join(tgt, "b.db"), nil, 0o644)
+	os.Chmod(filepath.Join(tgt, "b.db"), 0o644)
 	home := filepath.Join(root, "linkhome")
 	os.Mkdir(home, 0o700)
-	os.Symlink(filepath.Join(real, "b.db"), filepath.Join(home, "b-link.db"))
+	os.Symlink(filepath.Join(tgt, "b.db"), filepath.Join(home, "b-link.db"))
 	db, err = Open(filepath.Join(home, "b-link.db"))
 	if err != nil {
 		t.Fatalf("symlinked db file must start: %v", err)
 	}
 	db.Close()
-	if m := mode(t, filepath.Join(real, "b.db")); m != 0o600 {
+	if m := mode(t, filepath.Join(tgt, "b.db")); m != 0o600 {
 		t.Fatalf("symlink target mode %v, want 0600", m)
 	}
 }
@@ -602,5 +604,100 @@ func TestIdempotencyKeyScopedPerUser(t *testing.T) {
 	}
 	if err := run("r3", "A", "cA"); err == nil {
 		t.Fatal("same user, same key must be refused")
+	}
+}
+
+func TestOpenSymlinkedDBIntoSharedDirIsRefused(t *testing.T) {
+	root := t.TempDir()
+	shared := filepath.Join(root, "shared")
+	os.Mkdir(shared, 0o777)
+	os.Chmod(shared, 0o777)
+	other := filepath.Join(shared, "other-service.conf")
+	os.WriteFile(other, []byte("keep"), 0o644)
+	home := filepath.Join(root, "home")
+	os.Mkdir(home, 0o700)
+	os.Symlink(filepath.Join(shared, "antares.db"), filepath.Join(home, "antares.db"))
+	db, err := Open(filepath.Join(home, "antares.db"))
+	if err == nil {
+		db.Close()
+		t.Fatal("a symlink into a shared directory must be refused")
+	}
+	if m := mode(t, shared); m != 0o777 {
+		t.Errorf("shared dir mode changed to %v", m)
+	}
+	if entries, _ := os.ReadDir(shared); len(entries) != 1 {
+		t.Errorf("database created inside the shared directory: %v", entries)
+	}
+}
+
+func TestOpenRefusesSymlinkedSidecar(t *testing.T) {
+	for _, suf := range []string{"-wal", "-shm"} {
+		dir := t.TempDir()
+		victim := filepath.Join(dir, "victim.txt")
+		os.WriteFile(victim, []byte("v"), 0o644)
+		os.Chmod(victim, 0o644)
+		p := filepath.Join(dir, "antares.db")
+		os.WriteFile(p, nil, 0o600)
+		os.Symlink(victim, p+suf)
+		// victim.txt makes the dir non-dedicated, so exercise the sidecar guard
+		// directly as well as through Open.
+		if err := secureFiles(p); err == nil {
+			t.Errorf("%s: secureFiles followed a symlinked sidecar", suf)
+		}
+		if m := mode(t, victim); m != 0o644 {
+			t.Errorf("%s: victim mode changed to %v", suf, m)
+		}
+	}
+	// Through Open, victim placed outside the data dir.
+	root := t.TempDir()
+	victim := filepath.Join(root, "victim.txt")
+	os.WriteFile(victim, []byte("v"), 0o644)
+	os.Chmod(victim, 0o644)
+	dir := filepath.Join(root, "data")
+	os.Mkdir(dir, 0o700)
+	os.Symlink(victim, filepath.Join(dir, "antares.db-wal"))
+	if db, err := Open(filepath.Join(dir, "antares.db")); err == nil {
+		db.Close()
+		t.Fatal("Open accepted a symlinked -wal")
+	}
+	if m := mode(t, victim); m != 0o644 {
+		t.Fatalf("victim mode changed to %v", m)
+	}
+}
+
+func TestOpenRejectsTrailingSeparator(t *testing.T) {
+	dir := t.TempDir()
+	for _, p := range []string{filepath.Join(dir, "sub") + "/", filepath.Join(dir, "sub") + "/."} {
+		if db, err := Open(p); err == nil {
+			db.Close()
+			t.Errorf("%q should be rejected", p)
+		}
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("files created: %v", entries)
+	}
+}
+
+func TestMigrateRefusesUnknownVersionBeforeTouchingAnything(t *testing.T) {
+	db, _ := openTest(t)
+	ctx := context.Background()
+	m1 := fstest.MapFS{"0001_a.sql": {Data: []byte(`CREATE TABLE a (id INTEGER);`)}}
+	if _, err := Migrate(ctx, db, m1); err != nil {
+		t.Fatal(err)
+	}
+	db.Exec(`INSERT INTO schema_migrations VALUES (5,'future','x','t')`)
+	m12 := fstest.MapFS{"0001_a.sql": m1["0001_a.sql"], "0002_b.sql": {Data: []byte(`CREATE TABLE b (id INTEGER);`)}}
+	applied, err := Migrate(ctx, db, m12)
+	if err == nil {
+		t.Fatal("foreign version must be refused")
+	}
+	var n int
+	db.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE name = 'b'`).Scan(&n)
+	if n != 0 || len(applied) != 0 {
+		t.Fatalf("DDL committed into a foreign-lineage database: table b=%d applied=%v", n, applied)
+	}
+	db.QueryRow(`SELECT COUNT(*) FROM schema_migrations WHERE version = 2`).Scan(&n)
+	if n != 0 {
+		t.Fatal("version 2 recorded")
 	}
 }

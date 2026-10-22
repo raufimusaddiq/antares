@@ -32,7 +32,8 @@ Forward-only, embedded SQL files `NNNN_name.sql`. Each runs in its own transacti
 `schema_migrations` row (SQLite DDL is transactional), so a failure rolls back fully and the process
 refuses to start. A recorded migration whose checksum differs from its file, or a recorded version
 the binary does not know, also refuses startup. Recovery: restore the pre-migration backup or deploy
-the matching binary; there are no down-migrations. `/readyz` is 503 unless the DB answers and is at
+the matching binary; there are no down-migrations. The unknown-version check runs **before** any
+DDL, so a downgrade against a newer database changes nothing. `/readyz` is 503 unless the DB answers and is at
 the latest version.
 
 ## `approvals` vs `audit_log`
@@ -55,9 +56,13 @@ writes only `audit_log` because it has no actor and is not an approval decision.
   nothing but the database and its sidecars (a volume's `lost+found` is tolerated). Anything else is
   refused before any chmod, so `ANTARES_DB_PATH=/var/lib/antares.db` fails cleanly instead of
   locking down `/var/lib`. Put the database in its own directory, e.g. `/var/lib/antares/antares.db`.
+- Checks and chmods act on the **resolved** location: a symlinked database file is followed first,
+  and the dedicated-directory rule applies to the directory it really lives in. A trailing separator
+  is rejected (it would nest the database a level down).
 - The database file and any existing `-wal`/`-shm` sidecars are forced to 0600 before the first
   connection, and again after the pragmas run (SQLite creates sidecars lazily and only copies the db
-  file's mode when it creates them). Sidecars from a restore are chmod-ed, never deleted: deleting a
+  file's mode when it creates them). Each is opened `O_NOFOLLOW` and chmod-ed via the descriptor, so a symlinked or non-regular
+  sidecar is refused, never followed. Sidecars from a restore are chmod-ed, never deleted: deleting a
   WAL loses committed rows.
 - Paths containing `?`, `#` or `%` are rejected (the driver would rewrite them), and
   `PRAGMA database_list` proves the file the driver opened is the file that was secured.
