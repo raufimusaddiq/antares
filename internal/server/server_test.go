@@ -149,3 +149,22 @@ func TestMissingBundleIsNotFoundNotAFallback(t *testing.T) {
 		}
 	}
 }
+
+// A dot or empty segment under a reserved root is 404, never the mux's redirect to
+// the cleaned path: a client that follows it would land on a route it did not ask for.
+func TestDotSegmentsUnderReservedRootsAre404NotARedirect(t *testing.T) {
+	h := New(func(context.Context) error { return nil }, t.TempDir()).Routes()
+	for _, p := range []string{"/api/admin/users/..", "/api/admin/users/.", "/api/admin/../me", "/api/x//y", "/api//x", "/api/./x",
+		"/healthz/..", "/readyz/./", "/api/admin/users/../../..", "/api/admin/users/%2e%2e", "/api/admin/users/..%2f"} {
+		for _, m := range []string{"GET", "POST"} {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(m, p, nil))
+			if rec.Code != 404 || rec.Header().Get("Location") != "" {
+				t.Errorf("%s %s -> %d Location=%q", m, p, rec.Code, rec.Header().Get("Location"))
+			}
+		}
+	}
+	if rec := get(h, "/api/"); rec.Code != 404 { // the reserved catch-all, unchanged
+		t.Errorf("/api/ -> %d", rec.Code)
+	}
+}

@@ -352,7 +352,7 @@ func TestMutationsNeedSameOriginAndRefuseServerChosenFields(t *testing.T) {
 func TestTargetIdsAreValidatedAndUnknownOnesAre404(t *testing.T) {
 	h := newHarness(t)
 	admin, adminID, _ := h.adminWithKicks()
-	for _, id := range []string{"nope", "..", "%2e%2e", strings.Repeat("A", 32), strings.Repeat("0", 31), strings.Repeat("0", 33), "u_aaaaaaaaaaaa"} {
+	for _, id := range []string{"nope", "..", ".", "%2e%2e", "%2e", "../..", "..%2f", ".%2e", strings.Repeat("A", 32), strings.Repeat("0", 31), strings.Repeat("0", 33), "u_aaaaaaaaaaaa"} {
 		for _, rt := range []struct{ m, p string }{{"GET", "/api/admin/users/"}, {"POST", "/api/admin/users/"}} {
 			path := rt.p + id
 			var w *httptest.ResponseRecorder
@@ -361,9 +361,13 @@ func TestTargetIdsAreValidatedAndUnknownOnesAre404(t *testing.T) {
 			} else {
 				w = admin.send("POST", path+"/approve", ``, sameOriginHdr)
 			}
-			// ServeMux cleans ".." into a redirect to the guarded tree; it reaches no handler.
-			if w.Code != 404 && w.Code != 400 && w.Code != http.StatusTemporaryRedirect {
-				t.Errorf("%s %s = %d", rt.m, path, w.Code)
+			// 404 for every id that cannot exist, dot segments included: never a
+			// redirect, whose target a following client would silently adopt.
+			if w.Code != 404 {
+				t.Errorf("%s %s = %d (want 404)", rt.m, path, w.Code)
+			}
+			if loc := w.Header().Get("Location"); loc != "" {
+				t.Errorf("%s %s redirected to %s", rt.m, path, loc)
 			}
 		}
 	}
