@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	_ "modernc.org/sqlite" // pure-Go driver, no CGO
@@ -44,12 +45,22 @@ func Open(path string) (*sql.DB, error) {
 	// explicitly, and resolve symlinks so everything below acts on the real
 	// location (a data dir mounted through a symlink is legitimate).
 	dir := filepath.Dir(path)
+	_, statErr := os.Stat(dir)
+	created := errors.Is(statErr, os.ErrNotExist)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, fmt.Errorf("store: create data dir: %w", err)
 	}
 	realDir, err := filepath.EvalSymlinks(dir)
 	if err != nil {
 		return nil, fmt.Errorf("store: resolve data dir: %w", err)
+	}
+	// Forcing 0700 is right for a directory that is ours alone and wrong for a
+	// shared one (/var/lib). An existing directory is dedicated only if the
+	// running user owns it and it holds nothing but this database's files.
+	if !created {
+		if err := requireDedicated(realDir, filepath.Base(path)); err != nil {
+			return nil, err
+		}
 	}
 	if realDir == string(filepath.Separator) {
 		return nil, errors.New("store: data directory resolves to the filesystem root")
@@ -119,6 +130,31 @@ func Open(path string) (*sql.DB, error) {
 	return db, nil
 }
 
+// requireDedicated refuses a directory that is not exclusively Antares': owned
+// by another user, or holding any entry other than the database and its
+// SQLite sidecars. It runs before any chmod.
+func requireDedicated(dir, base string) error {
+	st, err := os.Stat(dir)
+	if err != nil {
+		return fmt.Errorf("store: stat data dir: %w", err)
+	}
+	if sys, ok := st.Sys().(*syscall.Stat_t); ok && int(sys.Uid) != os.Geteuid() {
+		return errors.New("store: data directory is not owned by the running user; use a dedicated directory")
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("store: read data dir: %w", err)
+	}
+	own := map[string]bool{"lost+found": true, base: true, base + "-wal": true, base + "-shm": true, base + "-journal": true}
+	for _, e := range entries {
+		if !own[e.Name()] {
+			return errors.New("store: data directory is not dedicated to Antares (it holds other files); " +
+				"set ANTARES_DB_PATH inside a directory used only for this database")
+		}
+	}
+	return nil
+}
+
 // secureFiles forces 0600 on the database file and its WAL sidecars. Missing
 // sidecars are fine. The mode of the database file itself is not inherited by
 // one that already exists (a restored backup), hence the explicit chmod.
@@ -140,4 +176,8 @@ func NewID() string {
 	return hex.EncodeToString(b)
 }
 
-func ts(t time.Time) string { return t.UTC().Format(time.RFC3339) }
+// tsLayout is fixed-width (nanoseconds, always nine digits) so that string
+// order equals time order; RFC3339Nano trims zeros and would not sort.
+const tsLayout = "2006-01-02T15:04:05.000000000Z"
+
+func ts(t time.Time) string { return t.UTC().Format(tsLayout) }

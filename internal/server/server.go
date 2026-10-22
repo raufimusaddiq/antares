@@ -28,6 +28,10 @@ func (s *Server) Routes() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /readyz", s.readyz)
+	// The slash forms are probes too; without these they fall through to the
+	// SPA shell and report healthy with the database down.
+	mux.HandleFunc("GET /healthz/{$}", s.healthz)
+	mux.HandleFunc("GET /readyz/{$}", s.readyz)
 	mux.HandleFunc("/api/", func(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "not found")
 	})

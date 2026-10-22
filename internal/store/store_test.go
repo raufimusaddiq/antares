@@ -445,8 +445,10 @@ func TestOpenThroughSymlinks(t *testing.T) {
 	// symlinked db file
 	os.WriteFile(filepath.Join(real, "b.db"), nil, 0o644)
 	os.Chmod(filepath.Join(real, "b.db"), 0o644)
-	os.Symlink(filepath.Join(real, "b.db"), filepath.Join(root, "b-link.db"))
-	db, err = Open(filepath.Join(root, "b-link.db"))
+	home := filepath.Join(root, "linkhome")
+	os.Mkdir(home, 0o700)
+	os.Symlink(filepath.Join(real, "b.db"), filepath.Join(home, "b-link.db"))
+	db, err = Open(filepath.Join(home, "b-link.db"))
 	if err != nil {
 		t.Fatalf("symlinked db file must start: %v", err)
 	}
@@ -524,3 +526,81 @@ func setOf(t *testing.T, f fs.FS) Set {
 }
 
 func set(t *testing.T) Set { return setOf(t, Migrations()) }
+
+func TestOpenRefusesSharedDirectoryWithoutTouchingIt(t *testing.T) {
+	dir := t.TempDir() // stands in for /var/lib: not ours alone
+	other := filepath.Join(dir, "other-service.conf")
+	if err := os.WriteFile(other, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	os.Chmod(other, 0o644)
+	os.Chmod(dir, 0o755)
+	db, err := Open(filepath.Join(dir, "antares.db"))
+	if err == nil {
+		db.Close()
+		t.Fatal("a directory holding another service's file must be refused")
+	}
+	if !strings.Contains(err.Error(), "dedicated") {
+		t.Errorf("error should say the directory must be dedicated: %v", err)
+	}
+	if m := mode(t, dir); m != 0o755 {
+		t.Errorf("shared directory mode changed to %v", m)
+	}
+	if m := mode(t, other); m != 0o644 {
+		t.Errorf("other service's file mode changed to %v", m)
+	}
+	if b, _ := os.ReadFile(other); string(b) != "keep" {
+		t.Error("other service's file was modified")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 1 {
+		t.Errorf("Open left files in a directory it refused: %v", entries)
+	}
+}
+
+func TestOpenAcceptsExistingDirHoldingOnlyItsOwnFiles(t *testing.T) {
+	dir := t.TempDir()
+	os.Chmod(dir, 0o755)
+	p := filepath.Join(dir, "antares.db")
+	for _, suf := range []string{"", "-wal", "-shm"} {
+		os.WriteFile(p+suf, nil, 0o644)
+	}
+	db, err := Open(p)
+	if err != nil {
+		t.Fatalf("restore directory with only db files must be accepted: %v", err)
+	}
+	db.Close()
+	if m := mode(t, dir); m != 0o700 {
+		t.Fatalf("dir mode %v", m)
+	}
+}
+
+func TestTimestampsSortChronologically(t *testing.T) {
+	a := time.Date(2026, 1, 1, 0, 0, 5, 0, time.UTC)
+	b := a.Add(500 * time.Millisecond)
+	c := a.Add(time.Second)
+	if !(ts(a) < ts(b) && ts(b) < ts(c)) {
+		t.Fatalf("string order differs from time order: %s %s %s", ts(a), ts(b), ts(c))
+	}
+}
+
+func TestIdempotencyKeyScopedPerUser(t *testing.T) {
+	db, _ := migrated(t)
+	for _, u := range []string{"A", "B"} {
+		db.Exec(`INSERT INTO users (id, google_issuer, google_sub, email, role, approval_status, tenant_status, created_at) VALUES (?,'i',?,?,'USER','APPROVED','READY','t')`, u, "s"+u, u+"@example.test")
+		db.Exec(`INSERT INTO tenant_bindings (id, user_id, profile_name, routing_mode, upstream_endpoint_id, credential_ciphertext, credential_key_version, credential_fingerprint, memory_scope_key, status, created_at) VALUES (?,?,?,'MUX_PREFIX','ep',x'00',1,?,?,'READY','t')`, "b"+u, u, "u_"+u, "fp"+u, "m"+u)
+		db.Exec(`INSERT INTO chats (id, user_id, hermes_binding_id, hermes_session_id, status, created_at, updated_at) VALUES (?,?,?,?,'ACTIVE','t','t')`, "c"+u, u, "b"+u, "s"+u)
+	}
+	run := func(id, user, chat string) error {
+		_, err := db.Exec(`INSERT INTO runs (id, user_id, chat_id, idempotency_key, status, created_at, updated_at) VALUES (?,?,?,'same-key','PENDING','t','t')`, id, user, chat)
+		return err
+	}
+	if err := run("r1", "A", "cA"); err != nil {
+		t.Fatal(err)
+	}
+	if err := run("r2", "B", "cB"); err != nil {
+		t.Fatalf("B reusing A's key must not collide (cross-user existence oracle): %v", err)
+	}
+	if err := run("r3", "A", "cA"); err == nil {
+		t.Fatal("same user, same key must be refused")
+	}
+}

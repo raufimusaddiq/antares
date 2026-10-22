@@ -50,7 +50,11 @@ writes only `audit_log` because it has no actor and is not an approval decision.
 `store.Open` guarantees, on every start:
 
 - The data directory is forced to 0700 (even if it existed as 0755), after resolving symlinks, so a
-  data dir mounted through a symlink works and the chmod hits the real directory.
+  data dir mounted through a symlink works and the chmod hits the real directory. This only happens
+  to a **dedicated** directory: one Antares created, or one owned by the running user that holds
+  nothing but the database and its sidecars (a volume's `lost+found` is tolerated). Anything else is
+  refused before any chmod, so `ANTARES_DB_PATH=/var/lib/antares.db` fails cleanly instead of
+  locking down `/var/lib`. Put the database in its own directory, e.g. `/var/lib/antares/antares.db`.
 - The database file and any existing `-wal`/`-shm` sidecars are forced to 0600 before the first
   connection, and again after the pragmas run (SQLite creates sidecars lazily and only copies the db
   file's mode when it creates them). Sidecars from a restore are chmod-ed, never deleted: deleting a
@@ -61,3 +65,9 @@ writes only `audit_log` because it has no actor and is not an approval decision.
 Not guaranteed: files are readable with their old mode between the restore and the next start, and a
 sidecar SQLite creates later (after a checkpoint removes the old one) takes the db file's mode, 0600.
 Restore into a 0700 directory.
+
+## Timestamps and idempotency keys
+
+Timestamps are fixed-width UTC with nanoseconds so string order is time order. `runs.idempotency_key`
+is unique per user, not globally: a global constraint would let one user probe whether another has
+used a key.

@@ -5,16 +5,27 @@ package config
 import (
 	"encoding/base64"
 	"errors"
+	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 )
 
-// Secret holds key material. It prints as redacted so a stray %v or %+v in a
-// log line cannot leak it.
+// Secret holds key material. Every way of rendering it is redacted: fmt verbs
+// (Format covers %v %s %q %x %d ..., which Stringer alone does not), JSON/text
+// encoders and slog.
 type Secret []byte
 
-func (Secret) String() string   { return "[redacted]" }
-func (Secret) GoString() string { return "[redacted]" }
+const redacted = "[redacted]"
+
+func (Secret) String() string   { return redacted }
+func (Secret) GoString() string { return redacted }
+
+func (Secret) Format(f fmt.State, _ rune) { _, _ = f.Write([]byte(redacted)) }
+
+func (Secret) MarshalJSON() ([]byte, error) { return []byte(`"` + redacted + `"`), nil }
+func (Secret) MarshalText() ([]byte, error) { return []byte(redacted), nil }
+func (Secret) LogValue() slog.Value         { return slog.StringValue(redacted) }
 
 // Config is the validated configuration.
 type Config struct {

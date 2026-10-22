@@ -1,8 +1,11 @@
 package config
 
 import (
+	"bytes"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"log/slog"
 	"strings"
 	"testing"
 )
@@ -55,6 +58,33 @@ func TestLoadRequiresAbsoluteDBPath(t *testing.T) {
 		_, err := Load(env(map[string]string{"ANTARES_DB_PATH": p, "ANTARES_SECRET_KEY": goodKey}))
 		if err == nil || !strings.Contains(err.Error(), "absolute") {
 			t.Errorf("%q should be refused as non-absolute: %v", p, err)
+		}
+	}
+}
+
+func TestSecretNeverLeaksThroughAnyVerbOrEncoder(t *testing.T) {
+	raw := []byte(strings.Repeat("k", 32))
+	cfg, err := Load(env(map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var out []string
+	for _, v := range []string{"%v", "%+v", "%#v", "%s", "%q", "%x", "%X", "%d", "%08b", "%o", "%T%v"} {
+		out = append(out, fmt.Sprintf(v, cfg.SecretKey), fmt.Sprintf(v, cfg), fmt.Sprintf(v, &cfg))
+	}
+	j, _ := json.Marshal(cfg.SecretKey)
+	jc, _ := json.Marshal(cfg)
+	out = append(out, string(j), string(jc))
+	var buf bytes.Buffer
+	slog.New(slog.NewJSONHandler(&buf, nil)).Info("x", "key", cfg.SecretKey, "cfg", cfg)
+	slog.New(slog.NewTextHandler(&buf, nil)).Info("x", "key", cfg.SecretKey)
+	out = append(out, buf.String())
+	hexKey := fmt.Sprintf("%x", raw)
+	for _, s := range out {
+		for _, bad := range []string{goodKey, hexKey, string(raw), "107 107 107", "[107"} {
+			if strings.Contains(s, bad) {
+				t.Errorf("secret leaked as %q in %q", bad, s)
+			}
 		}
 	}
 }

@@ -59,3 +59,21 @@ func TestStaticServing(t *testing.T) {
 		t.Fatal("path traversal")
 	}
 }
+
+func TestTrailingSlashProbesDoNotServeTheShell(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "index.html"), []byte("<!doctype html>shell"), 0o644)
+	s := New(func(context.Context) error { return errors.New("db down") }, dir)
+	for _, p := range []string{"/readyz/", "/healthz/"} {
+		rec := get(s.Routes(), p)
+		if strings.Contains(rec.Body.String(), "<!doctype") {
+			t.Errorf("%s served the SPA shell (status %d)", p, rec.Code)
+		}
+	}
+	if rec := get(s.Routes(), "/readyz/"); rec.Code != 503 {
+		t.Errorf("/readyz/ = %d with the database down, want 503", rec.Code)
+	}
+	if rec := get(s.Routes(), "/healthz/"); rec.Code != 200 {
+		t.Errorf("/healthz/ = %d, want 200", rec.Code)
+	}
+}

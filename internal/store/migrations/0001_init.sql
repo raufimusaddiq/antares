@@ -89,12 +89,13 @@ CREATE TABLE runs (
   user_id         TEXT NOT NULL REFERENCES users(id),
   chat_id         TEXT NOT NULL,
   hermes_run_id   TEXT,
-  idempotency_key TEXT NOT NULL UNIQUE,
+  idempotency_key TEXT NOT NULL,
   status          TEXT NOT NULL CHECK (status IN
                     ('PENDING','RUNNING','COMPLETED','FAILED','CANCELLED','DISCONNECTED','TIMED_OUT')),
   created_at      TEXT NOT NULL,
   updated_at      TEXT NOT NULL,
   UNIQUE (id, user_id),
+  UNIQUE (user_id, idempotency_key),
   FOREIGN KEY (chat_id, user_id) REFERENCES chats (id, user_id)
 );
 CREATE INDEX runs_chat ON runs (chat_id, created_at);
