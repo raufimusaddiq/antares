@@ -254,7 +254,7 @@ The Chat UI must not invoke `docker exec`, mount `/var/run/docker.sock`, write H
 5. Chat UI runs readiness tests: endpoint response, profile identity, credential isolation, session ownership, selected tool policy, memory boundaries.
 6. Only on successful validation does `tenant_status` become `READY` and chat unlock.
 
-**Possible later enhancement:** automated provisioning through a separately authenticated, narrowly scoped trusted operator control plane. It is **out of scope for Chat UI v1**; do not invent an undocumented Hermes provisioning REST endpoint.
+**Amended 2026-10-22 (owner decision, issue #18):** automated provisioning is now **in scope**. It is delivered by a separately authenticated, narrowly scoped host-side helper (`tools/hermes-provisioner/`) that drives `hermes profile create/delete/purge-identity` over `docker exec`; Antares calls it over HTTP with a bearer token and never receives Docker access. Hermes itself still exposes no provisioning REST endpoint, and none is to be invented.
 
 ### 5.4 Memory contract
 
