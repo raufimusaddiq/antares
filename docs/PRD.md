@@ -1093,6 +1093,8 @@ networks:
 
 ### Phase 0 — Integration/security proof (hard gate)
 
+*Recorded results and fixtures: [`docs/hermes/PHASE0-FINDINGS.md`](hermes/PHASE0-FINDINGS.md).*
+
 **Deliverables:** exact Hermes image/version, network connectivity proof, API capability snapshot, verified multi-profile routing, per-profile key tests, profile-vs-tool isolation assessment, test A/B users, admin bootstrap method.
 
 **DoD:** Two unique profile bindings work in the existing container; user A cannot read B's sessions and memory through allowed API/tools; admin auth/status matrix passes. If not, **block** multi-user chat rather than proceed with shared profile.

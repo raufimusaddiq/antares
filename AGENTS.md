@@ -93,6 +93,7 @@ do not copy its data model, and do not treat "aixell does it this way" as a reas
 - Do not post, message or publish anything outside this machine.
 - Do not rewrite git history, delete branches or tags, or force-push.
 - Do not merge your own PR. The lead does that.
+- Inside the running Hermes container, profile create/delete is the only authorised mutation, and only when the ticket says so; root writes and hand-deleting a profile directory need explicit owner approval. Full rule: [`docs/runbooks/deployment.md`](docs/runbooks/deployment.md).
 
 ## Reporting
 

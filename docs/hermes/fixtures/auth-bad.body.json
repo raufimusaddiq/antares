@@ -1,0 +1,7 @@
+{
+  "error": {
+    "message": "<redacted>",
+    "type": "gateway_auth_error",
+    "code": "gateway_auth_failed"
+  }
+}
