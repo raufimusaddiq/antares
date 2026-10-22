@@ -10,7 +10,11 @@ The API is only reachable inside the hermes_edge network, e.g.:
 (capture needs the mount writable: drop :ro.) The key is read from the environment, never printed
 or written. Every number and timestamp in a fixture is fabricated; only shapes are real.
 
-`check` is the API contract test: it fails when a status code, key set or value type differs.
+`check` is the API contract test. It fails when a status code differs, a key is added or removed, a
+value changes type, a list changes length or an item's shape, or the per-toolset `enabled` flags in
+`/v1/toolsets` differ (the one value that is compared, because isolation rests on it). Other values
+are ignored. An unreachable Hermes is also a failure. Offline self-test:
+  python3 -I -m unittest discover -s scripts -p 'test_*.py'
 """
 import json, os, re, sys, urllib.error, urllib.request
 from pathlib import Path
@@ -27,7 +31,11 @@ CASES = [
     ("auth-bad", "GET", "/v1/capabilities", "bad"),
     ("profile-prefix-unserved", "GET", "/p/testa/v1/models", "owner"),
 ]
-TS = re.compile(r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d")
+TS = re.compile(r"^\d{4}-\d\d-\d\d(T\d\d:\d\d:\d\d)?")
+
+
+class Unreachable(Exception):
+    pass
 
 
 def call(base, key, method, path, auth):
@@ -42,9 +50,11 @@ def call(base, key, method, path, auth):
             return r.status, r.read()
     except urllib.error.HTTPError as e:
         return e.code, e.read()
+    except (urllib.error.URLError, OSError) as e:
+        raise Unreachable("%s %s: %s" % (method, path, type(e).__name__))
 
 
-def sanitize(v, key=None):
+def sanitize(v):
     """Keep shape, fabricate values: numbers -> 1/1.0, timestamps and URLs -> constants."""
     if isinstance(v, bool) or v is None:
         return v
@@ -54,13 +64,13 @@ def sanitize(v, key=None):
         return 1.0
     if isinstance(v, str):
         if TS.match(v):
-            return "2026-01-01T00:00:00+00:00"
+            return "2026-01-01T00:00:00+00:00" if "T" in v else "2026-01-01"
         if v.startswith("http://") or v.startswith("https://"):
             return "http://host.example:8642"
         return v
     if isinstance(v, list):
         return [sanitize(x) for x in v]
-    return {k: sanitize(x, k) for k, x in v.items()}
+    return {k: sanitize(x) for k, x in v.items()}
 
 
 def shape(v):
@@ -73,8 +83,27 @@ def shape(v):
     if isinstance(v, str):
         return "string"
     if isinstance(v, list):
-        return [shape(v[0])] if v else []
+        return [shape(x) for x in v]
     return {k: shape(x) for k, x in sorted(v.items())}
+
+
+def enabled_toolsets(body):
+    """{name: enabled} from a /v1/toolsets body, or None when the body is not that shape."""
+    try:
+        return {t["name"]: t["enabled"] for t in body["data"]}
+    except (KeyError, TypeError):
+        return None
+
+
+def compare(name, status, data, want_status, want):
+    """Return a list of contract violations for one case (empty when it holds)."""
+    if status != want_status:
+        return ["%s: status %d, fixture %d" % (name, status, want_status)]
+    if shape(sanitize(data)) != shape(want):
+        return ["%s: response shape differs from fixture" % name]
+    if name == "toolsets" and enabled_toolsets(data) != enabled_toolsets(want):
+        return ["toolsets: enabled set differs from fixture"]
+    return []
 
 
 def parse(body):
@@ -92,7 +121,10 @@ def main():
         sys.exit(__doc__)
     bad = []
     for name, method, path, auth in CASES:
-        status, body = call(base, key, method, path, auth)
+        try:
+            status, body = call(base, key, method, path, auth)
+        except Unreachable as e:
+            sys.exit("CONTRACT BROKEN: Hermes unreachable: %s" % e)
         data = parse(body)
         if key in json.dumps(data):
             sys.exit("refusing: response contains the API key (%s)" % name)
@@ -104,14 +136,13 @@ def main():
             continue
         want_status = int((FIX / (name + ".status")).read_text())
         want = json.loads((FIX / (name + ".body.json")).read_text())
-        if status != want_status:
-            bad.append("%s: status %d, fixture %d" % (name, status, want_status))
-        elif shape(sanitize(data)) != shape(want):
-            bad.append("%s: response shape differs from fixture" % name)
-        else:
+        problems = compare(name, status, data, want_status, want)
+        bad.extend(problems)
+        if not problems:
             print("ok", name)
     if bad:
         sys.exit("CONTRACT BROKEN:\n  " + "\n  ".join(bad))
 
 
-main()
+if __name__ == "__main__":
+    main()

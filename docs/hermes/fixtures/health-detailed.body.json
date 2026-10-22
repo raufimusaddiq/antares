@@ -56,7 +56,7 @@
         "last_request_at": "2026-01-01T00:00:00+00:00",
         "last_heartbeat": "2026-01-01T00:00:00+00:00",
         "metrics_today": {
-          "day": "2026-10-22",
+          "day": "2026-01-01",
           "requests": 1,
           "messages": 1,
           "tokens": 1,
@@ -73,7 +73,7 @@
     "last_request_at": "2026-01-01T00:00:00+00:00",
     "last_heartbeat": "2026-01-01T00:00:00+00:00",
     "metrics_today": {
-      "day": "2026-10-22",
+      "day": "2026-01-01",
       "requests": 1,
       "messages": 1,
       "tokens": 1,
@@ -81,7 +81,7 @@
     }
   },
   "metrics_today": {
-    "day": "2026-10-22",
+    "day": "2026-01-01",
     "requests": 1,
     "messages": 1,
     "tokens": 1,

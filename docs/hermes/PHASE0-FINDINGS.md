@@ -39,9 +39,18 @@ never bound anything: the image the container is *running* is not the `latest` o
 ID `sha256:36099926da31…`, disk `sha256:7a69201726bc…`, `RepoDigests` empty), so a pin would describe
 an image that is not the one serving. Hermes may update at any time.
 
-The guard is `scripts/hermes_contract.py check`, built from the captured fixtures. It fails (exit 1)
-when an endpoint's status code, key set or value type differs from the fixture; values are ignored.
-Verified: it passes against the live API, and fails when a field is added to a fixture copy.
+The guard is `scripts/hermes_contract.py check`, built from the captured fixtures. It exits 1 when:
+a status code differs; a key is added or removed; a value changes type; a list changes length or an
+item's shape; Hermes is unreachable; or the per-toolset `enabled` flags in `/v1/toolsets` differ
+(compared by toolset name, so the failure says which toolset changed). All other values are ignored.
+The toolset check exists because isolation rests on per-profile `disabled_toolsets` (section 6): a
+toolset silently becoming enabled is the change it must catch.
+
+Verification: `scripts/test_hermes_contract.py` is an offline self-test (no network) run by the CI
+`security` job. Against the previous version of the guard (which compared only the first list element),
+the same five toolset mutations — one added, one removed, one swapped and enabled, one item type
+change, one newly enabled — all passed unnoticed; the self-test covers each and the current code
+fails on each. It also passes against the live API.
 Observed version at capture: Hermes Agent v0.22.2 (2026.9.24), upstream `d923a5eb`.
 
 ## 2. Capability snapshot
