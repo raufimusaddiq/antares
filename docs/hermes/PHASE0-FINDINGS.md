@@ -196,3 +196,12 @@ small tombstone files in a hidden `.deleted` directory under the profiles direct
    tests can be run, and confirm whether a restart is needed for multiplexing to switch on.
 2. Decide the per-profile `agent.disabled_toolsets` set (see section 6), then run the A-vs-B negative
    tests against it. Until that passes, do not describe Antares as secure for multiple users.
+
+## Update — issue #13 (2026-10-22)
+
+Per-profile routing is **not delivered**. With a second profile present the gateway's `api_server`
+adapter did not start, so `/p/<profile>/v1/...` was unreachable (see
+[issue #13 comment 6333799116](https://github.com/raufimusaddiq/antares/issues/13#issuecomment-6333799116)).
+The `disabled_toolsets` gap above therefore **remains open**: no automated check exists. A tenant
+toolset policy is proposed in `docs/runbooks/tenant-toolsets.md`, **unverified**. The Phase 0 FAIL
+verdict and the isolation finding in section 6 stand unchanged.
