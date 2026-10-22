@@ -89,7 +89,7 @@ func viewOf(u store.User) AccountView {
 	st := StateOf(u)
 	return AccountView{ID: u.ID, Email: u.Email, DisplayName: u.DisplayName, AvatarURL: u.AvatarURL,
 		Role: u.Role, ApprovalStatus: u.ApprovalStatus, TenantStatus: u.TenantStatus, State: st,
-		RequestedAt: u.CreatedAt, CanChat: st == StateActive, CanAdmin: u.ApprovalStatus == "APPROVED" && u.Role == "ADMIN"}
+		RequestedAt: u.CreatedAt, CanChat: st == StateActive, CanAdmin: st == StateActive && u.Role == "ADMIN"}
 }
 
 func (a *Auth) me(w http.ResponseWriter, r *http.Request) {

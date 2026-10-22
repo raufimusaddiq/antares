@@ -99,6 +99,15 @@ jobs:
             exit 1
           fi
           echo "no credential-shaped files tracked"
+      - name: Lockfile resolves from the public registry
+        run: |
+          # A lockfile generated behind a private mirror pins URLs a CI runner cannot reach;
+          # npm ci then hangs and dies with "Exit handler never called".
+          if [ -f web/package-lock.json ] && grep -E '"resolved": "' web/package-lock.json | grep -v '"resolved": "https://registry.npmjs.org/'; then
+            echo "::error::web/package-lock.json has a non-public resolved URL. Regenerate it with --registry=https://registry.npmjs.org/."
+            exit 1
+          fi
+          echo "lockfile resolves from registry.npmjs.org"
       - name: Hermes contract guard self-test
         run: python3 -I -m unittest discover -s scripts -p 'test_*.py' -v
       - name: No Docker socket reference in code

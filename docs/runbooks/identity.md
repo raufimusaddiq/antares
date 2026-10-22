@@ -32,7 +32,7 @@ clears the cookie. Every request re-reads the user row: a status change applies 
 
 `Active` (every chat-touching route) = valid session ∧ `APPROVED` ∧ `tenant_status = READY` ∧ a
 `READY` tenant binding row exists. It also rejects caller-supplied profile / route prefix / key /
-session-id query parameters and headers. `Admin` = valid session ∧ `APPROVED` ∧ `ADMIN`. Routes are
+session-id query parameters and headers. `Admin` = valid session ∧ `ADMIN` ∧ the same eligibility as `Active` (`APPROVED`, tenant `READY`, ready binding; PRD §3.1 "Admin (active and mapped)"). An approved admin with an unprovisioned or failed tenant gets 409 `TENANT_NOT_READY`; the admin's own workspace is provisioned out of band first. Routes are
 listed in `auth.ChatRoutes`; a test parses the PRD §9 and §9A.7 tables and fails if a listed route
 is not guarded. Until the slice that implements a route lands, an eligible user gets 501
 `CAPABILITY_UNAVAILABLE` from it. The live Hermes health check joins the gate in the tenant slice.

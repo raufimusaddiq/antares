@@ -393,12 +393,15 @@ func (a *Auth) Active(next http.Handler) http.Handler {
 	}))
 }
 
-// Admin guards the /api/admin tree: valid session, APPROVED, role ADMIN.
+// Admin guards the /api/admin tree: valid session, role ADMIN, and an account
+// that is active and mapped (PRD §3.1 "Admin (active and mapped)", §3.2) — the
+// same eligibility as Active. An approved admin whose tenant is unprovisioned,
+// failed or unbound is refused like any other user; the admin's own workspace
+// is provisioned out of band before the admin surface opens.
 func (a *Auth) Admin(next http.Handler) http.Handler {
 	return a.signedIn(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u, _ := UserFrom(r.Context())
-		if u.ApprovalStatus != "APPROVED" {
-			a.refuseState(w, r, u)
+		if !a.refuseUnlessActive(w, r, u) {
 			return
 		}
 		if u.Role != "ADMIN" {

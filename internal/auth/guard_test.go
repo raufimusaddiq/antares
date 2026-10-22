@@ -79,15 +79,65 @@ func TestEligibleUserPassesTheGuardAndAdminTreeIsAdminOnly(t *testing.T) {
 	if w := h.browser().get("/api/admin/users"); w.Code != 401 {
 		t.Errorf("anonymous on admin tree: %d", w.Code)
 	}
-	admin := h.userIn("s-a", "APPROVED", "UNPROVISIONED", "ADMIN", false)
+	admin := h.userIn("s-a", "APPROVED", "READY", "ADMIN", true)
 	if w := admin.get("/api/admin/users"); w.Code != http.StatusNotImplemented {
-		t.Errorf("admin on admin tree: %d", w.Code)
+		t.Errorf("active admin on admin tree: %d", w.Code)
 	}
 	// Role decides what is shown; the login path is the same one.
 	var v AccountView
 	json.Unmarshal(admin.get("/api/me").Body.Bytes(), &v)
-	if !v.CanAdmin || v.CanChat || v.Role != "ADMIN" {
+	if !v.CanAdmin || !v.CanChat || v.Role != "ADMIN" {
 		t.Errorf("admin view = %+v", v)
+	}
+}
+
+// PRD §3.1/§3.2: an admin must be active and mapped. APPROVED + ADMIN alone is
+// not enough: without a READY binding the admin tree is closed.
+func TestAdminTreeRequiresAnActiveMappedAdmin(t *testing.T) {
+	h := newHarness(t)
+	paths := []struct{ method, path string }{
+		{"GET", "/api/admin/users"}, {"GET", "/api/admin/users/00000000000000000000000000000001"},
+		{"POST", "/api/admin/users/00000000000000000000000000000001/approve"},
+		{"POST", "/api/admin/users/00000000000000000000000000000001/suspend"},
+		{"POST", "/api/admin/users/00000000000000000000000000000001/tenant-binding"},
+		{"GET", "/api/admin/audit"}, {"GET", "/api/admin/system"},
+	}
+	cases := []struct {
+		name             string
+		approval, tenant string
+		bind             bool
+		status           int
+		code             string
+	}{
+		{"pending, unprovisioned (a fresh login)", "PENDING", "UNPROVISIONED", false, 403, "ACCOUNT_PENDING"},
+		{"rejected", "REJECTED", "UNPROVISIONED", false, 403, "ACCOUNT_REJECTED"},
+		{"suspended, ready", "SUSPENDED", "READY", true, 403, "ACCOUNT_SUSPENDED"},
+		{"approved, unprovisioned", "APPROVED", "UNPROVISIONED", false, 409, "TENANT_NOT_READY"},
+		{"approved, configuring", "APPROVED", "CONFIGURING", false, 409, "TENANT_NOT_READY"},
+		{"approved, failed tenant", "APPROVED", "FAILED", false, 409, "TENANT_NOT_READY"},
+		{"approved, disabled tenant", "APPROVED", "DISABLED", true, 409, "TENANT_NOT_READY"},
+		{"approved, READY but unbound", "APPROVED", "READY", false, 409, "TENANT_NOT_READY"},
+	}
+	for i, c := range cases {
+		b := h.userIn("adm-"+string(rune('a'+i)), c.approval, c.tenant, "ADMIN", c.bind)
+		for _, p := range paths {
+			w := b.do(p.method, p.path, nil)
+			if w.Code != c.status || errCode(t, w.Body.Bytes()) != c.code {
+				t.Errorf("%s: %s %s = %d %s", c.name, p.method, p.path, w.Code, w.Body.String())
+			}
+		}
+		var v AccountView
+		json.Unmarshal(b.get("/api/me").Body.Bytes(), &v)
+		if v.CanAdmin {
+			t.Errorf("%s: /api/me advertises canAdmin for an admin the guard refuses", c.name)
+		}
+	}
+	// Every refusal above must be the guard's, not a placeholder 501 slipping through.
+	active := h.userIn("adm-ok", "APPROVED", "READY", "ADMIN", true)
+	for _, p := range paths {
+		if w := active.do(p.method, p.path, nil); w.Code != http.StatusNotImplemented {
+			t.Errorf("active admin %s %s = %d", p.method, p.path, w.Code)
+		}
 	}
 }
 
