@@ -56,11 +56,12 @@ const COPY: Record<AccountState, Copy> = {
     message: "Your account is approved, but its workspace is not working, so chat is not available.",
     next: "This needs an administrator. Contact the person who runs this service.",
   },
-  // The chat UI is a later slice. Say so rather than show a control that does nothing.
+  // The app shows the chat itself for an active account (Chat.tsx); this is only
+  // the fallback if a Screen is ever asked to render one.
   ACTIVE: {
     title: "Signed in",
     heading: "You are signed in",
-    message: "Your workspace is ready, but the chat interface is not part of this build yet.",
+    message: "Your workspace is ready.",
     refresh: true,
   },
 };

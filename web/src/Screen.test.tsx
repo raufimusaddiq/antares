@@ -38,9 +38,9 @@ describe("status screens", () => {
     expect(render(account("SUSPENDED"))).not.toContain("Refresh");
   });
 
-  it("an active account is told chat is not in this build, not shown a dead composer", () => {
+  it("the status screen never carries a composer, even for an active account", () => {
     const html = render(account("ACTIVE"));
-    expect(html).toContain("not part of this build yet");
+    expect(html).toContain("Your workspace is ready");
     expect(html).not.toContain("<textarea");
   });
 

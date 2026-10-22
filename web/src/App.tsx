@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { loadSession, signOut, type Session } from "./api";
+import { Chat } from "./Chat";
 import { Screen, documentTitle, type View } from "./Screen";
 
 const SCREEN_PATH = {
@@ -42,6 +43,13 @@ export function App() {
 
   const view = viewOf(session);
 
+  const onSignOut = () => {
+    void signOut().then((ok) => {
+      setFailedSignOut(!ok);
+      if (ok) setSession({ kind: "anonymous", loginFailed: false });
+    });
+  };
+
   // Keep the address bar on the screen that is showing, so a reload lands on it.
   useEffect(() => {
     if (session.kind === "account") window.history.replaceState(null, "", SCREEN_PATH[session.account.state]);
@@ -53,6 +61,9 @@ export function App() {
   }, [view]);
 
   if (!view) return <main aria-busy="true"><p>Loading…</p></main>;
+  if (session.kind === "account" && session.account.state === "ACTIVE") {
+    return <Chat email={session.account.email} onSignOut={onSignOut} />;
+  }
   return (
     <Screen
       view={view}
@@ -61,12 +72,7 @@ export function App() {
         setSession({ kind: "loading" });
         refresh();
       }}
-      onSignOut={() => {
-        void signOut().then((ok) => {
-          setFailedSignOut(!ok);
-          if (ok) setSession({ kind: "anonymous", loginFailed: false });
-        });
-      }}
+      onSignOut={onSignOut}
     />
   );
 }

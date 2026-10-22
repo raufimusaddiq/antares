@@ -74,7 +74,13 @@ func TestBundleIsNotStale(t *testing.T) {
 // Structural, not textual: the only backend paths the app can name, and nothing
 // that looks like a credential or a profile slug, in the source or the bundle.
 func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
-	allowed := map[string]bool{"/api/me": true, "/api/auth/logout": true, "/api/auth/google/start": true}
+	// Slice 4 (#23) adds the chat routes, listed here one by one. The patterns match
+	// up to a template-literal "${": /api/chats/ is /api/chats/{id}[/messages] and
+	// /api/runs/ is /api/runs/{id}[/events|/cancel]. Nothing else was widened.
+	allowed := map[string]bool{
+		"/api/me": true, "/api/auth/logout": true, "/api/auth/google/start": true,
+		"/api/chats": true, "/api/chats/": true, "/api/runs/": true,
+	}
 	pathRe := regexp.MustCompile(`/api/[A-Za-z0-9_/.-]*`)
 	badRe := regexp.MustCompile(`(?i)ciphertext|fingerprint|tenant_binding|profile_name|profileSlug|memory_scope|client_secret|api_key|apikey|hermes|authorization`)
 	// The bare word also appears in React DOM's own code (`use-credentials`), so it
@@ -83,6 +89,11 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 
 	// The one legitimate use of the word: fetch's `credentials` option, pinned to same-origin.
 	fetchOption := regexp.MustCompile(`credentials:\s*"same-origin"`)
+	// The one legitimate use of the upstream's name: the API error code
+	// HERMES_UNAVAILABLE (PRD §9.1), which the browser must recognise to explain a
+	// failure. It is a public constant, not a route, key or profile. Any other
+	// mention of the word is still refused.
+	apiCode := regexp.MustCompile(`HERMES_UNAVAILABLE`)
 	check := func(name string, b []byte, ours bool) {
 		if ours && wordRe.Match(fetchOption.ReplaceAll(b, nil)) {
 			t.Errorf("%s mentions credentials beyond fetch's same-origin option", name)
@@ -92,7 +103,7 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 				t.Errorf("%s names backend path %s", name, p)
 			}
 		}
-		if m := badRe.FindString(string(b)); m != "" {
+		if m := badRe.FindString(string(apiCode.ReplaceAll(b, nil))); m != "" {
 			t.Errorf("%s contains %q: nothing credential-shaped may reach the browser", name, m)
 		}
 	}
