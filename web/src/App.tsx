@@ -60,7 +60,7 @@ export function App() {
     if (view) document.title = documentTitle(view);
   }, [view]);
 
-  if (!view) return <main aria-busy="true"><p>Loading…</p></main>;
+  if (!view) return <main className="screen" aria-busy="true"><p>Loading…</p></main>;
   if (session.kind === "account" && session.account.state === "ACTIVE") {
     return <Chat email={session.account.email} onSignOut={onSignOut} />;
   }
