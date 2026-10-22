@@ -79,7 +79,9 @@ func disabledFor(allowed []string) ([]string, error) {
 // policyFromEnv parses PROVISIONER_ALLOWED_TOOLSETS; empty means the default.
 func policyFromEnv(raw string) ([]string, error) {
 	allowed := defaultAllowed
-	if strings.TrimSpace(raw) != "" {
+	// Only an empty variable means "unset". A set-but-blank value (" ", ",") is
+	// an error, exactly as in Antares' config.Load, so the two agree.
+	if raw != "" {
 		allowed = nil
 		for _, n := range strings.Split(raw, ",") {
 			if n = strings.TrimSpace(n); n != "" {

@@ -22,10 +22,11 @@ const (
 	CheckSessions  = "session_ownership"
 	CheckToolsets  = "toolset_policy"
 	CheckMemory    = "memory_boundary"
-	// ProbeTimeout bounds one verification request. MaxVerifyProbes is an upper
-	// bound on the requests of one Verify with maxSiblingProbes siblings (the
-	// longest path makes 14: 1+1 endpoint, 2 identity, 2+3 isolation, 1+3
-	// sessions, 1 toolsets), pinned by TestVerifyProbeCount.
+	// ProbeTimeout bounds one verification request. The longest Verify path with
+	// maxSiblingProbes siblings makes 14 requests (1+1 endpoint, 2 identity, 2+3
+	// isolation, 1+3 sessions, 1 toolsets). MaxVerifyProbes is 15: one probe of
+	// deliberate slack, so adding a single probe does not instantly break the
+	// lease arithmetic. TestVerifyProbeCount pins 14 <= measured <= 15.
 	ProbeTimeout     = 15 * time.Second
 	MaxVerifyProbes  = 15
 	absentSlug       = "u_zzzzzzzzzzzz" // never provisioned: a probe target that must not answer
@@ -328,10 +329,12 @@ func (v *Verifier) isolation(ctx context.Context, t Target, siblings []string) R
 }
 
 // sessions: the profile lists its own sessions, no other tenant's route lists
-// them for this key, and a new profile owns none. The list shape was captured
-// from the deployed build (Hermes v0.22.2, issue #41) and is pinned by
-// TestSessionCountDeployedEnvelope; anything this does not recognise fails
-// closed.
+// them for this key, and a new profile owns none. The list envelope is the one
+// the deployed build (Hermes v0.22.2) returned for a fresh profile, as
+// reproduced in issue #41 and committed as fixtures/sessions-empty.body.json
+// (an empty list; the shape of a session item is still unverified). It is
+// pinned by TestSessionCountDeployedEnvelope; anything this does not
+// recognise fails closed.
 func (v *Verifier) sessions(ctx context.Context, t Target, siblings []string) Result {
 	r, err := v.get(ctx, route(t.Profile)+"/api/sessions?limit=1&offset=0", t.Key)
 	if err != nil || r.status != http.StatusOK {

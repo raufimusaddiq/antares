@@ -83,9 +83,10 @@ refuses to start.
 - Refusal probes require **401 or 403**, except the never-provisioned route, which also accepts the
   **404** the deployed Hermes returns for it (issue #41). A 404 on the default route or a sibling route
   still fails: that would mean a misrouted endpoint. Reasons name the statuses accepted.
-- `/api/sessions` was captured from the deployed build: `{"object":"list","data":[...],"limit":N,
-  "offset":N,"has_more":bool}`. The check accepts that envelope (and, defensively, a bare array or
-  `{"sessions": [...]}`) and fails on anything else.
+- `/api/sessions` returned `{"object":"list","data":[],"limit":1,"offset":0,"has_more":false}` for a
+  fresh profile on the deployed build (issue #41; fixture `sessions-empty`). Only the empty list
+  envelope is evidenced: the shape of a session item is still unverified. The check accepts the
+  envelope (and, defensively, a bare array or `{"sessions": [...]}`) and fails on anything else.
 - The checks have been exercised only against a fake Hermes in tests, not against a live tenant.
 
 ## Operator actions

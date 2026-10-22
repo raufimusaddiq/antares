@@ -422,6 +422,12 @@ func TestPolicyFromEnv(t *testing.T) {
 	if contains(narrow, "web") || contains(narrow, "memory") || !contains(narrow, "vision") || !contains(narrow, "todo") {
 		t.Errorf("narrowed policy wrong: %v", narrow)
 	}
+	// Whitespace-only is an error, not "unset" (Antares' Load refuses it too).
+	for _, blank := range []string{" ", ",", " , "} {
+		if _, err := policyFromEnv(blank); err == nil || !strings.Contains(err.Error(), "must not be empty") {
+			t.Errorf("%q: %v", blank, err)
+		}
+	}
 	for _, bad := range []string{"web,terminal", "web,nonsense", "browser"} {
 		if _, err := policyFromEnv(bad); err == nil {
 			t.Errorf("accepted %q", bad)

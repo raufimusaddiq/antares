@@ -81,6 +81,7 @@ The script aborts if any response contains the key.
 | auth matrix on `/v1/capabilities`: no key / wrong key → 401, owner key → 200 | **verified on the wire** |
 | `GET /p/<profile>/…` for an unregistered profile → 404 | **verified on the wire, once, prose only** — deliberately **not** a fixture or a guard case: it is expected to change when profile routes are registered, and the guard must not fail on that. |
 | `/v1/chat/completions`, `/v1/responses`, `/v1/runs*` (status, events SSE, approval, steer, stop) | **UNVERIFIED** — listed by `/v1/capabilities` and the route table only; not called |
+| `GET /api/sessions?limit=1&offset=0` on a fresh tenant profile | **verified on the wire for the empty list envelope only** (issue #41): `{"object":"list","data":[],"limit":1,"offset":0,"has_more":false}`, fixture `sessions-empty`. A non-empty list carries real session data, so the item shape is still **UNVERIFIED**. |
 | `/api/sessions` CRUD, `/messages`, `/fork`, `/chat`, `/chat/stream`, `/model` | **UNVERIFIED** — route table only; responses carry the owner's real data, so no fixture. Do not code against a guessed shape. |
 | `GET /v1/skills`, `/api/model/options`, `/api/jobs*`, artifacts, browser-control | **UNVERIFIED** — route table only |
 

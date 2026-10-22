@@ -5,6 +5,8 @@ Antares code: `ANTARES_TENANT_ALLOWED_TOOLSETS` (Antares, enforced by verificati
 `PROVISIONER_ALLOWED_TOOLSETS` (the provisioner, applied to each profile) take the same comma list,
 default `web,vision,image_gen,skills,memory,todo,clarify`. The floor below can never be allowed. Set both
 variables to the same value; if the provisioner allows more than Antares, `toolset_policy` fails.
+Both refuse the same bad input at startup: an unknown name, a floor toolset, or a set-but-blank value
+(`" "`, `","`). Only an empty or unset variable means the default.
 
 **The provisioner owns each profile's `agent.disabled_toolsets`.** `/provision` and `/rotate` both write
 it (every toolset Hermes reports that is not allowed), so a hand edit to one profile is overwritten by

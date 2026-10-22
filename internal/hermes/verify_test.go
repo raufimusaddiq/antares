@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -483,6 +484,7 @@ func TestSessionCountDeployedEnvelope(t *testing.T) {
 		n    int
 		ok   bool
 	}{
+		{"committed fixture", string(sessionsFixture(t)), 0, true},
 		{"deployed empty", `{"object":"list","data":[],"limit":1,"offset":0,"has_more":false}`, 0, true},
 		{"deployed one", `{"object":"list","data":[{"id":"s1"}],"limit":1,"offset":0,"has_more":true}`, 1, true},
 		{"data without object list", `{"data":[]}`, 0, false},
@@ -566,4 +568,13 @@ func TestValidateAllowedToolsetsRejectsUnknownAndFloorNames(t *testing.T) {
 			t.Errorf("%q: %v", c.name, err)
 		}
 	}
+}
+
+func sessionsFixture(t *testing.T) []byte {
+	t.Helper()
+	b, err := os.ReadFile("../../docs/hermes/fixtures/sessions-empty.body.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return b
 }
