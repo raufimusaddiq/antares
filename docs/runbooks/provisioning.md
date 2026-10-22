@@ -92,8 +92,10 @@ refuses to start.
 
 - `FAILED` with `provisioning helper …`: check the helper (`GET /health`), its token and its network
   path from the Antares container, then `tenant-binding`.
-- `FAILED` with `verification failed: toolset_policy …`: apply the tenant policy in the profile's own
-  `config.yaml` (`docs/runbooks/tenant-toolsets.md`), then `tenant-verify`.
+- `FAILED` with `verification failed: toolset_policy …`: do not edit the profile's `config.yaml`; the
+  provisioner overwrites it on the next `/provision` or `/rotate`. Make `PROVISIONER_ALLOWED_TOOLSETS`
+  (provisioner) equal `ANTARES_TENANT_ALLOWED_TOOLSETS` (Antares), restart the provisioner, rotate the
+  profile so the policy is reapplied, then `tenant-verify` (`docs/runbooks/tenant-toolsets.md`).
 - `FAILED` with `verification failed: endpoint …`: the profile route is not served (see Phase 0 and
   `docs/hermes/MULTIPLEX-LISTENER-DIAGNOSIS.md`).
 - `stored credential cannot be opened`: `ANTARES_SECRET_KEY` changed. Restore the previous key; do not

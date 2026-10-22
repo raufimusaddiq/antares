@@ -16,7 +16,7 @@ the next provision or rotate. Narrowing a single profile by hand is not durable;
   deleted): after the provisioner's `config set`, `GET /p/<profile>/v1/toolsets` with that profile's key
   returned 200 with `web, vision, image_gen, skills, todo, memory` enabled and every denied toolset
   (`terminal, file, code_execution, delegation, cronjob, session_search, connections, browser`) reported
-  `enabled: false`; the rest of the 27 reported toolsets were also off. Output below.
+  `enabled: false`; the rest of the 27 reported toolsets were also off. The `config set` was the provisioner's exact command, run by hand (not through a running provisioner). Output below.
 - Phase 0's filesystem-isolation FAIL stands. This policy is a gate on which tools exist, not a sandbox.
 - The two open questions below (`web_extract`, `skill_manage`) are still unverified.
 
@@ -70,19 +70,19 @@ unverified.
 
 ## How to apply
 
-`tools/hermes-provisioner` now applies this on `/provision` with
-`hermes -p <slug> config set agent.disabled_toolsets '[...]'` (issue #41). The paragraph below is the
-manual equivalent.
+`tools/hermes-provisioner` applies the policy on `/provision` and `/rotate` with
+`hermes -p <slug> config set agent.disabled_toolsets '[...]'`, in the profile's own `config.yaml`, never
+`default`'s. To change the policy, change `PROVISIONER_ALLOWED_TOOLSETS` and
+`ANTARES_TENANT_ALLOWED_TOOLSETS` together, restart the provisioner, and rotate the affected profiles.
+Verify by reading `/p/<profile>/v1/toolsets` with the profile's key: every toolset under "Disabled" must
+report `enabled: false`. Antares' `toolset_policy` check does exactly that on every verification.
 
-Set `agent.disabled_toolsets` in the tenant profile's own `config.yaml`, never in `default`'s. Then
-read `/p/<profile>/v1/toolsets` and confirm every toolset under "Disabled" has `enabled: false` and
-the "Enabled" set is exactly as listed. Until that has been done, none of this is verified.
+## Guard cases
 
-## Guard case
-
-Not added. Add a `/p/<profile>/v1/toolsets` case, with a fabricated fixture, in the PR that makes the
-route reachable, and show it failing against a profile whose policy was not applied. The
-`/p/<profile>/v1/models` 404 is deliberately not pinned either.
+Tests, with fabricated data: `TestNarrowedAllowListStillVerifies` and the `toolset_policy` cases in
+`internal/hermes/verify_test.go` (a denied or unlisted toolset enabled fails the check);
+`TestProvisionerToolsetListsMatchAntares` (the provisioner's lists equal Antares' and the fixture);
+the provisioner's `TestNarrowedPolicyReachesProvisionAndRotate`.
 
 ## Unknown names in `agent.disabled_toolsets` (issue #41, PR #42 review)
 
@@ -113,7 +113,6 @@ only `web`, `vision`, `image_gen`, `skills`, `todo`, `memory` were reported enab
 named in this runbook (`clarify` is off for `api_server` by default on this build). None of the denied
 toolsets or `a2a` / `computer_use` was enabled.
 
-Not measured: the gateway's `/p/<slug>/v1/toolsets` for a probe profile (it needs a key and a served
-route). The CLI view above reads the same config through `_get_platform_tools`, which is also what
-`/v1/toolsets` calls; the end-to-end read is still the first thing to check on the first real
-provision.
+The gateway route itself was read afterwards on a second throwaway profile; see "Status". That profile's
+`config set` was run by hand with the provisioner's command and list, not through a running
+provisioner, so the provisioner's HTTP path on the live host is the one thing not exercised end to end.

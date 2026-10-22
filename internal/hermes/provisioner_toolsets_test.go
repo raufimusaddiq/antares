@@ -148,7 +148,10 @@ func TestNarrowedAllowListStillVerifies(t *testing.T) {
 		// exactly the drift the verifier must catch.
 		if len(allowed) < len(DefaultAllowedToolsets) {
 			g := fakeFor(t, DefaultAllowedToolsets)
-			vv, _ := NewVerifier(g.srv.URL, allowed, nil)
+			vv, err := NewVerifier(g.srv.URL, allowed, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if rep := vv.Verify(context.Background(), target()); rep.OK() {
 				t.Errorf("allowed %v: a profile with the default set passed", allowed)
 			}

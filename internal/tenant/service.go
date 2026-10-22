@@ -25,10 +25,14 @@ const (
 	DefaultMaxAttempts = 5
 	DefaultBaseBackoff = 15 * time.Second
 	maxBackoff         = 10 * time.Minute
-	// A run is one helper call (hermes.HelperTimeout) plus a verification
-	// (hermes.MaxVerifyProbes requests of hermes.ProbeTimeout), bounded by
-	// runBudget; the lease outlives runBudget, so a run still in flight is never
-	// mistaken for an interrupted one. TestRunBudgetCoversHelperAndProbes and
+	// A run is a helper call (hermes.HelperTimeout) plus a verification
+	// (hermes.MaxVerifyProbes requests of hermes.ProbeTimeout). obtainCredential
+	// can make a second helper call, Rotate after ErrKeyExists; that 409 comes
+	// from the helper's fast path (no key written), so the budget covers one call
+	// plus probes, not two calls at their timeout. If both did run long, the run
+	// is cut at runBudget and stays CONFIGURING. The lease outlives runBudget, so
+	// a run still in flight is never mistaken for an interrupted one, and a cut
+	// run is retried, not lost. TestRunBudgetCoversHelperAndProbes and
 	// TestLeaseOutlastsRunBudget pin the order.
 	lease        = 12 * time.Minute
 	sweepEvery   = 10 * time.Second

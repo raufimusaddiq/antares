@@ -44,7 +44,10 @@ func (s *server) begin(w http.ResponseWriter, r *http.Request) (context.Context,
 }
 
 func newServer(r Runner, token string) *server {
-	disabled, _ := disabledFor(defaultAllowed)
+	disabled, err := disabledFor(defaultAllowed)
+	if err != nil {
+		panic("hermes-provisioner: default toolset policy is invalid: " + err.Error())
+	}
 	return newServerWithPolicy(r, token, disabled)
 }
 

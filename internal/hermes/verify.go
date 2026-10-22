@@ -22,10 +22,11 @@ const (
 	CheckSessions  = "session_ownership"
 	CheckToolsets  = "toolset_policy"
 	CheckMemory    = "memory_boundary"
-	probeTimeout   = 15 * time.Second
-	// ProbeTimeout bounds one verification request; MaxVerifyProbes is the most a
-	// Verify makes (maxSiblingProbes siblings), pinned by TestVerifyProbeCount.
-	ProbeTimeout     = probeTimeout
+	// ProbeTimeout bounds one verification request. MaxVerifyProbes is an upper
+	// bound on the requests of one Verify with maxSiblingProbes siblings (the
+	// longest path makes 14: 1+1 endpoint, 2 identity, 2+3 isolation, 1+3
+	// sessions, 1 toolsets), pinned by TestVerifyProbeCount.
+	ProbeTimeout     = 15 * time.Second
 	MaxVerifyProbes  = 15
 	absentSlug       = "u_zzzzzzzzzzzz" // never provisioned: a probe target that must not answer
 	maxSiblingProbes = 3
@@ -124,7 +125,7 @@ func NewVerifier(baseURL string, allowed []string, client *http.Client) (*Verifi
 		return nil, err
 	}
 	if client == nil {
-		client = &http.Client{Timeout: probeTimeout}
+		client = &http.Client{Timeout: ProbeTimeout}
 	}
 	c := *client
 	c.CheckRedirect = noRedirect
@@ -143,7 +144,7 @@ type resp struct {
 // get performs one GET. key == "" sends no Authorization header. A transport
 // failure is returned as an error with no text from the cause.
 func (v *Verifier) get(ctx context.Context, path, key string) (resp, error) {
-	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	ctx, cancel := context.WithTimeout(ctx, ProbeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.base.String()+path, nil)
 	if err != nil {

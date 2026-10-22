@@ -686,8 +686,11 @@ func TestNewRequiresEveryDependency(t *testing.T) {
 	}
 }
 
-// A run is the helper call plus a verification; its budget must cover both,
-// derived from the probe count and timeouts in internal/hermes.
+// A run is a helper call plus a verification; its budget must cover both,
+// derived from the probe count and timeouts in internal/hermes. It covers one
+// helper call, not the Provision-then-Rotate pair at full timeout: the 409 that
+// triggers Rotate is a fast path, and a run cut at runBudget is retried via the
+// lease (TestLeaseOutlastsRunBudget).
 func TestRunBudgetCoversHelperAndProbes(t *testing.T) {
 	need := hermes.HelperTimeout + hermes.MaxVerifyProbes*hermes.ProbeTimeout
 	if runBudget <= need {
