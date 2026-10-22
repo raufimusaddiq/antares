@@ -402,7 +402,7 @@ func TestRefusalProbesRequireExactly401Or403(t *testing.T) {
 				if !strings.Contains(reason, strconv.Itoa(code)) {
 					t.Fatalf("reason %q does not name status %d", reason, code)
 				}
-				if code != 200 && !strings.Contains(reason, "expected 401 or 403") {
+				if code != 200 && !strings.Contains(reason, "expected 401") {
 					t.Fatalf("reason %q does not say what was expected", reason)
 				}
 			})
@@ -511,5 +511,44 @@ func TestFreshProfileWithDeployedEnvelopeSessions(t *testing.T) {
 	f.sessionsBody = `{"object":"list","data":[{"id":"s"}],"limit":1,"offset":0,"has_more":false}`
 	if rep := f.verifier(t).Verify(context.Background(), tg); rep.OK() {
 		t.Fatal("a fresh profile holding a session passed")
+	}
+}
+
+// The admin-visible reason names exactly what the probe accepts.
+func TestAbsentRouteReasonNamesTheAcceptedStatuses(t *testing.T) {
+	f := newFake(t)
+	f.override = func(r *http.Request) int {
+		if r.URL.Path == "/p/"+absentSlug+"/v1/models" {
+			return http.StatusInternalServerError
+		}
+		return 0
+	}
+	got := failed(f.verifier(t).Verify(context.Background(), target()))[CheckIdentity]
+	if !strings.Contains(got, "expected 401, 403 or 404") {
+		t.Fatalf("reason %q", got)
+	}
+}
+
+// MaxVerifyProbes is the worst-case request count of one Verify (the longest
+// path, with maxSiblingProbes siblings), which the tenant lease is derived from.
+func TestVerifyProbeCount(t *testing.T) {
+	f := newFake(t)
+	sibs := []string{"u_sibling0001", "u_sibling0002", "u_sibling0003"}
+	for _, s := range sibs {
+		f.keys[s] = "k-" + s
+	}
+	tg := target()
+	tg.Siblings = sibs
+	if rep := f.verifier(t).Verify(context.Background(), tg); !rep.OK() {
+		t.Fatalf("%+v", rep)
+	}
+	f.mu.Lock()
+	n := len(f.hits)
+	f.mu.Unlock()
+	if n > MaxVerifyProbes {
+		t.Fatalf("Verify made %d requests, MaxVerifyProbes is %d", n, MaxVerifyProbes)
+	}
+	if n < MaxVerifyProbes-1 {
+		t.Fatalf("Verify made %d requests; lower MaxVerifyProbes (%d) to match", n, MaxVerifyProbes)
 	}
 }

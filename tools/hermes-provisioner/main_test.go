@@ -396,3 +396,80 @@ func TestHandlersStayBelowExecBudget(t *testing.T) {
 		}
 	}
 }
+
+func TestPolicyFromEnv(t *testing.T) {
+	def, err := policyFromEnv("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, n := range defaultAllowed {
+		if contains(def, n) {
+			t.Errorf("default policy disables allowed toolset %s", n)
+		}
+	}
+	for _, n := range floorToolsets {
+		if !contains(def, n) {
+			t.Errorf("default policy leaves floor toolset %s on", n)
+		}
+	}
+	if len(def)+len(defaultAllowed) != len(knownToolsets) {
+		t.Errorf("disabled %d + allowed %d != known %d", len(def), len(defaultAllowed), len(knownToolsets))
+	}
+	narrow, err := policyFromEnv(" web, memory ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if contains(narrow, "web") || contains(narrow, "memory") || !contains(narrow, "vision") || !contains(narrow, "todo") {
+		t.Errorf("narrowed policy wrong: %v", narrow)
+	}
+	for _, bad := range []string{"web,terminal", "web,nonsense", "browser"} {
+		if _, err := policyFromEnv(bad); err == nil {
+			t.Errorf("accepted %q", bad)
+		}
+	}
+	if _, err := policyFromEnv(","); err == nil {
+		t.Error("accepted an allow-list with no names")
+	}
+}
+
+func toolsetCall(f *scripted) []string {
+	for _, c := range f.calls {
+		if len(c) == 7 && c[3] == "config" && c[5] == toolsetsConfigKey {
+			return c
+		}
+	}
+	return nil
+}
+
+func TestNarrowedPolicyReachesProvisionAndRotate(t *testing.T) {
+	disabled, err := policyFromEnv("web,memory")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ path, slug string }{{"/provision", "u_newuser01"}, {"/rotate", "u_existing1"}} {
+		f := &scripted{list: listFixture}
+		rec := do(t, newServerWithPolicy(f, testToken, disabled), c.path, "Bearer "+testToken, `{"slug":"`+c.slug+`"}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: got %d %s", c.path, rec.Code, rec.Body)
+		}
+		call := toolsetCall(f)
+		if call == nil {
+			t.Fatalf("%s did not apply the toolset policy", c.path)
+		}
+		var got []string
+		if err := json.Unmarshal([]byte(call[6]), &got); err != nil {
+			t.Fatal(err)
+		}
+		if contains(got, "web") || contains(got, "memory") || !contains(got, "vision") {
+			t.Errorf("%s applied %v", c.path, got)
+		}
+	}
+}
+
+func TestRotateFailsClosedWhenToolsetPolicyFails(t *testing.T) {
+	f := &toolsetFail{scripted{list: listFixture}}
+	rec := do(t, newServer(f, testToken), "/rotate", "Bearer "+testToken, `{"slug":"u_existing1"}`)
+	if rec.Code != http.StatusBadGateway || strings.Contains(rec.Body.String(), `"key"`) || f.called("python3") {
+		t.Fatalf("got %d %s", rec.Code, rec.Body)
+	}
+}

@@ -19,9 +19,10 @@ import (
 )
 
 type server struct {
-	h     hermes
-	token string
-	mu    sync.Mutex // one profile mutation at a time
+	h        hermes
+	token    string
+	disabled []string   // toolsets written to every profile at provision and rotate
+	mu       sync.Mutex // one profile mutation at a time
 }
 
 // opCtx returns the context for a whole request. It is detached from the
@@ -43,7 +44,12 @@ func (s *server) begin(w http.ResponseWriter, r *http.Request) (context.Context,
 }
 
 func newServer(r Runner, token string) *server {
-	return &server{h: hermes{r}, token: token}
+	disabled, _ := disabledFor(defaultAllowed)
+	return newServerWithPolicy(r, token, disabled)
+}
+
+func newServerWithPolicy(r Runner, token string, disabled []string) *server {
+	return &server{h: hermes{r}, token: token, disabled: disabled}
 }
 
 func (s *server) routes() http.Handler {
@@ -123,7 +129,7 @@ func (s *server) provision(w http.ResponseWriter, r *http.Request) {
 	}
 	// Applied on every provision, existing profile or not, before any key is
 	// issued: a profile that cannot be locked down never gets a key.
-	if err := s.h.disableToolsets(ctx, slug); err != nil {
+	if err := s.h.disableToolsets(ctx, slug, s.disabled); err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -159,6 +165,11 @@ func (s *server) rotate(w http.ResponseWriter, r *http.Request) {
 	}
 	if !exists {
 		writeErr(w, http.StatusNotFound, errNoProfile.Error())
+		return
+	}
+	// Reapplied so provision and rotate leave a profile in the same state.
+	if err := s.h.disableToolsets(ctx, slug, s.disabled); err != nil {
+		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
 	key, err := newKey()
@@ -235,7 +246,11 @@ func main() {
 	if addr == "" {
 		addr = "127.0.0.1:8750"
 	}
-	s := newServer(dockerRunner{container}, token)
+	disabled, err := policyFromEnv(os.Getenv("PROVISIONER_ALLOWED_TOOLSETS"))
+	if err != nil {
+		log.Fatal("PROVISIONER_ALLOWED_TOOLSETS: ", err)
+	}
+	s := newServerWithPolicy(dockerRunner{container}, token, disabled)
 	go s.sweepLoop(20 * time.Second)
 	srv := &http.Server{Addr: addr, Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second}
 	log.Printf("hermes-provisioner listening on %s", addr)

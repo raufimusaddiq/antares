@@ -25,15 +25,17 @@ const (
 	DefaultMaxAttempts = 5
 	DefaultBaseBackoff = 15 * time.Second
 	maxBackoff         = 10 * time.Minute
-	// lease outlives hermes.HelperTimeout (390s, above the helper's 330s budget
-	// plus 30s write slack), so a run still in
-	// flight is never mistaken for an interrupted one.
-	lease        = 7 * time.Minute
+	// A run is one helper call (hermes.HelperTimeout) plus a verification
+	// (hermes.MaxVerifyProbes requests of hermes.ProbeTimeout), bounded by
+	// runBudget; the lease outlives runBudget, so a run still in flight is never
+	// mistaken for an interrupted one. TestRunBudgetCoversHelperAndProbes and
+	// TestLeaseOutlastsRunBudget pin the order.
+	lease        = 12 * time.Minute
 	sweepEvery   = 10 * time.Second
 	sweepBatch   = 20
 	endpointID   = "hermes-primary"
 	maxSiblings  = 3
-	runBudget    = 10 * time.Minute
+	runBudget    = 11 * time.Minute
 	scopePrefix  = "chatui:user:"
 	slugRandomLn = 12 // bytes -> 24 hex chars, within the helper's 8..32
 )

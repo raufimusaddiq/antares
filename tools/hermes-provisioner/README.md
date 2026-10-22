@@ -10,6 +10,7 @@ Host-side helper that creates and removes per-user Hermes profiles for Antares (
 export PROVISIONER_TOKEN=...      # required, >= 32 chars, no default; the service refuses to start without it
 export PROVISIONER_ADDR=127.0.0.1:8750   # optional (default shown)
 export HERMES_CONTAINER=hermes           # optional (default shown)
+export PROVISIONER_ALLOWED_TOOLSETS=...  # optional; toolsets a tenant keeps (default web,vision,image_gen,skills,memory,todo,clarify)
 go build -o hermes-provisioner . && ./hermes-provisioner
 ```
 
@@ -33,8 +34,10 @@ All endpoints except `/health` need `Authorization: Bearer $PROVISIONER_TOKEN`.
   (`profile`, `key`, ...) are rejected.
 - Fail closed: if `profile create` fails nothing is written.
 - Tenant toolset policy (issue #41): before any key is issued, `/provision` runs
-  `hermes -p <slug> config set agent.disabled_toolsets '[...]'` for the profile, disabling every denied
-  toolset and everything outside the allowed default (`toolsets.go`). Hermes applies that list last,
+  `hermes -p <slug> config set agent.disabled_toolsets '[...]'` for the profile, disabling every toolset Hermes
+  reports that is not in `PROVISIONER_ALLOWED_TOOLSETS` (`toolsets.go`; floor toolsets and unknown names refuse to start). Set
+  the same value as `ANTARES_TENANT_ALLOWED_TOOLSETS`. `/rotate` reapplies it, so an edit to a profile's
+  `agent.disabled_toolsets` is overwritten by the next provision or rotate. Hermes applies that list last,
   over every platform list. If it fails, no key is written (`502`).
 - Keys travel to the container on stdin (not argv), are never logged, and never appear in errors.
 

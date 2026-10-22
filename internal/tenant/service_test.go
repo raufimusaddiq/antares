@@ -686,10 +686,20 @@ func TestNewRequiresEveryDependency(t *testing.T) {
 	}
 }
 
-// A claimed run must not be taken for an interrupted one while the helper call
-// it made is still within its timeout.
-func TestLeaseOutlastsHelperTimeout(t *testing.T) {
-	if lease <= hermes.HelperTimeout {
-		t.Fatalf("lease %v must exceed hermes.HelperTimeout %v", lease, hermes.HelperTimeout)
+// A run is the helper call plus a verification; its budget must cover both,
+// derived from the probe count and timeouts in internal/hermes.
+func TestRunBudgetCoversHelperAndProbes(t *testing.T) {
+	need := hermes.HelperTimeout + hermes.MaxVerifyProbes*hermes.ProbeTimeout
+	if runBudget <= need {
+		t.Fatalf("runBudget %v must exceed helper %v + %d probes x %v = %v",
+			runBudget, hermes.HelperTimeout, hermes.MaxVerifyProbes, hermes.ProbeTimeout, need)
+	}
+}
+
+// A claimed run is bounded by runBudget, so a lease longer than that can never
+// expire under a run that is still working.
+func TestLeaseOutlastsRunBudget(t *testing.T) {
+	if lease <= runBudget {
+		t.Fatalf("lease %v must exceed runBudget %v", lease, runBudget)
 	}
 }

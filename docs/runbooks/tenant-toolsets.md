@@ -1,23 +1,34 @@
 # Runbook — tenant toolset policy
 
-Issue #13. This is a **documented default** for each tenant profile's `agent.disabled_toolsets`. The
-admin owns it and may change it per profile; it is not a constant in Antares code.
+Issue #13, applied by issue #41. The allowed set is **operator configuration**, not a constant in
+Antares code: `ANTARES_TENANT_ALLOWED_TOOLSETS` (Antares, enforced by verification) and
+`PROVISIONER_ALLOWED_TOOLSETS` (the provisioner, applied to each profile) take the same comma list,
+default `web,vision,image_gen,skills,memory,todo,clarify`. The floor below can never be allowed. Set both
+variables to the same value; if the provisioner allows more than Antares, `toolset_policy` fails.
+
+**The provisioner owns each profile's `agent.disabled_toolsets`.** `/provision` and `/rotate` both write
+it (every toolset Hermes reports that is not allowed), so a hand edit to one profile is overwritten by
+the next provision or rotate. Narrowing a single profile by hand is not durable; narrow the variable.
 
 ## Status
 
-- **Per-profile routing is NOT delivered.** With a second profile present the gateway's `api_server`
-  adapter did not start, so `/p/<profile>/v1/...` could not be reached at all. Diagnosis:
-  [issue #13 comment 6333799116](https://github.com/raufimusaddiq/antares/issues/13#issuecomment-6333799116).
-  It is a separate ticket.
-- **Everything below is UNVERIFIED.** Nothing was read back through `/p/<profile>/v1/toolsets`,
-  because that route could not be reached. The policy is **not enforced or demonstrated on any
-  profile**; it is a proposal. Toolset names and tool lists come from the committed `/v1/toolsets`
-  fixture (the `default` profile). The reasons come from the Phase 0 findings (section 6), not from a
-  tenant test.
-- No guard case exists for `/p/<profile>/...`. A check against a route that cannot be served cannot
-  pass, so none is pinned.
+- **Enforced and demonstrated on a live profile** (Hermes v0.22.2, 2026-10-23, throwaway profile, since
+  deleted): after the provisioner's `config set`, `GET /p/<profile>/v1/toolsets` with that profile's key
+  returned 200 with `web, vision, image_gen, skills, todo, memory` enabled and every denied toolset
+  (`terminal, file, code_execution, delegation, cronjob, session_search, connections, browser`) reported
+  `enabled: false`; the rest of the 27 reported toolsets were also off. Output below.
+- Phase 0's filesystem-isolation FAIL stands. This policy is a gate on which tools exist, not a sandbox.
+- The two open questions below (`web_extract`, `skill_manage`) are still unverified.
 
-Until a tenant policy is verified end to end, Antares may serve **one trusted user** only (AGENTS.md).
+```
+GET /p/u_probezz02/v1/toolsets -> 200 object=list platform=api_server
+enabled : ['web', 'vision', 'image_gen', 'skills', 'todo', 'memory']
+disabled: ['browser', 'terminal', 'file', 'code_execution', 'video', 'video_gen', 'x_search', 'tts', 'stt', 'kanban', 'context_engine', 'session_search', 'connections', 'clarify', 'delegation', 'cronjob', 'discord', 'discord_admin', 'yuanbao', 'computer_use', 'a2a']
+denied all reported & disabled: True
+```
+
+(`clarify` is off for `api_server` on this build by default, so it reports disabled although allowed;
+the verifier only requires that nothing outside the allow-list is enabled.)
 
 ## Enabled for a tenant
 

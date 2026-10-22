@@ -1,9 +1,12 @@
 package hermes
 
 import (
+	"context"
+	"encoding/json"
 	"go/ast"
 	"go/parser"
 	"go/token"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -42,36 +45,113 @@ func valueOf(f *ast.File, name string) ast.Expr {
 	return nil
 }
 
-// The provisioner is a separate module and keeps its own list. Every floor
-// toolset must be in it, and no default-allowed toolset may be.
-func TestProvisionerDisablesTheWholeFloor(t *testing.T) {
-	lit, ok := valueOf(parseProvisioner(t, "toolsets.go"), "disabledToolsets").(*ast.CompositeLit)
+// stringsVar returns the elements of a package-level []string literal.
+func stringsVar(t *testing.T, name string) []string {
+	t.Helper()
+	lit, ok := valueOf(parseProvisioner(t, "toolsets.go"), name).(*ast.CompositeLit)
 	if !ok {
-		t.Fatal("var disabledToolsets (a composite literal) not found in the provisioner")
+		t.Fatalf("var %s (a composite literal) not found in the provisioner", name)
 	}
-	have := map[string]bool{}
+	var out []string
 	for _, e := range lit.Elts {
 		bl, ok := e.(*ast.BasicLit)
 		if !ok || bl.Kind != token.STRING {
-			t.Fatalf("disabledToolsets element %T is not a string literal", e)
+			t.Fatalf("%s element %T is not a string literal", name, e)
 		}
 		n, err := strconv.Unquote(bl.Value)
 		if err != nil {
 			t.Fatal(err)
 		}
-		have[n] = true
+		out = append(out, n)
 	}
-	if len(have) == 0 {
-		t.Fatal("disabledToolsets is empty")
+	if len(out) == 0 {
+		t.Fatalf("%s is empty", name)
 	}
-	for _, d := range DeniedToolsets {
-		if !have[d] {
-			t.Errorf("provisioner does not disable %s", d)
+	return out
+}
+
+func sameSet(a, b []string) bool {
+	m := map[string]int{}
+	for _, x := range a {
+		m[x]++
+	}
+	for _, x := range b {
+		m[x]--
+	}
+	for _, v := range m {
+		if v != 0 {
+			return false
 		}
 	}
-	for _, a := range DefaultAllowedToolsets {
-		if have[a] {
-			t.Errorf("provisioner disables allowed toolset %s", a)
+	return true
+}
+
+// The provisioner is a separate module and mirrors three lists. They must equal
+// Antares' own, and its known list must equal what the deployed Hermes reports.
+func TestProvisionerToolsetListsMatchAntares(t *testing.T) {
+	if got := stringsVar(t, "floorToolsets"); !sameSet(got, DeniedToolsets) {
+		t.Errorf("floorToolsets %v != DeniedToolsets %v", got, DeniedToolsets)
+	}
+	if got := stringsVar(t, "defaultAllowed"); !sameSet(got, DefaultAllowedToolsets) {
+		t.Errorf("defaultAllowed %v != DefaultAllowedToolsets %v", got, DefaultAllowedToolsets)
+	}
+	b, err := os.ReadFile("../../docs/hermes/fixtures/toolsets.body.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fx struct {
+		Data []struct {
+			Name string `json:"name"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(b, &fx); err != nil {
+		t.Fatal(err)
+	}
+	var reported []string
+	for _, d := range fx.Data {
+		reported = append(reported, d.Name)
+	}
+	if got := stringsVar(t, "knownToolsets"); !sameSet(got, reported) {
+		t.Errorf("knownToolsets %v != fixture %v", got, reported)
+	}
+}
+
+// What the provisioner leaves enabled for an allow-list, as /v1/toolsets would
+// report it: knownToolsets minus disabledFor(allowed). The derivation is stated
+// here independently of the provisioner's code.
+func fakeFor(t *testing.T, allowed []string) *fakeHermes {
+	f := newFake(t)
+	f.toolsets = nil
+	for _, n := range stringsVar(t, "knownToolsets") {
+		on := false
+		for _, a := range allowed {
+			on = on || a == n
+		}
+		f.toolsets = append(f.toolsets, tset{n, on})
+	}
+	return f
+}
+
+// Narrowing the allow-list (ANTARES_TENANT_ALLOWED_TOOLSETS and the
+// provisioner's matching variable) must still produce a profile that verifies.
+func TestNarrowedAllowListStillVerifies(t *testing.T) {
+	for _, allowed := range [][]string{DefaultAllowedToolsets, {"web", "memory"}, {"memory"}} {
+		f := fakeFor(t, allowed)
+		v, err := NewVerifier(f.srv.URL, allowed, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if rep := v.Verify(context.Background(), target()); !rep.OK() {
+			t.Errorf("allowed %v: %+v", allowed, rep)
+		}
+		// The default provisioner policy under a narrower Antares allow-list is
+		// exactly the drift the verifier must catch.
+		if len(allowed) < len(DefaultAllowedToolsets) {
+			g := fakeFor(t, DefaultAllowedToolsets)
+			vv, _ := NewVerifier(g.srv.URL, allowed, nil)
+			if rep := vv.Verify(context.Background(), target()); rep.OK() {
+				t.Errorf("allowed %v: a profile with the default set passed", allowed)
+			}
 		}
 	}
 }

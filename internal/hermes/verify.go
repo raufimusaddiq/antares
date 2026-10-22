@@ -16,13 +16,17 @@ import (
 
 // Check names. They are the vocabulary admins see (PRD §5.3 step 5).
 const (
-	CheckEndpoint    = "endpoint"
-	CheckIdentity    = "profile_identity"
-	CheckIsolation   = "credential_isolation"
-	CheckSessions    = "session_ownership"
-	CheckToolsets    = "toolset_policy"
-	CheckMemory      = "memory_boundary"
-	probeTimeout     = 15 * time.Second
+	CheckEndpoint  = "endpoint"
+	CheckIdentity  = "profile_identity"
+	CheckIsolation = "credential_isolation"
+	CheckSessions  = "session_ownership"
+	CheckToolsets  = "toolset_policy"
+	CheckMemory    = "memory_boundary"
+	probeTimeout   = 15 * time.Second
+	// ProbeTimeout bounds one verification request; MaxVerifyProbes is the most a
+	// Verify makes (maxSiblingProbes siblings), pinned by TestVerifyProbeCount.
+	ProbeTimeout     = probeTimeout
+	MaxVerifyProbes  = 15
 	absentSlug       = "u_zzzzzzzzzzzz" // never provisioned: a probe target that must not answer
 	maxSiblingProbes = 3
 )
@@ -190,7 +194,11 @@ func (v *Verifier) expectRefusalOr(ctx context.Context, path, key, what string, 
 	case r.status == http.StatusOK:
 		return what + " accepted the request (status 200)"
 	default:
-		return what + " answered status " + strconv.Itoa(r.status) + ", expected 401 or 403"
+		want := "401 or 403"
+		if notFoundOK {
+			want = "401, 403 or 404"
+		}
+		return what + " answered status " + strconv.Itoa(r.status) + ", expected " + want
 	}
 }
 
