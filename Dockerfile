@@ -10,7 +10,9 @@ COPY web/ ./
 RUN mkdir -p /src/internal/webui && npm run build
 
 # Stage 2: the Go binary with that fresh bundle embedded. Pure Go (modernc SQLite), no cgo.
-FROM golang:1.24-alpine AS build
+# Pinned by digest: a floating tag is what left the base frozen at EOL 1.24 (#36). Bump per deploy/README.md;
+# scripts/check_go_base.py (CI) fails if this is outside the supported Go window or older than go.mod.
+FROM golang:1.27.3-alpine@sha256:d530cf60723abf1ffae0cd16bb546b379ec0550d2f3815e5b16ed69dbc00fba4 AS build
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download
