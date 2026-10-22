@@ -354,10 +354,12 @@ func TestNewVerifierRefusesUnsafeBaseURLs(t *testing.T) {
 	}
 }
 
-// Each probe that must be refused accepts 401 and 403 and nothing else. A broken
-// or misrouted endpoint (404, a redirect, 5xx) is not a refusal, and a 200 is a
-// leak; every one of them fails the check and the reason names the status.
-func TestRefusalProbesRequireExactly401Or403(t *testing.T) {
+// Each probe that must be refused accepts 401 and 403 and nothing else, with one
+// exception: the never-provisioned route also accepts 404 (accepts404 below). A
+// broken or misrouted endpoint (404 elsewhere, a redirect, 5xx) is not a
+// refusal, and a 200 is a leak; every one of them fails the check and the
+// reason names the status.
+func TestRefusalProbesRequire401Or403Except404OnTheUnprovisionedRoute(t *testing.T) {
 	absent := "/p/" + absentSlug + "/v1/models"
 	// The never-provisioned route is the one probe where the deployed Hermes
 	// answers 404, and 404 proves the key opens nothing there.

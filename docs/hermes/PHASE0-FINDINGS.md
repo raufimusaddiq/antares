@@ -46,12 +46,15 @@ unreachable; or a toolset's `enabled` flag in `/v1/toolsets` differs (the failur
 
 **What it does not guard — read this before relying on it.** `/v1/toolsets` is read for the profile
 served at the URL called, which is the **default** profile. The `enabled` check therefore guards the
-default profile's flags only. It does **not** observe any tenant profile's `disabled_toolsets`, and
-none can be captured today (`/p/<profile>/…` returns 404 until the profile is registered in
-`gateway.profile_routes`). So the isolation argument in section 6, which rests on per-profile
-`disabled_toolsets`, has **no automated check behind it**. A toolset becoming enabled in a tenant
-profile would go unnoticed by this guard. Closing that gap needs a `/p/<profile>/v1/toolsets` case
-with its own fixture, once a profile is routable (open item 1).
+default profile's flags only. It does **not** observe any tenant profile's `disabled_toolsets`:
+`CASES` has no `/p/<profile>/…` entry. A toolset becoming enabled in a tenant profile would go
+unnoticed by *this* guard. (Originally the route could not be reached at all, so no such case could be
+captured; tenant profiles are routable now, and a `/p/<profile>/v1/toolsets` read was captured once, by
+hand, in issue #41, see the update at the end of this file.) The tenant-side check that exists is
+Antares' own `toolset_policy` verification (`internal/hermes/verify.go`), run against each tenant
+profile before it is `READY`; it is not part of this script.
+Closing the remaining gap here needs a `/p/<profile>/v1/toolsets` case with its own fixture (open
+item 1).
 
 Verification: `scripts/test_hermes_contract.py` is an offline self-test (no network) run by the CI
 `security` job. Against the round-1 guard (which compared only the first list element),
