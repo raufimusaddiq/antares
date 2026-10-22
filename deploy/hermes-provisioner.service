@@ -10,8 +10,8 @@ Requires=docker.service
 User=antares-prov
 Group=antares-prov
 SupplementaryGroups=docker
-# Holds PROVISIONER_TOKEN (and optionally HERMES_CONTAINER). Root-owned, mode 0600, outside the repo.
-EnvironmentFile=/etc/antares/provisioner.env
+# Holds PROVISIONER_TOKEN (and optionally HERMES_CONTAINER). Root-owned, mode 0600, under /opt/antares (outside the repo).
+EnvironmentFile=/opt/antares/provisioner.env
 # Bind to the docker bridge gateway so the antares container (host.docker.internal) can reach it
 # and the edge cannot: never 0.0.0.0, never a public address. Set to the gateway of hermes_edge,
 # see deploy/README.md. 127.0.0.1 is not reachable from a container.

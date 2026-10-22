@@ -24,10 +24,26 @@ behind `go.mod`.
 ## 1. Secret files (outside the repository)
 
 ```sh
-sudo install -d -m 0750 /etc/antares
-sudo install -m 0600 /dev/null /etc/antares/antares.env        # variables: see ../.env.example
-sudo install -m 0600 /dev/null /etc/antares/provisioner.env
+sudo install -d -m 0700 -o "$USER" -g "$USER" /opt/antares
+sudo install -d -m 0755 -o root -g root /opt/antares/bin
+sudo install -m 0600 -o root -g root /dev/null /opt/antares/antares.env        # variables: see ../.env.example
+sudo install -m 0600 -o root -g root /dev/null /opt/antares/provisioner.env
 ```
+
+This is the layout the live host runs:
+
+| Path | Mode | Owner |
+|---|---|---|
+| `/opt/antares` | `700` | the deploying user |
+| `/opt/antares/antares.env`, `/opt/antares/provisioner.env` | `600` | `root:root` |
+| `/opt/antares/bin/hermes-provisioner` | `755` | `root:root` |
+
+Why they differ: the secrets are readable only by root. systemd reads `EnvironmentFile` as root before
+dropping to `antares-prov`, so the helper never needs read access, and neither does any other local
+user. Edit them with `sudo`. The binary is root-owned and not writable by the deploying user or by
+`antares-prov`, so a compromise of either cannot swap the code that runs with the Docker group. Compose
+reads `antares.env` as the invoking user's `docker compose` client, so run it with `sudo` or point
+`ANTARES_ENV_FILE` at a readable copy.
 
 `provisioner.env`:
 
