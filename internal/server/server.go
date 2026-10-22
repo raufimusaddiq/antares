@@ -3,13 +3,16 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"io"
 	"io/fs"
+	"mime"
 	"net/http"
 	"os"
 	"path"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -26,6 +29,7 @@ type Server struct {
 	ready  Checker
 	assets fs.FS
 	auth   Auth
+	gz     gzipCache
 }
 
 // New serves the bundle from staticDir (a development override). Production
@@ -192,6 +196,22 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, name string) 
 		h.Set("Cache-Control", "no-store")
 	} else if strings.HasPrefix(name, "assets/") { // content-hashed by the build
 		h.Set("Cache-Control", "public, max-age=31536000, immutable")
+	}
+	if canGzip(name, st.Size()) {
+		// The representation depends on Accept-Encoding, so say so on identity responses too.
+		h.Add("Vary", "Accept-Encoding")
+		if acceptsGzip(r.Header.Get("Accept-Encoding")) {
+			if gz := s.gz.get(s.assets, name, st.Size(), st.ModTime()); gz != nil {
+				if ct := mime.TypeByExtension(path.Ext(name)); ct != "" {
+					h.Set("Content-Type", ct)
+				}
+				h.Set("Content-Encoding", "gzip")
+				// net/http leaves Content-Length unset when Content-Encoding is present.
+				h.Set("Content-Length", strconv.Itoa(len(gz)))
+				http.ServeContent(w, r, name, st.ModTime(), bytes.NewReader(gz))
+				return
+			}
+		}
 	}
 	http.ServeContent(w, r, name, st.ModTime(), rs)
 }
