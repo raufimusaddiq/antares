@@ -17,8 +17,8 @@
       },
       "disk": {
         "status": "ok",
-        "used_percent": 67.6,
-        "free_bytes": 23786188800
+        "used_percent": 1.0,
+        "free_bytes": 1
       },
       "gateway": {
         "status": "ok",
@@ -28,9 +28,9 @@
       },
       "background_queues": {
         "status": "ok",
-        "active_api_runs": 0,
-        "process_completions": 0,
-        "active_delegations": 0
+        "active_api_runs": 1,
+        "process_completions": 1,
+        "active_delegations": 1
       }
     }
   },
@@ -42,24 +42,24 @@
       "state": "connected",
       "error_code": null,
       "error_message": null,
-      "updated_at": "2026-10-22T04:00:11.772238+00:00",
-      "writer_pid": 156,
-      "writer_start_time": 90523166,
+      "updated_at": "2026-01-01T00:00:00+00:00",
+      "writer_pid": 1,
+      "writer_start_time": 1,
       "needs_attention": false,
       "retrying_since": null,
-      "listener_base": "http://127.0.0.1:8642",
+      "listener_base": "http://host.example:8642",
       "metrics": {
         "host": "0.0.0.0",
-        "port": 8642,
-        "active_runs": 0,
-        "stored_runs": 0,
-        "last_request_at": "2026-10-20T21:08:51.412995+00:00",
-        "last_heartbeat": "2026-10-22T04:00:30.268122+00:00",
+        "port": 1,
+        "active_runs": 1,
+        "stored_runs": 1,
+        "last_request_at": "2026-01-01T00:00:00+00:00",
+        "last_heartbeat": "2026-01-01T00:00:00+00:00",
         "metrics_today": {
           "day": "2026-10-22",
-          "requests": 0,
-          "messages": 0,
-          "tokens": 0,
+          "requests": 1,
+          "messages": 1,
+          "tokens": 1,
           "latency_p95_ms": null
         }
       }
@@ -67,31 +67,31 @@
   },
   "api_server": {
     "host": "0.0.0.0",
-    "port": 8642,
-    "active_runs": 0,
-    "stored_runs": 0,
-    "last_request_at": "2026-10-20T21:08:51.412995+00:00",
-    "last_heartbeat": "2026-10-22T04:00:30.268122+00:00",
+    "port": 1,
+    "active_runs": 1,
+    "stored_runs": 1,
+    "last_request_at": "2026-01-01T00:00:00+00:00",
+    "last_heartbeat": "2026-01-01T00:00:00+00:00",
     "metrics_today": {
       "day": "2026-10-22",
-      "requests": 0,
-      "messages": 0,
-      "tokens": 0,
+      "requests": 1,
+      "messages": 1,
+      "tokens": 1,
       "latency_p95_ms": null
     }
   },
   "metrics_today": {
     "day": "2026-10-22",
-    "requests": 0,
-    "messages": 0,
-    "tokens": 0,
+    "requests": 1,
+    "messages": 1,
+    "tokens": 1,
     "latency_p95_ms": null
   },
-  "last_heartbeat": "2026-10-22T04:00:30.268122+00:00",
-  "active_agents": 0,
+  "last_heartbeat": "2026-01-01T00:00:00+00:00",
+  "active_agents": 1,
   "gateway_busy": false,
   "gateway_drainable": true,
   "exit_reason": null,
-  "updated_at": "2026-10-22T04:00:11.772198+00:00",
-  "pid": 156
+  "updated_at": "2026-01-01T00:00:00+00:00",
+  "pid": 1
 }

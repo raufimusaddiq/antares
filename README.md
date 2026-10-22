@@ -52,6 +52,8 @@ A unable to read user B's sessions or memory through any allowed API or tool, an
 auth/status matrix passing. Until that is demonstrated, Antares can be used by a single trusted user
 but **must not be represented as secure for multiple mutually untrusted users**.
 
+Phase 0 results and the Hermes API fixtures: [`docs/hermes/PHASE0-FINDINGS.md`](docs/hermes/PHASE0-FINDINGS.md).
+
 ## Non-negotiables
 
 1. Default deny — no approved, healthy tenant binding means no Hermes request.
