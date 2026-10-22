@@ -22,6 +22,9 @@ const (
 	CheckSessions  = "session_ownership"
 	CheckToolsets  = "toolset_policy"
 	CheckMemory    = "memory_boundary"
+	// ProbeTimeout and MaxVerifyProbes (and HelperTimeout in helper.go) are
+	// exported only so internal/tenant can assert its lease and run-budget
+	// arithmetic against them; nothing in production reads MaxVerifyProbes.
 	// ProbeTimeout bounds one verification request. The longest Verify path with
 	// maxSiblingProbes siblings makes 14 requests (1+1 endpoint, 2 identity, 2+3
 	// isolation, 1+3 sessions, 1 toolsets). MaxVerifyProbes is 15: one probe of

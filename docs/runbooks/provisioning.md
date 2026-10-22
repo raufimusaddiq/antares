@@ -87,7 +87,14 @@ refuses to start.
   fresh profile on the deployed build (issue #41; fixture `sessions-empty`). Only the empty list
   envelope is evidenced: the shape of a session item is still unverified. The check accepts the
   envelope (and, defensively, a bare array or `{"sessions": [...]}`) and fails on anything else.
-- The checks have been exercised only against a fake Hermes in tests, not against a live tenant.
+- What has and has not been exercised live (Hermes v0.22.2, 2026-10-23, throwaway profiles, since
+  deleted): the 404 on a never-provisioned route, the `/api/sessions` empty-list envelope, and the
+  tenant toolset policy (`config set agent.disabled_toolsets`, then `GET /p/<profile>/v1/toolsets` with
+  the profile's key: every denied toolset `enabled: false`) were each observed on the wire; the
+  `config set` was run by hand with the provisioner's command, not through a running provisioner. Not
+  exercised live: a complete provision-and-verify of a real tenant to `READY` through Antares and the
+  running provisioner, the non-empty sessions item shape, and the cross-tenant checks against a second
+  routable tenant. Those run only against a fake Hermes in tests.
 
 ## Operator actions
 
@@ -97,6 +104,13 @@ refuses to start.
   provisioner overwrites it on the next `/provision` or `/rotate`. Make `PROVISIONER_ALLOWED_TOOLSETS`
   (provisioner) equal `ANTARES_TENANT_ALLOWED_TOOLSETS` (Antares), restart the provisioner, rotate the
   profile so the policy is reapplied, then `tenant-verify` (`docs/runbooks/tenant-toolsets.md`).
+- `FAILED` with `verification failed: toolset_policy … toolset X is enabled but not allowed` for every
+  tenant right after a **Hermes upgrade**: the new build probably added a toolset that is on by
+  default. The provisioner only disables the toolsets it knows (`knownToolsets` in
+  `tools/hermes-provisioner/toolsets.go`, mirrored by `hermes.KnownToolsets`), so the new one stays on.
+  Add its name to both lists (the contract test against `docs/hermes/fixtures/toolsets.body.json`
+  fails until the fixture is re-captured and both lists agree), redeploy both programs, then rotate
+  each profile so the policy is reapplied. Until then no tenant verifies; that is fail-closed.
 - `FAILED` with `verification failed: endpoint …`: the profile route is not served (see Phase 0 and
   `docs/hermes/MULTIPLEX-LISTENER-DIAGNOSIS.md`).
 - `stored credential cannot be opened`: `ANTARES_SECRET_KEY` changed. Restore the previous key; do not

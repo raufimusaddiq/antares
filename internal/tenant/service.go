@@ -32,8 +32,14 @@ const (
 	// plus probes, not two calls at their timeout. If both did run long, the run
 	// is cut at runBudget and stays CONFIGURING. The lease outlives runBudget, so
 	// a run still in flight is never mistaken for an interrupted one, and a cut
-	// run is retried, not lost. TestRunBudgetCoversHelperAndProbes and
-	// TestLeaseOutlastsRunBudget pin the order.
+	// run is retried, not lost. The two-call path is tight by design: in the
+	// helper's own exec budget (60s each) Provision with an existing key is 3
+	// execs and Rotate 3, so 6x60s + 15x15s probes = 585s worst case, 75s inside
+	// runBudget (660s); a new profile's Provision (4 execs) is never followed by
+	// Rotate. One more exec in either handler eats 60s of that margin. This margin
+	// is stated, not pinned: the exec counts live in the provisioner module (its
+	// TestHandlersStayBelowExecBudget bounds them). TestRunBudgetCoversHelperAndProbes
+	// (single call) and TestLeaseOutlastsRunBudget pin the rest.
 	lease        = 12 * time.Minute
 	sweepEvery   = 10 * time.Second
 	sweepBatch   = 20

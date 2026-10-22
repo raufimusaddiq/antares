@@ -103,11 +103,11 @@ func ValidID(s string) bool { return idRE.MatchString(s) }
 
 // Client talks to the Hermes API origin.
 type Client struct {
-	base        *url.URL
-	http        *http.Client
-	idle        time.Duration
-	call        time.Duration
-	maxStream   time.Duration
+	base      *url.URL
+	http      *http.Client
+	idle      time.Duration
+	call      time.Duration
+	maxStream time.Duration
 	transcripts chan struct{} // bounds concurrent full-transcript reads
 }
 

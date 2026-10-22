@@ -203,6 +203,16 @@ small tombstone files in a hidden `.deleted` directory under the profiles direct
 Per-profile routing is **not delivered**. With a second profile present the gateway's `api_server`
 adapter did not start, so `/p/<profile>/v1/...` was unreachable (see
 [issue #13 comment 6333799116](https://github.com/raufimusaddiq/antares/issues/13#issuecomment-6333799116)).
-The `disabled_toolsets` gap above therefore **remains open**: no automated check exists. A tenant
-toolset policy is proposed in `docs/runbooks/tenant-toolsets.md`, **unverified**. The Phase 0 FAIL
-verdict and the isolation finding in section 6 stand unchanged.
+The `disabled_toolsets` gap above was open at that point: no automated check existed.
+
+### Update — issue #41 (2026-10-23)
+
+Routing now works for a provisioned profile, and the toolset policy is no longer only proposed:
+`tools/hermes-provisioner` writes `agent.disabled_toolsets` on `/provision` and `/rotate`, Antares'
+`toolset_policy` check fails closed on any enabled toolset outside the allow-list, and a throwaway profile
+read back through `GET /p/<profile>/v1/toolsets` with its own key showed every denied toolset
+`enabled: false` (`docs/runbooks/tenant-toolsets.md`). What is **still unexercised**: the provisioner's
+own HTTP path on the live host (the `config set` was run by hand), the two escalation questions in that
+runbook (`web_extract`, `skill_manage`), and the A-vs-B cross-tenant negative tests. The Phase 0 FAIL
+verdict and the isolation finding in section 6 stand unchanged: this policy limits which tools exist, it
+does not make profiles sandboxes.
