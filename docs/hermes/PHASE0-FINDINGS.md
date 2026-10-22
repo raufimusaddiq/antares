@@ -40,14 +40,22 @@ ID `sha256:36099926da31…`, disk `sha256:7a69201726bc…`, `RepoDigests` empty)
 an image that is not the one serving. Hermes may update at any time.
 
 The guard is `scripts/hermes_contract.py check`, built from the captured fixtures. It exits 1 when:
-a status code differs; a key is added or removed; a value changes type; a list changes length or an
-item's shape; Hermes is unreachable; or the per-toolset `enabled` flags in `/v1/toolsets` differ
-(compared by toolset name, so the failure says which toolset changed). All other values are ignored.
-The toolset check exists because isolation rests on per-profile `disabled_toolsets` (section 6): a
-toolset silently becoming enabled is the change it must catch.
+a status code differs; a key is added or removed; a value changes type (null, bool, int, float,
+string, list, object); a list changes length or an item's shape; a fixture is missing; Hermes is
+unreachable; or a toolset's `enabled` flag in `/v1/toolsets` differs (compared by toolset name, so
+the failure says which). All other values are ignored.
+
+**What it does not guard — read this before relying on it.** `/v1/toolsets` is read for the profile
+served at the URL called, which is the **default** profile. The `enabled` check therefore guards the
+default profile's flags only. It does **not** observe any tenant profile's `disabled_toolsets`, and
+none can be captured today (`/p/<profile>/…` returns 404 until the profile is registered in
+`gateway.profile_routes`). So the isolation argument in section 6, which rests on per-profile
+`disabled_toolsets`, has **no automated check behind it**. A toolset becoming enabled in a tenant
+profile would go unnoticed by this guard. Closing that gap needs a `/p/<profile>/v1/toolsets` case
+with its own fixture, once a profile is routable (open item 1).
 
 Verification: `scripts/test_hermes_contract.py` is an offline self-test (no network) run by the CI
-`security` job. Against the previous version of the guard (which compared only the first list element),
+`security` job. Against the round-1 guard (which compared only the first list element),
 the same five toolset mutations — one added, one removed, one swapped and enabled, one item type
 change, one newly enabled — all passed unnoticed; the self-test covers each and the current code
 fails on each. It also passes against the live API.
@@ -113,7 +121,33 @@ yet). The Antares container must join `hermes_edge`; edge route decision is stil
 
 ## 6. Profile-vs-tool filesystem isolation — NOT ISOLATED
 
-Evidence (read-only checks, `test -r` and byte counts; no file contents were read):
+Evidence. All checks are read-only (`test -r`, `stat`, `ps`); no file content was read. Output is
+verbatim except the numeric uid/gid, which are redacted. `<data>` is the Hermes data root inside the
+container. Re-run on 2026-10-22 against the live container:
+
+```
+$ docker exec hermes sh -c 'ps -eo user,args | grep "gateway run --replace" | grep -v grep | cut -c1-8'
+hermes
+$ docker exec -u hermes hermes sh -c 'D=<data>; for f in .env state.db memories; do
+    test -r $D/$f && echo "default/$f readable" || echo "default/$f NOT readable"; done'
+default/.env readable
+default/state.db readable
+default/memories readable
+$ docker exec hermes sh -c 'stat -c "%U %a" <data>/.env <data>/state.db <data>/memories'
+hermes 600
+hermes 600
+hermes 755
+```
+
+So the process that runs tools is `hermes`, the default profile's credential file, state database and
+memory directory belong to `hermes`, and `docker exec -u hermes` (the same user) can read all three.
+The same session also showed, while the test profiles existed (output not preserved verbatim; the
+profiles are deleted), that as that user another profile's credential file and persona file had
+non-zero size via `wc -c < file`, and that another profile's directory could be listed. That part
+cannot be re-run now.
+
+Limits of this evidence: it proves OS-level readability by the gateway user, not that a *tool call*
+reached the files. No tool call was driven.
 
 - One gateway process serves the API **and executes tools** (`runtime.tool_execution: "server"`; no
   terminal sandbox backend is configured).

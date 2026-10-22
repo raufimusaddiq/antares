@@ -12,8 +12,9 @@ or written. Every number and timestamp in a fixture is fabricated; only shapes a
 
 `check` is the API contract test. It fails when a status code differs, a key is added or removed, a
 value changes type, a list changes length or an item's shape, or the per-toolset `enabled` flags in
-`/v1/toolsets` differ (the one value that is compared, because isolation rests on it). Other values
-are ignored. An unreachable Hermes is also a failure. Offline self-test:
+`/v1/toolsets` differ. That check sees the profile served at the URL it calls, which is the default
+profile; it says nothing about any tenant profile until a `/p/<profile>/v1/toolsets` case exists.
+Other values are ignored. An unreachable Hermes is also a failure. Offline self-test:
   python3 -I -m unittest discover -s scripts -p 'test_*.py'
 """
 import json, os, re, sys, urllib.error, urllib.request
@@ -78,8 +79,10 @@ def shape(v):
         return "bool"
     if v is None:
         return "null"
-    if isinstance(v, (int, float)):
-        return "number"
+    if isinstance(v, int):
+        return "int"
+    if isinstance(v, float):
+        return "float"
     if isinstance(v, str):
         return "string"
     if isinstance(v, list):
@@ -134,8 +137,12 @@ def main():
             (FIX / (name + ".body.json")).write_text(json.dumps(sanitize(data), indent=2) + "\n")
             print("captured", name, status)
             continue
-        want_status = int((FIX / (name + ".status")).read_text())
-        want = json.loads((FIX / (name + ".body.json")).read_text())
+        try:
+            want_status = int((FIX / (name + ".status")).read_text())
+            want = json.loads((FIX / (name + ".body.json")).read_text())
+        except (OSError, ValueError) as e:
+            bad.append("%s: fixture missing or unreadable (%s)" % (name, type(e).__name__))
+            continue
         problems = compare(name, status, data, want_status, want)
         bad.extend(problems)
         if not problems:

@@ -1,5 +1,7 @@
 """Offline self-test for the contract guard: no network, no Hermes."""
-import copy, unittest
+import copy, json, os, tempfile, unittest
+from pathlib import Path
+from unittest import mock
 
 import hermes_contract as hc
 
@@ -62,6 +64,54 @@ class Contract(unittest.TestCase):
                            "u": "http://172.1.2.3:8642", "ok": True})
         self.assertEqual(out, {"n": 1, "f": 1.0, "day": "2026-01-01", "ts": "2026-01-01T00:00:00+00:00",
                                "u": "http://host.example:8642", "ok": True})
+
+    def test_int_float_and_other_type_changes_are_caught(self):
+        for live in ({"created": 1.5}, {"created": None}, {"created": True}, {"created": "1"}):
+            self.assertTrue(check(live, {"created": 1}, "models"), live)
+        self.assertEqual(check({"created": 7}, {"created": 1}, "models"), [])
+
+    def test_parse(self):
+        self.assertEqual(hc.parse(b'{"a": 1}'), {"a": 1})
+        self.assertEqual(hc.parse(b"not json"), "not json")
+
+
+class Main(unittest.TestCase):
+    """Drive main() with the network stubbed out."""
+
+    def run_main(self, mode, call, fixtures=None):
+        tmp = Path(tempfile.mkdtemp())
+        fix = fixtures if fixtures is not None else tmp
+        env = {"HERMES_API_KEY": "k" * 32, "HERMES_BASE_URL": "http://x"}
+        with mock.patch.object(hc, "FIX", fix), mock.patch.object(hc, "call", call), \
+                mock.patch.dict(os.environ, env), mock.patch("sys.argv", ["h", mode]):
+            try:
+                hc.main()
+            except SystemExit as e:
+                return e.code
+        return None
+
+    def test_unreachable_is_a_contract_failure_not_a_crash(self):
+        def call(*a):
+            raise hc.Unreachable("GET /health: URLError")
+        code = self.run_main("check", call)
+        self.assertIn("CONTRACT BROKEN", str(code))
+
+    def test_missing_fixture_is_a_contract_failure(self):
+        code = self.run_main("check", lambda *a: (200, b"{}"))
+        self.assertIn("CONTRACT BROKEN", str(code))
+        self.assertIn("fixture missing", str(code))
+
+    def test_capture_then_check_round_trips(self):
+        tmp = Path(tempfile.mkdtemp())
+        call = lambda *a: (200, json.dumps({"n": 123456, "day": "2026-10-22"}).encode())
+        self.assertIsNone(self.run_main("capture", call, tmp))
+        self.assertEqual(json.loads((tmp / "health.body.json").read_text()), {"n": 1, "day": "2026-01-01"})
+        self.assertIsNone(self.run_main("check", call, tmp))
+
+    def test_capture_refuses_a_response_containing_the_key(self):
+        leak = lambda *a: (200, json.dumps({"echo": "k" * 32}).encode())
+        code = self.run_main("capture", leak)
+        self.assertIn("refusing", str(code))
 
 
 if __name__ == "__main__":
