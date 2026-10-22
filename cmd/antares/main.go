@@ -22,6 +22,16 @@ import (
 )
 
 func main() {
+	if len(os.Args) == 2 && os.Args[1] == "healthcheck" {
+		addr := os.Getenv("ANTARES_ADDR")
+		if addr == "" {
+			addr = ":8080"
+		}
+		if err := healthcheck(context.Background(), addr); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}

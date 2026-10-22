@@ -1,0 +1,12 @@
+.git
+.github
+.task-brief.md
+.env
+.env.*
+!.env.example
+node_modules
+web/node_modules
+docs
+deploy
+*.sqlite
+*.db
