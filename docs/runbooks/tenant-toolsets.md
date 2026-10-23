@@ -119,3 +119,44 @@ toolsets or `a2a` / `computer_use` was enabled.
 The gateway route itself was read afterwards on a second throwaway profile; see "Status". That profile's
 `config set` was run by hand with the provisioner's command and list, not through a running
 provisioner, so the provisioner's HTTP path on the live host is the one thing not exercised end to end.
+
+
+## Recovery after verification failure (issue #51)
+
+Both admin requeue operations (`tenant-binding` and `tenant-verify`) reset the retry budget.
+For an existing binding, the pipeline calls `/rotate`, which reapplies `agent.disabled_toolsets`,
+then seals the returned key against the same binding ID and runs all verification checks. A missing
+host profile (404) or key (409) from `/rotate` instead triggers `/provision`, then the same credential
+replacement and verification. Recreating a deleted profile cannot restore its lost data.
+Retries, interrupted runs, and reactivation also rotate existing bindings before verification.
+Profile, binding ID, memory scope and private data stay in place. The old key is invalidated;
+a lost rotation response is recovered by rotating again. No failed or partial verification unlocks chat.
+A mixed report retains other failed checks without labelling those checks deterministic.
+
+An enabled forbidden toolset carries `reapply_toolset_policy` remediation in the internal verifier
+report. If it is still enabled after the helper ran, the run stops immediately as `FAILED` with
+`operator attention required: deterministic failure in toolset_policy:` in the admin detail and a `tenant.attention`
+audit event. Attempts count actual failed runs, rather than being set artificially to the limit.
+The operator should align the two allow-list variables, fix helper access or policy application,
+and requeue. A helper success alone never proves policy compliance.
+
+Unreachable endpoints, malformed evidence and transient helper failures retry with bounded backoff.
+At the retry limit, the detail instead says `operator attention required: retry budget exhausted:`
+and the same attention event is recorded. Both stopped outcomes have a NULL next-attempt time;
+the account remains blocked until an admin requeues it. These signals are available through the
+existing admin user and audit APIs; there is no external notification service.
+
+Tenant states remain:
+
+| State | Entry and exit |
+|---|---|
+| `UNPROVISIONED` | New account; approval or requeue without a binding makes it eligible for a claim. |
+| `CONFIGURING` | Claimed, requeued with a binding, or reactivated with a binding. Helper and verification run here; an expired lease resumes the run. |
+| `READY` | Full verification passed. Requeue or reactivation requires fresh verification; suspension disables access. |
+| `FAILED` | Helper or verification failed. Transient failures retry after backoff; deterministic failures and exhausted budgets require operator attention and requeue. |
+| `DISABLED` | Admin suspended the account and binding. Only reactivation returns it to setup. |
+
+Regression tests cover both requeue modes repairing policy, a helper that leaves policy wrong,
+deterministic versus transient retry behavior, lost rotation responses, owner-scoped replacement,
+and suspension during repair. Existing verifier and provisioner tests still enforce the denied
+floor, policy writes on rotation and failure before key issuance when policy application fails.
