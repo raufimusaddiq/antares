@@ -22,3 +22,6 @@ in CI. It tests the UI contract, not the Go backend.
 What the gate does **not** show: that Hermes isolates one profile's memory or tools from another's (Phase 0 FAIL stands —
 `docs/runbooks/memory-scoping.md`), anything about load/RAM (`PERF-006`), and anything that needs the real Hermes wire
 shapes (still documented, not captured: `docs/runbooks/chat-runs.md`).
+
+This script judges the code. It does not judge a deployment: for that, run the smoke test
+(`docs/runbooks/smoke-test.md`) against the deployed origin; its exit `0` is what "deployed" means.
