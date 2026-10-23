@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { describeCode, describeQuota, getChatModel, getModels, putChatModel, type ModelCatalog, type ModelChoice } from "./chatApi";
 
 /**
@@ -13,13 +13,32 @@ export function ModelPicker({ chatId, disabled }: { chatId: string; disabled: bo
   const [query, setQuery] = useState("");
   const [msg, setMsg] = useState("");
 
+  // Every response is applied only if it belongs to this chat and is the newest request for it. A save
+  // that resolves after the chat changed, or after a newer save or read, is dropped: it must never show
+  // as another chat's model, nor be sent back as that chat's provider/model.
+  const gen = useRef(0);
+  const chat = useRef(chatId);
+  chat.current = chatId;
+  // The choice the next change builds on. It moves when a change is requested (not when its response
+  // arrives), so two quick changes compose instead of the second overwriting the first from stale state.
+  const want = useRef<ModelChoice | null | undefined>(undefined);
+  // Saves for one chat go out one at a time, in the order they were made, so the server's last write is the user's last.
+  const tail = useRef<Promise<unknown>>(Promise.resolve());
+
   useEffect(() => {
-    let live = true;
+    gen.current += 1;
+    const mine = gen.current;
+    want.current = undefined;
+    tail.current = Promise.resolve();
     setChoice(undefined);
     setMsg("");
-    void getChatModel(chatId).then((r) => live && setChoice(r.ok ? r.value.choice : undefined));
+    void getChatModel(chatId).then((r) => {
+      if (gen.current !== mine || chat.current !== chatId) return;
+      want.current = r.ok ? r.value.choice : undefined;
+      setChoice(want.current);
+    });
     return () => {
-      live = false;
+      gen.current += 1; // anything still in flight for the old chat is now stale
     };
   }, [chatId]);
 
@@ -29,13 +48,33 @@ export function ModelPicker({ chatId, disabled }: { chatId: string; disabled: bo
       setMsg(r.ok ? "" : describeCode(r.code));
     });
 
-  const save = async (body: Parameters<typeof putChatModel>[1]) => {
-    const r = await putChatModel(chatId, body);
-    if (r.ok) {
-      setChoice(r.value.choice);
-      setMsg("");
-    } else setMsg(describeCode(r.code));
+  /** next = the choice after this change, or null to reset. */
+  const change = (next: ModelChoice | null) => {
+    const forChat = chatId;
+    want.current = next;
+    gen.current += 1;
+    const mine = gen.current;
+    const body = next
+      ? { provider: next.provider, model: next.model, reasoningEffort: next.reasoningEffort || undefined, serviceTier: next.serviceTier || undefined }
+      : { reset: true as const };
+    tail.current = tail.current.then(async () => {
+      const r = await putChatModel(forChat, body);
+      if (gen.current !== mine || chat.current !== forChat) return; // stale: another save, a read or a chat switch came after
+      if (r.ok) {
+        want.current = r.value.choice;
+        setChoice(r.value.choice);
+        setMsg("");
+      } else {
+        setMsg(describeCode(r.code));
+        const back = await getChatModel(forChat); // the failed change is not the saved one: show what the server holds
+        if (gen.current === mine && chat.current === forChat && back.ok) {
+          want.current = back.value.choice;
+          setChoice(back.value.choice);
+        }
+      }
+    });
   };
+  const patch = (p: Partial<ModelChoice>) => want.current && change({ ...want.current, ...p });
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -71,7 +110,7 @@ export function ModelPicker({ chatId, disabled }: { chatId: string; disabled: bo
                       name="model"
                       disabled={!m.available}
                       checked={choice?.provider === p.slug && choice.model === m.id}
-                      onChange={() => void save({ provider: p.slug, model: m.id })}
+                      onChange={() => change({ provider: p.slug, model: m.id, reasoningEffort: "", serviceTier: "" })}
                     />{" "}
                     {m.id}
                     {!m.available && " (unavailable)"}
@@ -96,7 +135,7 @@ export function ModelPicker({ chatId, disabled }: { chatId: string; disabled: bo
                   Reasoning effort{" "}
                   <select
                     value={choice.reasoningEffort}
-                    onChange={(e) => void save({ provider: choice.provider, model: choice.model, reasoningEffort: e.target.value || undefined, serviceTier: choice.serviceTier || undefined })}
+                    onChange={(e) => patch({ reasoningEffort: e.target.value })}
                   >
                     <option value="">Default</option>
                     {catalog.reasoningEfforts.map((x) => (
@@ -112,7 +151,7 @@ export function ModelPicker({ chatId, disabled }: { chatId: string; disabled: bo
                   <input
                     type="checkbox"
                     checked={choice.serviceTier === "priority"}
-                    onChange={(e) => void save({ provider: choice.provider, model: choice.model, reasoningEffort: choice.reasoningEffort || undefined, serviceTier: e.target.checked ? "priority" : undefined })}
+                    onChange={(e) => patch({ serviceTier: e.target.checked ? "priority" : "" })}
                   />{" "}
                   Priority tier
                 </label>
@@ -122,7 +161,7 @@ export function ModelPicker({ chatId, disabled }: { chatId: string; disabled: bo
               </p>
             </div>
           )}
-          {choice && <button type="button" onClick={() => void save({ reset: true })}>Use the default model</button>}
+          {choice && <button type="button" onClick={() => change(null)}>Use the default model</button>}
         </>
       )}
     </details>

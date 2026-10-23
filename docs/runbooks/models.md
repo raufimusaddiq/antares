@@ -35,3 +35,13 @@ and locks nothing.
 | `LLM-005` hide/show, admin allow/deny policy | **Not built here** | Antares-side storage/admin work, not a Hermes limit; follow-up. |
 | `LLM-008` OpenUI toggle | **Not in this slice** | separate ticket (`docs/runbooks/openui.md`). |
 | `GET /api/capabilities` | **Not built** | nothing in this slice reads it; stays the 501 placeholder. |
+
+## Relation to #117 (capability discovery, `sprint/t99`)
+#117 also reads `GET /api/model/options`, but with `include_unconfigured=false`, only to decide whether
+`models` is available (`slug`, `name`, `models`, `authenticated`). This slice needs the picker projection
+(`capabilities`, `pricing`, `usage.windows`, unconfigured rows to show them unavailable), so it parses its
+own view in `internal/hermes/models.go`. Both read the same source lines (`inventory.py:227-256`); neither
+re-derives the other's result. Whichever merges second should reuse the first's route constant and fixture
+rather than add another, and #118 should gate on #117's `offers(inv, "models")` once both are on `main`.
+The deployed container was re-checked on 2026-10-24 (same image digest, started 2026-10-23): the cited
+lines are unchanged. No API call was made: that needs a tenant key, which AGENTS.md reserves.
