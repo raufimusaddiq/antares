@@ -203,6 +203,16 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
     document.getElementById("composer-input")?.focus();
   };
   const area = useRef<HTMLTextAreaElement>(null);
+  useEffect(() => {
+    const onShortcut = (e: globalThis.KeyboardEvent) => {
+      if (e.code !== "KeyM" || !e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey || e.defaultPrevented || e.isComposing) return;
+      if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select, [contenteditable]")) return;
+      e.preventDefault();
+      area.current?.focus();
+    };
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, []);
   const caret = useRef<[number, number] | null>(null);
   useLayoutEffect(() => {
     if (caret.current && area.current) area.current.setSelectionRange(...caret.current);
@@ -252,6 +262,7 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
       <textarea
         ref={area}
         id="composer-input"
+        aria-keyshortcuts="Alt+Shift+M"
         rows={2}
         maxLength={MAX_INPUT}
         value={props.value}

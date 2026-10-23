@@ -48,7 +48,7 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
   // last scroll *event*: a scroll event fires once per frame, so state taken from
   // it can be a frame stale when a render lands, and acting on it would undo the
   // reader's own scroll.
-  const placed = useRef<{ keys: readonly string[]; lay: Layout; scrollHeight: number } | null>(null);
+  const placed = useRef<{ keys: readonly string[]; lay: Layout; scrollHeight: number; viewport: number } | null>(null);
   const remeasured = useRef(false);
 
   const keys = useMemo(() => items.map(itemKey), [items, itemKey]);
@@ -94,7 +94,7 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
     setViewport((v) => (Math.abs(v - el.clientHeight) > 0.5 && el.clientHeight > 0 ? el.clientHeight : v));
     const prev = placed.current;
     // Following the newest content: at the end last time (in last time's coordinates), or just opened.
-    const wasFollowing = prev === null || atBottom(el.scrollTop, el.clientHeight, prev.scrollHeight);
+    const wasFollowing = prev === null || atBottom(el.scrollTop, prev.viewport, prev.scrollHeight);
     if (wasFollowing) {
       if (el.scrollTop + el.clientHeight < el.scrollHeight - 0.5) el.scrollTop = el.scrollHeight;
     } else {
@@ -102,7 +102,8 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
       const y = a ? scrollTopFor(keys, lay, a) : null;
       if (y !== null && Math.abs(el.scrollTop - y) > 0.5) el.scrollTop = Math.max(0, y);
     }
-    placed.current = { keys, lay, scrollHeight: el.scrollHeight };
+    placed.current = { keys, lay, scrollHeight: el.scrollHeight, viewport: el.clientHeight };
+    setFollowing(atBottom(el.scrollTop, el.clientHeight, el.scrollHeight));
     setTop(el.scrollTop);
     maybeLoadMore();
   });
@@ -117,7 +118,7 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
     if (i < 0) return;
     focused.current = token;
     el.scrollTop = Math.max(0, lay.offsets[i]);
-    placed.current = { keys, lay, scrollHeight: el.scrollHeight };
+    placed.current = { keys, lay, scrollHeight: el.scrollHeight, viewport: el.clientHeight };
     setFollowing(false);
     setTop(el.scrollTop);
   });
@@ -129,7 +130,7 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
     if (!el || !inner || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver(() => {
       const prev = placed.current;
-      if (prev && atBottom(el.scrollTop, el.clientHeight, prev.scrollHeight) && el.scrollTop + el.clientHeight < el.scrollHeight - 0.5) {
+      if (prev && atBottom(el.scrollTop, prev.viewport, prev.scrollHeight) && el.scrollTop + el.clientHeight < el.scrollHeight - 0.5) {
         el.scrollTop = el.scrollHeight;
         placed.current = { ...prev, scrollHeight: el.scrollHeight };
       }
