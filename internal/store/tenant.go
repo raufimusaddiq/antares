@@ -3,10 +3,13 @@ package store
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"strings"
 	"time"
 	"unicode"
+
+	"modernc.org/sqlite"
 )
 
 // Errors the admin and provisioning layers translate into API answers.
@@ -78,6 +81,22 @@ func scanAdmin(row interface{ Scan(...any) error }) (AdminUser, error) {
 	return a, err
 }
 
+// SQLite's built-in LOWER() folds ASCII only, while strings.ToLower folds all of Unicode, so
+// lowering the term in Go and the column in SQL disagreed for names like "Ünal". ulower is the
+// same Go fold, applied to the column, so both sides of the comparison fold identically.
+// (LIKE itself is only ASCII case-insensitive, which is fine: both operands are already lowered.)
+func init() {
+	sqlite.RegisterDeterministicScalarFunction("ulower", 1, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		switch v := args[0].(type) {
+		case string:
+			return strings.ToLower(v), nil
+		case []byte:
+			return strings.ToLower(string(v)), nil
+		}
+		return args[0], nil
+	})
+}
+
 var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
 // ListAdminUsers returns accounts oldest request first, optionally filtered by
@@ -99,7 +118,7 @@ func ListAdminUsers(ctx context.Context, db *sql.DB, approval, search string, li
 	if search != "" {
 		// A substring match on identity metadata only; %, _ and the escape itself are literals.
 		like := "%" + likeEscaper.Replace(strings.ToLower(search)) + "%"
-		where = append(where, `(LOWER(u.email) LIKE ? ESCAPE '\' OR LOWER(COALESCE(u.display_name,'')) LIKE ? ESCAPE '\')`)
+		where = append(where, `(ulower(u.email) LIKE ? ESCAPE '\' OR ulower(COALESCE(u.display_name,'')) LIKE ? ESCAPE '\')`)
 		args = append(args, like, like)
 	}
 	if len(where) > 0 {

@@ -148,6 +148,11 @@ export const requeue = (id: string, mode: Requeue) => call("POST", `/api/admin/u
 export function describeAdminCode(code: string, status: number): string {
   if (status === 401 || code === "UNAUTHENTICATED") return "You are signed out. Sign in again.";
   switch (code) {
+    case "ACCOUNT_PENDING":
+    case "ACCOUNT_REJECTED":
+    case "ACCOUNT_SUSPENDED":
+    case "TENANT_NOT_READY":
+      return "Your own account's state changed, so admin actions are no longer available to you. Sign in again.";
     case "NETWORK":
       return "Could not reach Antares. Check your connection.";
     case "NOT_FOUND":

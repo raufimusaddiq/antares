@@ -248,6 +248,12 @@ describe("api calls send the server nothing it must choose", () => {
     expect(await getUser(ID)).toEqual({ ok: false, code: "NETWORK", status: 0 });
   });
 
+  it("a change to the admin's own account state says to sign in again, not a generic failure", () => {
+    for (const code of ["ACCOUNT_PENDING", "ACCOUNT_REJECTED", "ACCOUNT_SUSPENDED", "TENANT_NOT_READY"]) {
+      expect(describeAdminCode(code, 403), code).toContain("Sign in again");
+    }
+  });
+
   it("the server's own message text is never shown", () => {
     expect(describeAdminCode("INTERNAL", 500)).not.toContain("Administrator access required");
     expect(describeAdminCode("anything", 500)).toContain("Something went wrong");

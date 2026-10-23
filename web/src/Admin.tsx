@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import {
   USERS_PAGE,
   decide,
@@ -326,9 +326,13 @@ export function ActionPanel({ pick, busy, error, onCancel, onConfirm }: { pick: 
     e.preventDefault();
     onConfirm(reason.trim());
   };
+  // The panel appears below the button that opened it: move focus into it so a keyboard or screen-reader
+  // user lands on the form they now have to answer instead of staying on the trigger above.
+  const form = useRef<HTMLFormElement>(null);
+  useEffect(() => form.current?.focus(), []);
   const blocked = busy || (!!copy.needsReason && reason.trim() === "");
   return (
-    <form className="confirm" onSubmit={submit} aria-label={`Confirm: ${copy.label}`}>
+    <form ref={form} tabIndex={-1} className="confirm" onSubmit={submit} aria-label={`Confirm: ${copy.label}`}>
       <h3>{copy.label}</h3>
       <p>{copy.effect}</p>
       {copy.needsReason && (

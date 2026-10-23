@@ -551,6 +551,14 @@ func TestListAdminUsersSearchMatchesIdentityOnlyAndEscapesWildcards(t *testing.T
 	if g := got("", "_"); !reflect.DeepEqual(g, []string{"ub"}) {
 		t.Fatalf("a lone _ is a literal underscore, got %v", g)
 	}
+	// Non-ASCII names: SQLite's LOWER() folds ASCII only, so the fold must be the same on both sides.
+	c := mkUser(t, db, "uc", "USER", "APPROVED", "UNPROVISIONED")
+	db.Exec(`UPDATE users SET email = 'unal@example.test', display_name = 'Ünal Öztürk' WHERE id = ?`, c)
+	for _, q := range []string{"Ünal", "ünal", "ÜNAL", "Öztürk", "öztürk", "ÖZTÜRK"} {
+		if g := got("", q); !reflect.DeepEqual(g, []string{"uc"}) {
+			t.Fatalf("q=%q = %v, want the account displayed as %q", q, g, "Ünal Öztürk")
+		}
+	}
 	if g := got("PENDING", "budi"); len(g) != 0 {
 		t.Fatalf("search must combine with the approval filter, got %v", g)
 	}
@@ -590,5 +598,32 @@ func TestListAuditKeysetPagingSurvivesNewRows(t *testing.T) {
 	}
 	if fresh, _, _ := ListAudit(ctx, db, 2, "", ""); fresh[0].ID != "e6" {
 		t.Fatalf("a fresh first page must show the new entry, got %+v", fresh)
+	}
+}
+
+// Both the newest page and a cursor page must be served in index order: no in-memory sort.
+func TestListAuditPagesUseTheKeysetIndex(t *testing.T) {
+	db, _ := migrated(t)
+	for name, q := range map[string]string{
+		"first page":  `SELECT id FROM audit_log ORDER BY created_at DESC, id DESC LIMIT 51`,
+		"cursor page": `SELECT id FROM audit_log WHERE (created_at < 'x' OR (created_at = 'x' AND id < 'y')) ORDER BY created_at DESC, id DESC LIMIT 51`,
+	} {
+		rows, err := db.Query(`EXPLAIN QUERY PLAN ` + q)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var plan []string
+		for rows.Next() {
+			var a, b, c int
+			var d string
+			if err := rows.Scan(&a, &b, &c, &d); err != nil {
+				t.Fatal(err)
+			}
+			plan = append(plan, d)
+		}
+		rows.Close()
+		if joined := strings.Join(plan, "; "); strings.Contains(joined, "TEMP B-TREE") || !strings.Contains(joined, "audit_log_keyset") {
+			t.Errorf("%s plan = %s: want the keyset index and no temp b-tree", name, joined)
+		}
 	}
 }
