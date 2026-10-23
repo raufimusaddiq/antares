@@ -94,6 +94,8 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		"/api/me/notifications": true,
 		// #60 chat search: /api/search/chats; the per-chat form is /api/chats/{id}/search, covered above.
 		"/api/search/chats": true,
+		// #81 per-user opt-in token limit.
+		"/api/me/budget": true,
 	}
 	pathRe := regexp.MustCompile(`/api/[A-Za-z0-9_/.-]*`)
 	badRe := regexp.MustCompile(`(?i)ciphertext|fingerprint|tenant_binding|profile_name|profileSlug|memory_scope|client_secret|api_key|apikey|hermes|authorization`)

@@ -18,9 +18,8 @@ import (
 // listed: any other model is shown as unpriced, never guessed. Re-read the URL
 // and change this table together with its date when the provider changes.
 const (
-	priceListSource = "https://kenari.id/v1/models"
-	priceListDate   = "2026-10-23"
-	priceCurrency   = "IDR"
+	priceListDate = "2026-10-23"
+	priceCurrency = "IDR"
 )
 
 type price struct {
@@ -32,10 +31,15 @@ var prices = map[string]price{
 	"deepseek-v4-1-flash": {inMicro: 2_750_000_000, outMicro: 5_500_000_000, cacheReadMicro: 65_000_000, window: 1_000_000},
 }
 
-// chatTokenBudget is the most input+output tokens one chat may have reported
-// before it stops accepting new messages. A constant, not a setting: nobody has
-// asked to change it. Per-user budgets are not built (see the PR).
-const chatTokenBudget int64 = 2_000_000
+// Token budget. There is none unless the user sets one (PUT /api/me/budget): no
+// default, no constant. The limit is per chat and counts reported input+output
+// tokens; Hermes' input already includes cache reads, so it caps the size of one
+// conversation, not spend. The user can raise or clear it at any time to continue.
+const (
+	minTokenBudget int64 = 10_000
+	maxTokenBudget int64 = 1_000_000_000
+	budgetBasis          = "input + output tokens reported for this chat; input includes cache reads"
+)
 
 // estimateIDR prices one model's usage. Hermes' input_tokens includes cache
 // reads and writes, so cache reads are priced at the cache rate and everything
@@ -66,13 +70,18 @@ type usageView struct {
 		Currency      string   `json:"currency"`
 		Amount        *float64 `json:"amount"` // null when no reported run could be priced
 		UnpricedRuns  int      `json:"unpricedRuns"`
-		PriceListFrom string   `json:"priceListSource"`
 		PriceListDate string   `json:"priceListDate"`
 	} `json:"cost"`
+	// Budget: LimitTokens is null when the user set none. UsedTokens is null while no
+	// finished reply reported usage: unknown, not zero. Enforced is true only when a
+	// limit is set and usage is known; otherwise the limit, if any, is not being applied.
 	Budget struct {
-		LimitTokens int64  `json:"limitTokens"`
-		UsedTokens  int64  `json:"usedTokens"`
+		LimitTokens *int64 `json:"limitTokens"`
+		UsedTokens  *int64 `json:"usedTokens"`
+		UsageKnown  bool   `json:"usageKnown"`
+		Enforced    bool   `json:"enforced"`
 		Reached     bool   `json:"reached"`
+		Basis       string `json:"basis"`
 		AtLimit     string `json:"atLimit"`
 	} `json:"budget"`
 }
@@ -85,15 +94,18 @@ type tokensView struct {
 	Total      int64 `json:"total"`
 }
 
-const atLimit = "new messages are refused; a reply already running finishes"
+const atLimit = "new messages are refused until the limit is raised or removed; a reply already running finishes"
 
-func buildUsage(chatID string, cu store.ChatUsage) usageView {
+func buildUsage(chatID string, cu store.ChatUsage, limit int64) usageView {
 	var v usageView
 	v.ChatID = chatID
 	v.Runs.Finished, v.Runs.Reported = cu.Finished, cu.Reported
 	v.Cost.Estimated, v.Cost.Currency = true, priceCurrency
-	v.Cost.PriceListFrom, v.Cost.PriceListDate = priceListSource, priceListDate
-	v.Budget.LimitTokens, v.Budget.AtLimit = chatTokenBudget, atLimit
+	v.Cost.PriceListDate = priceListDate
+	v.Budget.Basis, v.Budget.AtLimit = budgetBasis, atLimit
+	if limit > 0 {
+		v.Budget.LimitTokens = &limit
+	}
 	if p, ok := prices[cu.LastModel]; ok {
 		w := p.window
 		v.Context.WindowTokens = &w
@@ -118,8 +130,12 @@ func buildUsage(chatID string, cu store.ChatUsage) usageView {
 	}
 	t.Total = t.Input + t.Output
 	v.Tokens = &t
-	v.Budget.UsedTokens = t.Total
-	v.Budget.Reached = t.Total >= chatTokenBudget
+	used := t.Total
+	v.Budget.UsedTokens, v.Budget.UsageKnown = &used, true
+	if limit > 0 {
+		v.Budget.Enforced = true
+		v.Budget.Reached = used >= limit
+	}
 	if priced {
 		v.Cost.Amount = &sum
 	}
@@ -145,7 +161,12 @@ func (s *Service) chatUsage(w http.ResponseWriter, r *http.Request) {
 		internalError(w, "chat usage", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, buildUsage(chatID, cu))
+	limit, err := store.TokenBudget(r.Context(), s.db, uid)
+	if err != nil {
+		internalError(w, "token budget", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, buildUsage(chatID, cu, limit))
 }
 
 // recordUsage stores what Hermes reported for a finished run. Nothing reported
@@ -159,4 +180,55 @@ func (s *Service) recordUsage(userID, runID string, u *hermes.Usage) {
 	if err := store.RecordRunUsage(ctx, s.db, userID, runID, store.RunUsage{Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, Model: u.Model}); err != nil {
 		log.Printf("chat: run %s: could not record usage: %v", runID, err)
 	}
+}
+
+type budgetView struct {
+	LimitTokens *int64 `json:"limitTokens"` // null: no limit (the default)
+	Scope       string `json:"scope"`
+	Basis       string `json:"basis"`
+	Min         int64  `json:"minTokens"`
+	Max         int64  `json:"maxTokens"`
+}
+
+func budgetOf(limit int64) budgetView {
+	v := budgetView{Scope: "per chat", Basis: budgetBasis, Min: minTokenBudget, Max: maxTokenBudget}
+	if limit > 0 {
+		v.LimitTokens = &limit
+	}
+	return v
+}
+
+func (s *Service) getBudget(w http.ResponseWriter, r *http.Request) {
+	uid, _ := user(r)
+	limit, err := store.TokenBudget(r.Context(), s.db, uid)
+	if err != nil {
+		internalError(w, "token budget", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, budgetOf(limit))
+}
+
+// putBudget sets or clears the caller's own limit. Only that: the account is the
+// session's, and a body naming anything else is refused by decode.
+func (s *Service) putBudget(w http.ResponseWriter, r *http.Request) {
+	uid, _ := user(r)
+	var in struct {
+		LimitTokens *int64 `json:"limitTokens"`
+	}
+	if !decode(w, r, &in) {
+		return
+	}
+	var limit int64
+	if in.LimitTokens != nil {
+		limit = *in.LimitTokens
+		if limit < minTokenBudget || limit > maxTokenBudget {
+			apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "limitTokens must be null (no limit) or between 10,000 and 1,000,000,000")
+			return
+		}
+	}
+	if err := store.SetTokenBudget(r.Context(), s.db, uid, limit, s.now()); err != nil {
+		internalError(w, "set token budget", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, budgetOf(limit))
 }

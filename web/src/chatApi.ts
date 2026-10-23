@@ -71,7 +71,7 @@ export function describeCode(code: string): string {
     case "SEARCH_TIMEOUT":
       return "The search took too long. Try more specific words.";
     case "BUDGET_REACHED":
-      return "This conversation has reached its token budget, so it takes no new messages. Start a new chat to continue.";
+      return "This conversation has reached the token limit you set, so it takes no new messages. Raise or remove the limit under Usage to continue.";
     case "NETWORK":
       return "Could not reach Antares. Check your connection.";
     default:
@@ -275,14 +275,15 @@ export function searchChats(text: string, o: SearchOptions = {}) {
 
 /** Per-chat usage as the assistant backend reported it. null means it reported nothing, which is not zero. */
 export interface ChatUsage {
-  tokens: { input: number; output: number; cacheRead: number; total: number } | null;
+  tokens: { input: number; output: number; cacheRead: number; cacheWrite: number; total: number } | null;
   finishedRuns: number;
   reportedRuns: number;
   costIDR: number | null;
   unpricedRuns: number;
   priceListDate: string;
   windowTokens: number | null;
-  budget: { limit: number; used: number; reached: boolean };
+  /** limit null: the user set none. used null: no finished reply reported usage (unknown, not zero). enforced: a limit is set and usage is known. */
+  budget: { limit: number | null; used: number | null; enforced: boolean; reached: boolean; basis: string };
 }
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
@@ -294,13 +295,14 @@ export function parseUsage(v: unknown): ChatUsage | null {
   const ctx = obj(o?.context);
   const b = obj(o?.budget);
   if (!o || !runs || !cost || !ctx || !b) return null;
-  const limit = num(b.limitTokens);
-  const used = num(b.usedTokens);
+  const limit = b.limitTokens === null ? null : num(b.limitTokens);
+  const used = b.usedTokens === null ? null : num(b.usedTokens);
+  if ((b.limitTokens !== null && limit === null) || (b.usedTokens !== null && used === null)) return null;
   const finished = num(runs.finished);
   const reported = num(runs.reported);
-  if (limit === null || used === null || finished === null || reported === null) return null;
+  if (finished === null || reported === null) return null;
   const t = obj(o.tokens);
-  const tokens = t && num(t.input) !== null && num(t.output) !== null && num(t.total) !== null ? { input: num(t.input)!, output: num(t.output)!, cacheRead: num(t.cacheRead) ?? 0, total: num(t.total)! } : null;
+  const tokens = t && num(t.input) !== null && num(t.output) !== null && num(t.total) !== null ? { input: num(t.input)!, output: num(t.output)!, cacheRead: num(t.cacheRead) ?? 0, cacheWrite: num(t.cacheWrite) ?? 0, total: num(t.total)! } : null;
   return {
     tokens,
     finishedRuns: finished,
@@ -309,7 +311,7 @@ export function parseUsage(v: unknown): ChatUsage | null {
     unpricedRuns: num(cost.unpricedRuns) ?? 0,
     priceListDate: str(cost.priceListDate),
     windowTokens: num(ctx.windowTokens),
-    budget: { limit, used, reached: b.reached === true },
+    budget: { limit, used, enforced: b.enforced === true, reached: b.reached === true, basis: str(b.basis) },
   };
 }
 
@@ -325,10 +327,31 @@ export function describeUsage(u: ChatUsage): string[] {
   lines.push(`Context in use: — (not reported)${u.windowTokens !== null ? `; model window ${fmt(u.windowTokens)} tokens` : ""}`);
   if (u.unpricedRuns > 0) lines.push(`${u.unpricedRuns} ${u.unpricedRuns === 1 ? "reply was" : "replies were"} from a model with no known price and ${u.unpricedRuns === 1 ? "is" : "are"} left out of the estimate`);
   if (u.finishedRuns > u.reportedRuns) lines.push(`${u.finishedRuns - u.reportedRuns} finished ${u.finishedRuns - u.reportedRuns === 1 ? "reply" : "replies"} reported no usage and ${u.finishedRuns - u.reportedRuns === 1 ? "is" : "are"} not counted`);
-  lines.push(
-    u.budget.reached
-      ? `Budget reached (${fmt(u.budget.used)} of ${fmt(u.budget.limit)} tokens): this chat takes no new messages`
-      : `Budget: ${fmt(u.budget.used)} of ${fmt(u.budget.limit)} tokens; this limit is per chat (a new chat starts at zero), so it caps one conversation's size, not total spend. At the limit the chat stops taking new messages (a reply already running finishes)`,
-  );
+  lines.push(...describeBudget(u));
   return lines;
 }
+
+const BASIS = "counts input + output tokens reported for this chat, and input includes cache reads";
+
+/** What the budget line says. No limit is the default; an unknown usage is never printed as zero. */
+export function describeBudget(u: ChatUsage): string[] {
+  const { limit, used, reached } = u.budget;
+  if (limit === null) return ["Token limit: none set. You can set one below; it is per chat and opt-in"];
+  if (used === null) return [`Token limit: ${fmt(limit)} per chat, but usage is unknown (nothing reported yet), so the limit is not being applied`];
+  const partial = u.finishedRuns > u.reportedRuns ? "; replies that reported no usage are not counted, so the limit may be reached later than shown" : "";
+  if (reached) return [`Token limit reached (${fmt(used)} of ${fmt(limit)}): this chat takes no new messages until you raise or remove the limit. It ${BASIS}`];
+  return [`Token limit: ${fmt(used)} of ${fmt(limit)} per chat (a new chat starts at zero). It ${BASIS}. At the limit the chat stops taking new messages (a reply already running finishes)${partial}`];
+}
+
+const parseBudget = (v: unknown): { limit: number | null; min: number; max: number } | null => {
+  const o = obj(v);
+  if (!o) return null;
+  const limit = o.limitTokens === null ? null : num(o.limitTokens);
+  const min = num(o.minTokens);
+  const max = num(o.maxTokens);
+  if ((o.limitTokens !== null && limit === null) || min === null || max === null) return null;
+  return { limit, min, max };
+};
+
+export const getBudget = () => call("GET", "/api/me/budget", parseBudget);
+export const putBudget = (limitTokens: number | null) => call("PUT", "/api/me/budget", parseBudget, { limitTokens });

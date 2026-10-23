@@ -281,7 +281,7 @@ describe("api client", () => {
 });
 
 describe("usage text", () => {
-  const base = { tokens: { input: 1000, output: 200, cacheRead: 400, total: 1200 }, finishedRuns: 2, reportedRuns: 1, costIDR: 3.4, unpricedRuns: 0, priceListDate: "2026-10-23", windowTokens: 1000000, budget: { limit: 2000000, used: 1200, reached: false } };
+  const base = { tokens: { input: 1000, output: 200, cacheRead: 400, cacheWrite: 0, total: 1200 }, finishedRuns: 2, reportedRuns: 1, costIDR: 3.4, unpricedRuns: 0, priceListDate: "2026-10-23", windowTokens: 1000000, budget: { limit: 2000000 as number | null, used: 1200 as number | null, enforced: true, reached: false, basis: "" } };
 
   it("labels cost as an estimate with its price date, and shows unknowns as a dash", () => {
     const t = describeUsage(base).join("\n");
@@ -293,15 +293,32 @@ describe("usage text", () => {
     expect(describeUsage({ ...base, tokens: null, costIDR: null }).join("\n")).toContain("Tokens: — (none reported)");
   });
 
-  it("states what happens at the limit, and when it is reached", () => {
-    expect(describeUsage(base).join("\n")).toContain("At the limit the chat stops taking new messages")
-    expect(describeUsage(base).join("\n")).toContain("per chat");
-    expect(describeUsage({ ...base, budget: { limit: 2000000, used: 2000000, reached: true } }).join("\n")).toContain("takes no new messages");
-    expect(describeCode("BUDGET_REACHED")).toContain("token budget");
+  it("states the limit, its basis and what happens at it", () => {
+    const t = describeUsage(base).join("\n");
+    expect(t).toContain("per chat");
+    expect(t).toContain("input includes cache reads");
+    expect(t).toContain("At the limit the chat stops taking new messages");
+    expect(describeUsage({ ...base, budget: { ...base.budget, used: 2000000, reached: true } }).join("\n")).toContain("raise or remove the limit");
+    expect(describeCode("BUDGET_REACHED")).toContain("token limit");
+  });
+
+  it("has no limit by default, and never prints unknown usage as zero", () => {
+    expect(describeUsage({ ...base, budget: { ...base.budget, limit: null, enforced: false } }).join("\n")).toContain("none set");
+    const t = describeUsage({ ...base, tokens: null, budget: { ...base.budget, used: null, enforced: false } }).join("\n");
+    expect(t).toContain("usage is unknown");
+    expect(t).toContain("not being applied");
+    expect(t).not.toContain("0 of");
+  });
+
+  it("keeps cache writes and nulls from the server", () => {
+    const p = parseUsage({ tokens: { input: 5, output: 1, cacheRead: 2, cacheWrite: 3, total: 6 }, runs: { finished: 1, reported: 1 }, cost: {}, context: {}, budget: { limitTokens: null, usedTokens: 6, enforced: false, reached: false, basis: "x" } });
+    expect(p?.tokens?.cacheWrite).toBe(3);
+    expect(p?.budget.limit).toBeNull();
+    expect(parseUsage({ runs: { finished: 0, reported: 0 }, cost: {}, context: {}, budget: { limitTokens: 5, usedTokens: null } })?.budget.used).toBeNull();
   });
 
   it("refuses a usage body it cannot read instead of guessing", () => {
     expect(parseUsage({})).toBeNull();
-    expect(parseUsage({ runs: {}, cost: {}, context: {}, budget: { limitTokens: -1 } })).toBeNull();
+    expect(parseUsage({ runs: {}, cost: {}, context: {}, budget: { limitTokens: -1, usedTokens: 0 } })).toBeNull();
   });
 });

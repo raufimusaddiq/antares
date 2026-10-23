@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 // RunUsage is what Hermes reported for one run.
@@ -22,7 +23,7 @@ type ModelUsage struct {
 // Finished but contribute no tokens: unknown is not zero.
 type ChatUsage struct {
 	Finished  int // terminal runs
-	Reported  int // of those, runs with reported usage
+	Reported  int // of those, runs with reported usage (never more than Finished)
 	ByModel   []ModelUsage
 	LastModel string // model of the newest run that reported one
 }
@@ -44,7 +45,8 @@ func GetChatUsage(ctx context.Context, db *sql.DB, userID, chatID string) (ChatU
 	}
 	rows, err := db.QueryContext(ctx, `SELECT COALESCE(usage_model,''), COUNT(*), SUM(input_tokens), SUM(output_tokens),
 		SUM(cache_read_tokens), SUM(cache_write_tokens) FROM runs
-		WHERE user_id = ? AND chat_id = ? AND input_tokens IS NOT NULL GROUP BY usage_model ORDER BY usage_model`, userID, chatID)
+		WHERE user_id = ? AND chat_id = ? AND input_tokens IS NOT NULL
+		AND status IN ('COMPLETED','FAILED','CANCELLED','TIMED_OUT') GROUP BY usage_model ORDER BY usage_model`, userID, chatID)
 	if err != nil {
 		return cu, err
 	}
@@ -66,4 +68,26 @@ func GetChatUsage(ctx context.Context, db *sql.DB, userID, chatID string) (ChatU
 		err = nil
 	}
 	return cu, err
+}
+
+// TokenBudget returns the user's per-chat token limit; 0 means they set none.
+func TokenBudget(ctx context.Context, db *sql.DB, userID string) (int64, error) {
+	var n sql.NullInt64
+	err := db.QueryRowContext(ctx, `SELECT token_budget FROM user_preferences WHERE user_id = ?`, userID).Scan(&n)
+	if err == sql.ErrNoRows {
+		return 0, nil
+	}
+	return n.Int64, err
+}
+
+// SetTokenBudget stores the user's own limit; 0 clears it.
+func SetTokenBudget(ctx context.Context, db *sql.DB, userID string, limit int64, now time.Time) error {
+	var v any
+	if limit > 0 {
+		v = limit
+	}
+	_, err := db.ExecContext(ctx, `INSERT INTO user_preferences (user_id, token_budget, updated_at) VALUES (?,?,?)
+		ON CONFLICT(user_id) DO UPDATE SET token_budget = excluded.token_budget, updated_at = excluded.updated_at`,
+		userID, v, ts(now))
+	return err
 }

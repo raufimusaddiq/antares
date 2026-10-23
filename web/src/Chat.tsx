@@ -8,6 +8,7 @@ import {
   getMessages,
   getRun,
   getUsage,
+  putBudget,
   listChats,
   newIdempotencyKey,
   runEventsUrl,
@@ -764,16 +765,53 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         />
         {usage && (
           <details className="usage" open={usage.budget.reached}>
-            <summary>{usage.budget.reached ? "Budget reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens` : "Usage unavailable"}</summary>
+            <summary>{usage.budget.reached ? "Token limit reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens` : "Usage unknown"}</summary>
             <ul>
               {describeUsage(usage).map((l) => (
                 <li key={l}>{l}</li>
               ))}
             </ul>
+            <BudgetForm
+              limit={usage.budget.limit}
+              onSaved={() => current && void getUsage(current).then((r) => setUsage(r.ok ? r.value : null))}
+            />
           </details>
         )}
         <Composer value={draft} busy={busy} onChange={onDraft} onSubmit={onSubmit} />
       </main>
     </div>
+  );
+}
+
+/** Opt-in per-chat token limit. Empty means no limit; saving re-reads the usage so the stated state is the server's. */
+function BudgetForm({ limit, onSaved }: { limit: number | null; onSaved: () => void }) {
+  const [text, setText] = useState(limit === null ? "" : String(limit));
+  const [err, setErr] = useState("");
+  useEffect(() => setText(limit === null ? "" : String(limit)), [limit]);
+  const save = async (value: number | null) => {
+    const r = await putBudget(value);
+    setErr(r.ok ? "" : "Could not save the limit. Use a whole number from 10,000 to 1,000,000,000.");
+    if (r.ok) onSaved();
+  };
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const n = Number(text.replace(/[,\s]/g, ""));
+        void save(text.trim() === "" ? null : n);
+      }}
+    >
+      <label>
+        Token limit per chat (empty = none){" "}
+        <input inputMode="numeric" value={text} onChange={(e) => setText(e.target.value)} />
+      </label>{" "}
+      <button type="submit">Save limit</button>
+      {limit !== null && (
+        <button type="button" onClick={() => void save(null)}>
+          Remove limit
+        </button>
+      )}
+      {err && <p role="alert">{err}</p>}
+    </form>
   );
 }

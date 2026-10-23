@@ -19,16 +19,19 @@ type usageBody struct {
 	Tokens *struct{ Input, Output, CacheRead, CacheWrite, Total int64 }
 	Runs   struct{ Finished, Reported int }
 	Cost   struct {
-		Estimated     bool
-		Currency      string
-		Amount        *float64
-		UnpricedRuns  int
-		PriceListDate string
+		Estimated       bool
+		Currency        string
+		Amount          *float64
+		UnpricedRuns    int
+		PriceListDate   string
+		PriceListSource string
 	}
 	Context struct{ WindowTokens, CarriedTokens *int64 }
 	Budget  struct {
-		LimitTokens, UsedTokens int64
+		LimitTokens, UsedTokens *int64
+		UsageKnown, Enforced    bool
 		Reached                 bool
+		Basis                   string
 	}
 }
 
@@ -45,6 +48,16 @@ type httptestResult struct {
 	code int
 	b    usageBody
 }
+
+// setLimit gives the person an opt-in per-chat token limit through the API.
+func setLimit(t *testing.T, p *person, n int64) {
+	t.Helper()
+	if w := p.do("PUT", "/api/me/budget", nil, map[string]any{"limitTokens": n}); w.Code != 200 {
+		t.Fatalf("set limit: %d %s", w.Code, w.Body.String())
+	}
+}
+
+const testLimit int64 = 2_000_000
 
 // runWithUsage sends a message and ends the run with a run.completed frame.
 func runWithUsage(t *testing.T, a *app, p *person, chatID, text, frame string) string {
@@ -175,14 +188,15 @@ func TestBudgetBoundary(t *testing.T) {
 		used int64
 		want int
 	}{
-		{"one token under", chatTokenBudget - 1, 202},
-		{"exactly at the limit", chatTokenBudget, 403},
-		{"over the limit", chatTokenBudget + 500, 403},
+		{"one token under", testLimit - 1, 202},
+		{"exactly at the limit", testLimit, 403},
+		{"over the limit", testLimit + 500, 403},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
 			a := newApp(t)
 			alice := a.user("alice")
+			setLimit(t, alice, testLimit)
 			chat := alice.newChat()
 			runID := runWithUsage(t, a, alice, chat, "seed", usageFrame)
 			if err := store.RecordRunUsage(context.Background(), a.db, alice.id, runID, store.RunUsage{Input: c.used - 10, Output: 10, Model: "deepseek-v4-1-flash"}); err != nil {
@@ -196,7 +210,7 @@ func TestBudgetBoundary(t *testing.T) {
 				if errCode(t, w) != "BUDGET_REACHED" {
 					t.Fatalf("code %q", errCode(t, w))
 				}
-				if u := alice.usage(chat); !u.b.Budget.Reached || u.b.Budget.UsedTokens != c.used {
+				if u := alice.usage(chat); !u.b.Budget.Reached || u.b.Budget.UsedTokens == nil || *u.b.Budget.UsedTokens != c.used {
 					t.Fatalf("budget view: %+v", u.b.Budget)
 				}
 			}
@@ -244,6 +258,7 @@ func TestUsageRecordedWhenAttachFindsTheRunFinished(t *testing.T) {
 func TestBudgetReplayReturnsTheOriginalRun(t *testing.T) {
 	a := newApp(t)
 	alice := a.user("alice")
+	setLimit(t, alice, testLimit)
 	chat := alice.newChat()
 	idem := nextIdem()
 	post := func(key string) *httptest.ResponseRecorder {
@@ -260,7 +275,7 @@ func TestBudgetReplayReturnsTheOriginalRun(t *testing.T) {
 	a.hx.push(fr, "run.completed", usageFrame)
 	s.waitFor(t, "run.completed")
 	s.close()
-	if err := store.RecordRunUsage(context.Background(), a.db, alice.id, runID, store.RunUsage{Input: chatTokenBudget, Output: 1, Model: "deepseek-v4-1-flash"}); err != nil {
+	if err := store.RecordRunUsage(context.Background(), a.db, alice.id, runID, store.RunUsage{Input: testLimit, Output: 1, Model: "deepseek-v4-1-flash"}); err != nil {
 		t.Fatal(err)
 	}
 	if w := post(idem); w.Code != 202 || decodeBody[struct{ RunID string }](t, w).RunID != runID {
@@ -285,7 +300,7 @@ func TestCancelledRunUsageIsCounted(t *testing.T) {
 	if w := alice.do("POST", "/api/runs/"+run+"/cancel", nil, nil); w.Code != 200 {
 		t.Fatalf("cancel: %d %s", w.Code, w.Body.String())
 	}
-	if u := alice.usage(chat); u.b.Tokens == nil || u.b.Tokens.Total != 750 || u.b.Budget.UsedTokens != 750 {
+	if u := alice.usage(chat); u.b.Tokens == nil || u.b.Tokens.Total != 750 || u.b.Budget.UsedTokens == nil || *u.b.Budget.UsedTokens != 750 {
 		t.Fatalf("cancelled run's usage not counted: %+v", u.b)
 	}
 }
@@ -307,9 +322,10 @@ func TestUnpricedRunsCountsReplies(t *testing.T) {
 func TestBusyChatAtLimitIsRunConflict(t *testing.T) {
 	a := newApp(t)
 	alice := a.user("alice")
+	setLimit(t, alice, testLimit)
 	chat := alice.newChat()
 	done := runWithUsage(t, a, alice, chat, "seed", usageFrame)
-	if err := store.RecordRunUsage(context.Background(), a.db, alice.id, done, store.RunUsage{Input: chatTokenBudget, Output: 1}); err != nil {
+	if err := store.RecordRunUsage(context.Background(), a.db, alice.id, done, store.RunUsage{Input: testLimit, Output: 1}); err != nil {
 		t.Fatal(err)
 	}
 	// Put a run in flight directly: the budget gate would refuse a normal send.
@@ -320,5 +336,106 @@ func TestBusyChatAtLimitIsRunConflict(t *testing.T) {
 	w := alice.do("POST", "/api/chats/"+chat+"/messages", map[string]string{"Idempotency-Key": nextIdem()}, map[string]string{"input": "x"})
 	if w.Code != 409 || errCode(t, w) != "RUN_CONFLICT" {
 		t.Fatalf("busy chat at the limit: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// There is no default limit: a chat far past 2M tokens still takes messages until the user opts in.
+func TestNoBudgetByDefault(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	runID := runWithUsage(t, a, alice, chat, "seed", usageFrame)
+	if err := store.RecordRunUsage(context.Background(), a.db, alice.id, runID, store.RunUsage{Input: 50_000_000, Output: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if w := alice.do("GET", "/api/me/budget", nil, nil); w.Code != 200 || decodeBody[struct{ LimitTokens *int64 }](t, w).LimitTokens != nil {
+		t.Fatalf("default budget: %d %s", w.Code, w.Body.String())
+	}
+	if u := alice.usage(chat); u.b.Budget.LimitTokens != nil || u.b.Budget.Enforced || u.b.Budget.Reached || u.b.Budget.Basis == "" {
+		t.Fatalf("budget view with no limit: %+v", u.b.Budget)
+	}
+	if w := alice.do("POST", "/api/chats/"+chat+"/messages", map[string]string{"Idempotency-Key": nextIdem()}, map[string]string{"input": "go on"}); w.Code != 202 {
+		t.Fatalf("send with no limit: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// A chat stopped by the user's own limit continues once the limit is raised or removed.
+func TestBudgetCanBeRaisedOrCleared(t *testing.T) {
+	a := newApp(t)
+	alice, bob := a.user("alice"), a.user("bobby")
+	chat := alice.newChat()
+	runID := runWithUsage(t, a, alice, chat, "seed", usageFrame)
+	if err := store.RecordRunUsage(context.Background(), a.db, alice.id, runID, store.RunUsage{Input: 20_000, Output: 1}); err != nil {
+		t.Fatal(err)
+	}
+	setLimit(t, alice, 10_000)
+	send := func() int {
+		return alice.do("POST", "/api/chats/"+chat+"/messages", map[string]string{"Idempotency-Key": nextIdem()}, map[string]string{"input": "q"}).Code
+	}
+	if c := send(); c != 403 {
+		t.Fatalf("over the user's limit: %d", c)
+	}
+	if u := alice.usage(chat); !u.b.Budget.Enforced || !u.b.Budget.Reached {
+		t.Fatalf("view: %+v", u.b.Budget)
+	}
+	if bw := bob.do("GET", "/api/me/budget", nil, nil); decodeBody[struct{ LimitTokens *int64 }](t, bw).LimitTokens != nil {
+		t.Fatal("alice's limit is visible to bob")
+	}
+	setLimit(t, alice, 100_000)
+	if c := send(); c != 202 {
+		t.Fatalf("after raising: %d", c)
+	}
+	_, fr := a.hx.runWithInput(t, "q")
+	_ = fr
+	if w := alice.do("PUT", "/api/me/budget", nil, map[string]any{"limitTokens": nil}); w.Code != 200 {
+		t.Fatalf("clear: %d", w.Code)
+	}
+	for _, bad := range []any{5, 0, -3, int64(2_000_000_000)} {
+		if w := alice.do("PUT", "/api/me/budget", nil, map[string]any{"limitTokens": bad}); w.Code != 400 {
+			t.Fatalf("limit %v accepted: %d", bad, w.Code)
+		}
+	}
+	if w := alice.do("PUT", "/api/me/budget", nil, map[string]any{"limitTokens": 50_000, "userId": "x"}); w.Code != 400 {
+		t.Fatalf("extra field accepted: %d", w.Code)
+	}
+}
+
+// With a limit set but nothing reported, usage is unknown (null), not zero, and the limit is not applied.
+func TestUnknownUsageIsNotZero(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	setLimit(t, alice, 50_000)
+	u := alice.usage(chat)
+	b := u.b.Budget
+	if b.UsedTokens != nil || b.UsageKnown || b.Enforced || b.Reached || b.LimitTokens == nil || *b.LimitTokens != 50_000 {
+		t.Fatalf("unknown usage view: %+v", b)
+	}
+	if u.b.Cost.PriceListSource != "" {
+		t.Fatal("the upstream price URL is serialized")
+	}
+}
+
+// Reported runs are counted among finished runs only, so reported never exceeds finished.
+func TestReportedNeverExceedsFinished(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	alice.send(chat, "in flight")
+	_, _ = a.hx.runWithInput(t, "in flight")
+	runs, err := a.db.Query(`SELECT id FROM runs WHERE chat_id = ?`, chat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var id string
+	for runs.Next() {
+		_ = runs.Scan(&id)
+	}
+	runs.Close()
+	if err := store.RecordRunUsage(context.Background(), a.db, alice.id, id, store.RunUsage{Input: 10, Output: 1}); err != nil {
+		t.Fatal(err)
+	}
+	if u := alice.usage(chat); u.b.Runs.Reported > u.b.Runs.Finished {
+		t.Fatalf("reported %d > finished %d", u.b.Runs.Reported, u.b.Runs.Finished)
 	}
 }
