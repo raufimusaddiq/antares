@@ -125,14 +125,17 @@ provisioner, so the provisioner's HTTP path on the live host is the one thing no
 
 Both admin requeue operations (`tenant-binding` and `tenant-verify`) reset the retry budget.
 For an existing binding, the pipeline calls `/rotate`, which reapplies `agent.disabled_toolsets`,
-then seals the returned key against the same binding ID and runs all verification checks.
+then seals the returned key against the same binding ID and runs all verification checks. A missing
+host profile (404) or key (409) from `/rotate` instead triggers `/provision`, then the same credential
+replacement and verification. Recreating a deleted profile cannot restore its lost data.
 Retries, interrupted runs, and reactivation also rotate existing bindings before verification.
 Profile, binding ID, memory scope and private data stay in place. The old key is invalidated;
 a lost rotation response is recovered by rotating again. No failed or partial verification unlocks chat.
+A mixed report retains other failed checks without labelling those checks deterministic.
 
 An enabled forbidden toolset carries `reapply_toolset_policy` remediation in the internal verifier
 report. If it is still enabled after the helper ran, the run stops immediately as `FAILED` with
-`operator attention required: deterministic failure:` in the admin detail and a `tenant.attention`
+`operator attention required: deterministic failure in toolset_policy:` in the admin detail and a `tenant.attention`
 audit event. Attempts count actual failed runs, rather than being set artificially to the limit.
 The operator should align the two allow-list variables, fix helper access or policy application,
 and requeue. A helper success alone never proves policy compliance.

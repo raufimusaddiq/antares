@@ -23,6 +23,9 @@ admin approve ─▶ APPROVED + UNPROVISIONED ─▶ (claim) CONFIGURING
   automatic retries, resumed leases and reactivation. The helper reapplies toolset policy and replaces
   the profile key; Antares seals the new key with the current `ANTARES_SECRET_KEY` and stores it against
   the same binding ID. The old profile key is invalidated. Every such run requires the helper.
+  If `/rotate` reports a missing host profile (404) or missing key (409), `/provision` recreates the
+  profile or issues its first key, then replaces the credential in the existing binding before full
+  verification. This does not restore any host data lost with a deleted profile.
 - Users who are approved but not `READY` see `SETTING_UP`; a tenant that ends `FAILED` shows the user
   the existing `ERROR` screen (slice 2) and the admin the reason. Every chat route stays closed
   (`TENANT_NOT_READY`) until `READY`.
@@ -54,13 +57,17 @@ Transient helper failures (unreachable, 5xx, unreadable response) and unavailabl
 evidence retry with backoff 15 s, 30 s, 1 m, … capped at 10 m, for 5 attempts. An enabled forbidden
 toolset after policy application is a deterministic divergence: it stops after one failed run, as do
 permanent helper failures (token refused, request rejected, answer for another profile). Attempts
-count actual failed runs. Deterministic stops and exhausted retry budgets stay `FAILED` with a NULL
+count actual failed runs. If a report also contains transient verification failures, the admin detail
+names `toolset_policy` as the deterministic check and retains the other check results. Deterministic stops and exhausted retry budgets stay `FAILED` with a NULL
 next-attempt time, an explicit `operator attention required` detail distinguishing the two outcomes,
 and a `tenant.attention` audit event. Both admin requeue operations reset the budget.
 
 A run interrupted by a restart resumes when its 12-minute lease expires. If a provision response
 was lost before a binding was stored, `/provision` returns `409` and the pipeline recovers with
-`/rotate`. With a binding, every retry rotates again, recovering a lost rotation response too.
+`/rotate`. With a binding, every retry attempts rotation again, falling back to `/provision` only
+for a missing profile or key. A run makes at most two helper calls; a provision conflict during that
+fallback waits for the next retry rather than adding a third call. Token refusals and other helper
+failures do not trigger provisioning.
 
 ## What `READY` requires (`internal/hermes/verify.go`)
 

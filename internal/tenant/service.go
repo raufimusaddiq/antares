@@ -27,19 +27,22 @@ const (
 	maxBackoff         = 10 * time.Minute
 	// A run is a helper call (hermes.HelperTimeout) plus a verification
 	// (hermes.MaxVerifyProbes requests of hermes.ProbeTimeout). obtainCredential
-	// can make a second helper call, Rotate after ErrKeyExists; that 409 comes
+	// can make a second helper call: Rotate after ErrKeyExists, or Provision
+	// after Rotate reports a missing profile or key. Each recovery is bounded
+	// to two calls; a further conflict waits for the next run. The first error comes
 	// from the helper's fast path (no key written), so the budget covers one call
 	// plus probes, not two calls at their timeout. If both did run long, the run
 	// is cut at runBudget and stays CONFIGURING. The lease outlives runBudget, so
 	// a run still in flight is never mistaken for an interrupted one, and a cut
 	// run is retried, not lost. The two-call path is tight by design: in the
 	// helper's own exec budget (60s each) Provision with an existing key is 3
-	// execs and Rotate 3, so 6x60s + 15x15s probes = 585s worst case, 75s inside
+	// execs and Rotate 3 (in either order); missing-profile Rotate 1 + Provision 4.
+	// Thus 6x60s + 15x15s probes = 585s worst case, 75s inside
 	// runBudget (660s); a new profile's Provision (4 execs) is never followed by
-	// Rotate. One more exec in either handler eats 60s of that margin. This margin
-	// is stated, not pinned: the exec counts live in the provisioner module (its
-	// TestHandlersStayBelowExecBudget bounds them). TestRunBudgetCoversHelperAndProbes
-	// (single call) and TestLeaseOutlastsRunBudget pin the rest.
+	// Rotate. One more exec in either handler eats 60s of that margin. The
+	// provisioner tests TestHandlersStayBelowExecBudget and
+	// TestRotateThenProvisionRecoveryExecCounts pin the relevant call counts.
+	// TestRunBudgetCoversHelperAndProbes and TestLeaseOutlastsRunBudget pin the rest.
 	lease        = 12 * time.Minute
 	sweepEvery   = 10 * time.Second
 	sweepBatch   = 20
@@ -219,11 +222,14 @@ func (s *Service) Process(ctx context.Context, userID string) error {
 type outcome struct {
 	detail    string
 	permanent bool
+	check     string
 }
 
 func (o *outcome) Error() string { return o.detail }
 
-func fail(detail string, permanent bool) error { return &outcome{detail, permanent} }
+func fail(detail string, permanent bool) error {
+	return &outcome{detail: detail, permanent: permanent}
+}
 
 // finish records the run's result. A nil err means verified: READY.
 func (s *Service) finish(ctx context.Context, c store.Claim, err error) error {
@@ -257,7 +263,11 @@ func (s *Service) finish(ctx context.Context, c store.Claim, err error) error {
 	detail := o.detail
 	if o.permanent {
 		nextAt = time.Time{}
-		detail = "operator attention required: deterministic failure: " + detail
+		if o.check != "" {
+			detail = "operator attention required: deterministic failure in " + o.check + ": " + detail
+		} else {
+			detail = "operator attention required: deterministic failure: " + detail
+		}
 	} else if attempts >= s.max {
 		nextAt = time.Time{}
 		detail = "operator attention required: retry budget exhausted: " + detail
@@ -275,15 +285,17 @@ func (s *Service) obtainCredential(ctx context.Context, c *store.Claim) error {
 	var cred hermes.Credential
 	var err error
 	if c.BindingID != "" {
-		// Rotate reapplies toolset policy; repeating it also recovers a lost response.
+		// Rotate reapplies toolset policy; only an absent profile or key needs provisioning.
 		cred, err = s.helper.Rotate(ctx, c.Profile)
+		if errors.Is(err, hermes.ErrNotProvisioned) {
+			cred, err = s.helper.Provision(ctx, c.Profile)
+		}
 	} else {
 		cred, err = s.helper.Provision(ctx, c.Profile)
-	}
-	if errors.Is(err, hermes.ErrKeyExists) {
-		// The profile has a key we never stored: a previous response was lost.
-		// The helper's documented recovery is a rotation, which issues a fresh key.
-		cred, err = s.helper.Rotate(ctx, c.Profile)
+		if errors.Is(err, hermes.ErrKeyExists) {
+			// A lost provision response left a key we never stored.
+			cred, err = s.helper.Rotate(ctx, c.Profile)
+		}
 	}
 	if err != nil {
 		return helperFailure(err)
@@ -351,7 +363,7 @@ func (s *Service) verify(ctx context.Context, c store.Claim) error {
 		}
 		for _, result := range rep {
 			if !result.Passed && result.Remediation == hermes.ReapplyToolsetPolicy {
-				return fail(d, true)
+				return &outcome{detail: d, permanent: true, check: result.Check}
 			}
 		}
 		return fail(d, false)

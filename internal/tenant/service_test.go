@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -769,7 +772,7 @@ func TestDeterministicPolicyFailureStopsWithAttentionWithoutSpendingBudget(t *te
 		}
 		got := r.view(u)
 		if got.TenantStatus != "FAILED" || got.BindingStatus != "FAILED" || got.TenantAttempts != 1 ||
-			!strings.Contains(got.TenantDetail, "operator attention required: deterministic failure:") {
+			!strings.Contains(got.TenantDetail, "operator attention required: deterministic failure in toolset_policy:") {
 			t.Fatalf("got %+v", got)
 		}
 		if n := r.count(`SELECT COUNT(*) FROM users WHERE id = ? AND tenant_next_attempt_at IS NULL`, u); n != 1 {
@@ -857,5 +860,163 @@ func TestSuspensionDuringPolicyRepairCannotUnlock(t *testing.T) {
 	}
 	if len(r.v.targets) != 1 {
 		t.Fatal("repair verified a suspended account")
+	}
+}
+
+func TestExistingBindingRecoversMissingHostProfileOrKey(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusConflict} {
+		for _, mode := range []string{store.RequeueProvision, store.RequeueVerify} {
+			t.Run(fmt.Sprintf("%d/%s", status, mode), func(t *testing.T) {
+				r := newRig(t)
+				u := r.approved("u1")
+				ctx := context.Background()
+				if err := r.svc.Process(ctx, u); err != nil {
+					t.Fatal(err)
+				}
+				before, err := store.BindingCredential(ctx, r.db, u)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var calls []string
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					var body struct {
+						Slug string `json:"slug"`
+					}
+					if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.Slug != before.Profile {
+						t.Error("helper target changed")
+						w.WriteHeader(400)
+						return
+					}
+					calls = append(calls, req.URL.Path)
+					if req.URL.Path == "/rotate" {
+						w.WriteHeader(status)
+						return
+					}
+					if req.URL.Path != "/provision" {
+						w.WriteHeader(400)
+						return
+					}
+					json.NewEncoder(w).Encode(map[string]string{"profile": body.Slug, "key": keyTwo})
+				}))
+				defer srv.Close()
+				h, err := hermes.NewHelper(srv.URL, "fabricated-helper-token-0123456789abcdef", srv.Client())
+				if err != nil {
+					t.Fatal(err)
+				}
+				r.svc.helper = h
+				r.v.report = func(target hermes.Target) hermes.Report {
+					if target.Profile != before.Profile || target.Key != keyTwo || target.Fresh {
+						t.Fatal("verification lost profile, new credential or verification history")
+					}
+					return pass(target)
+				}
+				if _, err := store.RequeueTenant(ctx, r.db, r.admin, u, mode, "r", r.clk.Now()); err != nil {
+					t.Fatal(err)
+				}
+				if err := r.svc.Process(ctx, u); err != nil {
+					t.Fatal(err)
+				}
+				if got := r.view(u); got.TenantStatus != "READY" || got.BindingStatus != "READY" {
+					t.Fatalf("recovery: %+v", got)
+				}
+				if strings.Join(calls, ",") != "/rotate,/provision" {
+					t.Fatalf("calls: %v", calls)
+				}
+				after, err := store.BindingCredential(ctx, r.db, u)
+				if err != nil || after.BindingID != before.BindingID || after.Profile != before.Profile || !after.Verified {
+					t.Fatalf("binding changed: %v", err)
+				}
+				if key, err := r.box.Open(after.Ciphertext, before.BindingID); err != nil || key != keyTwo {
+					t.Fatal("recovery key was not sealed against the existing binding")
+				}
+			})
+		}
+	}
+}
+
+func TestMixedVerificationFailureNamesOnlyTheDeterministicCheck(t *testing.T) {
+	for _, policyFirst := range []bool{false, true} {
+		r := newRig(t)
+		u := r.approved("u1")
+		r.v.report = func(hermes.Target) hermes.Report {
+			report := hermes.Report{
+				{Check: hermes.CheckEndpoint, Reason: "models endpoint did not answer"},
+				{Check: hermes.CheckToolsets, Reason: "boundary-crossing toolset browser is enabled", Remediation: hermes.ReapplyToolsetPolicy},
+			}
+			if policyFirst {
+				report[0], report[1] = report[1], report[0]
+			}
+			return report
+		}
+		if err := r.svc.Process(context.Background(), u); err != nil {
+			t.Fatal(err)
+		}
+		got := r.view(u)
+		if !strings.HasPrefix(got.TenantDetail, "operator attention required: deterministic failure in toolset_policy: ") ||
+			!strings.Contains(got.TenantDetail, "verification failed: endpoint") || !strings.Contains(got.TenantDetail, "verification failed: toolset_policy") {
+			t.Fatalf("mixed report lost evidence or mislabelled its decision: %+v", got)
+		}
+		if r.count(`SELECT COUNT(*) FROM audit_log WHERE action = 'tenant.attention' AND target_id = ? AND outcome = ?`, u, got.TenantDetail) != 1 {
+			t.Fatal("audit did not retain the scoped failure label")
+		}
+	}
+}
+
+func TestProvisionFallbackStillRequiresVerification(t *testing.T) {
+	r := newRig(t)
+	u := r.approved("u1")
+	ctx := context.Background()
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	r.h.rotate = func(string) (hermes.Credential, error) { return hermes.Credential{}, hermes.ErrNotProvisioned }
+	r.h.provision = issues(keyTwo)
+	r.v.report = func(hermes.Target) hermes.Report {
+		return hermes.Report{{Check: hermes.CheckToolsets, Reason: "boundary-crossing toolset browser is enabled", Remediation: hermes.ReapplyToolsetPolicy}}
+	}
+	if _, err := store.RequeueTenant(ctx, r.db, r.admin, u, store.RequeueProvision, "r", r.clk.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.view(u); got.TenantStatus != "FAILED" || got.BindingStatus != "FAILED" || got.TenantAttempts != 1 {
+		t.Fatalf("got %+v", got)
+	}
+	if p, ro := r.h.counts(); p != 2 || ro != 1 {
+		t.Fatalf("helper calls: %d/%d", p, ro)
+	}
+}
+
+func TestProvisionFallbackConflictWaitsForNextRun(t *testing.T) {
+	r := newRig(t)
+	u := r.approved("u1")
+	ctx := context.Background()
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	r.h.rotate = func(string) (hermes.Credential, error) { return hermes.Credential{}, hermes.ErrNotProvisioned }
+	r.h.provision = func(string, int) (hermes.Credential, error) { return hermes.Credential{}, hermes.ErrKeyExists }
+	if _, err := store.RequeueTenant(ctx, r.db, r.admin, u, store.RequeueVerify, "r", r.clk.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.view(u); got.TenantStatus != "FAILED" || got.TenantAttempts != 1 || strings.Contains(got.TenantDetail, "operator attention required") {
+		t.Fatalf("got %+v", got)
+	}
+	if p, ro := r.h.counts(); p != 2 || ro != 1 || len(r.v.targets) != 1 {
+		t.Fatalf("unbounded fallback: %d/%d", p, ro)
+	}
+	r.h.rotate = func(slug string) (hermes.Credential, error) {
+		return hermes.Credential{Profile: slug, Key: keyTwo}, nil
+	}
+	r.clk.Add(time.Minute)
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.view(u); got.TenantStatus != "READY" {
+		t.Fatalf("got %+v", got)
 	}
 }

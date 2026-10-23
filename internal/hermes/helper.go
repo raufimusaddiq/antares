@@ -42,6 +42,8 @@ var (
 	// ErrKeyExists is the helper's 409 from /provision: the profile already has a
 	// key Antares does not hold (a lost response). Recovery is /rotate.
 	ErrKeyExists = errors.New("hermes: profile already has a key")
+	// ErrNotProvisioned identifies /rotate responses recoverable by /provision.
+	ErrNotProvisioned = errors.New("hermes: profile or key missing")
 )
 
 // Failure is a classified helper failure. Detail comes from a fixed
@@ -155,6 +157,8 @@ func (h *Helper) issue(ctx context.Context, path, slug string) (Credential, erro
 	case resp.StatusCode == http.StatusOK:
 	case resp.StatusCode == http.StatusConflict && path == "/provision":
 		return Credential{}, ErrKeyExists
+	case path == "/rotate" && (resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusConflict):
+		return Credential{}, &Failure{errors.Join(ErrPermanent, ErrNotProvisioned), "provisioning helper reported a missing profile or key"}
 	case resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden:
 		return Credential{}, permanent("provisioning helper refused our token")
 	case resp.StatusCode == http.StatusBadRequest || resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusConflict:

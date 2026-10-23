@@ -501,6 +501,9 @@ func AttachBinding(ctx context.Context, db *sql.DB, c Claim, b NewBinding, now t
 
 // ReplaceBindingCredential replaces only the claimed account's configuring binding.
 func ReplaceBindingCredential(ctx context.Context, db *sql.DB, c Claim, b NewBinding, now time.Time) error {
+	if b.ID == "" || b.ID != c.BindingID {
+		return ErrConflict
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
