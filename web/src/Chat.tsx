@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useReducer, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import {
   cancelRun,
   createChat,
@@ -17,6 +17,7 @@ import {
 import { mergeNewest, prependOlder, reachOf } from "./history";
 import { SearchPanel } from "./Search";
 import { MessageBody } from "./MessageBody";
+import { indentInFence, wrapSelection, type Edit } from "./composerEdit";
 import { Notifications } from "./Notifications";
 import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
@@ -190,7 +191,25 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
     props.onChange(t.body);
     document.getElementById("composer-input")?.focus();
   };
+  const area = useRef<HTMLTextAreaElement>(null);
+  const caret = useRef<[number, number] | null>(null);
+  useLayoutEffect(() => {
+    if (caret.current && area.current) area.current.setSelectionRange(...caret.current);
+    caret.current = null;
+  }, [props.value]);
+  const apply = (e: KeyboardEvent<HTMLTextAreaElement>, edit: Edit | null) => {
+    if (!edit) return;
+    e.preventDefault();
+    caret.current = [edit.start, edit.end];
+    props.onChange(edit.value);
+  };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
+    const t = e.currentTarget;
+    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && !e.nativeEvent.isComposing) {
+      apply(e, wrapSelection(t.value, t.selectionStart, t.selectionEnd, e.key));
+    } else if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.nativeEvent.isComposing) {
+      apply(e, indentInFence(t.value, t.selectionStart, t.selectionEnd));
+    }
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
       if (matches.length > 0) insert(matches[0]); // an open template menu: Enter picks, it does not send "/sum"
@@ -220,6 +239,7 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
         Message
       </label>
       <textarea
+        ref={area}
         id="composer-input"
         rows={2}
         maxLength={MAX_INPUT}

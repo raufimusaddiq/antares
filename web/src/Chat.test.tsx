@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Composer, Transcript } from "./Chat";
 import { Markdown, safeHref } from "./Markdown";
+import { indentInFence, wrapSelection } from "./composerEdit";
 import { describeCode, getMessages, listChats, sendMessage } from "./chatApi";
 import { isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 
@@ -41,11 +42,38 @@ describe("Markdown has no path to raw HTML", () => {
     expect(md("```\nunterminated <b>")).toContain("&lt;b&gt;");
   });
 
+  it("renders a fenced block with its language, and a hostile language is dropped", () => {
+    const html = md("```ts\nconst a = 1;\n```");
+    expect(html).toContain('data-lang="ts"');
+    expect(html).toContain(">ts</span>");
+    expect(html).toContain("Copy");
+    const bad = md('```"onmouseover="x\nhi\n```');
+    expect(bad).not.toContain("onmouseover=");
+    expect(bad).not.toContain("data-lang");
+  });
+
+  it("renders tables with inert cells", () => {
+    const html = md("| a | b |\n|---|:-:|\n| 1 | **2** |");
+    expect(html).toContain("<th>a</th>");
+    expect(html).toContain("<td><strong>2</strong></td>");
+  });
+
   it("falls back to plain text for huge input and never throws on odd input", () => {
     expect(md("a".repeat(250_000))).toContain('class="plain"');
     for (const s of ["", "**", "[", "[]()", "[x](", "`", "***a***", "- ", "#", ">", "\u0000", "\r\n\r\n"]) {
       expect(() => md(s), JSON.stringify(s)).not.toThrow();
     }
+  });
+});
+
+describe("composer shortcuts", () => {
+  it("wraps a selection and indents only inside a fence", () => {
+    expect(wrapSelection("hi there", 3, 8, "b")).toEqual({ value: "hi **there**", start: 5, end: 10 });
+    expect(wrapSelection("x", 1, 1, "e")?.value).toBe("x``");
+    expect(wrapSelection("x", 0, 1, "z")).toBeNull();
+    expect(indentInFence("```\nab", 6, 6)?.value).toBe("```\nab  ");
+    expect(indentInFence("plain", 2, 2)).toBeNull();
+    expect(indentInFence("```\nx\n```\nafter", 15, 15)).toBeNull();
   });
 });
 
