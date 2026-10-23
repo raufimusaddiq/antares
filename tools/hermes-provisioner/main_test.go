@@ -542,3 +542,30 @@ func TestHealthReportsRevisionWhenHermesDown(t *testing.T) {
 		t.Fatalf("503 body lacks revision: %s", rec.Body)
 	}
 }
+
+func TestRotateThenProvisionRecoveryExecCounts(t *testing.T) {
+	for _, tc := range []struct {
+		slug          string
+		writeErr      error
+		status, calls int
+	}{
+		{"u_missing01", nil, http.StatusNotFound, 5},
+		{"u_existing1", exitErr(4), http.StatusConflict, 6},
+	} {
+		t.Run(tc.slug, func(t *testing.T) {
+			f := &scripted{list: listFixture, writeErr: tc.writeErr}
+			s := newServer(f, testToken)
+			body := `{"slug":"` + tc.slug + `"}`
+			if rec := do(t, s, "/rotate", "Bearer "+testToken, body); rec.Code != tc.status {
+				t.Fatalf("rotate: %d", rec.Code)
+			}
+			f.writeErr = nil
+			if rec := do(t, s, "/provision", "Bearer "+testToken, body); rec.Code != http.StatusOK {
+				t.Fatalf("provision: %d", rec.Code)
+			}
+			if len(f.calls) != tc.calls {
+				t.Fatalf("execs = %d, want %d", len(f.calls), tc.calls)
+			}
+		})
+	}
+}

@@ -580,3 +580,40 @@ func sessionsFixture(t *testing.T) []byte {
 	}
 	return b
 }
+
+func TestToolsetRemediationDistinguishesDivergenceFromUnavailableEvidence(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*fakeHermes)
+		want   string
+	}{
+		{"compliant", func(*fakeHermes) {}, ""},
+		{"denied enabled", func(f *fakeHermes) { f.toolsets[0].Enabled = true }, ReapplyToolsetPolicy},
+		{"unlisted enabled", func(f *fakeHermes) { f.toolsets = append(f.toolsets, tset{"unexpected", true}) }, ReapplyToolsetPolicy},
+		{"unavailable", func(f *fakeHermes) {
+			f.override = func(r *http.Request) int {
+				if strings.HasSuffix(r.URL.Path, "/v1/toolsets") {
+					return 503
+				}
+				return 0
+			}
+		}, ""},
+		{"malformed", func(f *fakeHermes) { f.toolsetsRaw = `{}` }, ""},
+		{"missing denied", func(f *fakeHermes) { f.toolsets = f.toolsets[1:] }, ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newFake(t)
+			tc.change(f)
+			report := f.verifier(t).Verify(context.Background(), target())
+			for _, result := range report {
+				if result.Check == CheckToolsets {
+					if result.Remediation != tc.want || (tc.want != "" && report.OK()) {
+						t.Fatalf("result=%+v OK=%v", result, report.OK())
+					}
+					return
+				}
+			}
+			t.Fatal("toolsets check missing")
+		})
+	}
+}

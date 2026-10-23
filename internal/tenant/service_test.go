@@ -4,8 +4,11 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -132,7 +135,9 @@ func newRig(t *testing.T) *rig {
 		t.Fatal(err)
 	}
 	r := &rig{t: t, db: db, path: path, box: box, clk: &clock{t: time.Date(2026, 5, 6, 7, 8, 9, 0, time.UTC)},
-		h: &fakeHelper{provision: issues(keyOne)}, v: &fakeVerifier{report: pass}}
+		h: &fakeHelper{provision: issues(keyOne), rotate: func(slug string) (hermes.Credential, error) {
+			return hermes.Credential{Profile: slug, Key: keyTwo}, nil
+		}}, v: &fakeVerifier{report: pass}}
 	r.svc, err = New(Options{DB: db, Box: box, Helper: r.h, Verifier: r.v, Now: r.clk.Now, MaxAttempts: 3, BaseBackoff: 15 * time.Second})
 	if err != nil {
 		t.Fatal(err)
@@ -329,8 +334,12 @@ func TestRetriesStopAfterTheBudgetAndAnAdminRequeueRestartsThem(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if got := r.view(u); got.TenantStatus != "FAILED" || got.TenantAttempts != 3 {
+	if got := r.view(u); got.TenantStatus != "FAILED" || got.TenantAttempts != 3 ||
+		!strings.Contains(got.TenantDetail, "operator attention required: retry budget exhausted:") {
 		t.Fatalf("got %+v", got)
+	}
+	if r.count(`SELECT COUNT(*) FROM audit_log WHERE action = 'tenant.attention' AND target_id = ? AND outcome LIKE '%retry budget exhausted%'`, u) != 1 {
+		t.Fatal("exhausted budget lacks operator signal")
 	}
 	before, _ := r.h.counts()
 	r.clk.Add(24 * time.Hour)
@@ -360,11 +369,14 @@ func TestPermanentHelperFailureNeedsAnOperatorAndExposesOnlyTheFixedReason(t *te
 	}
 	r.svc.Process(context.Background(), u)
 	got := r.view(u)
-	if got.TenantStatus != "FAILED" || got.TenantDetail != "provisioning helper refused our token" || got.TenantAttempts != 3 {
+	if got.TenantStatus != "FAILED" || got.TenantDetail != "operator attention required: deterministic failure: provisioning helper refused our token" || got.TenantAttempts != 1 {
 		t.Fatalf("got %+v", got)
 	}
 	if ids, _ := store.DueTenants(context.Background(), r.db, r.clk.Now().Add(100*time.Hour), 3, 10); len(ids) != 0 {
 		t.Fatal("a permanent failure is retried automatically")
+	}
+	if r.count(`SELECT COUNT(*) FROM audit_log WHERE action = 'tenant.attention' AND target_id = ?`, u) != 1 {
+		t.Fatal("permanent helper failure lacks operator signal")
 	}
 	// A raw, unclassified error never reaches the stored reason.
 	u2 := r.approved("u2")
@@ -392,14 +404,14 @@ func TestVerificationFailureNeverReachesReadyAndReusesTheStoredBinding(t *testin
 	if r.count(`SELECT COUNT(*) FROM tenant_bindings WHERE status = 'READY'`) != 0 {
 		t.Fatal("a binding is READY after a failed verification")
 	}
-	// Retry: the helper is not asked for a second key; the stored one is verified again.
+	// Rotation reapplies policy while preserving the binding identity.
 	r.v.report = pass
 	r.clk.Add(time.Minute)
 	if err := r.svc.Process(context.Background(), u); err != nil {
 		t.Fatal(err)
 	}
-	if p, ro := r.h.counts(); p != 1 || ro != 0 {
-		t.Fatalf("helper called %d/%d times; the stored binding must be reused", p, ro)
+	if p, ro := r.h.counts(); p != 1 || ro != 1 {
+		t.Fatalf("helper called %d/%d times; retry must rotate the stored binding", p, ro)
 	}
 	if got := r.view(u); got.TenantStatus != "READY" || got.BindingStatus != "READY" {
 		t.Fatalf("after retry: %+v", got)
@@ -563,7 +575,7 @@ func TestSuspensionWhileVerifyingCannotUnlock(t *testing.T) {
 	}
 }
 
-func TestReactivationReverifiesTheExistingBindingWithoutANewKey(t *testing.T) {
+func TestReactivationRotatesAndReverifiesTheExistingBinding(t *testing.T) {
 	r := newRig(t)
 	u := r.approved("u1")
 	r.svc.Process(context.Background(), u)
@@ -581,8 +593,8 @@ func TestReactivationReverifiesTheExistingBindingWithoutANewKey(t *testing.T) {
 	if got.TenantStatus != "READY" || got.BindingStatus != "READY" {
 		t.Fatalf("got %+v", got)
 	}
-	if p, _ := r.h.counts(); p != 1 {
-		t.Fatalf("reactivation asked the helper for a new key (%d calls)", p)
+	if p, ro := r.h.counts(); p != 1 || ro != 1 {
+		t.Fatalf("reactivation helper calls = %d/%d", p, ro)
 	}
 	if r.v.targets[1].Fresh {
 		t.Fatal("a re-verification was treated as a first one")
@@ -607,7 +619,7 @@ func TestSecondTenantIsVerifiedAgainstTheFirstAsASibling(t *testing.T) {
 	}
 }
 
-func TestStoredCredentialThatCannotBeOpenedFailsPermanently(t *testing.T) {
+func TestRotationRepairsAnUnreadableStoredCredential(t *testing.T) {
 	r := newRig(t)
 	u := r.approved("u1")
 	r.v.report = failing(hermes.CheckEndpoint, "x")
@@ -616,9 +628,10 @@ func TestStoredCredentialThatCannotBeOpenedFailsPermanently(t *testing.T) {
 	svc, _ := New(Options{DB: r.db, Box: other, Helper: r.h, Verifier: r.v, Now: r.clk.Now, MaxAttempts: 3})
 	defer svc.Close()
 	r.clk.Add(time.Hour)
+	r.v.report = pass
 	svc.Process(context.Background(), u)
 	got := r.view(u)
-	if got.TenantStatus != "FAILED" || got.TenantDetail != "stored credential cannot be opened" {
+	if got.TenantStatus != "READY" {
 		t.Fatalf("got %+v", got)
 	}
 }
@@ -704,5 +717,306 @@ func TestRunBudgetCoversHelperAndProbes(t *testing.T) {
 func TestLeaseOutlastsRunBudget(t *testing.T) {
 	if lease <= runBudget {
 		t.Fatalf("lease %v must exceed runBudget %v", lease, runBudget)
+	}
+}
+
+func TestRequeueRepairsToolsetPolicy(t *testing.T) {
+	for _, mode := range []string{store.RequeueProvision, store.RequeueVerify} {
+		t.Run(mode, func(t *testing.T) {
+			r := newRig(t)
+			u := r.approved("u1")
+			policyApplied := false
+			r.v.report = func(target hermes.Target) hermes.Report {
+				if !policyApplied {
+					return hermes.Report{{Check: hermes.CheckToolsets, Reason: "boundary-crossing toolset browser is enabled", Remediation: hermes.ReapplyToolsetPolicy}}
+				}
+				if target.Key != keyTwo {
+					t.Fatal("verification used the old key")
+				}
+				return pass(target)
+			}
+			if err := r.svc.Process(context.Background(), u); err != nil {
+				t.Fatal(err)
+			}
+			r.h.rotate = func(slug string) (hermes.Credential, error) {
+				policyApplied = true
+				return hermes.Credential{Profile: slug, Key: keyTwo}, nil
+			}
+			if _, err := store.RequeueTenant(context.Background(), r.db, r.admin, u, mode, "r", r.clk.Now()); err != nil {
+				t.Fatal(err)
+			}
+			if err := r.svc.Process(context.Background(), u); err != nil {
+				t.Fatal(err)
+			}
+			if got := r.view(u); got.TenantStatus != "READY" || !policyApplied {
+				t.Fatalf("after requeue: %+v, policy applied=%v", got, policyApplied)
+			}
+		})
+	}
+}
+
+func TestDeterministicPolicyFailureStopsWithAttentionWithoutSpendingBudget(t *testing.T) {
+	r := newRig(t)
+	u := r.approved("u1")
+	r.v.report = func(hermes.Target) hermes.Report {
+		return hermes.Report{{Check: hermes.CheckToolsets, Reason: "boundary-crossing toolset browser is enabled", Remediation: hermes.ReapplyToolsetPolicy}}
+	}
+	for _, mode := range []string{"", store.RequeueVerify} {
+		if mode != "" {
+			if _, err := store.RequeueTenant(context.Background(), r.db, r.admin, u, mode, "r", r.clk.Now()); err != nil {
+				t.Fatal(err)
+			}
+		}
+		if err := r.svc.Process(context.Background(), u); err != nil {
+			t.Fatal(err)
+		}
+		got := r.view(u)
+		if got.TenantStatus != "FAILED" || got.BindingStatus != "FAILED" || got.TenantAttempts != 1 ||
+			!strings.Contains(got.TenantDetail, "operator attention required: deterministic failure in toolset_policy:") {
+			t.Fatalf("got %+v", got)
+		}
+		if n := r.count(`SELECT COUNT(*) FROM users WHERE id = ? AND tenant_next_attempt_at IS NULL`, u); n != 1 {
+			t.Fatal("deterministic failure scheduled a retry")
+		}
+		r.clk.Add(24 * time.Hour)
+		if ids, err := store.DueTenants(context.Background(), r.db, r.clk.Now(), 3, 10); err != nil || len(ids) != 0 {
+			t.Fatalf("due=%v err=%v", ids, err)
+		}
+		if err := r.svc.Process(context.Background(), u); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if p, ro := r.h.counts(); p != 1 || ro != 1 {
+		t.Fatalf("unexpected automatic retries: %d/%d", p, ro)
+	}
+	if r.count(`SELECT COUNT(*) FROM audit_log WHERE action = 'tenant.attention' AND target_id = ?`, u) != 2 {
+		t.Fatal("deterministic stops lack audit signals")
+	}
+}
+
+func TestLostRotationResponseRecoversOnRetry(t *testing.T) {
+	r := newRig(t)
+	u := r.approved("u1")
+	ctx := context.Background()
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	before, err := store.BindingCredential(ctx, r.db, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RequeueTenant(ctx, r.db, r.admin, u, store.RequeueVerify, "r", r.clk.Now()); err != nil {
+		t.Fatal(err)
+	}
+	r.h.rotate = func(string) (hermes.Credential, error) {
+		return hermes.Credential{}, &hermes.Failure{Class: hermes.ErrRetryable, Detail: "provisioning helper unreachable"}
+	}
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.view(u); got.TenantStatus != "FAILED" || got.TenantAttempts != 1 {
+		t.Fatalf("lost response: %+v", got)
+	}
+	r.h.rotate = func(slug string) (hermes.Credential, error) {
+		return hermes.Credential{Profile: slug, Key: keyTwo}, nil
+	}
+	r.clk.Add(time.Minute)
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	after, err := store.BindingCredential(ctx, r.db, u)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := r.view(u); got.TenantStatus != "READY" || after.BindingID != before.BindingID || after.Profile != before.Profile {
+		t.Fatalf("recovery: %+v", got)
+	}
+	if key, err := r.box.Open(after.Ciphertext, after.BindingID); err != nil || key != keyTwo {
+		t.Fatal("rotated key was not sealed against the existing binding")
+	}
+}
+
+func TestSuspensionDuringPolicyRepairCannotUnlock(t *testing.T) {
+	r := newRig(t)
+	u := r.approved("u1")
+	ctx := context.Background()
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.RequeueTenant(ctx, r.db, r.admin, u, store.RequeueVerify, "r", r.clk.Now()); err != nil {
+		t.Fatal(err)
+	}
+	r.h.rotate = func(slug string) (hermes.Credential, error) {
+		if _, err := store.Decide(ctx, r.db, r.admin, u, store.ActionSuspend, "test", "r", r.clk.Now()); err != nil {
+			t.Fatal(err)
+		}
+		return hermes.Credential{Profile: slug, Key: keyTwo}, nil
+	}
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.view(u); got.TenantStatus != "DISABLED" || got.BindingStatus != "DISABLED" {
+		t.Fatalf("got %+v", got)
+	}
+	if len(r.v.targets) != 1 {
+		t.Fatal("repair verified a suspended account")
+	}
+}
+
+func TestExistingBindingRecoversMissingHostProfileOrKey(t *testing.T) {
+	for _, status := range []int{http.StatusNotFound, http.StatusConflict} {
+		for _, mode := range []string{store.RequeueProvision, store.RequeueVerify} {
+			t.Run(fmt.Sprintf("%d/%s", status, mode), func(t *testing.T) {
+				r := newRig(t)
+				u := r.approved("u1")
+				ctx := context.Background()
+				if err := r.svc.Process(ctx, u); err != nil {
+					t.Fatal(err)
+				}
+				before, err := store.BindingCredential(ctx, r.db, u)
+				if err != nil {
+					t.Fatal(err)
+				}
+				var calls []string
+				srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					var body struct {
+						Slug string `json:"slug"`
+					}
+					if err := json.NewDecoder(req.Body).Decode(&body); err != nil || body.Slug != before.Profile {
+						t.Error("helper target changed")
+						w.WriteHeader(400)
+						return
+					}
+					calls = append(calls, req.URL.Path)
+					if req.URL.Path == "/rotate" {
+						w.WriteHeader(status)
+						return
+					}
+					if req.URL.Path != "/provision" {
+						w.WriteHeader(400)
+						return
+					}
+					json.NewEncoder(w).Encode(map[string]string{"profile": body.Slug, "key": keyTwo})
+				}))
+				defer srv.Close()
+				h, err := hermes.NewHelper(srv.URL, "fabricated-helper-token-0123456789abcdef", srv.Client())
+				if err != nil {
+					t.Fatal(err)
+				}
+				r.svc.helper = h
+				r.v.report = func(target hermes.Target) hermes.Report {
+					if target.Profile != before.Profile || target.Key != keyTwo || target.Fresh {
+						t.Fatal("verification lost profile, new credential or verification history")
+					}
+					return pass(target)
+				}
+				if _, err := store.RequeueTenant(ctx, r.db, r.admin, u, mode, "r", r.clk.Now()); err != nil {
+					t.Fatal(err)
+				}
+				if err := r.svc.Process(ctx, u); err != nil {
+					t.Fatal(err)
+				}
+				if got := r.view(u); got.TenantStatus != "READY" || got.BindingStatus != "READY" {
+					t.Fatalf("recovery: %+v", got)
+				}
+				if strings.Join(calls, ",") != "/rotate,/provision" {
+					t.Fatalf("calls: %v", calls)
+				}
+				after, err := store.BindingCredential(ctx, r.db, u)
+				if err != nil || after.BindingID != before.BindingID || after.Profile != before.Profile || !after.Verified {
+					t.Fatalf("binding changed: %v", err)
+				}
+				if key, err := r.box.Open(after.Ciphertext, before.BindingID); err != nil || key != keyTwo {
+					t.Fatal("recovery key was not sealed against the existing binding")
+				}
+			})
+		}
+	}
+}
+
+func TestMixedVerificationFailureNamesOnlyTheDeterministicCheck(t *testing.T) {
+	for _, policyFirst := range []bool{false, true} {
+		r := newRig(t)
+		u := r.approved("u1")
+		r.v.report = func(hermes.Target) hermes.Report {
+			report := hermes.Report{
+				{Check: hermes.CheckEndpoint, Reason: "models endpoint did not answer"},
+				{Check: hermes.CheckToolsets, Reason: "boundary-crossing toolset browser is enabled", Remediation: hermes.ReapplyToolsetPolicy},
+			}
+			if policyFirst {
+				report[0], report[1] = report[1], report[0]
+			}
+			return report
+		}
+		if err := r.svc.Process(context.Background(), u); err != nil {
+			t.Fatal(err)
+		}
+		got := r.view(u)
+		if !strings.HasPrefix(got.TenantDetail, "operator attention required: deterministic failure in toolset_policy: ") ||
+			!strings.Contains(got.TenantDetail, "verification failed: endpoint") || !strings.Contains(got.TenantDetail, "verification failed: toolset_policy") {
+			t.Fatalf("mixed report lost evidence or mislabelled its decision: %+v", got)
+		}
+		if r.count(`SELECT COUNT(*) FROM audit_log WHERE action = 'tenant.attention' AND target_id = ? AND outcome = ?`, u, got.TenantDetail) != 1 {
+			t.Fatal("audit did not retain the scoped failure label")
+		}
+	}
+}
+
+func TestProvisionFallbackStillRequiresVerification(t *testing.T) {
+	r := newRig(t)
+	u := r.approved("u1")
+	ctx := context.Background()
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	r.h.rotate = func(string) (hermes.Credential, error) { return hermes.Credential{}, hermes.ErrNotProvisioned }
+	r.h.provision = issues(keyTwo)
+	r.v.report = func(hermes.Target) hermes.Report {
+		return hermes.Report{{Check: hermes.CheckToolsets, Reason: "boundary-crossing toolset browser is enabled", Remediation: hermes.ReapplyToolsetPolicy}}
+	}
+	if _, err := store.RequeueTenant(ctx, r.db, r.admin, u, store.RequeueProvision, "r", r.clk.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.view(u); got.TenantStatus != "FAILED" || got.BindingStatus != "FAILED" || got.TenantAttempts != 1 {
+		t.Fatalf("got %+v", got)
+	}
+	if p, ro := r.h.counts(); p != 2 || ro != 1 {
+		t.Fatalf("helper calls: %d/%d", p, ro)
+	}
+}
+
+func TestProvisionFallbackConflictWaitsForNextRun(t *testing.T) {
+	r := newRig(t)
+	u := r.approved("u1")
+	ctx := context.Background()
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	r.h.rotate = func(string) (hermes.Credential, error) { return hermes.Credential{}, hermes.ErrNotProvisioned }
+	r.h.provision = func(string, int) (hermes.Credential, error) { return hermes.Credential{}, hermes.ErrKeyExists }
+	if _, err := store.RequeueTenant(ctx, r.db, r.admin, u, store.RequeueVerify, "r", r.clk.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.view(u); got.TenantStatus != "FAILED" || got.TenantAttempts != 1 || strings.Contains(got.TenantDetail, "operator attention required") {
+		t.Fatalf("got %+v", got)
+	}
+	if p, ro := r.h.counts(); p != 2 || ro != 1 || len(r.v.targets) != 1 {
+		t.Fatalf("unbounded fallback: %d/%d", p, ro)
+	}
+	r.h.rotate = func(slug string) (hermes.Credential, error) {
+		return hermes.Credential{Profile: slug, Key: keyTwo}, nil
+	}
+	r.clk.Add(time.Minute)
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.view(u); got.TenantStatus != "READY" {
+		t.Fatalf("got %+v", got)
 	}
 }
