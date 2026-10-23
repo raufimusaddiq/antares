@@ -318,6 +318,13 @@ dd:last-child { margin-bottom: 0; }
 .turn p { margin: 0.3rem 0; }
 .turn .plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .turn pre { overflow: auto; padding: 0.65rem 0.85rem; background: var(--bg-base); border: 1px solid var(--solid-border); border-radius: var(--r-sm); }
+.codeblock { margin: 0.3rem 0; }
+.codehead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.2rem; }
+.codehead .label { margin: 0; }
+.codehead button { padding: 0.1rem 0.6rem; font-size: 0.85rem; min-height: 0; }
+.codeblock pre { margin: 0; }
+.tablewrap { overflow-x: auto; margin: 0.3rem 0; }
+.turn th, .turn td { padding: 0.3rem 0.6rem; border: 1px solid var(--solid-border); text-align: left; }
 .turn code { font-family: var(--font-mono); font-size: 0.9em; }
 .turn blockquote { margin: 0.3rem 0; padding-left: 0.85rem; border-left: 2px solid var(--solid-border); color: var(--text-2); }
 pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -474,3 +481,8 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
 .search mark { background: var(--accent); color: var(--accent-ink); border-radius: 2px; padding: 0 0.1em; }
 .turn[data-found] { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 760px) { .search { flex: none; width: min(22rem, 80vw); margin: 0; } }
+
+/* ---- slash templates: a short list above the composer text while it reads "/name" ---- */
+.composer { flex-wrap: wrap; }
+.composer .templates { flex-basis: 100%; display: flex; flex-wrap: wrap; gap: 0.25rem; margin: 0; padding: 0 0.5rem 0 0; list-style: none; }
+.composer .templates button { padding: 0.25rem 0.6rem; font-size: 0.875rem; }
