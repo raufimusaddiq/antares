@@ -117,17 +117,28 @@ async function currentSubscription(): Promise<PushSubscription | null> {
   return reg ? reg.pushManager.getSubscription() : null;
 }
 
-/** The server-side device row for this browser, if it has one. */
-export async function thisDevice(n: Notifications): Promise<Device | null> {
-  if (unsupportedReason() !== null) return null;
+/** Why this browser has no working registration. "unlisted" also covers a subscription bound to another account: the API only lists this account's devices, so the two cannot be told apart. */
+export type MissingReason = "denied" | "none" | "unlisted" | "unknown";
+
+export type DeviceStatus = { device: Device; missing: null } | { device: null; missing: MissingReason };
+
+/** Whether this browser has a working registration: a live subscription whose endpoint is in the device list. */
+export async function deviceStatus(n: Notifications): Promise<DeviceStatus> {
+  if (unsupportedReason() !== null) return { device: null, missing: "unknown" };
   try {
     const sub = await currentSubscription();
-    if (!sub) return null;
+    if (!sub) return { device: null, missing: Notification.permission === "denied" ? "denied" : "none" };
     const h = await sha256Hex(sub.endpoint);
-    return n.devices.find((d) => d.endpointHash === h) ?? null;
+    const device = n.devices.find((d) => d.endpointHash === h);
+    return device ? { device, missing: null } : { device: null, missing: "unlisted" };
   } catch {
-    return null;
+    return { device: null, missing: "unknown" };
   }
+}
+
+/** The server-side device row for this browser, if it has one. */
+export async function thisDevice(n: Notifications): Promise<Device | null> {
+  return (await deviceStatus(n)).device;
 }
 
 function save(sub: PushSubscription) {

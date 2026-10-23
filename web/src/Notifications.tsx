@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { disable, enable, loadNotifications, setMode, thisDevice, unsupportedReason, type Device, type Mode, type Notifications as State } from "./push";
+import { disable, enable, loadNotifications, setMode, deviceStatus, unsupportedReason, type Device, type MissingReason, type Mode, type Notifications as State } from "./push";
 
 const SAYS: Record<string, string> = {
   DENIED: "Notifications are blocked for this site in your browser settings.",
@@ -9,11 +9,19 @@ const SAYS: Record<string, string> = {
   NETWORK: "Could not reach Antares. Check your connection.",
 };
 
+const MISSING: Record<MissingReason, string> = {
+  denied: "This browser has blocked notifications for this site, so alerts are not reaching it. Allow them in your browser settings, then turn them on here.",
+  none: "This browser has no notification device registered, so alerts are not reaching it.",
+  unlisted: "This browser has a subscription that Antares does not have on your account, so alerts are not reaching it.",
+  unknown: "Antares could not confirm that this browser is registered for alerts, so they may not be reaching it.",
+};
+
 /** The per-device opt-in. Everything is off until the button is pressed. */
 export function Notifications() {
   const [open, setOpen] = useState(false);
   const [state, setState] = useState<State | null>(null);
   const [device, setDevice] = useState<Device | null>(null);
+  const [missing, setMissing] = useState<MissingReason | null>(null);
   const [loadFailed, setLoadFailed] = useState(false);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
@@ -27,7 +35,9 @@ export function Notifications() {
     }
     setLoadFailed(false);
     setState(r.value);
-    setDevice(await thisDevice(r.value));
+    const s = await deviceStatus(r.value);
+    setDevice(s.device);
+    setMissing(s.missing);
   }, []);
 
   useEffect(() => {
@@ -78,9 +88,16 @@ export function Notifications() {
                   </button>
                 </>
               ) : (
-                <button type="button" disabled={busy} onClick={() => void run(enable)}>
-                  Turn on for this device
-                </button>
+                <>
+                  {missing && (
+                    <p className="notice" role="status">
+                      {MISSING[missing]}
+                    </p>
+                  )}
+                  <button type="button" disabled={busy} onClick={() => void run(enable)}>
+                    Turn on for this device
+                  </button>
+                </>
               )}
             </>
           )}
