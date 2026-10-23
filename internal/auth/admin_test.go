@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -577,3 +579,55 @@ func (f helperFunc) Rotate(_ context.Context, s string) (hermes.Credential, erro
 type verifyFunc func(hermes.Target) hermes.Report
 
 func (f verifyFunc) Verify(_ context.Context, t hermes.Target) hermes.Report { return f(t) }
+
+func TestAuditAndDirectoryParametersAreValidated(t *testing.T) {
+	h := newHarness(t)
+	admin, _, _ := h.adminWithKicks()
+	for _, p := range []string{
+		"/api/admin/audit?offset=1", "/api/admin/audit?before=nopipe", "/api/admin/audit?before=|id", "/api/admin/audit?limit=0",
+		"/api/admin/users?q=%00", "/api/admin/users?q=" + strings.Repeat("a", 101),
+	} {
+		if w := admin.get(p); w.Code != 400 {
+			t.Errorf("%s = %d, want 400", p, w.Code)
+		}
+	}
+	for _, p := range []string{"/api/admin/audit?before=2026-01-01T00:00:00Z|abc", "/api/admin/users?q=%25_&status=PENDING"} {
+		if w := admin.get(p); w.Code != 200 {
+			t.Errorf("%s = %d, want 200: %s", p, w.Code, w.Body.String())
+		}
+	}
+}
+
+func TestAuditPagesByCursor(t *testing.T) {
+	h := newHarness(t)
+	admin, _, _ := h.adminWithKicks()
+	for i := 0; i < 3; i++ {
+		h.userIn("pg"+strconv.Itoa(i), "PENDING", "UNPROVISIONED", "USER", false)
+		admin.act(h.userID("pg"+strconv.Itoa(i)), "reject", `{"reason":"r"}`)
+	}
+	var seen = map[string]bool{}
+	before := ""
+	for pages := 0; pages < 20; pages++ {
+		w := admin.get("/api/admin/audit?limit=2&before=" + url.QueryEscape(before))
+		var out struct {
+			Entries []AuditView `json:"entries"`
+			Next    string      `json:"next"`
+		}
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+			t.Fatalf("%d %s", w.Code, w.Body.String())
+		}
+		for _, e := range out.Entries {
+			if seen[e.ID] {
+				t.Fatalf("entry %s served twice", e.ID)
+			}
+			seen[e.ID] = true
+		}
+		if out.Next == "" {
+			break
+		}
+		before = out.Next
+	}
+	if len(seen) < 3 {
+		t.Fatalf("paged through only %d entries", len(seen))
+	}
+}

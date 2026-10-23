@@ -79,11 +79,16 @@ func (s *server) auth(next http.HandlerFunc) http.HandlerFunc {
 }
 
 func (s *server) health(w http.ResponseWriter, r *http.Request) {
+	// The revision is reported even when Hermes is unreachable: a deploy check
+	// must be able to tell a stale binary from a down container.
+	revision, modified := buildRevision()
+	body := map[string]any{"status": "ok", "revision": revision, "modified": modified}
+	code := http.StatusOK
 	if !s.h.reachable(r.Context()) {
-		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"status": "hermes unreachable"})
-		return
+		body["status"] = "hermes unreachable"
+		code = http.StatusServiceUnavailable
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, code, body)
 }
 
 // readSlug decodes {"slug":...} strictly and validates it. Any extra field

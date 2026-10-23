@@ -45,9 +45,12 @@ read access. The deploying user and `antares-prov` cannot replace the binary, wh
 Docker group. Edit the env files with `sudo`. Compose also reads `antares.env` as the invoking user,
 so run `docker compose` with `sudo` (or point `ANTARES_ENV_FILE` at a readable copy).
 
-Note: the current live host has `/opt/antares` as `700` owned by the deploying user. That makes the
-binary's directory replaceable by that user, and it only starts because of how systemd opens the
-binary; do not copy it. Align the host to the table above at the owner's convenience.
+`root:root 0755` is chosen over a traverse-only ACL: it needs no `setfacl`/filesystem support, is what `ls -l`
+shows, and exposes nothing (the secrets inside are `600`). On 2026-10-23 the live host had `/opt/antares` at
+`700 ubuntu:ubuntu`; `antares-prov` could not reach `ExecStart` and the unit crashlooped with `203/EXEC`
+(47 restarts). `deploy/install-provisioner.sh` re-applies the modes with `install -d` and fails if they differ;
+`deploy/install-provisioner.sh --check-dirs` asserts them without changing anything. Env files are only
+stat'ed, never read or printed, and never loosened.
 
 `provisioner.env`:
 
@@ -74,22 +77,52 @@ docker pull ghcr.io/raufimusaddiq/antares:$ANTARES_TAG
 
 ## 3. Provisioner (host, systemd)
 
-Build the helper from the same commit and install it:
+The helper is a **separate Go module** (`tools/hermes-provisioner`). Pulling the Antares image does not
+rebuild it: on 2026-10-23 the host ran the PR #39 build while `af2ad22` was deployed, so the toolset
+policy did not exist and every tenant failed `toolset_policy` (#50). **Every deploy rebuilds and
+reinstalls it, in this order** (the old process holds the inode, so stop before replacing):
 
 ```sh
-git -C <checkout> checkout $ANTARES_TAG
-(cd <checkout>/tools/hermes-provisioner && go build -o /tmp/hermes-provisioner .)
+# Go stamps vcs.modified=true on ANY untracked file; checkout alone leaves them, and the revision check
+# below would then reject a correct deploy after the binary is installed. Use a dedicated checkout:
+# clean -fdx deletes everything untracked or ignored in it.
+git -C <checkout> checkout --detach $ANTARES_TAG && git -C <checkout> clean -fdx
+cd <checkout>/tools/hermes-provisioner && go build -o /tmp/hermes-provisioner .
+sudo systemctl stop hermes-provisioner
+sudo install -m 0755 -o root -g root /tmp/hermes-provisioner /opt/antares/bin/hermes-provisioner
+sudo systemctl start hermes-provisioner
+```
+
+`sudo PROVISIONER_HEALTH_URL=http://<PROVISIONER_ADDR>/health deploy/install-provisioner.sh <built-binary> $ANTARES_TAG`
+(the variable is only needed when the bridge gateway is not `172.17.0.1`; it must match the unit's
+`PROVISIONER_ADDR`, otherwise the final check fails on a deploy that succeeded) does the stop, install and start
+and also enforces the directory contract (section 1) and the revision check below; prefer it. First-time
+host setup, once:
+
+```sh
 sudo useradd --system --create-home --shell /usr/sbin/nologin antares-prov   # skip if it exists
 sudo usermod -aG docker antares-prov
-sudo install -d -m 0755 -o root -g root /opt/antares/bin && sudo install -m 0755 -o root -g root /tmp/hermes-provisioner /opt/antares/bin/
 sudo cp deploy/hermes-provisioner.service /etc/systemd/system/
-sudo systemctl daemon-reload && sudo systemctl enable --now hermes-provisioner
+sudo systemctl daemon-reload && sudo systemctl enable hermes-provisioner
 ```
+
+**Revision check (a deploy is not verified without it).** `GET /health` returns
+`{"status":"ok","revision":"<vcs.revision>","modified":false}`, read by `debug.ReadBuildInfo` from the
+binary itself. Without a VCS stamp `revision` is `"unavailable"`, never a made-up value. Then:
+
+```sh
+deploy/verify-helper-revision.sh $ANTARES_TAG http://172.17.0.1:8750/health
+```
+
+It exits non-zero when the helper's revision differs from `$ANTARES_TAG`, is `unavailable`, was built from
+a modified tree, or `/health` lacks the field (a pre-#50 helper). `200` and `systemctl is-active` do not
+prove the helper is current; this does. `strings -a /opt/antares/bin/hermes-provisioner | grep vcs.revision`
+shows the same thing offline.
 
 The unit binds `172.17.0.1:8750` (the docker bridge gateway that `host.docker.internal` resolves to
 with `host-gateway`). **Check before starting**: `docker network inspect bridge -f '{{(index .IPAM.Config 0).Gateway}}'`
 and edit `PROVISIONER_ADDR` if it differs. It must not be `0.0.0.0`, and the port must not be exposed
-at the edge or in the firewall's public zone. `curl -H "Authorization: Bearer …" http://172.17.0.1:8750/health`
+at the edge or in the firewall's public zone. `curl http://172.17.0.1:8750/health`
 from the host confirms it answers.
 
 ## 4. Start Antares
@@ -108,7 +141,20 @@ sudo docker compose ps                 # antares: healthy
 curl -fsS http://127.0.0.1:8080/readyz     # {"status":"ready"}
 ```
 
-Then verify with one real authenticated request (sign in as the bootstrap admin), not just "up".
+`ready` and `healthy` only say the process and its database are up. They are not the check. Run the gate next.
+
+## 4a. The deploy gate (smoke test)
+
+From any machine that reaches the deployment over HTTPS (not the host, no secrets from the host):
+
+```sh
+export ANTARES_SMOKE_COOKIE_ADMIN=… ANTARES_SMOKE_COOKIE_A=… ANTARES_SMOKE_COOKIE_B=… ANTARES_SMOKE_COOKIE_PENDING=…
+go run ./cmd/antares-smoke --url https://<ANTARES_PUBLIC_ORIGIN host> --json smoke-result.json
+```
+
+Exit `0` is the only result that means deployed. `1` (a step failed; the output names it) and `2` (a step did not
+run) mean it is not: roll back or fix, then run again. Where the four sessions come from, every step, and what it does
+not cover: `docs/runbooks/smoke-test.md`.
 
 ## 5. Caddy (documented, not applied)
 

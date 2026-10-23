@@ -83,8 +83,8 @@ func TestEligibleUserPassesTheGuardAndAdminTreeIsAdminOnly(t *testing.T) {
 	if w := admin.get("/api/admin/users"); w.Code != http.StatusOK {
 		t.Errorf("active admin on admin tree: %d", w.Code)
 	}
-	if w := admin.get("/api/admin/system"); w.Code != http.StatusNotImplemented {
-		t.Errorf("active admin on the unbuilt admin route: %d", w.Code)
+	if w := admin.get("/api/admin/system"); w.Code != http.StatusNotFound {
+		t.Errorf("active admin on a removed admin route: %d", w.Code)
 	}
 	// Role decides what is shown; the login path is the same one.
 	var v AccountView
@@ -136,14 +136,14 @@ func TestAdminTreeRequiresAnActiveMappedAdmin(t *testing.T) {
 		}
 	}
 	// Every refusal above must be the guard's. An active admin passes the guard:
-	// the one admin route still unbuilt answers with the placeholder, and the
+	// the removed system route answers a plain 404, and the
 	// built ones answer from their handlers (none of the guard's refusals).
 	active := h.userIn("adm-ok", "APPROVED", "READY", "ADMIN", true)
 	for _, p := range paths {
 		w := active.do(p.method, p.path, nil)
 		if p.path == "/api/admin/system" {
-			if w.Code != http.StatusNotImplemented {
-				t.Errorf("active admin %s %s = %d, want the placeholder", p.method, p.path, w.Code)
+			if w.Code != http.StatusNotFound || errCode(t, w.Body.Bytes()) != "NOT_FOUND" {
+				t.Errorf("active admin %s %s = %d, want a plain 404 (the stub is gone)", p.method, p.path, w.Code)
 			}
 			continue
 		}

@@ -25,7 +25,7 @@ All endpoints except `/health` need `Authorization: Bearer $PROVISIONER_TOKEN`.
 | `POST /provision` | `{"slug":"u_xxxxxxxx"}` | creates the profile if absent, writes a fresh `API_SERVER_KEY` to its `.env`, returns `{profile,key,created_at}` once. `409` if the profile already has a key. |
 | `POST /rotate` | `{"slug":...}` | replaces the key, returns it once. `404` if the profile is absent. |
 | `POST /deprovision` | `{"slug":...}` | `hermes profile delete` then `purge-identity`. Idempotent. Returns no key. |
-| `GET /health` | – | unauthenticated; `200` when the container answers `hermes --version`. |
+| `GET /health` | – | unauthenticated; `200` when the container answers `hermes --version`, else `503`. Body: `{"status","revision","modified"}`, the build's `vcs.revision` (`"unavailable"` without a VCS stamp). Deploys compare it to the deployed commit: `deploy/verify-helper-revision.sh`. The exact deployed commit is visible to anything that can reach the bind address (the docker bridge), which is why the bind must never be public. |
 
 ## Rules enforced
 

@@ -71,9 +71,12 @@ func (a *Auth) Register(mux *http.ServeMux) {
 		}
 		mux.Handle(key, a.Active(h))
 	}
-	// The whole admin tree is guarded. The catch-all answers for anything not
-	// listed below; the specific routes win over it.
-	mux.Handle("/api/admin/", a.Admin(notBuilt))
+	// The whole admin tree is guarded. Anything not registered below is a plain
+	// 404, not a "not built yet" stub: /api/admin/system was removed rather than
+	// left looking implemented (#47).
+	mux.Handle("/api/admin/", a.Admin(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		a.apiError(w, r, http.StatusNotFound, "NOT_FOUND", "No such admin route")
+	})))
 	a.registerAdmin(mux)
 }
 

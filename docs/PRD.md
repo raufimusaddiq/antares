@@ -171,10 +171,10 @@ Google sign-in
 
 ### 3.4 Admin UX (P0)
 
-- `/admin/users`: searchable/paginated directory, status filters, pending count, creation/last-login times.
+- `/admin/users`: searchable/paginated directory (substring search on name/email and the approval filter run server-side; the tenant-failed filter applies to loaded rows because the API cannot filter on it), creation/last-login times. A pending count is not shown (#47 follow-up).
 - `/admin/users/:id`: public Google identity metadata, approval history, tenant binding status, last Hermes connectivity check, quota status. **No private chats, transcripts, memories, file previews, or raw tool arguments.**
 - Explicit `Approve`, `Reject`, `Suspend`, `Reactivate`; destructive actions use confirmation dialog and optional reason.
-- `/admin/system`: Hermes connectivity, version/capability snapshot, active user count, run counts, failed provisioning/streaming, disk and app health. Redact secrets.
+- `/admin/system` — **deferred, not built** (#47 removed the 501 stub; the route does not exist and answers 404 for an admin). When real data exists it returns as its own ticket, not as a placeholder. Intended content: Hermes connectivity, version/capability snapshot, active user count, run counts, failed provisioning/streaming, disk and app health. Redact secrets.
 - Audit feed of approval, user status, admin login, tenant binding, key rotation, and policy changes.
 - For any recovery requiring viewing private content, design a distinct audited support-access workflow **out of scope for v1**. Admin power alone is not consent.
 
@@ -518,7 +518,7 @@ All endpoints begin with `/api/`. Every private endpoint resolves the identity f
 | `POST` | `/api/admin/users/{userId}/tenant-binding` | Admin | Register/check prepared Hermes binding via secret reference |
 | `POST` | `/api/admin/users/{userId}/tenant-verify` | Admin | Run required isolation/preflight checks |
 | `GET` | `/api/admin/audit` | Admin | Authorization and operation audit |
-| `GET` | `/api/admin/system` | Admin | Health + availability summaries |
+| ~~`GET`~~ | ~~`/api/admin/system`~~ | — | **Deferred, removed in #47** (no real data source; was a 501 stub). Health + availability summaries when built |
 | `GET` | `/healthz` | Internal/proxy | Chat UI process liveness |
 | `GET` | `/readyz` | Internal/proxy | DB/auth/proxy readiness without leaking config |
 
@@ -649,7 +649,7 @@ Content-Type: application/json
 | `GET /v1/toolsets` | DOC | `GET /api/toolsets` (P1) | Available tools panel | Shows enabled/configured toolsets and actual tool names; tool listing does not mean UI can call each tool by its own HTTP endpoint. |
 | `GET /health` | DOC | Backend readiness probe only | Admin system status | Cheap liveness, not evidence agent can execute / profile healthy. |
 | `GET /v1/health` | DOC | Backend compatibility probe only | Internal monitoring | Alias for liveness. |
-| `GET /health/detailed` | DOC | `GET /api/admin/system` sanitized | Admin readiness details | Bearer protected; returned HTTP 200 can still mean degraded; inspect `status` and `readiness.checks`. |
+| `GET /health/detailed` | DOC | `GET /api/admin/system` sanitized (deferred, see §3.4) | Admin readiness details | Bearer protected; returned HTTP 200 can still mean degraded; inspect `status` and `readiness.checks`. |
 
 **Model override `MODEL-001`:** `model` + `provider` + request-scoped `model_options` may be sent to `/v1/runs` and session chat endpoints. Session model lock and route aliases can take precedence; client must reflect **effective** model from actual run `runtime`, not assume the picker was honored. Bare `model` for Chat Completions/Responses may be ignored unless `direct_model_requests=true`, while Hermes-native `/v1/runs` honors model selection subject to policy/config. Never let the UI submit arbitrary provider URL, secret or command.
 
@@ -705,7 +705,7 @@ The following are **APP endpoints** to add to the Chat UI contract in §9 (not e
 | `POST /api/jobs/{jobId}/resume` | P1 | `POST /api/jobs/{id}/resume` | Resume owned job. |
 | `POST /api/jobs/{jobId}/run` | P1 | `POST /api/jobs/{id}/run` | Manual run of owned job. |
 
-Some original §9 endpoints are intentional **app abstractions**, not 1:1 Hermes mappings: Google OIDC/login/approval/admin/audit have **no Hermes analogue**; `POST /api/assets` is an app private asset staging flow until a safe relevant Hermes integration is proven; `GET /api/admin/system` is an aggregate of app health, per-profile Hermes readiness and sanitized telemetry. Revocation/reapproval and workspace provisioning remain Chat UI / trusted operator responsibilities.
+Some original §9 endpoints are intentional **app abstractions**, not 1:1 Hermes mappings: Google OIDC/login/approval/admin/audit have **no Hermes analogue**; `POST /api/assets` is an app private asset staging flow until a safe relevant Hermes integration is proven; `GET /api/admin/system` (deferred) would be an aggregate of app health, per-profile Hermes readiness and sanitized telemetry. Revocation/reapproval and workspace provisioning remain Chat UI / trusted operator responsibilities.
 
 ### 9A.8 Mandatory deployed-Hermes API preflight and acceptance evidence
 

@@ -39,6 +39,19 @@ jobs:
       - name: Test
         if: steps.detect.outputs.present == 'true'
         run: go test -race -count=1 ./...
+      # tools/hermes-provisioner is a separate module: ./... from the root does not reach it (#50).
+      - name: Build (provisioner module)
+        if: steps.detect.outputs.present == 'true'
+        working-directory: tools/hermes-provisioner
+        run: go build ./...
+      - name: Vet (provisioner module)
+        if: steps.detect.outputs.present == 'true'
+        working-directory: tools/hermes-provisioner
+        run: go vet ./...
+      - name: Test (provisioner module)
+        if: steps.detect.outputs.present == 'true'
+        working-directory: tools/hermes-provisioner
+        run: go test -race -count=1 ./...
 
   web:
     name: web
