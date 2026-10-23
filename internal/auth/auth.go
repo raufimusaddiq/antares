@@ -48,6 +48,8 @@ type Options struct {
 	// stay behind the guard with the "not available" placeholder.
 	Chat   ChatHandlers
 	Limits *Limits // nil uses DefaultLimits
+	// Push supplies the notification routes (PushRoutes). Without it they are not mounted.
+	Push ChatHandlers
 }
 
 // ChatHandlers is what the chat package gives the identity layer to mount:
@@ -71,6 +73,7 @@ type Auth struct {
 	flows    *flowStore
 	tenants  Tenants
 	chat     ChatHandlers
+	push     ChatHandlers
 	limits   *requestLimits
 }
 
@@ -93,7 +96,7 @@ func New(o Options) (*Auth, error) {
 		return nil, errors.New("request limits must be positive integers")
 	}
 	a := &Auth{limits: newRequestLimits(limits), db: o.DB, ep: o.Endpoints, clientID: o.ClientID, secret: o.ClientSecret,
-		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat}
+		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat, push: o.Push}
 	a.ver = &verifier{ep: o.Endpoints, clientID: o.ClientID, client: o.HTTPClient, now: o.Now}
 	return a, nil
 }

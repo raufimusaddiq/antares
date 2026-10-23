@@ -35,6 +35,14 @@ type Options struct {
 	// Heartbeat is the SSE keep-alive interval, which is also how often an open
 	// stream re-checks that the account is still eligible. Default 15s.
 	Heartbeat time.Duration
+	// Notifier, if set, is told when a run reaches a terminal status (UXP-002).
+	Notifier Notifier
+}
+
+// Notifier receives the stored terminal status of a run. It gets identifiers and
+// the status only — never a title, prompt or output — and must not block.
+type Notifier interface {
+	RunFinished(userID, runID, chatID, status string)
 }
 
 // Service runs chats. Workers are detached from HTTP requests: a closed
@@ -46,6 +54,7 @@ type Service struct {
 	now       func() time.Time
 	backoff   func(int) time.Duration
 	heartbeat time.Duration
+	notifier  Notifier
 
 	base context.Context
 	stop context.CancelFunc
@@ -68,7 +77,7 @@ func New(o Options) (*Service, error) {
 		o.Heartbeat = 15 * time.Second
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat,
+	return &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier,
 		base: ctx, stop: cancel, live: map[string]*liveRun{}}, nil
 }
 
@@ -290,6 +299,9 @@ func (s *Service) finish(l *liveRun, to, code, output string) {
 		log.Printf("chat: run %s: could not read back its status: %v", l.runID, err)
 		l.emit("run.failed", map[string]string{"runId": l.runID, "status": store.RunFailed, "code": hermes.CodeHermesUnavailable}, true)
 		return
+	}
+	if s.notifier != nil && store.RunTerminal(run.Status) {
+		s.notifier.RunFinished(run.UserID, run.ID, run.ChatID, run.Status) // the stored status, so a cancel is never a completion
 	}
 	if store.RunTerminal(run.Status) { // the transcript gained turns: its search index is stale
 		if err := store.InvalidateChatIndex(ctx, s.db, run.UserID, run.ChatID, s.now()); err != nil {

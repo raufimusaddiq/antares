@@ -16,6 +16,7 @@ import (
 	"github.com/raufimusaddiq/antares/internal/chat"
 	"github.com/raufimusaddiq/antares/internal/config"
 	"github.com/raufimusaddiq/antares/internal/hermes"
+	"github.com/raufimusaddiq/antares/internal/push"
 	"github.com/raufimusaddiq/antares/internal/secrets"
 	"github.com/raufimusaddiq/antares/internal/store"
 	"github.com/raufimusaddiq/antares/internal/tenant"
@@ -125,7 +126,18 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	chats, err := chat.New(chat.Options{DB: db, Box: box, Hermes: hermesClient})
+	var vapid *push.VAPID
+	if cfg.PushConfigured() {
+		if vapid, err = push.NewVAPID(cfg.VAPIDPrivateKey, cfg.VAPIDSubject); err != nil {
+			return err
+		}
+	}
+	pusher, err := push.New(push.Options{DB: db, Box: box, VAPID: vapid})
+	if err != nil {
+		return err
+	}
+	defer pusher.Close() // after chats.Close below has stopped the workers that call it
+	chats, err := chat.New(chat.Options{DB: db, Box: box, Hermes: hermesClient, Notifier: pusher})
 	if err != nil {
 		return err
 	}
@@ -140,6 +152,7 @@ func run() error {
 		PublicOrigin: cfg.PublicOrigin,
 		Tenants:      tenants,
 		Chat:         chats,
+		Push:         pusher,
 		Limits:       &cfg.Limits,
 	})
 	if err != nil {
