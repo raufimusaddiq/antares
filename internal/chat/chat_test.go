@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
@@ -682,11 +684,39 @@ func TestSendValidationAndLimits(t *testing.T) {
 	if n := countReqs(a.hx, "POST", "/v1/runs"); n != 0 {
 		t.Errorf("%d invalid sends reached Hermes", n)
 	}
-	// Cross-origin mutations are refused by the auth layer.
-	w := u.do("POST", "/api/chats/"+chat+"/messages", map[string]string{"Idempotency-Key": nextIdem(), "Origin": "https://evil.example"}, map[string]string{"input": "x"})
-	if w.Code != 403 {
-		t.Errorf("cross-origin send: %d", w.Code)
-	}
+	t.Run("CSRF preserves quotas", func(t *testing.T) {
+		for _, tc := range []struct {
+			name           string
+			runs, messages int
+		}{
+			{"runs", 2, 3}, {"messages", 3, 2},
+		} {
+			t.Run(tc.name, func(t *testing.T) {
+				limits := auth.DefaultLimits()
+				limits.RunsPerMinute, limits.MessagesPerMinute = tc.runs, tc.messages
+				a := newApp(t, appOpts{limits: &limits})
+				victim := a.user("victim")
+				path := "/api/chats/" + victim.newChat() + "/messages"
+				body := map[string]string{"input": "quota probe"}
+				key := nextIdem()
+				before := len(a.hx.requests())
+				w := victim.do("POST", path, map[string]string{"Idempotency-Key": key, "Origin": "https://evil.example"}, body)
+				if w.Code != 403 {
+					t.Fatalf("cross-origin send: %d %s", w.Code, w.Body.String())
+				}
+				if len(a.hx.requests()) != before {
+					t.Fatal("cross-origin send reached Hermes")
+				}
+				for i := 0; i < min(limits.RunsPerMinute, limits.MessagesPerMinute); i++ {
+					w = victim.do("POST", path, map[string]string{"Idempotency-Key": key}, body)
+					if w.Code != 202 {
+						t.Fatalf("quota after cross-origin refusal: send %d got %d %s", i+1, w.Code, w.Body.String())
+					}
+				}
+				requireLimit(t, victim.do("POST", path, map[string]string{"Idempotency-Key": key}, body))
+			})
+		}
+	})
 	// A malformed id is a 404 like an unknown one.
 	for _, id := range []string{"nope", "../x", strings.Repeat("0", 31), strings.ToUpper(strings.Repeat("a", 32))} {
 		if w := u.get("/api/runs/" + id); w.Code != 404 {
@@ -962,4 +992,13 @@ func TestStreamSurvivesOverRealHTTPAndShutdownEndsIt(t *testing.T) {
 	case <-time.After(3 * time.Second):
 		t.Fatal("stream still open after shutdown")
 	}
+}
+
+func TestRateLimitedStatusInvariant(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("RATE_LIMITED with a non-429 status was silently accepted")
+		}
+	}()
+	apiError(httptest.NewRecorder(), http.StatusServiceUnavailable, hermes.CodeRateLimited, "test limit")
 }

@@ -132,7 +132,6 @@ func run() error {
 	defer chats.Close() // after the server drains (serve returns first), before db.Close
 
 	// No WriteTimeout: SSE run streams outlive any fixed write deadline.
-	limits := auth.Limits(cfg.Limits)
 	identity, err := auth.New(auth.Options{
 		DB:           db,
 		Endpoints:    auth.GoogleEndpoints(),
@@ -141,7 +140,7 @@ func run() error {
 		PublicOrigin: cfg.PublicOrigin,
 		Tenants:      tenants,
 		Chat:         chats,
-		Limits:       &limits,
+		Limits:       &cfg.Limits,
 	})
 	if err != nil {
 		return err

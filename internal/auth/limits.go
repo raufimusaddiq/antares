@@ -1,30 +1,17 @@
 package auth
 
 import (
-	"errors"
 	"net/http"
 	"strconv"
 	"sync"
 	"time"
+
+	"github.com/raufimusaddiq/antares/internal/quota"
 )
 
-type Limits struct {
-	RunsPerMinute     int
-	MessagesPerMinute int
-	UploadsPerMinute  int
-	SSEConnections    int
-}
+type Limits = quota.Limits
 
-func DefaultLimits() Limits {
-	return Limits{RunsPerMinute: 30, MessagesPerMinute: 60, UploadsPerMinute: 10, SSEConnections: 4}
-}
-
-func (l Limits) validate() error {
-	if l.RunsPerMinute < 1 || l.MessagesPerMinute < 1 || l.UploadsPerMinute < 1 || l.SSEConnections < 1 {
-		return errors.New("request limits must be positive integers")
-	}
-	return nil
-}
+func DefaultLimits() Limits { return quota.DefaultLimits() }
 
 const maxLimitAccounts = 10000
 

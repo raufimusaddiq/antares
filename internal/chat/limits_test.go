@@ -48,7 +48,7 @@ func TestConfiguredMessageAndRunLimits(t *testing.T) {
 		name           string
 		runs, messages int
 	}{
-		{"runs", 1, 3}, {"messages", 3, 1}, {"changed", 2, 3},
+		{"runs", 1, 3}, {"messages", 3, 1}, {"changed", 2, 3}, {"changed messages", 3, 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			limits := auth.DefaultLimits()

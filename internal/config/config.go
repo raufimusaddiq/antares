@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/raufimusaddiq/antares/internal/hermes"
+	"github.com/raufimusaddiq/antares/internal/quota"
 )
 
 // Secret holds key material. Every way of rendering it is redacted: fmt verbs
@@ -31,12 +32,7 @@ func (Secret) MarshalJSON() ([]byte, error) { return []byte(`"` + redacted + `"`
 func (Secret) MarshalText() ([]byte, error) { return []byte(redacted), nil }
 func (Secret) LogValue() slog.Value         { return slog.StringValue(redacted) }
 
-type Limits struct {
-	RunsPerMinute     int
-	MessagesPerMinute int
-	UploadsPerMinute  int
-	SSEConnections    int
-}
+type Limits = quota.Limits
 
 // Config is the validated configuration.
 type Config struct {
@@ -82,7 +78,7 @@ func Load(getenv func(string) string) (Config, error) {
 		GoogleClientID: getenv("ANTARES_GOOGLE_CLIENT_ID"),
 	}
 	var problems []string
-	c.Limits = Limits{RunsPerMinute: 30, MessagesPerMinute: 60, UploadsPerMinute: 10, SSEConnections: 4}
+	c.Limits = quota.DefaultLimits()
 	for _, limit := range []struct {
 		name string
 		dst  *int

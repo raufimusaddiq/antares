@@ -58,6 +58,9 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 
 func apiError(w http.ResponseWriter, status int, code, msg string) {
 	if code == hermes.CodeRateLimited {
+		if status != http.StatusTooManyRequests {
+			panic("chat: RATE_LIMITED requires HTTP 429")
+		}
 		auth.WriteRateLimited(w, msg, 0)
 		return
 	}
