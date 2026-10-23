@@ -785,3 +785,51 @@ func TestRestoreRefusesKeepOldInsideDataDir(t *testing.T) {
 	}
 	os.RemoveAll(out)
 }
+
+// A session revoked after the backup was taken must not authenticate once the
+// backup is restored (#78): restore drops every session, so all accounts sign in again.
+func TestRestoreDropsSessionsSoRevocationSurvives(t *testing.T) {
+	ctx := context.Background()
+	d, u := setupTwo(t)
+	db := d.DB
+	livePath := dbFile(t, db)
+
+	const hashRevoked, hashLive = "hash-revoked-after-backup", "hash-live-at-backup"
+	for _, h := range []string{hashRevoked, hashLive} {
+		if err := CreateSession(ctx, db, u.a, h, t0, time.Hour); err != nil {
+			t.Fatal(err)
+		}
+	}
+	bak := filepath.Join(t.TempDir(), "antares.bak")
+	if err := Backup(ctx, db, bak); err != nil {
+		t.Fatal(err)
+	}
+	// The revocation happens after the backup.
+	if err := RevokeSession(ctx, db, hashRevoked, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := SessionUser(ctx, db, hashRevoked, t0); err != ErrNoSession {
+		t.Fatalf("precondition: revoked session authenticates before restore: %v", err)
+	}
+	db.Close()
+
+	if err := Restore(ctx, bak, livePath, migrationSet(t), RestoreOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	re, err := Open(livePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer re.Close()
+	for _, h := range []string{hashRevoked, hashLive} {
+		if _, err := SessionUser(ctx, re, h, t0); err != ErrNoSession {
+			t.Errorf("session %q authenticates after restore: %v", h, err)
+		}
+	}
+	if n := countRows(t, re, `SELECT COUNT(*) FROM app_sessions`); n != 0 {
+		t.Errorf("app_sessions = %d after restore, want 0", n)
+	}
+	if n := countRows(t, re, `SELECT COUNT(*) FROM users`); n != 2 {
+		t.Errorf("users = %d, restore must keep accounts", n)
+	}
+}
