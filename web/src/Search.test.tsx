@@ -1,17 +1,18 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { SearchResults, Snippet, type SearchState } from "./Search";
+import { SearchResults, Snippet, searchable, when, type SearchState } from "./Search";
 import { Transcript } from "./Chat";
 import { parseSearch, searchChats, type SearchPage, type Turn } from "./chatApi";
 import { reachOf } from "./history";
 
 const noop = () => {};
-const page = (over: Partial<SearchPage> = {}): SearchPage => ({ results: [], nextCursor: "", index: { complete: true, chats: 2, pending: 0, partial: 0 }, ...over });
+const page = (over: Partial<SearchPage> = {}): SearchPage => ({ results: [], nextCursor: "", index: { complete: true, chats: 2, pending: 0, failed: 0, partial: 0 }, ...over });
 const state = (p: SearchPage | null, over: Partial<SearchState> = {}): SearchState => ({ query: "ünal", page: p, error: "", loading: false, params: null, ...over });
 const render = (s: SearchState) => renderToStaticMarkup(<SearchResults state={s} onOpen={noop} onMore={noop} />);
 
 const hit = {
   chatId: "a".repeat(32),
+  createdAt: "2026-10-20T08:30:00Z",
   chatTitle: "Plan",
   kind: "message",
   turn: 4,
@@ -31,7 +32,7 @@ describe("snippets are text, never markup", () => {
   });
 
   it("renders a result with the chat title, who wrote it and the marked span", () => {
-    const html = render(state(parseSearch({ results: [hit], nextCursor: "", index: { complete: true, chats: 1, pending: 0, partial: 0 } })));
+    const html = render(state(parseSearch({ results: [hit], nextCursor: "", index: { complete: true, chats: 1, pending: 0, failed: 0, partial: 0 } })));
     expect(html).toContain("Plan");
     expect(html).toContain("Assistant");
     expect(html).toContain("<mark>Ünal</mark>");
@@ -46,18 +47,32 @@ describe("search says what it knows", () => {
   });
 
   it("a partial index is never presented as a complete answer", () => {
-    const none = render(state(page({ index: { complete: false, chats: 5, pending: 2, partial: 0 } })));
+    const none = render(state(page({ index: { complete: false, chats: 5, pending: 2, failed: 0, partial: 0 } })));
     expect(none).toContain("No matches yet");
     expect(none).toContain("Still indexing 2 of 5");
-    const some = render(state(page({ results: [{ ...hit, kind: "message" } as never], index: { complete: false, chats: 5, pending: 2, partial: 0 } })));
+    const some = render(state(page({ results: [{ ...hit, kind: "message" } as never], index: { complete: false, chats: 5, pending: 2, failed: 0, partial: 0 } })));
     expect(some).toContain("may be incomplete");
   });
 
   it("a chat cut by the size limit is partly indexed, not still indexing", () => {
-    const html = render(state(page({ index: { complete: false, chats: 4, pending: 0, partial: 1 } })));
+    const html = render(state(page({ index: { complete: false, chats: 4, pending: 0, failed: 0, partial: 1 } })));
     expect(html).toContain("1 of 4 conversations are only partly indexed");
     expect(html).not.toContain("Still indexing");
     expect(html).not.toContain("search again");
+  });
+
+  it("a chat that could not be read is reported as such, not as still indexing", () => {
+    const html = render(state(page({ index: { complete: false, chats: 4, pending: 0, failed: 2, partial: 0 } })));
+    expect(html).toContain("2 of 4 conversations could not be read");
+    expect(html).not.toContain("Still indexing");
+  });
+
+  it("shows when each result was written", () => {
+    const html = render(state(parseSearch({ results: [hit], nextCursor: "", index: { complete: true, chats: 1, pending: 0, failed: 0, partial: 0 } })));
+    expect(html).toContain('<time dateTime="2026-10-20T08:30:00Z">');
+    expect(when("2026-10-20T08:30:00Z")).not.toBe("");
+    expect(when("")).toBe("");
+    expect(when("not a date")).toBe("");
   });
 
   it("an error shows words from the vocabulary, not the server text, and no results", () => {
@@ -74,7 +89,7 @@ describe("search says what it knows", () => {
 });
 
 describe("parseSearch refuses what it cannot place", () => {
-  const ok = { results: [hit], nextCursor: "", index: { complete: true, chats: 1, pending: 0, partial: 0 } };
+  const ok = { results: [hit], nextCursor: "", index: { complete: true, chats: 1, pending: 0, failed: 0, partial: 0 } };
   it("accepts a well-formed page and keeps the turn anchor", () => {
     expect(parseSearch(ok)?.results[0]).toMatchObject({ chatId: "a".repeat(32), turn: 4, kind: "message" });
   });
@@ -119,5 +134,13 @@ describe("opening a result at its turn", () => {
     expect(html.match(/data-found="true"/g)?.length).toBe(1);
     expect(html).toContain('aria-current="location"');
     expect(renderToStaticMarkup(<Transcript {...props} turns={turns} />)).not.toContain("data-found");
+  });
+});
+
+describe("the client refuses what the server refuses", () => {
+  it("one-letter words, except in scripts where a character is a word", () => {
+    for (const q of ["a b", "x", "kopi s", "", "  ", "a b c d e f g"]) expect(searchable(q), q).toBe(false);
+    for (const q of ["ab", "kopi susu", "猫", "猫 犬", "ありがとう"]) expect(searchable(q), q).toBe(true);
+    expect(renderToStaticMarkup(<SearchResults state={{ query: "a b", page: null, error: "", loading: false, params: null, tooShort: true }} onOpen={noop} onMore={noop} />)).toContain("at least 2 letters");
   });
 });

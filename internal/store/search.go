@@ -13,7 +13,10 @@ import (
 // Limits that keep the derived index bounded (PRD §21.3).
 const (
 	MaxIndexedText     = 4000   // runes kept per turn
-	MaxIndexedUserDocs = 100000 // per user, across all chats
+	MaxIndexedUserDocs = 100000 // turns per user, across all chats
+	// MaxIndexedUserRunes bounds what one search scans (instr over every folded body). Measured in
+	// TestMeasureSearchAtQuota; the figures are in docs/runbooks/search.md.
+	MaxIndexedUserRunes = 25_000_000
 )
 
 // Search roles. RoleTitle is the chat title, indexed as turn -1.
@@ -87,14 +90,19 @@ func ReplaceChatIndex(ctx context.Context, db *sql.DB, userID, chatID string, do
 		return false, err
 	}
 	var others int
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM search_docs WHERE user_id = ? AND chat_id <> ?`, userID, chatID).Scan(&others); err != nil {
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM search_docs WHERE user_id = ? AND chat_id <> ? AND seq >= 0`, userID, chatID).Scan(&others); err != nil {
 		return false, err
 	}
 	if _, err := tx.ExecContext(ctx, `DELETE FROM search_docs WHERE chat_id = ? AND user_id = ? AND seq >= 0`, chatID, userID); err != nil {
 		return false, err
 	}
 	truncated := false
-	room := MaxIndexedUserDocs - others
+	var usedRunes int
+	if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(runes), 0) FROM search_state WHERE user_id = ? AND chat_id <> ?`, userID, chatID).Scan(&usedRunes); err != nil {
+		return false, err
+	}
+	room := MaxIndexedUserDocs - others // quota counts turns, not title rows
+	runes := 0
 	for _, d := range docs {
 		if (d.Role != "user" && d.Role != "assistant") || d.Seq < 0 || strings.TrimSpace(d.Text) == "" {
 			continue
@@ -105,6 +113,12 @@ func ReplaceChatIndex(ctx context.Context, db *sql.DB, userID, chatID string, do
 		}
 		text, cut := clip(d.Text)
 		truncated = truncated || cut
+		n := utf8.RuneCountInString(text)
+		if usedRunes+runes+n > MaxIndexedUserRunes {
+			truncated = true
+			break
+		}
+		runes += n
 		if _, err := tx.ExecContext(ctx, `INSERT INTO search_docs (user_id, chat_id, seq, role, body, folded, created_at) VALUES (?,?,?,?,?,?,?)`,
 			userID, chatID, d.Seq, d.Role, text, Fold(text), nullIfEmpty(d.CreatedAt)); err != nil {
 			return false, err
@@ -114,9 +128,9 @@ func ReplaceChatIndex(ctx context.Context, db *sql.DB, userID, chatID string, do
 	if err := setTitleDoc(ctx, tx, userID, chatID, title.String); err != nil {
 		return false, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO search_state (chat_id, user_id, indexed_at, invalidated_at, truncated) VALUES (?,?,?,?,?)
-		ON CONFLICT(chat_id) DO UPDATE SET indexed_at = excluded.indexed_at, truncated = excluded.truncated`,
-		chatID, userID, at, inval, boolInt(truncated)); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO search_state (chat_id, user_id, indexed_at, invalidated_at, truncated, runes) VALUES (?,?,?,?,?,?)
+		ON CONFLICT(chat_id) DO UPDATE SET indexed_at = excluded.indexed_at, truncated = excluded.truncated, failed_at = '', runes = excluded.runes`,
+		chatID, userID, at, inval, boolInt(truncated), runes); err != nil {
 		return false, err
 	}
 	return true, tx.Commit()
@@ -155,11 +169,17 @@ func PurgeChatIndex(ctx context.Context, db *sql.DB, userID, chatID string) erro
 }
 
 // StaleChats returns up to limit of the user's ACTIVE chats whose index is
-// missing or stale, most recently active first.
-func StaleChats(ctx context.Context, db *sql.DB, userID, onlyChat string, limit int) ([]Chat, error) {
+// missing or stale, most recently active first. A chat whose last read failed
+// is skipped until retryBefore has passed; the zero time disables the skip.
+func StaleChats(ctx context.Context, db *sql.DB, userID, onlyChat string, limit int, retryBefore time.Time) ([]Chat, error) {
+	rb := ""
+	if !retryBefore.IsZero() {
+		rb = ts(retryBefore)
+	}
 	q := `SELECT ` + chatCols + ` FROM chats c LEFT JOIN search_state s ON s.chat_id = c.id AND s.user_id = c.user_id
-		WHERE c.user_id = ? AND c.status = 'ACTIVE' AND (s.chat_id IS NULL OR s.indexed_at < s.invalidated_at OR s.indexed_at = '')`
-	args := []any{userID}
+		WHERE c.user_id = ? AND c.status = 'ACTIVE' AND (s.chat_id IS NULL OR s.indexed_at < s.invalidated_at OR s.indexed_at = '')
+		AND (? = '' OR s.chat_id IS NULL OR s.failed_at = '' OR s.failed_at < ?)`
+	args := []any{userID, rb, rb}
 	if onlyChat != "" {
 		q += ` AND c.id = ?`
 		args = append(args, onlyChat)
@@ -182,13 +202,24 @@ func StaleChats(ctx context.Context, db *sql.DB, userID, onlyChat string, limit 
 	return out, rows.Err()
 }
 
-// IndexStatus counts the user's ACTIVE chats (in scope: one chat or all), how many
-// are pending (not yet indexed, or stale: a later search will fix that) and how
-// many are partial (cut short by a size or quota limit: nothing will fix that).
-func IndexStatus(ctx context.Context, db *sql.DB, userID, onlyChat string) (total, pending, partial int, err error) {
+// MarkIndexFailed records that the user's chat could not be read for indexing.
+func MarkIndexFailed(ctx context.Context, db *sql.DB, userID, chatID string, now time.Time) error {
+	_, err := db.ExecContext(ctx, `INSERT INTO search_state (chat_id, user_id, indexed_at, invalidated_at, failed_at)
+		SELECT id, user_id, '', '', ? FROM chats WHERE id = ? AND user_id = ?
+		ON CONFLICT(chat_id) DO UPDATE SET failed_at = excluded.failed_at`, ts(now), chatID, userID)
+	return err
+}
+
+// IndexStatus counts the user's ACTIVE chats (in scope: one chat or all) and, of
+// them, how many are pending (not indexed or stale; a later search will read
+// them), failed (stale and the last read failed: retried after a backoff) and
+// partial (cut short by a size or quota limit: waiting never fixes that).
+func IndexStatus(ctx context.Context, db *sql.DB, userID, onlyChat string) (total, pending, failed, partial int, err error) {
+	const stale = `(s.chat_id IS NULL OR s.indexed_at = '' OR s.indexed_at < s.invalidated_at)`
 	q := `SELECT COUNT(*),
-		COALESCE(SUM(CASE WHEN s.chat_id IS NULL OR s.indexed_at = '' OR s.indexed_at < s.invalidated_at THEN 1 ELSE 0 END), 0),
-		COALESCE(SUM(CASE WHEN s.chat_id IS NOT NULL AND s.indexed_at <> '' AND s.indexed_at >= s.invalidated_at AND s.truncated = 1 THEN 1 ELSE 0 END), 0)
+		COALESCE(SUM(CASE WHEN ` + stale + ` AND COALESCE(s.failed_at,'') = '' THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN ` + stale + ` AND COALESCE(s.failed_at,'') <> '' THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN NOT ` + stale + ` AND s.truncated = 1 THEN 1 ELSE 0 END), 0)
 		FROM chats c LEFT JOIN search_state s ON s.chat_id = c.id AND s.user_id = c.user_id
 		WHERE c.user_id = ? AND c.status = 'ACTIVE'`
 	args := []any{userID}
@@ -196,7 +227,7 @@ func IndexStatus(ctx context.Context, db *sql.DB, userID, onlyChat string) (tota
 		q += ` AND c.id = ?`
 		args = append(args, onlyChat)
 	}
-	err = db.QueryRowContext(ctx, q, args...).Scan(&total, &pending, &partial)
+	err = db.QueryRowContext(ctx, q, args...).Scan(&total, &pending, &failed, &partial)
 	return
 }
 

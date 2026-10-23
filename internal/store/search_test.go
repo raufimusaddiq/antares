@@ -71,7 +71,7 @@ func TestIndexWritesAreOwnerScoped(t *testing.T) {
 	if hits, _, _ := SearchChats(ctx, d.DB, SearchQuery{UserID: u.a, Terms: terms("keep me"), Limit: 5}); len(hits) != 1 {
 		t.Errorf("A's index was changed by B: %+v", hits)
 	}
-	if tot, pen, par, _ := IndexStatus(ctx, d.DB, u.a, ""); tot != 1 || pen != 0 || par != 0 {
+	if tot, pen, _, par, _ := IndexStatus(ctx, d.DB, u.a, ""); tot != 1 || pen != 0 || par != 0 {
 		t.Errorf("A's status after B's invalidate: %d/%d/%d", tot, pen, par)
 	}
 	// The database itself refuses a doc whose owner differs from its chat's.
@@ -175,22 +175,22 @@ func TestSearchTitleFiltersAndKeysetPaging(t *testing.T) {
 func TestReindexReplacesAndStaleness(t *testing.T) {
 	d, u := setupTwo(t)
 	ctx := context.Background()
-	if st, err := StaleChats(ctx, d.DB, u.a, "", 10); err != nil || len(st) != 1 {
+	if st, err := StaleChats(ctx, d.DB, u.a, "", 10, time.Time{}); err != nil || len(st) != 1 {
 		t.Fatalf("unindexed chat is stale: %v %v", st, err)
 	}
 	mustIndex(t, d, u.a, u.chatA.ID, []IndexDoc{{Seq: 0, Role: "user", Text: "old text"}})
-	if st, _ := StaleChats(ctx, d.DB, u.a, "", 10); len(st) != 0 {
+	if st, _ := StaleChats(ctx, d.DB, u.a, "", 10, time.Time{}); len(st) != 0 {
 		t.Fatalf("fresh chat listed stale: %v", st)
 	}
 	// A turn arrives after the index was read: stale again, and an older read cannot undo that.
 	_ = InvalidateChatIndex(ctx, d.DB, u.a, u.chatA.ID, t0.Add(time.Minute))
-	if st, _ := StaleChats(ctx, d.DB, u.a, "", 10); len(st) != 1 {
+	if st, _ := StaleChats(ctx, d.DB, u.a, "", 10, time.Time{}); len(st) != 1 {
 		t.Fatal("invalidated chat not stale")
 	}
 	if _, err := ReplaceChatIndex(ctx, d.DB, u.a, u.chatA.ID, nil, t0.Add(time.Second)); err != nil {
 		t.Fatal(err)
 	}
-	if st, _ := StaleChats(ctx, d.DB, u.a, "", 10); len(st) != 1 {
+	if st, _ := StaleChats(ctx, d.DB, u.a, "", 10, time.Time{}); len(st) != 1 {
 		t.Fatal("a read that began before the invalidation made the chat fresh")
 	}
 	if ok, _ := ReplaceChatIndex(ctx, d.DB, u.a, u.chatA.ID, []IndexDoc{{Seq: 0, Role: "user", Text: "new text"}}, t0.Add(2*time.Minute)); !ok {
@@ -220,7 +220,7 @@ func TestLongTextIsClippedAndMarkedIncomplete(t *testing.T) {
 	if hits, _, _ := SearchChats(context.Background(), d.DB, SearchQuery{UserID: u.a, Terms: terms("tailword"), Limit: 5}); len(hits) != 0 {
 		t.Error("text beyond the cap is indexed")
 	}
-	if _, pen, par, _ := IndexStatus(context.Background(), d.DB, u.a, ""); pen != 0 || par != 1 {
+	if _, pen, _, par, _ := IndexStatus(context.Background(), d.DB, u.a, ""); pen != 0 || par != 1 {
 		t.Errorf("a clipped chat is partial, not pending: pending=%d partial=%d", pen, par)
 	}
 }
@@ -300,5 +300,82 @@ func TestSearchPagingSurvivesARunStartingMidPagination(t *testing.T) {
 	}
 	if len(got) != 2 || got[0] != ids[1] || got[1] != ids[0] {
 		t.Errorf("pages after the bump = %v, want [%s %s]: a chat was skipped or repeated", got, ids[1], ids[0])
+	}
+}
+
+func TestTitleRowsDoNotCountAgainstTheQuota(t *testing.T) {
+	d, u := setupTwo(t)
+	ctx := context.Background()
+	// Fill A's other chats to one turn short of the quota, counting only turns.
+	if _, err := d.DB.Exec(`INSERT INTO search_docs (user_id, chat_id, seq, role, body, folded)
+		WITH RECURSIVE n(i) AS (SELECT 0 UNION ALL SELECT i+1 FROM n WHERE i < ?) SELECT ?, ?, i, 'user', 'x', 'x' FROM n`, MaxIndexedUserDocs-2, u.a, u.chatA.ID); err != nil {
+		t.Fatal(err)
+	}
+	c2, err := CreateChat(ctx, d.DB, u.a, u.bindA, "sess-quota", "has a title", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// 99999 turns elsewhere + this chat's title row. Two turns fit only if the title is not counted.
+	mustIndex(t, d, u.a, c2.ID, []IndexDoc{{Seq: 0, Role: "user", Text: "one"}})
+	if _, _, _, par, _ := IndexStatus(ctx, d.DB, u.a, c2.ID); par != 0 {
+		t.Errorf("a title row consumed quota: chat is partial")
+	}
+}
+
+func TestFailedReadsBackOffAndAreReportedSeparately(t *testing.T) {
+	d, u := setupTwo(t)
+	ctx := context.Background()
+	if err := MarkIndexFailed(ctx, d.DB, u.b, u.chatA.ID, t0); err != nil { // not B's chat: no effect
+		t.Fatal(err)
+	}
+	if _, pen, fail, _, _ := IndexStatus(ctx, d.DB, u.a, ""); pen != 1 || fail != 0 {
+		t.Fatalf("B marked A's chat: pending=%d failed=%d", pen, fail)
+	}
+	if err := MarkIndexFailed(ctx, d.DB, u.a, u.chatA.ID, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, pen, fail, _, _ := IndexStatus(ctx, d.DB, u.a, ""); pen != 0 || fail != 1 {
+		t.Errorf("pending=%d failed=%d", pen, fail)
+	}
+	before, after := t0.Add(-time.Minute), t0.Add(time.Minute)
+	if st, _ := StaleChats(ctx, d.DB, u.a, "", 3, before); len(st) != 0 {
+		t.Errorf("a failed chat inside its backoff was offered again: %v", st)
+	}
+	if st, _ := StaleChats(ctx, d.DB, u.a, "", 3, after); len(st) != 1 {
+		t.Errorf("a failed chat past its backoff was not retried")
+	}
+	mustIndex(t, d, u.a, u.chatA.ID, nil)
+	if _, pen, fail, _, _ := IndexStatus(ctx, d.DB, u.a, ""); pen != 0 || fail != 0 {
+		t.Errorf("a successful index must clear the failure: %d %d", pen, fail)
+	}
+}
+
+// One search scans every folded body of one user, so the user's total is bounded in runes.
+func TestRuneBudgetCutsAChatShortAndSaysSo(t *testing.T) {
+	d, u := setupTwo(t)
+	ctx := context.Background()
+	c2, err := CreateChat(ctx, d.DB, u.a, u.bindA, "sess-budget", "", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Another chat of A's already holds all but 10 runes of the budget.
+	if _, err := d.DB.Exec(`INSERT INTO search_state (chat_id, user_id, indexed_at, invalidated_at, runes) VALUES (?,?,?,?,?)`,
+		u.chatA.ID, u.a, ts(t0), "", MaxIndexedUserRunes-10); err != nil {
+		t.Fatal(err)
+	}
+	mustIndex(t, d, u.a, c2.ID, []IndexDoc{{Seq: 0, Role: "user", Text: "abcdefgh"}, {Seq: 1, Role: "user", Text: "ijklmnop"}})
+	if hits, _, _ := SearchChats(ctx, d.DB, SearchQuery{UserID: u.a, Terms: terms("abcdefgh"), Limit: 5}); len(hits) != 1 {
+		t.Errorf("the turn that fits is missing: %+v", hits)
+	}
+	if hits, _, _ := SearchChats(ctx, d.DB, SearchQuery{UserID: u.a, Terms: terms("ijklmnop"), Limit: 5}); len(hits) != 0 {
+		t.Errorf("a turn over the budget was indexed")
+	}
+	if _, _, _, par, _ := IndexStatus(ctx, d.DB, u.a, c2.ID); par != 1 {
+		t.Errorf("the cut chat must be reported partial: %d", par)
+	}
+	// B's budget is B's own.
+	mustIndex(t, d, u.b, u.chatB.ID, []IndexDoc{{Seq: 0, Role: "user", Text: "abcdefgh"}, {Seq: 1, Role: "user", Text: "ijklmnop"}})
+	if _, _, _, par, _ := IndexStatus(ctx, d.DB, u.b, ""); par != 0 {
+		t.Errorf("A's usage cut B's chat")
 	}
 }

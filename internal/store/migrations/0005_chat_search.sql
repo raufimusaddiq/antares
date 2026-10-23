@@ -34,5 +34,6 @@ CREATE TABLE search_state (
 );
 CREATE INDEX search_state_user ON search_state (user_id);
 
--- SearchChats orders by (updated_at DESC, id DESC) within one user's ACTIVE chats.
+-- (0006 replaces the chats ordering index this migration first created: SearchChats pages by
+-- (created_at, id), see chats_user_status_created.)
 CREATE INDEX chats_user_status_updated ON chats (user_id, status, updated_at DESC, id DESC);

@@ -36,6 +36,7 @@ const CODES = [
   "INVALID_REQUEST",
   "FORBIDDEN",
   "HISTORY_CHANGED",
+  "SEARCH_TIMEOUT",
 ] as const;
 
 /** Words shown for a code. The server's own message is never displayed. */
@@ -64,6 +65,8 @@ export function describeCode(code: string): string {
       return "That message could not be sent.";
     case "HISTORY_CHANGED":
       return "This conversation changed while you were reading it.";
+    case "SEARCH_TIMEOUT":
+      return "The search took too long. Try more specific words.";
     case "NETWORK":
       return "Could not reach Antares. Check your connection.";
     default:
@@ -206,6 +209,8 @@ export interface SearchResult {
   /** The turn's seq for a message hit (the anchor); null for a title hit. */
   turn: number | null;
   role: "title" | "user" | "assistant";
+  /** The turn's timestamp (a title hit: when the chat was created); empty when the turn has no timestamp. */
+  createdAt: string;
   snippet: Segment[];
 }
 
@@ -213,7 +218,7 @@ export interface SearchPage {
   results: SearchResult[];
   nextCursor: string;
   /** How much of the account is searchable; incomplete means results may be missing. */
-  index: { complete: boolean; chats: number; pending: number; partial: number };
+  index: { complete: boolean; chats: number; pending: number; failed: number; partial: number };
 }
 
 export function parseSearch(v: unknown): SearchPage | null {
@@ -238,10 +243,10 @@ export function parseSearch(v: unknown): SearchPage | null {
       if (!so || typeof so.text !== "string") return null;
       snippet.push({ text: so.text, hit: so.hit === true });
     }
-    results.push({ chatId: str(ro.chatId), chatTitle: str(ro.chatTitle), kind: ro.kind, turn, role: ro.role, snippet });
+    results.push({ chatId: str(ro.chatId), chatTitle: str(ro.chatTitle), kind: ro.kind, turn, role: ro.role, createdAt: str(ro.createdAt), snippet });
   }
   const num = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? n : 0);
-  return { results, nextCursor: str(o.nextCursor), index: { complete: ix.complete, chats: num(ix.chats), pending: num(ix.pending), partial: num(ix.partial) } };
+  return { results, nextCursor: str(o.nextCursor), index: { complete: ix.complete, chats: num(ix.chats), pending: num(ix.pending), failed: num(ix.failed), partial: num(ix.partial) } };
 }
 
 export interface SearchOptions {

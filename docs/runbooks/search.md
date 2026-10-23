@@ -23,6 +23,32 @@ transcript. It is the scoped exception to the no-transcript-copy default, not a 
 - The search runs behind the same default-deny gate as history. A tenant that is not READY gets
   `TENANT_NOT_READY`, not stale local hits.
 
+## Deviation from the PRD: no FTS5, and what that costs (measured)
+
+PRD §21.3 names SQLite FTS5 for option B. This index is a plain table searched with `instr(folded, term)`:
+it keeps substring matching (`Ünal` inside a longer word, any script, no tokenizer) and one fold function
+for index, query and highlight. The price is that **every search scans the user's whole index** (a miss reads
+every row; a hit stops after `limit` rows). It is therefore bounded by a per-user budget, not by an index:
+`MaxIndexedUserDocs` = 100,000 turns and `MaxIndexedUserRunes` = 25,000,000 runes (`search_state.runes`),
+whichever comes first; a chat cut by either is `truncated` and reported as "partly indexed". A search that
+runs past 10 s is cancelled (`SEARCH_TIMEOUT`).
+
+Measured with `ANTARES_SEARCH_MEASURE=1 go test ./internal/store -run TestMeasureSearchAtQuota -v` (2 vCPU
+host, random text, warm cache, best of 3, `limit` 20, one search of one user, nothing else running):
+
+| index (docs × runes/doc) | miss (full scan) | rare hit | two terms, miss |
+|---|---|---|---|
+| 100,000 × 250 (turn cap, inside rune budget) | 120 ms | 23 ms | 112 ms |
+| 6,200 × 4,000 (rune budget, longest turns) | 208 ms | 62 ms | 474 ms |
+| 100,000 × 500 (50M runes, over today's budget) | 772 ms | 237 ms | 1.24 s |
+| 100,000 × 4,000 (400M runes, the old limits) | 1.73 s | 507 ms | 2.73 s |
+
+The last two rows are what the turn cap alone allowed before the rune budget; they are kept to show why the
+budget exists. A run of the same test while other builds were running on the host gave 3–10 s for those rows,
+so a loaded host is slower than this table. If real accounts outgrow the budget, move to FTS5 with the
+`trigram` tokenizer over the already-folded text (keeps substring matching; terms under 3 characters still
+scan) rather than raising the budget.
+
 ## Matching
 
 `store.Fold` (Unicode simple lower-casing, rune for rune) folds the stored text at index time and the query
@@ -35,8 +61,8 @@ text nodes and `<mark>`, so message content is never parsed as markup.
 
 - A search reads at most 3 stale chats from Hermes (1 for a scoped search); opening a chat indexes it from
   the transcript already fetched; a run ending in a chat invalidates it. Later pages read nothing.
-- Per turn 4000 runes, per user 100000 turns. A clipped chat is `truncated` and counts as incomplete.
-- The response says `index: {complete, chats, pending, partial}`. `pending` (not indexed yet) is "Still indexing N of M"; `partial` (cut by a limit, never fixed by waiting) is "only partly indexed". Neither is called
+- Per turn 4000 runes, per user 100000 turns and 25M runes (see the measurement above). A clipped chat is `truncated` and counts as incomplete.
+- The response says `index: {complete, chats, pending, failed, partial}`. `pending` (not indexed yet) is "Still indexing N of M"; `failed` (transcript unreadable; retried no sooner than every 5 minutes, so a few bad chats cannot use up every search's read budget); `partial` (cut by a limit, never fixed by waiting) is "only partly indexed". Neither is called
   a partial index complete.
 - Order is recency of creation (chat created_at, then newest turn); the key is immutable so a run starting mid-pagination cannot move a chat across a cursor. No relevance score exists. The plan sorts only the
   turns inside one chat (`TestSearchPlanUsesOwnerIndexWithoutSorting`).

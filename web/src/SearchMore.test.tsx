@@ -10,9 +10,9 @@ afterEach(() => {
 
 const body = (cursor: string) =>
   JSON.stringify({
-    results: [{ chatId: "a".repeat(32), chatTitle: "T", kind: "message", turn: 1, role: "user", snippet: [{ text: "x", hit: true }] }],
+    results: [{ chatId: "a".repeat(32), chatTitle: "T", kind: "message", turn: 1, role: "user", createdAt: "", snippet: [{ text: "x", hit: true }] }],
     nextCursor: cursor,
-    index: { complete: true, chats: 1, pending: 0, partial: 0 },
+    index: { complete: true, chats: 1, pending: 0, failed: 0, partial: 0 },
   });
 
 describe("More results belongs to the query that produced it", () => {

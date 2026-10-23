@@ -4,6 +4,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/raufimusaddiq/antares/internal/store"
 )
@@ -15,6 +16,7 @@ type searchResp struct {
 		Kind      string    `json:"kind"`
 		Turn      *int      `json:"turn"`
 		Role      string    `json:"role"`
+		CreatedAt string    `json:"createdAt"`
 		Snippet   []Segment `json:"snippet"`
 	} `json:"results"`
 	NextCursor string `json:"nextCursor"`
@@ -22,6 +24,7 @@ type searchResp struct {
 		Complete bool `json:"complete"`
 		Chats    int  `json:"chats"`
 		Pending  int  `json:"pending"`
+		Failed   int  `json:"failed"`
 	} `json:"index"`
 }
 
@@ -108,12 +111,9 @@ func TestSearchIsOwnerScopedEndToEnd(t *testing.T) {
 	if r := doSearch(t, alice, "/api/search/chats?q=secretlaunch&cursor="+url.QueryEscape(rb.NextCursor), 200); len(r.Results) != 0 {
 		t.Errorf("bob's cursor revealed something to alice: %+v", r.Results)
 	}
-	if r := doSearch(t, alice, "/api/search/chats?q=launch&cursor="+url.QueryEscape(rb.NextCursor), 200); len(r.Results) != 0 {
-		for _, x := range r.Results {
-			if x.ChatID != ca {
-				t.Errorf("foreign chat through a cursor: %+v", x)
-			}
-		}
+	// ...and it is not a position under any other query.
+	if w := alice.get("/api/search/chats?q=launch&cursor=" + url.QueryEscape(rb.NextCursor)); w.Code != 400 {
+		t.Errorf("bob's cursor under another query: %d", w.Code)
 	}
 }
 
@@ -277,5 +277,146 @@ func TestSearchSeesTurnsAddedByLaterRuns(t *testing.T) {
 	_ = store.InvalidateChatIndex(t.Context(), a.db, u.id, chat, a.svc.now())
 	if r := doSearch(t, u, "/api/search/chats?q=question", 200); len(r.Results) != 0 {
 		t.Errorf("removed turns are still searchable: %+v", r.Results)
+	}
+}
+
+func transcriptReads(a *app) int {
+	n := 0
+	for _, r := range a.hx.requests() {
+		if r.Method == "GET" && strings.Contains(r.Path, "/api/sessions/") && strings.Contains(r.Path, "/messages") {
+			n++
+		}
+	}
+	return n
+}
+
+// Opening a chat indexes it from the transcript that read already fetched: the following search
+// finds the text without a second transcript read.
+func TestOpeningAChatIndexesItAndSearchReadsNothingMore(t *testing.T) {
+	a := newApp(t)
+	u := a.user("alice")
+	chat := u.newChat()
+	a.setTranscript(t, u, chat, [2]string{"user", "tentang rencana peluncuran"}, [2]string{"assistant", "jadwal peluncuran disetujui"})
+	if n := transcriptReads(a); n != 0 {
+		t.Fatalf("setup read the transcript %d times", n)
+	}
+	if w := u.get("/api/chats/" + chat + "/messages"); w.Code != 200 {
+		t.Fatal(w.Code, w.Body.String())
+	}
+	if n := transcriptReads(a); n != 1 {
+		t.Fatalf("opening read the transcript %d times", n)
+	}
+	r := doSearch(t, u, "/api/search/chats?q=peluncuran", 200)
+	if len(r.Results) != 2 || !r.Index.Complete || r.Index.Pending != 0 {
+		t.Fatalf("hits after opening: %+v", r)
+	}
+	if n := transcriptReads(a); n != 1 {
+		t.Errorf("search re-read an index that opening had just filled: %d reads", n)
+	}
+	// Opening again, with the index fresh, writes nothing and reads once more only for the page itself.
+	u.get("/api/chats/" + chat + "/messages")
+	if n := transcriptReads(a); n != 2 {
+		t.Errorf("second open: %d reads", n)
+	}
+	// Another user opening their own chat does not index A's.
+	b := a.user("bob")
+	cb := b.newChat()
+	a.setTranscript(t, b, cb, [2]string{"user", "peluncuran rahasia"})
+	b.get("/api/chats/" + cb + "/messages")
+	if r := doSearch(t, u, "/api/search/chats?q=rahasia", 200); len(r.Results) != 0 {
+		t.Errorf("%+v", r.Results)
+	}
+}
+
+func TestSearchCursorBelongsToItsQuery(t *testing.T) {
+	a := newApp(t)
+	u := a.user("alice")
+	chat := u.newChat()
+	a.setTranscript(t, u, chat, [2]string{"user", "kopi hitam"}, [2]string{"assistant", "kopi susu"}, [2]string{"user", "teh manis"}, [2]string{"assistant", "teh tawar"})
+	first := doSearch(t, u, "/api/search/chats?q=kopi&limit=1", 200)
+	if first.NextCursor == "" {
+		t.Fatal("no cursor")
+	}
+	c := url.QueryEscape(first.NextCursor)
+	if r := doSearch(t, u, "/api/search/chats?q=kopi&limit=1&cursor="+c, 200); len(r.Results) != 1 {
+		t.Errorf("same query: %+v", r.Results)
+	}
+	for _, other := range []string{"q=teh&limit=1&cursor=" + c, "q=kopi&role=user&limit=1&cursor=" + c, "q=kopi&chatId=" + chat + "&limit=1&cursor=" + c} {
+		if w := u.get("/api/search/chats?" + other); w.Code != 400 || errCode(t, w) != "INVALID_REQUEST" {
+			t.Errorf("%s: %d %s", other, w.Code, w.Body.String())
+		}
+	}
+	if w := u.get("/api/chats/" + chat + "/search?q=kopi&cursor=" + c); w.Code != 400 {
+		t.Errorf("a global cursor under the per-chat route: %d", w.Code)
+	}
+}
+
+func TestSearchRefusesOneLetterWordsExceptInDenseScripts(t *testing.T) {
+	for _, q := range []string{"a b", "x y", "ab c", "kopi s"} {
+		if _, ok := parseSearchTerms(q); ok {
+			t.Errorf("%q accepted", q)
+		}
+	}
+	for _, q := range []string{"ab", "kopi susu", "猫", "猫 犬", "ありがとう"} {
+		if _, ok := parseSearchTerms(q); !ok {
+			t.Errorf("%q refused", q)
+		}
+	}
+	if _, ok := parseSearchTerms("a"); ok {
+		t.Error("a single letter accepted")
+	}
+}
+
+func TestSearchResultsCarryATimestamp(t *testing.T) {
+	a := newApp(t)
+	u := a.user("alice")
+	chat := u.newChat()
+	a.hx.mu.Lock()
+	a.hx.msgs[decodeSession(t, a, u, chat)] = []map[string]any{{"role": "user", "content": "kopi", "created_at": "2026-10-20T08:30:00Z"}}
+	a.hx.mu.Unlock()
+	r := doSearch(t, u, "/api/search/chats?q=kopi", 200)
+	if len(r.Results) != 1 || r.Results[0].CreatedAt != "2026-10-20T08:30:00Z" {
+		t.Errorf("message hit: %+v", r.Results)
+	}
+	w := u.do("POST", "/api/chats", nil, map[string]string{"title": "Judul kopi"})
+	if w.Code != 201 {
+		t.Fatal(w.Code)
+	}
+	r = doSearch(t, u, "/api/search/chats?q=judul&role=title", 200)
+	if len(r.Results) != 1 || r.Results[0].CreatedAt == "" {
+		t.Errorf("title hit has no timestamp: %+v", r.Results)
+	}
+}
+
+// A chat whose transcript cannot be read is not retried by every later search, so it cannot use up
+// the read budget; it is reported as failed, not as still indexing.
+func TestSearchBacksOffAChatItCannotRead(t *testing.T) {
+	a := newApp(t)
+	u := a.user("alice")
+	chat := u.newChat()
+	a.setTranscript(t, u, chat, [2]string{"user", "kopi"})
+	a.hx.mu.Lock()
+	a.hx.keys[u.profile] = "a-different-key-than-the-bound-one" // Hermes now refuses this profile
+	a.hx.mu.Unlock()
+	r := doSearch(t, u, "/api/search/chats?q=kopi", 200)
+	if r.Index.Complete || r.Index.Failed != 1 || r.Index.Pending != 0 {
+		t.Fatalf("%+v", r.Index)
+	}
+	reads := transcriptReads(a)
+	if reads == 0 {
+		t.Fatal("expected a first attempt")
+	}
+	doSearch(t, u, "/api/search/chats?q=kopi", 200)
+	if got := transcriptReads(a); got != reads {
+		t.Errorf("a failed chat was retried by the next search: %d -> %d reads", reads, got)
+	}
+	// After the backoff it is tried again and, once Hermes answers, indexed.
+	a.svc.now = func() time.Time { return time.Now().Add(indexRetryAfter + time.Minute) }
+	a.hx.mu.Lock()
+	a.hx.keys[u.profile] = u.key
+	a.hx.mu.Unlock()
+	r = doSearch(t, u, "/api/search/chats?q=kopi", 200)
+	if !r.Index.Complete || len(r.Results) != 1 {
+		t.Errorf("after the backoff: %+v", r)
 	}
 }

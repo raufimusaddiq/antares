@@ -13,6 +13,19 @@ export function Snippet({ segments }: { segments: readonly Segment[] }) {
   );
 }
 
+/** The same rule the server enforces: every word has 2+ letters (1 is enough in Han, Hiragana, Katakana, Hangul), at most 6 words. */
+export function searchable(q: string): boolean {
+  const words = q.split(/\s+/).filter(Boolean);
+  if (words.length === 0 || words.length > 6) return false;
+  return words.every((w) => [...w].length >= 2 || /^[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]$/u.test(w));
+}
+
+/** A timestamp as a short local date, or "" when it is not a date at all. */
+export function when(iso: string): string {
+  const d = new Date(iso);
+  return iso === "" || Number.isNaN(d.getTime()) ? "" : d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
 const who = (r: SearchResult) => (r.kind === "title" ? "Title" : r.role === "user" ? "You" : "Assistant");
 
 export interface SearchState {
@@ -21,6 +34,8 @@ export interface SearchState {
   /** An error code from the API vocabulary; the words come from describeCode. */
   error: string;
   loading: boolean;
+  /** The box holds words the server would refuse (too short): nothing was sent. */
+  tooShort?: boolean;
   /** The request that produced `page`: "More results" repeats this, never what the box says now. */
   params: { q: string; chatId?: string; role?: "user" | "assistant" } | null;
 }
@@ -35,8 +50,15 @@ export function SearchResults({ state, onOpen, onMore }: { state: SearchState; o
       </p>
     );
   }
+  if (state.tooShort) {
+    return (
+      <p className="label" role="status">
+        Each search word needs at least 2 letters.
+      </p>
+    );
+  }
   if (!page) return loading ? <p className="label">Searching…</p> : null;
-  const { pending, partial, chats } = page.index;
+  const { pending, partial, failed, chats } = page.index;
   const incomplete = !page.index.complete;
   return (
     <div className="search-results">
@@ -50,7 +72,15 @@ export function SearchResults({ state, onOpen, onMore }: { state: SearchState; o
             <li key={`${r.chatId}-${r.turn ?? "title"}-${i}`}>
               <button type="button" className="hit" onClick={() => onOpen(r)}>
                 <span className="hit-chat">{r.chatTitle || "New chat"}</span>
-                <span className="hit-who">{who(r)}</span>
+                <span className="hit-who">
+                  {who(r)}
+                  {when(r.createdAt) && (
+                    <>
+                      {" · "}
+                      <time dateTime={r.createdAt}>{when(r.createdAt)}</time>
+                    </>
+                  )}
+                </span>
                 <span className="hit-text">
                   <Snippet segments={r.snippet} />
                 </span>
@@ -62,6 +92,11 @@ export function SearchResults({ state, onOpen, onMore }: { state: SearchState; o
       {pending > 0 && (
         <p className="label" role="status">
           Still indexing {pending} of {chats} conversations. Results may be incomplete; search again in a moment.
+        </p>
+      )}
+      {failed > 0 && (
+        <p className="label" role="status">
+          {failed} of {chats} conversations could not be read just now and are not searched. Try again later.
         </p>
       )}
       {partial > 0 && (
@@ -91,9 +126,9 @@ export function SearchPanel({ current, onOpen }: { current: string | null; onOpe
   const run = (cursor?: string) => {
     const params = cursor && state.params ? state.params : { q: text.trim(), chatId: thisChat && current ? current : undefined, role: role || undefined };
     const q = params.q;
-    if ([...q].length < 2) {
+    if (!searchable(q)) {
       seq.current++;
-      setState({ query: q, page: null, error: "", loading: false, params: null });
+      setState({ query: q, page: null, error: "", loading: false, params: null, tooShort: q !== "" });
       return;
     }
     const mine = ++seq.current;

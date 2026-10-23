@@ -2,7 +2,9 @@ package chat
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"log"
 	"net/http"
@@ -33,12 +35,15 @@ const (
 	defaultSearchPage = 20
 	maxSearchPage     = 50
 	maxQueryRunes     = 200
-	minQueryRunes     = 2
+	minQueryRunes     = 1
+	minTermRunes      = 2
 	maxQueryTerms     = 6
 	backfillPerSearch = 3 // chats read from Hermes by one search request, at most
 	backfillBudget    = 25 * time.Second
+	searchTimeout     = 10 * time.Second // one scan of the user's index; a runaway query must not hold a connection
 	snippetRunes      = 180
 	snippetLead       = 60
+	indexRetryAfter   = 5 * time.Minute // a chat whose transcript read failed is not retried sooner
 )
 
 // Segment is a run of snippet text. Hit marks the matched span. The text is data:
@@ -51,6 +56,7 @@ type Segment struct {
 type searchResult struct {
 	ChatID    string    `json:"chatId"`
 	ChatTitle string    `json:"chatTitle"`
+	// CreatedAt is the turn's own timestamp when Hermes gave one; for a title hit, when the chat was created.
 	Kind      string    `json:"kind"` // "title" | "message"
 	Turn      *int      `json:"turn,omitempty"`
 	Role      string    `json:"role"`
@@ -62,7 +68,13 @@ type indexState struct {
 	Complete bool `json:"complete"`
 	Chats    int  `json:"chats"`
 	Pending  int  `json:"pending"` // chats not indexed yet or stale: a later search catches up
+	Failed   int  `json:"failed"`  // stale chats whose transcript could not be read; retried after a backoff
 	Partial  int  `json:"partial"` // chats cut short by a size or quota limit: they stay partly searchable
+}
+
+func denseScript(t string) bool {
+	r, _ := utf8.DecodeRuneInString(t)
+	return unicode.In(r, unicode.Han, unicode.Hiragana, unicode.Katakana, unicode.Hangul)
 }
 
 // parseSearchTerms validates and folds the query. The fold is store.Fold, the
@@ -92,29 +104,43 @@ func parseSearchTerms(raw string) ([]string, bool) {
 	if len(terms) == 0 || len(terms) > maxQueryTerms {
 		return nil, false
 	}
+	// A one-letter word matches nearly every turn; it is refused, except in scripts where one
+	// character is a word (Han, Hiragana, Katakana, Hangul).
+	for _, t := range terms {
+		if utf8.RuneCountInString(t) < minTermRunes && !denseScript(t) {
+			return nil, false
+		}
+	}
 	return terms, true
 }
 
-func encodeSearchCursor(c store.SearchCursor) string {
-	return base64.RawURLEncoding.EncodeToString([]byte("s1\x00" + c.CreatedAt + "\x00" + c.ChatID + "\x00" + strconv.Itoa(c.Seq)))
+// queryTag identifies the query a cursor belongs to: the folded terms, the scope and the role. A
+// cursor is a position in one query's results; under any other it would skip or repeat hits.
+func queryTag(terms []string, scope, role string) string {
+	h := sha256.Sum256([]byte(strings.Join(terms, "\x00") + "\x01" + scope + "\x01" + role))
+	return hex.EncodeToString(h[:6])
 }
 
-// decodeSearchCursor: a forged cursor can only name a position inside the
-// caller's own result list.
-func decodeSearchCursor(s string) (*store.SearchCursor, bool) {
+func encodeSearchCursor(c store.SearchCursor, tag string) string {
+	return base64.RawURLEncoding.EncodeToString([]byte("s2\x00" + tag + "\x00" + c.CreatedAt + "\x00" + c.ChatID + "\x00" + strconv.Itoa(c.Seq)))
+}
+
+// decodeSearchCursor: false for a malformed cursor or one made for a different query. A forged
+// cursor can only name a position inside the caller's own result list.
+func decodeSearchCursor(s, tag string) (*store.SearchCursor, bool) {
 	raw, err := base64.RawURLEncoding.DecodeString(s)
-	if err != nil || len(raw) > 160 {
+	if err != nil || len(raw) > 200 {
 		return nil, false
 	}
 	p := strings.Split(string(raw), "\x00")
-	if len(p) != 4 || p[0] != "s1" || p[1] == "" || !idRE.MatchString(p[2]) {
+	if len(p) != 5 || p[0] != "s2" || p[1] != tag || p[2] == "" || !idRE.MatchString(p[3]) {
 		return nil, false
 	}
-	n, err := strconv.Atoi(p[3])
+	n, err := strconv.Atoi(p[4])
 	if err != nil || n < store.TitleSeq || n > 1<<24 {
 		return nil, false
 	}
-	return &store.SearchCursor{CreatedAt: p[1], ChatID: p[2], Seq: n}, true
+	return &store.SearchCursor{CreatedAt: p[2], ChatID: p[3], Seq: n}, true
 }
 
 // snippet cuts a window of body around the first match and marks every match
@@ -207,7 +233,7 @@ func (s *Service) indexTranscript(ctx context.Context, userID string, chat store
 func (s *Service) refreshIndex(ctx context.Context, userID, onlyChat string, b hermes.Binding, limit int) {
 	ctx, cancel := context.WithTimeout(ctx, backfillBudget)
 	defer cancel()
-	stale, err := store.StaleChats(ctx, s.db, userID, onlyChat, limit)
+	stale, err := store.StaleChats(ctx, s.db, userID, onlyChat, limit, s.now().Add(-indexRetryAfter))
 	if err != nil {
 		log.Printf("chat: search index: %v", err)
 		return
@@ -219,6 +245,9 @@ func (s *Service) refreshIndex(ctx context.Context, userID, onlyChat string, b h
 			log.Printf("chat: search index: transcript read failed: %s", hermes.CodeOf(err))
 			if ctx.Err() != nil {
 				return
+			}
+			if merr := store.MarkIndexFailed(ctx, s.db, userID, c.ID, s.now()); merr != nil {
+				log.Printf("chat: search index: %v", merr)
 			}
 			continue
 		}
@@ -262,7 +291,7 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request, pathChat string
 	}
 	terms, ok := parseSearchTerms(q.Get("q"))
 	if !ok {
-		bad("The search text must be 2 to 200 characters and at most 6 words")
+		bad("Each search word needs 2 or more letters (1 for Chinese, Japanese or Korean); at most 6 words, 200 characters")
 		return
 	}
 	limit := defaultSearchPage
@@ -279,17 +308,17 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request, pathChat string
 		bad("role must be user, assistant or title")
 		return
 	}
-	var after *store.SearchCursor
-	if c := q.Get("cursor"); c != "" {
-		if after, ok = decodeSearchCursor(c); !ok {
-			bad("The cursor is not valid")
-			return
-		}
-	}
 	scope := pathChat
 	if scope == "" && q.Has("chatId") {
 		if scope = q.Get("chatId"); !idRE.MatchString(scope) {
 			notFound(w)
+			return
+		}
+	}
+	var after *store.SearchCursor
+	if c := q.Get("cursor"); c != "" {
+		if after, ok = decodeSearchCursor(c, queryTag(terms, scope, role)); !ok {
+			bad("The cursor is not valid for this search")
 			return
 		}
 	}
@@ -315,12 +344,18 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request, pathChat string
 		}
 		s.refreshIndex(r.Context(), uid, scope, b, perSearch)
 	}
-	hits, more, err := store.SearchChats(r.Context(), s.db, store.SearchQuery{UserID: uid, Terms: terms, ChatID: scope, Role: role, Limit: limit, After: after})
+	sctx, cancel := context.WithTimeout(r.Context(), searchTimeout)
+	defer cancel()
+	hits, more, err := store.SearchChats(sctx, s.db, store.SearchQuery{UserID: uid, Terms: terms, ChatID: scope, Role: role, Limit: limit, After: after})
+	if err != nil && errors.Is(sctx.Err(), context.DeadlineExceeded) && r.Context().Err() == nil { // the driver may not wrap the deadline
+		apiError(w, http.StatusServiceUnavailable, "SEARCH_TIMEOUT", "The search took too long")
+		return
+	}
 	if err != nil {
 		internalError(w, "search", err)
 		return
 	}
-	total, pending, partial, err := store.IndexStatus(r.Context(), s.db, uid, scope)
+	total, pending, failed, partial, err := store.IndexStatus(r.Context(), s.db, uid, scope)
 	if err != nil {
 		internalError(w, "search status", err)
 		return
@@ -330,6 +365,7 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request, pathChat string
 		res := searchResult{ChatID: h.ChatID, ChatTitle: h.ChatTitle, Kind: "message", Role: h.Role, CreatedAt: h.CreatedAt, Snippet: snippet(h.Body, terms)}
 		if h.Seq == store.TitleSeq {
 			res.Kind = "title"
+			res.CreatedAt = h.ChatCreatedAt
 		} else {
 			t := h.Seq
 			res.Turn = &t
@@ -339,11 +375,11 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request, pathChat string
 	next := ""
 	if more && len(hits) > 0 {
 		l := hits[len(hits)-1]
-		next = encodeSearchCursor(store.SearchCursor{CreatedAt: l.ChatCreatedAt, ChatID: l.ChatID, Seq: l.Seq})
+		next = encodeSearchCursor(store.SearchCursor{CreatedAt: l.ChatCreatedAt, ChatID: l.ChatID, Seq: l.Seq}, queryTag(terms, scope, role))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"results":    out,
 		"nextCursor": next,
-		"index":      indexState{Complete: pending == 0 && partial == 0, Chats: total, Pending: pending, Partial: partial},
+		"index":      indexState{Complete: pending == 0 && failed == 0 && partial == 0, Chats: total, Pending: pending, Failed: failed, Partial: partial},
 	})
 }
