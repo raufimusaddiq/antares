@@ -87,7 +87,7 @@ attributes, so state is expressed with classes.
   only), `--font-mono` is the system monospace. Both faces are self-hosted latin subsets under `public/fonts/` (OFL texts
   alongside), `font-display: swap`, each with an Arial-matched fallback face (`size-adjust` and ascent/descent overrides
   measured from the font files). There is no remote font host.
-- **CSP:** the shell's Content-Security-Policy carries `font-src 'self'` (`internal/server/server.go`, pinned in
+- **CSP:** the shell's Content-Security-Policy carries `font-src 'self'` and `media-src blob:` (the latter lets the recorder preview play; `default-src` stays `'none'`) (`internal/server/server.go`, pinned in
   `server_test.go`), so the two woff2 files and the preload are allowed and nothing is fetched from another origin.
 - **Bundle guard:** `scripts/stamp.mjs` hashes `src/` and `public/` (and `internal/webui/webui_test.go` mirrors both), so
   editing a font, icon or the OG card without rebuilding fails `go test ./internal/webui`.

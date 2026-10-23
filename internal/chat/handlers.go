@@ -50,6 +50,9 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"POST /api/runs/{runId}/cancel":                                http.HandlerFunc(s.cancelRun),
 		"POST /api/runs/{runId}/steer":                                 http.HandlerFunc(s.steerRun),
 
+		"POST /api/assets":                    http.HandlerFunc(s.uploadAsset),
+		"GET /api/assets/{assetId}":           http.HandlerFunc(s.getAsset),
+		"DELETE /api/assets/{assetId}":        http.HandlerFunc(s.deleteAsset),
 		"POST /api/chats/{chatId}/regenerate": http.HandlerFunc(s.noTurnMutation("regenerate")),
 		"POST /api/chats/{chatId}/edit-turn":  http.HandlerFunc(s.noTurnMutation("edit-turn")),
 		"POST /api/chats/{chatId}/rewind":     http.HandlerFunc(s.noTurnMutation("rewind")),
