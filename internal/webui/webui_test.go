@@ -87,6 +87,11 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		// and its action POSTs, and the audit feed. /api/admin/system is not here because
 		// the route no longer exists.
 		"/api/admin/users": true, "/api/admin/users/": true, "/api/admin/audit": true,
+		// #59 adds the opt-in notification routes, listed one by one: the VAPID public key,
+		// device (un)registration (/api/push/subscriptions/{id} is the revoke), and the
+		// per-account mode. None of them returns or accepts conversation content.
+		"/api/push/public-key": true, "/api/push/subscriptions": true, "/api/push/subscriptions/": true,
+		"/api/me/notifications": true,
 	}
 	pathRe := regexp.MustCompile(`/api/[A-Za-z0-9_/.-]*`)
 	badRe := regexp.MustCompile(`(?i)ciphertext|fingerprint|tenant_binding|profile_name|profileSlug|memory_scope|client_secret|api_key|apikey|hermes|authorization`)

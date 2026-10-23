@@ -149,6 +149,8 @@ export const listChats = (cursor?: string) =>
     return { chats: o.chats.map(parseChat).filter((c): c is ChatSummary => c !== null), nextCursor: str(o.nextCursor) };
   });
 
+export const getChat = (chatId: string) => call("GET", `/api/chats/${encodeURIComponent(chatId)}`, parseChat);
+
 export const createChat = () => call("POST", "/api/chats", parseChat, {});
 
 /** The newest page, or the page before `cursor`. The page size is the server's. */

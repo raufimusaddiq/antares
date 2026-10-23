@@ -3,6 +3,7 @@ import {
   cancelRun,
   createChat,
   describeCode,
+  getChat,
   getMessages,
   getRun,
   listChats,
@@ -14,6 +15,7 @@ import {
 } from "./chatApi";
 import { mergeNewest, prependOlder } from "./history";
 import { MessageBody } from "./MessageBody";
+import { Notifications } from "./Notifications";
 import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 import { AntaresMark } from "./brand/AntaresMark";
@@ -212,7 +214,7 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
 
 // ---- the app --------------------------------------------------------------------
 
-export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: string; onSignOut: () => void; canAdmin?: boolean; onAdmin?: () => void }) {
+export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatId = null }: { email: string; onSignOut: () => void; canAdmin?: boolean; onAdmin?: () => void; initialChatId?: string | null }) {
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [listState, setListState] = useState<"loading" | "ready" | "error">("loading");
   const [current, setCurrent] = useState<string | null>(null);
@@ -402,6 +404,22 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
       setChats(r.value.chats);
       setChatsCursor(r.value.nextCursor);
       setListState("ready");
+      if (initialChatId) {
+        // A notification link: the server decides whether this chat is the reader's own.
+        // Someone else's id and a deleted one both come back NOT_FOUND, and neither opens.
+        void getChat(initialChatId).then((c) => {
+          if (!live) return;
+          if (c.ok) {
+            setChats((l) => (l.some((x) => x.id === c.value.id) ? l : [c.value, ...l]));
+            open(c.value);
+          } else {
+            if (r.value.chats.length > 0) open(r.value.chats[0]); // open() clears the banner, so say it after
+            setBanner("That conversation is not available to this account.");
+          }
+          window.history.replaceState(null, "", "/");
+        });
+        return;
+      }
       if (r.value.chats.length > 0) open(r.value.chats[0]);
     });
     return () => {
@@ -537,6 +555,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
           Antares
         </strong>
         <span className="who-am-i">{email}</span>
+        <Notifications />
         {canAdmin && onAdmin && (
           <button type="button" className="quiet" onClick={onAdmin}>
             Admin

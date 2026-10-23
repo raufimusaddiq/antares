@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { loadSession, signOut, type Session } from "./api";
 import { AdminScreens, AdminShell, Forbidden } from "./Admin";
 import { Chat } from "./Chat";
+import { revokeThisDevice, chatIdFromPath } from "./push";
 import { isAdminPath, parseAdminPath } from "./route";
 import { Screen, documentTitle, type View } from "./Screen";
 
@@ -30,11 +31,36 @@ function viewOf(s: Session): View | null {
   }
 }
 
+// A notification link opened while signed out: remember the chat across the Google round trip
+// (same tab, so sessionStorage survives). Only a well-formed id is kept; the server still
+// checks ownership when the chat is opened.
+const LINK_KEY = "antares.deeplink";
+const rememberLink = (id: string) => {
+  try {
+    sessionStorage.setItem(LINK_KEY, id);
+  } catch {
+    // storage unavailable: the link degrades to the normal landing page
+  }
+};
+const takeLink = (): string | null => {
+  try {
+    const v = sessionStorage.getItem(LINK_KEY);
+    sessionStorage.removeItem(LINK_KEY);
+    return v && chatIdFromPath("/chat/" + v) ? v : null;
+  } catch {
+    return null;
+  }
+};
+
 export function App() {
   const [session, setSession] = useState<Session>({ kind: "loading" });
   const [failedSignOut, setFailedSignOut] = useState(false);
   const [failed] = useState(loginFailed);
   const [path, setPath] = useState(() => window.location.pathname);
+  // The chat a notification pointed at: from the address, or remembered across sign-in.
+  // Resolved once, when the account first becomes active, so Chat mounts with it.
+  const [addressLink] = useState(() => chatIdFromPath(window.location.pathname));
+  const deepLink = useRef<string | null | undefined>(undefined);
 
   useEffect(() => {
     const onPop = () => setPath(window.location.pathname);
@@ -58,7 +84,8 @@ export function App() {
   const view = viewOf(session);
 
   const onSignOut = () => {
-    void signOut().then((ok) => {
+    // This device stops getting the account's alerts before the session ends (best effort).
+    void revokeThisDevice().then(signOut).then((ok) => {
       setFailedSignOut(!ok);
       if (ok) setSession({ kind: "anonymous", loginFailed: false });
     });
@@ -67,7 +94,10 @@ export function App() {
   // Keep the address bar on the screen that is showing, so a reload lands on it.
   useEffect(() => {
     // An active account may be on an admin screen: keep that address instead of resetting it to "/".
+    const link = chatIdFromPath(window.location.pathname);
+    if (link && session.kind === "anonymous") rememberLink(link);
     if (session.kind === "account") {
+      if (session.account.state === "ACTIVE" && link) return; // Chat opens it, then rewrites the address
       if (session.account.state === "ACTIVE" && isAdminPath(window.location.pathname)) return;
       window.history.replaceState(null, "", SCREEN_PATH[session.account.state]);
       setPath(SCREEN_PATH[session.account.state]);
@@ -81,6 +111,7 @@ export function App() {
 
   if (!view) return <main className="screen" aria-busy="true"><p>Loading…</p></main>;
   if (session.kind === "account" && session.account.state === "ACTIVE") {
+    if (deepLink.current === undefined) deepLink.current = addressLink ?? takeLink();
     if (isAdminPath(path)) {
       const route = parseAdminPath(path);
       return (
@@ -90,7 +121,7 @@ export function App() {
         </AdminShell>
       );
     }
-    return <Chat email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onSignOut={onSignOut} />;
+    return <Chat initialChatId={deepLink.current ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onSignOut={onSignOut} />;
   }
   return (
     <Screen
