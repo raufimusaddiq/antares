@@ -289,6 +289,7 @@ describe("usage text", () => {
     expect(t).toContain("2026-10-23");
     expect(t).toContain("Context in use: —");
     expect(t).toContain("1 finished reply reported no usage and is not counted");
+    expect(describeUsage({ ...base, unpricedRuns: 2 }).join("\n")).toContain("2 replies were from a model with no known price");
     expect(describeUsage({ ...base, tokens: null, costIDR: null }).join("\n")).toContain("Tokens: — (none reported)");
   });
 

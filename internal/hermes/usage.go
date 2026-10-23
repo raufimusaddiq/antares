@@ -43,3 +43,8 @@ func parseUsage(usage, runtime map[string]any) *Usage {
 	}
 	return u
 }
+
+func asObject(v any) map[string]any {
+	m, _ := v.(map[string]any)
+	return m
+}

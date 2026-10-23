@@ -67,3 +67,12 @@ func GetChatUsage(ctx context.Context, db *sql.DB, userID, chatID string) (ChatU
 	}
 	return cu, err
 }
+
+// RunExists reports whether the user already has a run for this idempotency key
+// on this chat, i.e. whether a send with that key would be a replay.
+func RunExists(ctx context.Context, db *sql.DB, userID, chatID, idemKey string) (bool, error) {
+	var n int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs WHERE user_id = ? AND chat_id = ? AND idempotency_key = ?`,
+		userID, chatID, idemKey).Scan(&n)
+	return n > 0, err
+}

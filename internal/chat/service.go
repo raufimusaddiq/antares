@@ -480,6 +480,7 @@ func (s *Service) attach(ctx context.Context, run store.Run) (*liveRun, error) {
 	}
 	switch {
 	case st.Terminal():
+		s.recordUsage(l, st.Usage)
 		s.finishFromUpstream(l, st)
 		s.register(l)
 		return l, nil

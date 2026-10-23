@@ -320,10 +320,16 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	// Budget: at or over the limit, the chat takes no new message (a reply already
 	// running is not interrupted). Decided here, before a run is admitted.
+	// A replay of a key that already made a run gets that run back, as before.
+	replay, err := store.RunExists(r.Context(), s.db, uid, chatID, idem)
+	if err != nil {
+		internalError(w, "check replay", err)
+		return
+	}
 	if over, err := s.budgetReached(r, uid, chatID); err != nil {
 		internalError(w, "chat budget", err)
 		return
-	} else if over {
+	} else if over && !replay {
 		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "This conversation has reached its token budget")
 		return
 	}

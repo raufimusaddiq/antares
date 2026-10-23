@@ -1,7 +1,10 @@
 package hermes
 
 import (
+	"context"
 	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -36,5 +39,26 @@ func TestParseUsage(t *testing.T) {
 	ev := Normalize(Event{Name: "run.completed", Data: []byte(`{"usage":{"input_tokens":2,"output_tokens":1}}`)})
 	if ev.Usage == nil || ev.Usage.Input != 2 {
 		t.Fatalf("run.completed usage: %+v", ev.Usage)
+	}
+}
+
+// A malformed usage or runtime member must not fail the status read: the run's
+// state is still the truth, and the usage is simply unknown.
+func TestGetRunToleratesMalformedUsage(t *testing.T) {
+	for _, body := range []string{
+		`{"status":"completed","output":"x","usage":["a"],"runtime":"m"}`,
+		`{"status":"completed","output":"x","usage":"lots","runtime":7}`,
+		`{"status":"completed","output":"x","usage":null}`,
+	} {
+		srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { _, _ = w.Write([]byte(body)) }))
+		c, err := NewClient(srv.URL, ClientOptions{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		st, err := c.GetRun(context.Background(), bind(), "run1")
+		srv.Close()
+		if err != nil || st.State != StateCompleted || st.Usage != nil {
+			t.Fatalf("%s: %+v %v", body, st, err)
+		}
 	}
 }

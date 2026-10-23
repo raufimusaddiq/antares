@@ -317,6 +317,7 @@ export function describeUsage(u: ChatUsage): string[] {
   lines.push(u.tokens ? `Tokens: ${fmt(u.tokens.total)} (${fmt(u.tokens.input)} in, ${fmt(u.tokens.output)} out)` : "Tokens: — (none reported)");
   lines.push(u.costIDR !== null ? `Estimated cost: about Rp ${fmt(Math.round(u.costIDR))}, from the provider price list of ${u.priceListDate}; not a bill` : "Estimated cost: — (no price for the model)");
   lines.push(`Context in use: — (not reported)${u.windowTokens !== null ? `; model window ${fmt(u.windowTokens)} tokens` : ""}`);
+  if (u.unpricedRuns > 0) lines.push(`${u.unpricedRuns} ${u.unpricedRuns === 1 ? "reply was" : "replies were"} from a model with no known price and ${u.unpricedRuns === 1 ? "is" : "are"} left out of the estimate`);
   if (u.finishedRuns > u.reportedRuns) lines.push(`${u.finishedRuns - u.reportedRuns} finished ${u.finishedRuns - u.reportedRuns === 1 ? "reply" : "replies"} reported no usage and ${u.finishedRuns - u.reportedRuns === 1 ? "is" : "are"} not counted`);
   lines.push(
     u.budget.reached

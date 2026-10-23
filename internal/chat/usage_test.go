@@ -3,8 +3,11 @@ package chat
 import (
 	"context"
 	"math"
+	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -203,5 +206,67 @@ func TestBudgetBoundary(t *testing.T) {
 				t.Fatalf("bob blocked by alice's budget: %d", bw.Code)
 			}
 		})
+	}
+}
+
+// A run Hermes finished while Antares was down is discovered by attach(); its
+// usage must be recorded there too, or the budget is bypassable.
+func TestUsageRecordedWhenAttachFindsTheRunFinished(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	run := alice.send(chat, "q")
+	_, fr := a.hx.runWithInput(t, "q")
+	recv(t, fr.opens, "worker subscribed")
+	a.svc.Close()
+	if _, _, err := store.RecoverRuns(context.Background(), a.db, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	a.hx.mu.Lock()
+	fr.usage = `{"input_tokens":300,"output_tokens":20,"total_tokens":320,"cache_read_tokens":0,"cache_write_tokens":0}`
+	a.hx.mu.Unlock()
+	a.hx.setStatus(fr, "completed", "done while down")
+	cl, _ := hermes.NewClient(a.hx.srv.URL, hermes.ClientOptions{})
+	svc2, err := New(Options{DB: a.db, Box: a.box, Hermes: cl})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(svc2.Close)
+	a.h = rebuild(t, a, svc2)
+	s := alice.open(run, "")
+	<-s.done
+	if u := alice.usage(chat); u.b.Tokens == nil || u.b.Tokens.Total != 320 {
+		t.Fatalf("usage lost on the attach path: %+v", u.b)
+	}
+}
+
+// A replay of an old Idempotency-Key at the limit returns the original run; a fresh key is refused.
+func TestBudgetReplayReturnsTheOriginalRun(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	idem := nextIdem()
+	post := func(key string) *httptest.ResponseRecorder {
+		return alice.do("POST", "/api/chats/"+chat+"/messages", map[string]string{"Idempotency-Key": key}, map[string]string{"input": "q"})
+	}
+	first := post(idem)
+	if first.Code != 202 {
+		t.Fatalf("first send: %d", first.Code)
+	}
+	runID := decodeBody[struct{ RunID string }](t, first).RunID
+	_, fr := a.hx.runWithInput(t, "q")
+	s := alice.open(runID, "")
+	recv(t, fr.opens, "stream")
+	a.hx.push(fr, "run.completed", usageFrame)
+	s.waitFor(t, "run.completed")
+	s.close()
+	if err := store.RecordRunUsage(context.Background(), a.db, alice.id, runID, store.RunUsage{Input: chatTokenBudget, Output: 1, Model: "deepseek-v4-1-flash"}); err != nil {
+		t.Fatal(err)
+	}
+	if w := post(idem); w.Code != 202 || decodeBody[struct{ RunID string }](t, w).RunID != runID {
+		t.Fatalf("replay at the limit: %d %s", w.Code, w.Body.String())
+	}
+	if w := post(nextIdem()); w.Code != 403 {
+		t.Fatalf("fresh key at the limit: %d", w.Code)
 	}
 }
