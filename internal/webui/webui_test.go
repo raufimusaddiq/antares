@@ -87,9 +87,11 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		// and its action POSTs, and the audit feed. /api/admin/system is not here because
 		// the route no longer exists.
 		"/api/admin/users": true, "/api/admin/users/": true, "/api/admin/audit": true,
-		// #69: the service worker re-registers a rotated push subscription. Listed one by one;
-		// neither route accepts or returns conversation content.
-		"/api/push/public-key": true, "/api/push/subscriptions": true,
+		// #59 adds the opt-in notification routes, listed one by one: the VAPID public key,
+		// device (un)registration (/api/push/subscriptions/{id} is the revoke), and the
+		// per-account mode. None of them returns or accepts conversation content.
+		"/api/push/public-key": true, "/api/push/subscriptions": true, "/api/push/subscriptions/": true,
+		"/api/me/notifications": true,
 		// #60 chat search: /api/search/chats; the per-chat form is /api/chats/{id}/search, covered above.
 		"/api/search/chats": true,
 	}

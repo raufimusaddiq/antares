@@ -455,6 +455,12 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
   :root { --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --rest-fill: var(--solid); }
 }
 
+/* Notifications opt-in (UXP-002) */
+.notify { position: relative; }
+.notify-panel { position: absolute; right: 0; top: calc(100% + 0.4rem); z-index: 5; width: min(22rem, 90vw); display: grid; gap: 0.6rem; padding: 0.85rem; border: 1px solid var(--solid-border); border-radius: var(--r-md); background: var(--solid-raised); color: var(--text); }
+.notify-panel p { margin: 0; }
+.notify-panel select { max-width: 100%; }
+
 /* ---- search (UXP-003) ---------------------------------------------------------- */
 .search { margin: 0.6rem 0 0; }
 .search input[type="search"] { width: 100%; box-sizing: border-box; }
