@@ -7,12 +7,16 @@
 # Contract (deploy/README.md section 1): /opt/antares and /opt/antares/bin are root:root 0755 so the
 # service user antares-prov can traverse to ExecStart; the env files are root:root 0600 and are
 # only stat'ed here, never read or printed.
-# env: ANTARES_OPT_DIR (default /opt/antares), ANTARES_OPT_OWNER (default root:root; tests only)
+# env: ANTARES_OPT_DIR (default /opt/antares)
+#      PROVISIONER_HEALTH_URL (default http://172.17.0.1:8750/health; set it to match PROVISIONER_ADDR
+#        in the unit when the docker bridge gateway differs)
+#      ANTARES_OPT_OWNER (default root:root; test hook only, never set it on a real host)
 set -eu
 
 opt=${ANTARES_OPT_DIR:-/opt/antares}
 owner=${ANTARES_OPT_OWNER:-root:root}
 here=$(dirname "$0")
+health_url=${PROVISIONER_HEALTH_URL:-http://172.17.0.1:8750/health}
 
 check_dirs() {
 	bad=0
@@ -20,6 +24,7 @@ check_dirs() {
 		got=$(stat -c '%a %U:%G' "$d" 2>/dev/null) || { echo "FAIL: $d missing" >&2; bad=1; continue; }
 		[ "$got" = "755 $owner" ] || { echo "FAIL: $d is '$got', want '755 $owner' (antares-prov cannot traverse otherwise: 203/EXEC)" >&2; bad=1; }
 	done
+	# $owner is root:root on a real host (README table); other values exist only for the test hook.
 	for f in "$opt/provisioner.env" "$opt/antares.env"; do
 		[ -e "$f" ] || { [ "$f" = "$opt/antares.env" ] && continue; echo "FAIL: $f missing" >&2; bad=1; continue; }
 		got=$(stat -c '%a %U:%G' "$f")
@@ -46,4 +51,4 @@ check_dirs
 if systemctl cat hermes-provisioner >/dev/null 2>&1; then systemctl stop hermes-provisioner; fi
 install -m 0755 -o root -g root "$bin" "$opt/bin/hermes-provisioner"
 systemctl start hermes-provisioner
-exec "$here/verify-helper-revision.sh" "$sha"
+exec "$here/verify-helper-revision.sh" "$sha" "$health_url"

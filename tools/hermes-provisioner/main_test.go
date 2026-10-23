@@ -532,7 +532,9 @@ func TestHealthReportsRevisionWhenHermesDown(t *testing.T) {
 	rec := httptest.NewRecorder()
 	newServer(downRunner{}, testToken).routes().ServeHTTP(rec, req)
 	var got map[string]any
-	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatalf("503 body is not JSON: %v: %s", err, rec.Body)
+	}
 	if rec.Code != http.StatusServiceUnavailable {
 		t.Fatalf("want 503, got %d", rec.Code)
 	}

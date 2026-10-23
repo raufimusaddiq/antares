@@ -90,7 +90,9 @@ sudo install -m 0755 -o root -g root /tmp/hermes-provisioner /opt/antares/bin/he
 sudo systemctl start hermes-provisioner
 ```
 
-`deploy/install-provisioner.sh <built-binary> $ANTARES_TAG` (as root) does the stop, install and start
+`sudo PROVISIONER_HEALTH_URL=http://<PROVISIONER_ADDR>/health deploy/install-provisioner.sh <built-binary> $ANTARES_TAG`
+(the variable is only needed when the bridge gateway is not `172.17.0.1`; it must match the unit's
+`PROVISIONER_ADDR`, otherwise the final check fails on a deploy that succeeded) does the stop, install and start
 and also enforces the directory contract (section 1) and the revision check below; prefer it. First-time
 host setup, once:
 

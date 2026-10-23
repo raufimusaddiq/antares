@@ -98,6 +98,18 @@ func TestDeployDocsAndUnitDoNotDrift(t *testing.T) {
 		}
 	}
 
+	// The installer must hand its health URL to the verifier, and both default to the unit's address.
+	unitAddr := unitValue(t, unit, "Environment=PROVISIONER_ADDR")
+	def := "http://" + unitAddr + "/health"
+	if !strings.Contains(installer, `"$sha" "$health_url"`) ||
+		!strings.Contains(installer, "PROVISIONER_HEALTH_URL:-"+def) ||
+		!strings.Contains(verify, "url=${2:-"+def+"}") {
+		t.Errorf("installer/verifier health URL is not passed through or no longer matches the unit's %s", unitAddr)
+	}
+	if !strings.Contains(readme, "PROVISIONER_HEALTH_URL") {
+		t.Errorf("README does not document PROVISIONER_HEALTH_URL")
+	}
+
 	// /health field name is shared by the helper, the verifier and the docs.
 	for _, f := range []string{`"revision"`, `"modified"`} {
 		if !strings.Contains(helper, f) {
