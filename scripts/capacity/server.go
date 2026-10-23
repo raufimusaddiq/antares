@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/pprof"
 	"syscall"
 	"time"
 
@@ -44,6 +46,32 @@ func runServer(idpURL string) error {
 		return err
 	}
 	defer db.Close()
+	// Profiles of this scratch process only (go tool pprof). There is no HTTP debug endpoint: the
+	// files are written on a clean stop, and only when the variable is set.
+	if p := os.Getenv("CAPACITY_CPUPROFILE"); p != "" {
+		f, err := os.Create(p)
+		if err != nil {
+			return err
+		}
+		if err := pprof.StartCPUProfile(f); err != nil {
+			return err
+		}
+		defer func() { pprof.StopCPUProfile(); f.Close() }()
+	}
+	if p := os.Getenv("CAPACITY_MEMPROFILE"); p != "" {
+		defer func() {
+			f, err := os.Create(p)
+			if err != nil {
+				log.Print(err)
+				return
+			}
+			defer f.Close()
+			runtime.GC() // the allocs profile reports in-use as of the last GC
+			if err := pprof.Lookup("allocs").WriteTo(f, 0); err != nil {
+				log.Print(err)
+			}
+		}()
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	if _, err := store.Migrate(ctx, db, store.Migrations()); err != nil {
