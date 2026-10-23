@@ -36,6 +36,7 @@ const CODES = [
   "INVALID_REQUEST",
   "FORBIDDEN",
   "HISTORY_CHANGED",
+  "SEARCH_TIMEOUT",
 ] as const;
 
 /** Words shown for a code. The server's own message is never displayed. */
@@ -64,6 +65,8 @@ export function describeCode(code: string): string {
       return "That message could not be sent.";
     case "HISTORY_CHANGED":
       return "This conversation changed while you were reading it.";
+    case "SEARCH_TIMEOUT":
+      return "The search took too long. Try more specific words.";
     case "NETWORK":
       return "Could not reach Antares. Check your connection.";
     default:
@@ -152,6 +155,8 @@ export const listChats = (cursor?: string) =>
     return { chats: o.chats.map(parseChat).filter((c): c is ChatSummary => c !== null), nextCursor: str(o.nextCursor) };
   });
 
+export const getChat = (chatId: string) => call("GET", `/api/chats/${encodeURIComponent(chatId)}`, parseChat);
+
 export const createChat = () => call("POST", "/api/chats", parseChat, {});
 
 /** The newest page, or the page before `cursor`. The page size is the server's. */
@@ -188,3 +193,73 @@ export function newIdempotencyKey(): string {
 }
 
 export const runEventsUrl = (runId: string) => `/api/runs/${encodeURIComponent(runId)}/events`;
+
+// ---- search (UXP-003) ------------------------------------------------------------
+
+/** A run of snippet text. Always rendered as text; `hit` marks the matched span. */
+export interface Segment {
+  text: string;
+  hit: boolean;
+}
+
+export interface SearchResult {
+  chatId: string;
+  chatTitle: string;
+  kind: "title" | "message";
+  /** The turn's seq for a message hit (the anchor); null for a title hit. */
+  turn: number | null;
+  role: "title" | "user" | "assistant";
+  /** The turn's timestamp (a title hit: when the chat was created); empty when the turn has no timestamp. */
+  createdAt: string;
+  snippet: Segment[];
+}
+
+export interface SearchPage {
+  results: SearchResult[];
+  nextCursor: string;
+  /** How much of the account is searchable; incomplete means results may be missing. */
+  index: { complete: boolean; chats: number; pending: number; failed: number; partial: number };
+}
+
+export function parseSearch(v: unknown): SearchPage | null {
+  const o = obj(v);
+  const ix = obj(o?.index);
+  if (!o || !ix || !Array.isArray(o.results) || typeof ix.complete !== "boolean") return null;
+  const results: SearchResult[] = [];
+  for (const r of o.results) {
+    const ro = obj(r);
+    if (!ro || !str(ro.chatId) || !Array.isArray(ro.snippet)) return null;
+    if (ro.kind !== "title" && ro.kind !== "message") return null;
+    if (ro.role !== "title" && ro.role !== "user" && ro.role !== "assistant") return null;
+    let turn: number | null = null;
+    if (ro.kind === "message") {
+      // A message hit without a usable anchor cannot be opened at its turn: refused, not guessed at.
+      if (typeof ro.turn !== "number" || !Number.isInteger(ro.turn) || ro.turn < 0) return null;
+      turn = ro.turn;
+    }
+    const snippet: Segment[] = [];
+    for (const sg of ro.snippet) {
+      const so = obj(sg);
+      if (!so || typeof so.text !== "string") return null;
+      snippet.push({ text: so.text, hit: so.hit === true });
+    }
+    results.push({ chatId: str(ro.chatId), chatTitle: str(ro.chatTitle), kind: ro.kind, turn, role: ro.role, createdAt: str(ro.createdAt), snippet });
+  }
+  const num = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? n : 0);
+  return { results, nextCursor: str(o.nextCursor), index: { complete: ix.complete, chats: num(ix.chats), pending: num(ix.pending), failed: num(ix.failed), partial: num(ix.partial) } };
+}
+
+export interface SearchOptions {
+  /** Only this conversation ("find in this chat"). */
+  chatId?: string;
+  role?: "user" | "assistant";
+  cursor?: string;
+}
+
+export function searchChats(text: string, o: SearchOptions = {}) {
+  const p = new URLSearchParams({ q: text });
+  if (o.role) p.set("role", o.role);
+  if (o.cursor) p.set("cursor", o.cursor);
+  const path = o.chatId ? `/api/chats/${encodeURIComponent(o.chatId)}/search` : "/api/search/chats";
+  return call("GET", `${path}?${p.toString()}`, parseSearch);
+}
