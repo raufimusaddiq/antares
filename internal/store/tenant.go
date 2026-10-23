@@ -266,7 +266,7 @@ func Decide(ctx context.Context, db *sql.DB, actor, target, action, reason, reqI
 // Requeue modes for RequeueTenant.
 const (
 	RequeueProvision = "tenant-binding" // (re)run provisioning, e.g. after FAILED
-	RequeueVerify    = "tenant-verify"  // re-verify an existing binding
+	RequeueVerify    = "tenant-verify"  // reapply policy and re-verify an existing binding
 )
 
 // RequeueTenant puts an approved account back in the provisioning queue with a
@@ -469,20 +469,28 @@ func AttachBinding(ctx context.Context, db *sql.DB, c Claim, b NewBinding, now t
 	return nil
 }
 
-// ReplaceBindingCredential swaps a binding's sealed key after a rotation. Only
-// a binding that is not READY may be replaced: a live credential is rotated
-// through a flow that re-verifies it.
-func ReplaceBindingCredential(ctx context.Context, db *sql.DB, bindingID string, b NewBinding) error {
-	res, err := db.ExecContext(ctx, `UPDATE tenant_bindings SET credential_ciphertext = ?, credential_key_version = ?,
-		credential_fingerprint = ? WHERE id = ? AND status IN ('CONFIGURING','FAILED')`,
-		b.Ciphertext, b.KeyVersion, b.Fingerprint, bindingID)
+// ReplaceBindingCredential replaces only the claimed account's configuring binding.
+func ReplaceBindingCredential(ctx context.Context, db *sql.DB, c Claim, b NewBinding, now time.Time) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `UPDATE tenant_bindings SET credential_ciphertext = ?, credential_key_version = ?,
+		credential_fingerprint = ? WHERE id = ? AND user_id = ? AND profile_name = ? AND status = 'CONFIGURING'
+		AND EXISTS (SELECT 1 FROM users WHERE id = ? AND approval_status = 'APPROVED' AND tenant_status = 'CONFIGURING'
+		AND tenant_profile = ?)`,
+		b.Ciphertext, b.KeyVersion, b.Fingerprint, c.BindingID, c.UserID, c.Profile, c.UserID, c.Profile)
 	if err != nil {
 		return err
 	}
 	if n, err := res.RowsAffected(); err != nil || n != 1 {
 		return ErrSuperseded
 	}
-	return nil
+	if err := audit(ctx, tx, "", "tenant.rotate", c.UserID, "ok", "", now); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 // SealedCredential is the stored key material for a user's binding. It is read
@@ -561,7 +569,8 @@ func MarkReady(ctx context.Context, db *sql.DB, c Claim, now time.Time) error {
 }
 
 // MarkFailed records a failed run with its fixed-vocabulary detail, the new
-// attempt total and the next attempt time. It returns ErrSuperseded, changing
+// attempt total and next attempt time (zero stops retries and audits attention).
+// It returns ErrSuperseded, changing
 // nothing, if the account is no longer CONFIGURING under this run (e.g. it was
 // suspended meanwhile).
 func MarkFailed(ctx context.Context, db *sql.DB, c Claim, detail string, attempts int, nextAt time.Time, now time.Time) error {
@@ -570,10 +579,14 @@ func MarkFailed(ctx context.Context, db *sql.DB, c Claim, detail string, attempt
 		return err
 	}
 	defer tx.Rollback()
+	next := ""
+	if !nextAt.IsZero() {
+		next = ts(nextAt)
+	}
 	res, err := tx.ExecContext(ctx, `UPDATE users SET tenant_status = 'FAILED', tenant_detail = ?, tenant_attempts = ?,
 		tenant_next_attempt_at = ?, tenant_checked_at = ?
 		WHERE id = ? AND approval_status = 'APPROVED' AND tenant_status = 'CONFIGURING' AND tenant_profile = ?`,
-		detail, attempts, ts(nextAt), ts(now), c.UserID, c.Profile)
+		detail, attempts, nullIfEmpty(next), ts(now), c.UserID, c.Profile)
 	if err != nil {
 		return err
 	}
@@ -582,6 +595,11 @@ func MarkFailed(ctx context.Context, db *sql.DB, c Claim, detail string, attempt
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE tenant_bindings SET status = 'FAILED' WHERE user_id = ? AND status = 'CONFIGURING'`, c.UserID); err != nil {
 		return err
+	}
+	if nextAt.IsZero() {
+		if err := audit(ctx, tx, "", "tenant.attention", c.UserID, detail, "", now); err != nil {
+			return err
+		}
 	}
 	if err := audit(ctx, tx, "", "tenant.failed", c.UserID, "failed:"+detail, "", now); err != nil {
 		return err

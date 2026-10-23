@@ -523,3 +523,47 @@ func TestListAdminUsersFiltersAndPages(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRotatedCredentialIsOwnerScopedAndCannotReplaceReadyOrSuspendedBinding(t *testing.T) {
+	ctx := context.Background()
+	db, admin, u1 := adminAndUser(t, "APPROVED")
+	u2 := mkUser(t, db, "u2", "USER", "APPROVED", "UNPROVISIONED")
+	c1, err := ClaimTenant(ctx, db, u1, "u_slug000000001", t0, time.Minute, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2, err := ClaimTenant(ctx, db, u2, "u_slug000000002", t0, time.Minute, 5)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c1.BindingID = mkBinding(t, db, u1, c1.Profile, "CONFIGURING")
+	c2.BindingID = mkBinding(t, db, u2, c2.Profile, "CONFIGURING")
+	b := NewBinding{Ciphertext: []byte("rotated"), KeyVersion: 1, Fingerprint: "rotated-fp"}
+	wrong := c1
+	wrong.BindingID = c2.BindingID
+	if err := ReplaceBindingCredential(ctx, db, wrong, b, t0); !errors.Is(err, ErrSuperseded) {
+		t.Fatalf("cross-owner replacement: %v", err)
+	}
+	cred, err := BindingCredential(ctx, db, u2)
+	if err != nil || string(cred.Ciphertext) != "sealed-"+u2 {
+		t.Fatalf("other tenant's credential changed: %v", err)
+	}
+	if err := ReplaceBindingCredential(ctx, db, c1, b, t0); err != nil {
+		t.Fatal(err)
+	}
+	if count(t, db, `SELECT COUNT(*) FROM audit_log WHERE action = 'tenant.rotate' AND target_id = ?`, u1) != 1 {
+		t.Fatal("missing rotation audit")
+	}
+	if err := MarkReady(ctx, db, c1, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceBindingCredential(ctx, db, c1, b, t0); !errors.Is(err, ErrSuperseded) {
+		t.Fatalf("READY replacement: %v", err)
+	}
+	if _, err := Decide(ctx, db, admin, u2, ActionSuspend, "test", "r", t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := ReplaceBindingCredential(ctx, db, c2, b, t0); !errors.Is(err, ErrSuperseded) {
+		t.Fatalf("suspended replacement: %v", err)
+	}
+}

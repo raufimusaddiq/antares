@@ -209,10 +209,8 @@ func (s *Service) Process(ctx context.Context, userID string) error {
 		return err
 	}
 
-	if c.BindingID == "" {
-		if err := s.obtainCredential(ctx, &c); err != nil {
-			return s.finish(ctx, c, err)
-		}
+	if err := s.obtainCredential(ctx, &c); err != nil {
+		return s.finish(ctx, c, err)
 	}
 	return s.finish(ctx, c, s.verify(ctx, c))
 }
@@ -245,7 +243,7 @@ func (s *Service) finish(ctx context.Context, c store.Claim, err error) error {
 		}
 	}
 	if errors.Is(err, store.ErrSuperseded) {
-		return nil // the account moved on while the helper ran; the credential is stored DISABLED
+		return nil // the account moved on while the helper ran; nothing may unlock
 	}
 	var o *outcome
 	if !errors.As(err, &o) {
@@ -255,10 +253,16 @@ func (s *Service) finish(ctx context.Context, c store.Claim, err error) error {
 		return nil // shutdown or run budget: stay CONFIGURING, the lease resumes it
 	}
 	attempts := c.Attempts + 1
+	nextAt := now.Add(s.backoff(attempts))
+	detail := o.detail
 	if o.permanent {
-		attempts = s.max // needs an operator; no automatic retry
+		nextAt = time.Time{}
+		detail = "operator attention required: deterministic failure: " + detail
+	} else if attempts >= s.max {
+		nextAt = time.Time{}
+		detail = "operator attention required: retry budget exhausted: " + detail
 	}
-	switch werr := store.MarkFailed(wctx, s.db, c, o.detail, attempts, now.Add(s.backoff(attempts)), now); {
+	switch werr := store.MarkFailed(wctx, s.db, c, detail, attempts, nextAt, now); {
 	case werr == nil, errors.Is(werr, store.ErrSuperseded):
 		return nil
 	default:
@@ -268,7 +272,14 @@ func (s *Service) finish(ctx context.Context, c store.Claim, err error) error {
 
 // obtainCredential asks the helper for the profile's key and stores it sealed.
 func (s *Service) obtainCredential(ctx context.Context, c *store.Claim) error {
-	cred, err := s.helper.Provision(ctx, c.Profile)
+	var cred hermes.Credential
+	var err error
+	if c.BindingID != "" {
+		// Rotate reapplies toolset policy; repeating it also recovers a lost response.
+		cred, err = s.helper.Rotate(ctx, c.Profile)
+	} else {
+		cred, err = s.helper.Provision(ctx, c.Profile)
+	}
 	if errors.Is(err, hermes.ErrKeyExists) {
 		// The profile has a key we never stored: a previous response was lost.
 		// The helper's documented recovery is a rotation, which issues a fresh key.
@@ -277,7 +288,10 @@ func (s *Service) obtainCredential(ctx context.Context, c *store.Claim) error {
 	if err != nil {
 		return helperFailure(err)
 	}
-	id := store.NewID()
+	id := c.BindingID
+	if id == "" {
+		id = store.NewID()
+	}
 	sealed, err := s.box.Seal(cred.Key, id)
 	if err != nil {
 		return fail("could not seal the credential", true)
@@ -285,6 +299,15 @@ func (s *Service) obtainCredential(ctx context.Context, c *store.Claim) error {
 	b := store.NewBinding{
 		ID: id, Endpoint: endpointID, Ciphertext: sealed, KeyVersion: secrets.Version,
 		Fingerprint: s.box.Fingerprint(cred.Key), MemoryScopeKey: scopePrefix + c.UserID,
+	}
+	if c.BindingID != "" {
+		if err := store.ReplaceBindingCredential(ctx, s.db, *c, b, s.now()); err != nil {
+			if errors.Is(err, store.ErrSuperseded) {
+				return err
+			}
+			return fail("could not store the rotated credential", false)
+		}
+		return nil
 	}
 	if err := store.AttachBinding(ctx, s.db, *c, b, s.now()); err != nil {
 		if errors.Is(err, store.ErrSuperseded) {
@@ -325,6 +348,11 @@ func (s *Service) verify(ctx context.Context, c store.Claim) error {
 		d := rep.Detail()
 		if d == "" {
 			d = "verification did not complete"
+		}
+		for _, result := range rep {
+			if !result.Passed && result.Remediation == hermes.ReapplyToolsetPolicy {
+				return fail(d, true)
+			}
 		}
 		return fail(d, false)
 	}
