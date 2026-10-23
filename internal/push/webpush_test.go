@@ -12,8 +12,10 @@ import (
 	"errors"
 	"io"
 	"math/big"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"reflect"
 	"strings"
 	"testing"
@@ -201,6 +203,43 @@ func TestSendClassifiesPushServiceAnswers(t *testing.T) {
 		status = code
 		if err := s.Send(context.Background(), tg, Payload{V: 1, Kind: KindCompleted}); !errors.Is(err, want) {
 			t.Errorf("status %d -> %v, want %v", code, err, want)
+		}
+	}
+}
+
+// The standard predicates pass these; each is address space a push service is not in, and
+// 100.100.100.200 is a cloud metadata endpoint.
+func TestPublicIPRefusesSpecialPurposeSpace(t *testing.T) {
+	for _, s := range []string{
+		"100.100.100.200", "100.64.0.1", "100.127.255.254", "192.0.0.1", "198.18.0.1", "198.19.255.254", "240.0.0.1", "255.255.255.255",
+		"0.0.0.0", "10.0.0.1", "172.16.0.1", "192.168.1.1", "127.0.0.1", "169.254.169.254", "192.0.2.1", "198.51.100.1", "203.0.113.1",
+		"::1", "::", "fe80::1", "fc00::1", "fd00::1", "2001:db8::1", "64:ff9b::a00:1", "2002:a00:1::1", "2001::1",
+		"::ffff:10.0.0.1", "::ffff:100.100.100.200", "::ffff:127.0.0.1",
+	} {
+		if publicIP(net.ParseIP(s)) {
+			t.Errorf("%s was treated as public", s)
+		}
+	}
+	for _, s := range []string{"8.8.8.8", "142.250.80.46", "34.107.243.93", "17.253.144.10", "2606:4700:4700::1111", "2a00:1450:4001:81b::200e"} {
+		if !publicIP(net.ParseIP(s)) {
+			t.Errorf("%s was refused", s)
+		}
+	}
+	if publicIP(nil) || publicIP(net.IP{1, 2, 3}) {
+		t.Error("a malformed address was accepted")
+	}
+}
+
+func TestAudienceHasNoDefaultPort(t *testing.T) {
+	for in, want := range map[string]string{
+		"https://fcm.googleapis.com:443/fcm/send/x": "https://fcm.googleapis.com",
+		"https://fcm.googleapis.com/fcm/send/x":     "https://fcm.googleapis.com",
+		"https://FCM.GoogleAPIs.com/x":              "https://fcm.googleapis.com",
+		"https://127.0.0.1:8443/x":                  "https://127.0.0.1:8443",
+	} {
+		u, _ := url.Parse(in)
+		if got := audience(u); got != want {
+			t.Errorf("audience(%s) = %s, want %s", in, got, want)
 		}
 	}
 }

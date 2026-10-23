@@ -77,9 +77,6 @@ func New(o Options) (*Service, error) {
 	return s, nil
 }
 
-// Configured reports whether a VAPID key pair is present.
-func (s *Service) Configured() bool { return s.vapid != nil }
-
 // Close cancels in-flight sends and waits for them.
 func (s *Service) Close() {
 	s.stop()
@@ -126,7 +123,7 @@ func (s *Service) notify(userID, runID, chatID, kind string) {
 	if err != nil || mode == store.PushOff || (mode == store.PushFailures && kind != KindFailed) {
 		return
 	}
-	if err := store.PrunePushDeliveries(ctx, s.db, s.now().Add(-deliveryRetention)); err != nil {
+	if err := store.PrunePushDeliveries(ctx, s.db, userID, s.now().Add(-deliveryRetention)); err != nil {
 		log.Printf("push: prune delivery records: %v", err)
 	}
 	subs, err := store.ListPushSubs(ctx, s.db, userID)
@@ -152,7 +149,7 @@ func (s *Service) notify(userID, runID, chatID, kind string) {
 		err = s.sendWithRetry(ctx, t, p)
 		switch {
 		case err == nil:
-			_ = store.MarkPushDelivered(ctx, s.db, sub.ID, runID, kind, s.now())
+			_ = store.MarkPushDelivered(ctx, s.db, userID, sub.ID, runID, kind, s.now())
 		case errors.Is(err, ErrGone):
 			_ = store.DeletePushSub(ctx, s.db, userID, sub.ID)
 		default:

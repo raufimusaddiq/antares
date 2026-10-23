@@ -25,6 +25,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"strings"
 	"syscall"
@@ -215,8 +216,49 @@ func SafeClient() *http.Client {
 	}
 }
 
+// notPublic lists address space a push service never lives in, beyond what IsGlobalUnicast
+// and IsPrivate exclude: the RFC 6890 special-purpose blocks that the standard predicates
+// pass (carrier-grade NAT, which holds the 100.100.100.200 cloud metadata address, IETF
+// protocol assignments, benchmarking, reserved) and the IPv6 forms that embed an IPv4 address.
+var notPublic = func() []netip.Prefix {
+	var out []netip.Prefix
+	for _, p := range []string{
+		"0.0.0.0/8", "100.64.0.0/10", "192.0.0.0/24", "192.0.2.0/24", "192.88.99.0/24", "198.18.0.0/15",
+		"198.51.100.0/24", "203.0.113.0/24", "240.0.0.0/4", "255.255.255.255/32",
+		"64:ff9b::/96", "64:ff9b:1::/48", "100::/64", "2001::/32", "2001:db8::/32", "2002::/16",
+	} {
+		out = append(out, netip.MustParsePrefix(p))
+	}
+	return out
+}()
+
+// publicIP reports whether ip is an address a push service may be reached at: global unicast,
+// not private, loopback or link-local, and outside every notPublic block.
 func publicIP(ip net.IP) bool {
-	return ip.IsGlobalUnicast() && !ip.IsPrivate() && !ip.IsLoopback() && !ip.IsLinkLocalUnicast() && !ip.IsUnspecified()
+	a, ok := netip.AddrFromSlice(ip)
+	if !ok {
+		return false
+	}
+	a = a.Unmap() // ::ffff:10.0.0.1 is 10.0.0.1
+	if !a.IsGlobalUnicast() || a.IsPrivate() || a.IsLoopback() || a.IsLinkLocalUnicast() || a.IsUnspecified() {
+		return false
+	}
+	for _, p := range notPublic {
+		if p.Contains(a) {
+			return false
+		}
+	}
+	return true
+}
+
+// audience is the VAPID aud claim: scheme and host, with no default port. ValidEndpoint accepts
+// only :443, and a push service validating aud against its own origin rejects "host:443".
+func audience(u *url.URL) string {
+	host := strings.ToLower(u.Hostname())
+	if p := u.Port(); p != "" && p != "443" {
+		host += ":" + p
+	}
+	return u.Scheme + "://" + host
 }
 
 // Send encrypts p for t and posts it.
@@ -229,7 +271,7 @@ func (s *Sender) Send(ctx context.Context, t Target, p Payload) error {
 	if err != nil {
 		return ErrRejected
 	}
-	authz, err := s.vapid.authorization(u.Scheme+"://"+u.Host, s.now())
+	authz, err := s.vapid.authorization(audience(u), s.now())
 	if err != nil {
 		return ErrRejected
 	}

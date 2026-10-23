@@ -118,13 +118,6 @@ func DeletePushSub(ctx context.Context, db *sql.DB, userID, id string) error {
 	return nil
 }
 
-// DeleteAllPushSubs removes every device of an account (a user who is no longer
-// eligible keeps no live subscription).
-func DeleteAllPushSubs(ctx context.Context, db *sql.DB, userID string) error {
-	_, err := db.ExecContext(ctx, `DELETE FROM push_subscriptions WHERE user_id = ?`, userID)
-	return err
-}
-
 // ClaimPushDelivery records the intent to send {subscription, run, kind}. It
 // returns false when that notification was already claimed, so it is sent at most
 // once. The row is scoped to the owner of both the subscription and the run.
@@ -141,14 +134,14 @@ func ClaimPushDelivery(ctx context.Context, db *sql.DB, userID, subID, runID, ki
 }
 
 // MarkPushDelivered stamps a claimed delivery as accepted by the push service.
-func MarkPushDelivered(ctx context.Context, db *sql.DB, subID, runID, kind string, now time.Time) error {
-	_, err := db.ExecContext(ctx, `UPDATE push_delivery_events SET delivered_at = ? WHERE subscription_id = ? AND run_id = ? AND event_kind = ?`,
-		ts(now), subID, runID, kind)
+func MarkPushDelivered(ctx context.Context, db *sql.DB, userID, subID, runID, kind string, now time.Time) error {
+	_, err := db.ExecContext(ctx, `UPDATE push_delivery_events SET delivered_at = ? WHERE user_id = ? AND subscription_id = ? AND run_id = ? AND event_kind = ?`,
+		ts(now), userID, subID, runID, kind)
 	return err
 }
 
-// PrunePushDeliveries drops delivery records older than cutoff.
-func PrunePushDeliveries(ctx context.Context, db *sql.DB, cutoff time.Time) error {
-	_, err := db.ExecContext(ctx, `DELETE FROM push_delivery_events WHERE created_at < ?`, ts(cutoff))
+// PrunePushDeliveries drops one account's delivery records older than cutoff.
+func PrunePushDeliveries(ctx context.Context, db *sql.DB, userID string, cutoff time.Time) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM push_delivery_events WHERE user_id = ? AND created_at < ?`, userID, ts(cutoff))
 	return err
 }
