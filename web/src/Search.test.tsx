@@ -6,8 +6,8 @@ import { parseSearch, searchChats, type SearchPage, type Turn } from "./chatApi"
 import { reachOf } from "./history";
 
 const noop = () => {};
-const page = (over: Partial<SearchPage> = {}): SearchPage => ({ results: [], nextCursor: "", index: { complete: true, chats: 2, pending: 0 }, ...over });
-const state = (p: SearchPage | null, over: Partial<SearchState> = {}): SearchState => ({ query: "ünal", page: p, error: "", loading: false, ...over });
+const page = (over: Partial<SearchPage> = {}): SearchPage => ({ results: [], nextCursor: "", index: { complete: true, chats: 2, pending: 0, partial: 0 }, ...over });
+const state = (p: SearchPage | null, over: Partial<SearchState> = {}): SearchState => ({ query: "ünal", page: p, error: "", loading: false, params: null, ...over });
 const render = (s: SearchState) => renderToStaticMarkup(<SearchResults state={s} onOpen={noop} onMore={noop} />);
 
 const hit = {
@@ -31,7 +31,7 @@ describe("snippets are text, never markup", () => {
   });
 
   it("renders a result with the chat title, who wrote it and the marked span", () => {
-    const html = render(state(parseSearch({ results: [hit], nextCursor: "", index: { complete: true, chats: 1, pending: 0 } })));
+    const html = render(state(parseSearch({ results: [hit], nextCursor: "", index: { complete: true, chats: 1, pending: 0, partial: 0 } })));
     expect(html).toContain("Plan");
     expect(html).toContain("Assistant");
     expect(html).toContain("<mark>Ünal</mark>");
@@ -46,11 +46,18 @@ describe("search says what it knows", () => {
   });
 
   it("a partial index is never presented as a complete answer", () => {
-    const none = render(state(page({ index: { complete: false, chats: 5, pending: 2 } })));
+    const none = render(state(page({ index: { complete: false, chats: 5, pending: 2, partial: 0 } })));
     expect(none).toContain("No matches yet");
     expect(none).toContain("Still indexing 2 of 5");
-    const some = render(state(page({ results: [{ ...hit, kind: "message" } as never], index: { complete: false, chats: 5, pending: 2 } })));
+    const some = render(state(page({ results: [{ ...hit, kind: "message" } as never], index: { complete: false, chats: 5, pending: 2, partial: 0 } })));
     expect(some).toContain("may be incomplete");
+  });
+
+  it("a chat cut by the size limit is partly indexed, not still indexing", () => {
+    const html = render(state(page({ index: { complete: false, chats: 4, pending: 0, partial: 1 } })));
+    expect(html).toContain("1 of 4 conversations are only partly indexed");
+    expect(html).not.toContain("Still indexing");
+    expect(html).not.toContain("search again");
   });
 
   it("an error shows words from the vocabulary, not the server text, and no results", () => {
@@ -67,7 +74,7 @@ describe("search says what it knows", () => {
 });
 
 describe("parseSearch refuses what it cannot place", () => {
-  const ok = { results: [hit], nextCursor: "", index: { complete: true, chats: 1, pending: 0 } };
+  const ok = { results: [hit], nextCursor: "", index: { complete: true, chats: 1, pending: 0, partial: 0 } };
   it("accepts a well-formed page and keeps the turn anchor", () => {
     expect(parseSearch(ok)?.results[0]).toMatchObject({ chatId: "a".repeat(32), turn: 4, kind: "message" });
   });

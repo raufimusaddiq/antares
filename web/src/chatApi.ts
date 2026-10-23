@@ -210,7 +210,7 @@ export interface SearchPage {
   results: SearchResult[];
   nextCursor: string;
   /** How much of the account is searchable; incomplete means results may be missing. */
-  index: { complete: boolean; chats: number; pending: number };
+  index: { complete: boolean; chats: number; pending: number; partial: number };
 }
 
 export function parseSearch(v: unknown): SearchPage | null {
@@ -238,7 +238,7 @@ export function parseSearch(v: unknown): SearchPage | null {
     results.push({ chatId: str(ro.chatId), chatTitle: str(ro.chatTitle), kind: ro.kind, turn, role: ro.role, snippet });
   }
   const num = (n: unknown) => (typeof n === "number" && Number.isFinite(n) ? n : 0);
-  return { results, nextCursor: str(o.nextCursor), index: { complete: ix.complete, chats: num(ix.chats), pending: num(ix.pending) } };
+  return { results, nextCursor: str(o.nextCursor), index: { complete: ix.complete, chats: num(ix.chats), pending: num(ix.pending), partial: num(ix.partial) } };
 }
 
 export interface SearchOptions {

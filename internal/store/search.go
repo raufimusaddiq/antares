@@ -182,10 +182,13 @@ func StaleChats(ctx context.Context, db *sql.DB, userID, onlyChat string, limit 
 	return out, rows.Err()
 }
 
-// IndexStatus counts the user's ACTIVE chats (in scope: one chat or all) and how
-// many of them are not completely searchable: not yet indexed, stale, or cut short.
-func IndexStatus(ctx context.Context, db *sql.DB, userID, onlyChat string) (total, incomplete int, err error) {
-	q := `SELECT COUNT(*), COALESCE(SUM(CASE WHEN s.chat_id IS NULL OR s.indexed_at = '' OR s.indexed_at < s.invalidated_at OR s.truncated = 1 THEN 1 ELSE 0 END), 0)
+// IndexStatus counts the user's ACTIVE chats (in scope: one chat or all), how many
+// are pending (not yet indexed, or stale: a later search will fix that) and how
+// many are partial (cut short by a size or quota limit: nothing will fix that).
+func IndexStatus(ctx context.Context, db *sql.DB, userID, onlyChat string) (total, pending, partial int, err error) {
+	q := `SELECT COUNT(*),
+		COALESCE(SUM(CASE WHEN s.chat_id IS NULL OR s.indexed_at = '' OR s.indexed_at < s.invalidated_at THEN 1 ELSE 0 END), 0),
+		COALESCE(SUM(CASE WHEN s.chat_id IS NOT NULL AND s.indexed_at <> '' AND s.indexed_at >= s.invalidated_at AND s.truncated = 1 THEN 1 ELSE 0 END), 0)
 		FROM chats c LEFT JOIN search_state s ON s.chat_id = c.id AND s.user_id = c.user_id
 		WHERE c.user_id = ? AND c.status = 'ACTIVE'`
 	args := []any{userID}
@@ -193,7 +196,7 @@ func IndexStatus(ctx context.Context, db *sql.DB, userID, onlyChat string) (tota
 		q += ` AND c.id = ?`
 		args = append(args, onlyChat)
 	}
-	err = db.QueryRowContext(ctx, q, args...).Scan(&total, &incomplete)
+	err = db.QueryRowContext(ctx, q, args...).Scan(&total, &pending, &partial)
 	return
 }
 
@@ -210,27 +213,28 @@ type SearchQuery struct {
 
 // SearchCursor is the keyset position after the last hit of a page.
 type SearchCursor struct {
-	UpdatedAt, ChatID string
+	CreatedAt, ChatID string
 	Seq               int
 }
 
 type SearchHit struct {
 	ChatID        string
 	ChatTitle     string
-	ChatUpdatedAt string
+	ChatCreatedAt string
 	Seq           int
 	Role          string
 	Body          string
 	CreatedAt     string
 }
 
-// SearchChats returns hits from the user's own ACTIVE chats, newest chat activity
+// SearchChats returns hits from the user's own ACTIVE chats, newest-created chat
 // first and, inside a chat, newest turn first. It asks for one extra row; that
 // row is returned last and is not part of the page. Ownership is in the query:
 // the chat row and the index row must both carry userID, so no row of another
 // user can be reached however the terms are written. Terms are bound
 // parameters to instr(), not patterns, so there is nothing to escape.
-// Order is recency, not relevance: no score is claimed. CROSS JOIN pins the
+// Order is recency of creation (chat, then turn), not relevance: no score is claimed. The chat key is created_at because
+// it never changes; updated_at moves when a run starts, which would move a chat across a live cursor. CROSS JOIN pins the
 // chats index as the outer loop (left to right); left free, the planner drives
 // from search_docs and sorts every match the user has. The plan then orders the
 // chats for free and sorts only the turns inside one chat (EXPLAIN QUERY PLAN
@@ -239,7 +243,7 @@ func SearchChats(ctx context.Context, db *sql.DB, q SearchQuery) (hits []SearchH
 	if q.UserID == "" || len(q.Terms) == 0 {
 		return nil, false, errors.New("store: search needs a user and at least one term")
 	}
-	sqlq := `SELECT c.id, COALESCE(c.title,''), c.updated_at, d.seq, d.role, d.body, COALESCE(d.created_at,'')
+	sqlq := `SELECT c.id, COALESCE(c.title,''), c.created_at, d.seq, d.role, d.body, COALESCE(d.created_at,'')
 		FROM chats c CROSS JOIN search_docs d ON d.chat_id = c.id AND d.user_id = c.user_id
 		WHERE c.user_id = ? AND c.status = 'ACTIVE'`
 	args := []any{q.UserID}
@@ -256,10 +260,10 @@ func SearchChats(ctx context.Context, db *sql.DB, q SearchQuery) (hits []SearchH
 		args = append(args, t)
 	}
 	if q.After != nil {
-		sqlq += ` AND (c.updated_at, c.id, d.seq) < (?, ?, ?)`
-		args = append(args, q.After.UpdatedAt, q.After.ChatID, q.After.Seq)
+		sqlq += ` AND (c.created_at, c.id, d.seq) < (?, ?, ?)`
+		args = append(args, q.After.CreatedAt, q.After.ChatID, q.After.Seq)
 	}
-	sqlq += ` ORDER BY c.updated_at DESC, c.id DESC, d.seq DESC LIMIT ?`
+	sqlq += ` ORDER BY c.created_at DESC, c.id DESC, d.seq DESC LIMIT ?`
 	args = append(args, q.Limit+1)
 	rows, err := db.QueryContext(ctx, sqlq, args...)
 	if err != nil {
@@ -268,7 +272,7 @@ func SearchChats(ctx context.Context, db *sql.DB, q SearchQuery) (hits []SearchH
 	defer rows.Close()
 	for rows.Next() {
 		var h SearchHit
-		if err := rows.Scan(&h.ChatID, &h.ChatTitle, &h.ChatUpdatedAt, &h.Seq, &h.Role, &h.Body, &h.CreatedAt); err != nil {
+		if err := rows.Scan(&h.ChatID, &h.ChatTitle, &h.ChatCreatedAt, &h.Seq, &h.Role, &h.Body, &h.CreatedAt); err != nil {
 			return nil, false, err
 		}
 		hits = append(hits, h)

@@ -106,6 +106,7 @@ export interface TranscriptProps {
   onLoadMore?: () => void;
   /** The turn a search result opened at: scrolled to and marked. */
   focusSeq?: number | null;
+  focusNonce?: number;
   onCancel: () => void;
   onRetry: () => void;
   onReconnect: () => void;
@@ -115,7 +116,7 @@ export interface TranscriptProps {
 const never = () => {};
 
 export function Transcript(props: TranscriptProps) {
-  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null } = props;
+  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0 } = props;
   const renderTurn = useCallback(
     (t: Turn) => (
       <article className={`turn ${t.role}`} data-found={t.seq === focusSeq ? "true" : undefined} aria-current={t.seq === focusSeq ? "location" : undefined}>
@@ -174,6 +175,7 @@ export function Transcript(props: TranscriptProps) {
       topNote={note}
       onLoadMore={onLoadMore}
       focusKey={focusSeq === null ? undefined : String(focusSeq)}
+      focusNonce={focusNonce}
     />
   );
 }
@@ -233,7 +235,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
   const [pending, setPending] = useState<Pending | null>(null);
   const [draft, setDraft] = useState("");
   const [banner, setBanner] = useState("");
-  const [focus, setFocus] = useState<{ chat: string; seq: number } | null>(null); // a search result being opened at its turn
+  const [focus, setFocus] = useState<{ chat: string; seq: number; nonce: number } | null>(null); // a search result being opened at its turn
 
   const es = useRef<EventSource | null>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -244,6 +246,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
   const cursorRef = useRef("");
   const blankChat = useRef(""); // id of the chat New chat created and nothing has been sent into yet
   const creating = useRef(false); // a New chat request is in flight: a second click must not create a second chat
+  const focusCount = useRef(0); // distinguishes opening the same result twice
   const nav = useRef(0); // bumped whenever the reader picks a chat, so a slow create cannot override that choice
   const olderInflight = useRef(""); // "chat|cursor" of the older-page request in flight: one at a time, never twice
   currentRef.current = current;
@@ -412,7 +415,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
         c = got.value;
       }
       if (r.chatId !== currentRef.current) open(c);
-      if (r.turn !== null) setFocus({ chat: r.chatId, seq: r.turn });
+      if (r.turn !== null) setFocus({ chat: r.chatId, seq: r.turn, nonce: ++focusCount.current });
     },
     [chats, open],
   );
@@ -425,7 +428,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
     }
     switch (reachOf(turns, cursor, focus.seq)) {
       case "older":
-        if (!loadingOlder && !olderError) void loadOlder();
+        if (olderError) {
+          // Older pages cannot be fetched, so the turn cannot be reached: say so instead of leaving the click pending.
+          setFocus(null);
+          setBanner(`Could not reach that message: ${olderError}`);
+        } else if (!loadingOlder) void loadOlder();
         break;
       case "gone":
         setFocus(null);
@@ -635,6 +642,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
           loadingMore={loadingOlder}
           olderError={olderError}
           onLoadMore={() => void loadOlder()}
+          focusNonce={focus?.nonce ?? 0}
           focusSeq={focus && focus.chat === current && reachOf(turns, cursor, focus.seq) === "held" ? focus.seq : null}
           onCancel={onCancel}
           onRetry={() => {

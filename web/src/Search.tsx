@@ -21,6 +21,8 @@ export interface SearchState {
   /** An error code from the API vocabulary; the words come from describeCode. */
   error: string;
   loading: boolean;
+  /** The request that produced `page`: "More results" repeats this, never what the box says now. */
+  params: { q: string; chatId?: string; role?: "user" | "assistant" } | null;
 }
 
 /** The results and the honest statements around them. Pure, so it renders to static markup in tests. */
@@ -34,12 +36,13 @@ export function SearchResults({ state, onOpen, onMore }: { state: SearchState; o
     );
   }
   if (!page) return loading ? <p className="label">Searching…</p> : null;
-  const partial = !page.index.complete;
+  const { pending, partial, chats } = page.index;
+  const incomplete = !page.index.complete;
   return (
     <div className="search-results">
       {page.results.length === 0 ? (
         <p className="label" role="status">
-          {partial ? `No matches yet for “${query}”.` : `No matches for “${query}”.`}
+          {incomplete ? `No matches yet for “${query}”.` : `No matches for “${query}”.`}
         </p>
       ) : (
         <ul aria-label="Search results">
@@ -56,9 +59,14 @@ export function SearchResults({ state, onOpen, onMore }: { state: SearchState; o
           ))}
         </ul>
       )}
-      {partial && (
+      {pending > 0 && (
         <p className="label" role="status">
-          Still indexing {page.index.pending} of {page.index.chats} conversations. Results may be incomplete; search again in a moment.
+          Still indexing {pending} of {chats} conversations. Results may be incomplete; search again in a moment.
+        </p>
+      )}
+      {partial > 0 && (
+        <p className="label" role="status">
+          {partial} of {chats} conversations are only partly indexed (they are too long). Text in the unindexed part cannot be found.
         </p>
       )}
       {page.nextCursor && (
@@ -75,28 +83,32 @@ export function SearchPanel({ current, onOpen }: { current: string | null; onOpe
   const [text, setText] = useState("");
   const [thisChat, setThisChat] = useState(false);
   const [role, setRole] = useState<"" | "user" | "assistant">("");
-  const [state, setState] = useState<SearchState>({ query: "", page: null, error: "", loading: false });
+  const [state, setState] = useState<SearchState>({ query: "", page: null, error: "", loading: false, params: null });
   const seq = useRef(0); // only the newest request may write: an older answer arriving late is dropped
 
+  // A new search reads the box; "More results" (cursor given) repeats the stored params, because the
+  // cursor is a position in that query's results and means nothing for any other.
   const run = (cursor?: string) => {
-    const q = text.trim();
+    const params = cursor && state.params ? state.params : { q: text.trim(), chatId: thisChat && current ? current : undefined, role: role || undefined };
+    const q = params.q;
     if ([...q].length < 2) {
       seq.current++;
-      setState({ query: q, page: null, error: "", loading: false });
+      setState({ query: q, page: null, error: "", loading: false, params: null });
       return;
     }
     const mine = ++seq.current;
-    setState((s) => ({ query: q, page: cursor ? s.page : null, error: "", loading: true }));
-    void searchChats(q, { chatId: thisChat && current ? current : undefined, role: role || undefined, cursor }).then((r) => {
+    setState((s) => ({ query: q, page: cursor ? s.page : null, error: "", loading: true, params }));
+    void searchChats(q, { chatId: params.chatId, role: params.role, cursor }).then((r) => {
       if (mine !== seq.current) return;
       if (!r.ok) {
-        setState({ query: q, page: null, error: r.code, loading: false });
+        setState({ query: q, page: null, error: r.code, loading: false, params: null });
         return;
       }
       setState((s) => ({
         query: q,
         error: "",
         loading: false,
+        params,
         page: cursor && s.page ? { ...r.value, results: [...s.page.results, ...r.value.results] } : r.value,
       }));
     });

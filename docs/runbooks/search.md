@@ -36,9 +36,9 @@ text nodes and `<mark>`, so message content is never parsed as markup.
 - A search reads at most 3 stale chats from Hermes (1 for a scoped search); opening a chat indexes it from
   the transcript already fetched; a run ending in a chat invalidates it. Later pages read nothing.
 - Per turn 4000 runes, per user 100000 turns. A clipped chat is `truncated` and counts as incomplete.
-- The response says `index: {complete, chats, pending}`. The UI says "Still indexing N of M" and never calls
+- The response says `index: {complete, chats, pending, partial}`. `pending` (not indexed yet) is "Still indexing N of M"; `partial` (cut by a limit, never fixed by waiting) is "only partly indexed". Neither is called
   a partial index complete.
-- Order is recency (chat activity, then newest turn). No relevance score exists. The plan sorts only the
+- Order is recency of creation (chat created_at, then newest turn); the key is immutable so a run starting mid-pagination cannot move a chat across a cursor. No relevance score exists. The plan sorts only the
   turns inside one chat (`TestSearchPlanUsesOwnerIndexWithoutSorting`).
 
 ## At rest

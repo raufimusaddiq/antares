@@ -71,8 +71,8 @@ func TestIndexWritesAreOwnerScoped(t *testing.T) {
 	if hits, _, _ := SearchChats(ctx, d.DB, SearchQuery{UserID: u.a, Terms: terms("keep me"), Limit: 5}); len(hits) != 1 {
 		t.Errorf("A's index was changed by B: %+v", hits)
 	}
-	if tot, inc, _ := IndexStatus(ctx, d.DB, u.a, ""); tot != 1 || inc != 0 {
-		t.Errorf("A's status after B's invalidate: %d/%d", tot, inc)
+	if tot, pen, par, _ := IndexStatus(ctx, d.DB, u.a, ""); tot != 1 || pen != 0 || par != 0 {
+		t.Errorf("A's status after B's invalidate: %d/%d/%d", tot, pen, par)
 	}
 	// The database itself refuses a doc whose owner differs from its chat's.
 	if _, err := d.DB.Exec(`INSERT INTO search_docs (user_id, chat_id, seq, role, body, folded) VALUES (?,?,5,'user','x','x')`, u.b, u.chatA.ID); err == nil {
@@ -159,7 +159,7 @@ func TestSearchTitleFiltersAndKeysetPaging(t *testing.T) {
 			break
 		}
 		l := hits[len(hits)-1]
-		after = &SearchCursor{UpdatedAt: l.ChatUpdatedAt, ChatID: l.ChatID, Seq: l.Seq}
+		after = &SearchCursor{CreatedAt: l.ChatCreatedAt, ChatID: l.ChatID, Seq: l.Seq}
 	}
 	want := []int{6, 5, 4, 3, 2, 1, 0}
 	if len(seen) != len(want) {
@@ -220,18 +220,18 @@ func TestLongTextIsClippedAndMarkedIncomplete(t *testing.T) {
 	if hits, _, _ := SearchChats(context.Background(), d.DB, SearchQuery{UserID: u.a, Terms: terms("tailword"), Limit: 5}); len(hits) != 0 {
 		t.Error("text beyond the cap is indexed")
 	}
-	if _, inc, _ := IndexStatus(context.Background(), d.DB, u.a, ""); inc != 1 {
-		t.Errorf("a clipped chat must not be reported complete: %d", inc)
+	if _, pen, par, _ := IndexStatus(context.Background(), d.DB, u.a, ""); pen != 0 || par != 1 {
+		t.Errorf("a clipped chat is partial, not pending: pending=%d partial=%d", pen, par)
 	}
 }
 
 // The sort key must be covered by an index, or every page sorts in memory (ListAudit lesson).
 func TestSearchPlanUsesOwnerIndexWithoutSorting(t *testing.T) {
 	d, u := setupTwo(t)
-	rows, err := d.DB.Query(`EXPLAIN QUERY PLAN SELECT c.id, COALESCE(c.title,''), c.updated_at, d.seq, d.role, d.body, COALESCE(d.created_at,'')
+	rows, err := d.DB.Query(`EXPLAIN QUERY PLAN SELECT c.id, COALESCE(c.title,''), c.created_at, d.seq, d.role, d.body, COALESCE(d.created_at,'')
 		FROM chats c CROSS JOIN search_docs d ON d.chat_id = c.id AND d.user_id = c.user_id
-		WHERE c.user_id = ? AND c.status = 'ACTIVE' AND instr(d.folded, ?) > 0 AND (c.updated_at, c.id, d.seq) < (?, ?, ?)
-		ORDER BY c.updated_at DESC, c.id DESC, d.seq DESC LIMIT ?`, u.a, "x", "z", "z", 9, 11)
+		WHERE c.user_id = ? AND c.status = 'ACTIVE' AND instr(d.folded, ?) > 0 AND (c.created_at, c.id, d.seq) < (?, ?, ?)
+		ORDER BY c.created_at DESC, c.id DESC, d.seq DESC LIMIT ?`, u.a, "x", "z", "z", 9, 11)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -252,10 +252,53 @@ func TestSearchPlanUsesOwnerIndexWithoutSorting(t *testing.T) {
 	if strings.Contains(all, "USE TEMP B-TREE FOR ORDER BY") || strings.Contains(all, "LAST 2 TERMS") {
 		t.Errorf("search sorts in memory:\n%s", all)
 	}
-	if !strings.Contains(all, "chats_user_status_updated") {
+	if !strings.Contains(all, "chats_user_status_created") {
 		t.Errorf("search does not use the chats ordering index:\n%s", all)
 	}
 	if strings.Contains(all, "SCAN d") || strings.Contains(all, "SCAN search_docs") {
 		t.Errorf("search scans the whole index table:\n%s", all)
+	}
+}
+
+// A run starting bumps chats.updated_at. Paging must not skip or repeat a chat because of it:
+// the cursor's chat key is created_at, which never moves. Fails with an updated_at key.
+func TestSearchPagingSurvivesARunStartingMidPagination(t *testing.T) {
+	d, u := setupTwo(t)
+	ctx := context.Background()
+	var ids []string
+	for i := 1; i <= 3; i++ {
+		c, err := CreateChat(ctx, d.DB, u.a, u.bindA, "sess-page-"+string(rune('0'+i)), "", t0.Add(time.Duration(i)*time.Minute))
+		if err != nil {
+			t.Fatal(err)
+		}
+		mustIndex(t, d, u.a, c.ID, []IndexDoc{{Seq: 0, Role: "user", Text: "pagingword"}})
+		ids = append(ids, c.ID) // ids[2] is the newest
+	}
+	first, more, err := SearchChats(ctx, d.DB, SearchQuery{UserID: u.a, Terms: terms("pagingword"), Limit: 1})
+	if err != nil || !more || first[0].ChatID != ids[2] {
+		t.Fatalf("first page: %+v %v %v", first, more, err)
+	}
+	// A run is admitted in the oldest chat: its updated_at jumps above every other chat.
+	if _, _, err := AdmitRun(ctx, d.DB, u.a, ids[0], "idem-paging-0001", t0.Add(time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	var got []string
+	after := &SearchCursor{CreatedAt: first[0].ChatCreatedAt, ChatID: first[0].ChatID, Seq: first[0].Seq}
+	for pages := 0; pages < 5; pages++ {
+		hits, more, err := SearchChats(ctx, d.DB, SearchQuery{UserID: u.a, Terms: terms("pagingword"), Limit: 1, After: after})
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, h := range hits {
+			got = append(got, h.ChatID)
+		}
+		if !more {
+			break
+		}
+		l := hits[len(hits)-1]
+		after = &SearchCursor{CreatedAt: l.ChatCreatedAt, ChatID: l.ChatID, Seq: l.Seq}
+	}
+	if len(got) != 2 || got[0] != ids[1] || got[1] != ids[0] {
+		t.Errorf("pages after the bump = %v, want [%s %s]: a chat was skipped or repeated", got, ids[1], ids[0])
 	}
 }

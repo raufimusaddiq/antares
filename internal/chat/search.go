@@ -61,7 +61,8 @@ type searchResult struct {
 type indexState struct {
 	Complete bool `json:"complete"`
 	Chats    int  `json:"chats"`
-	Pending  int  `json:"pending"` // chats not (completely) searchable yet
+	Pending  int  `json:"pending"` // chats not indexed yet or stale: a later search catches up
+	Partial  int  `json:"partial"` // chats cut short by a size or quota limit: they stay partly searchable
 }
 
 // parseSearchTerms validates and folds the query. The fold is store.Fold, the
@@ -95,7 +96,7 @@ func parseSearchTerms(raw string) ([]string, bool) {
 }
 
 func encodeSearchCursor(c store.SearchCursor) string {
-	return base64.RawURLEncoding.EncodeToString([]byte("s1\x00" + c.UpdatedAt + "\x00" + c.ChatID + "\x00" + strconv.Itoa(c.Seq)))
+	return base64.RawURLEncoding.EncodeToString([]byte("s1\x00" + c.CreatedAt + "\x00" + c.ChatID + "\x00" + strconv.Itoa(c.Seq)))
 }
 
 // decodeSearchCursor: a forged cursor can only name a position inside the
@@ -113,7 +114,7 @@ func decodeSearchCursor(s string) (*store.SearchCursor, bool) {
 	if err != nil || n < store.TitleSeq || n > 1<<24 {
 		return nil, false
 	}
-	return &store.SearchCursor{UpdatedAt: p[1], ChatID: p[2], Seq: n}, true
+	return &store.SearchCursor{CreatedAt: p[1], ChatID: p[2], Seq: n}, true
 }
 
 // snippet cuts a window of body around the first match and marks every match
@@ -319,7 +320,7 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request, pathChat string
 		internalError(w, "search", err)
 		return
 	}
-	total, pending, err := store.IndexStatus(r.Context(), s.db, uid, scope)
+	total, pending, partial, err := store.IndexStatus(r.Context(), s.db, uid, scope)
 	if err != nil {
 		internalError(w, "search status", err)
 		return
@@ -338,11 +339,11 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request, pathChat string
 	next := ""
 	if more && len(hits) > 0 {
 		l := hits[len(hits)-1]
-		next = encodeSearchCursor(store.SearchCursor{UpdatedAt: l.ChatUpdatedAt, ChatID: l.ChatID, Seq: l.Seq})
+		next = encodeSearchCursor(store.SearchCursor{CreatedAt: l.ChatCreatedAt, ChatID: l.ChatID, Seq: l.Seq})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"results":    out,
 		"nextCursor": next,
-		"index":      indexState{Complete: pending == 0, Chats: total, Pending: pending},
+		"index":      indexState{Complete: pending == 0 && partial == 0, Chats: total, Pending: pending, Partial: partial},
 	})
 }

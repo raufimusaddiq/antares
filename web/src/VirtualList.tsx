@@ -32,9 +32,11 @@ interface Props<T> {
   onLoadMore: () => void;
   /** Scroll this item (by key) to the top once it is held; once per distinct key. */
   focusKey?: string;
+  /** Changes each time the same result is opened again, so it scrolls back even if the key is unchanged. */
+  focusNonce?: number;
 }
 
-export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore, loadingMore, topNote, onLoadMore, focusKey }: Props<T>) {
+export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore, loadingMore, topNote, onLoadMore, focusKey, focusNonce = 0 }: Props<T>) {
   const scroller = useRef<HTMLDivElement | null>(null);
   const content = useRef<HTMLDivElement | null>(null);
   const heights = useRef(new Map<string, number>());
@@ -109,10 +111,11 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
   const focused = useRef<string | undefined>(undefined);
   useLayoutEffect(() => {
     const el = scroller.current;
-    if (!el || focusKey === undefined || focused.current === focusKey) return;
+    const token = `${focusNonce}|${focusKey}`;
+    if (!el || focusKey === undefined || focused.current === token) return;
     const i = keys.indexOf(focusKey);
     if (i < 0) return;
-    focused.current = focusKey;
+    focused.current = token;
     el.scrollTop = Math.max(0, lay.offsets[i]);
     placed.current = { keys, lay, scrollHeight: el.scrollHeight };
     setFollowing(false);
