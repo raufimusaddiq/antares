@@ -93,7 +93,12 @@ func (s *Service) artifactFor(w http.ResponseWriter, r *http.Request) (artifact,
 	// seq alone is a position, and compaction moves positions: the caller must also quote
 	// the turn's hash (the ref the history API stamped on it), so a stale seq is a 404
 	// rather than another turn's artifact.
-	ref := r.URL.Query().Get("ref")
+	q, ok := query(r)
+	if !ok {
+		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "The query string is not valid")
+		return artifact{}, 0, 0, false
+	}
+	ref := q.Get("ref")
 	for _, m := range all {
 		if m.Seq != seq {
 			continue
@@ -125,8 +130,10 @@ func (s *Service) downloadArtifact(w http.ResponseWriter, r *http.Request) {
 
 // previewCSP: `sandbox` with no tokens gives the document an opaque origin with
 // no scripts, forms, popups, top navigation or storage, even if it is opened
-// directly instead of in the page's iframe. default-src 'none' stops it fetching.
-const previewCSP = "sandbox; default-src 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; frame-ancestors 'self'"
+// directly instead of in the page's iframe. default-src 'none' stops it fetching. navigate-to is
+// for browsers that implement it; elsewhere a <meta refresh> is held by the app page's frame-src 'self'
+// (probed by web/scripts/sandbox-probe.mjs).
+const previewCSP = "sandbox; default-src 'none'; navigate-to 'none'; style-src 'unsafe-inline'; img-src data:; base-uri 'none'; frame-ancestors 'self'"
 
 func (s *Service) previewArtifact(w http.ResponseWriter, r *http.Request) {
 	a, _, _, ok := s.artifactFor(w, r)

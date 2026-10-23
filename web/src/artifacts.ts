@@ -15,7 +15,7 @@ const MAX_BYTES = 512 << 10;
 const MAX_ARTIFACTS = 32;
 
 export function findArtifacts(text: string): ArtifactRef[] {
-  if (!/```\s*(html|svg)/i.test(text)) return [];
+  if (!/```[ \t]*(html|svg)/i.test(text)) return [];
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
   const out: ArtifactRef[] = [];
   for (let i = 0; i < lines.length; ) {

@@ -43,15 +43,23 @@ func TestFindArtifactsSharedTable(t *testing.T) {
 	}
 	var cases []struct {
 		Name, Text string
-		Want       []string
+		Repeat     []struct {
+			Text  string
+			Times int
+		}
+		Want []string
 	}
 	if err := json.Unmarshal(raw, &cases); err != nil {
 		t.Fatal(err)
 	}
 	for _, c := range cases {
 		t.Run(c.Name, func(t *testing.T) {
+			text := c.Text
+			for _, r := range c.Repeat { // big inputs are written as pieces to keep the table small
+				text += strings.Repeat(r.Text, r.Times)
+			}
 			got := []string{}
-			for _, a := range findArtifacts(c.Text) {
+			for _, a := range findArtifacts(text) {
 				got = append(got, a.kind)
 			}
 			if !reflect.DeepEqual(got, append([]string{}, c.Want...)) {

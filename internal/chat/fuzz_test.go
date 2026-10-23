@@ -62,6 +62,7 @@ func newOwnFuzz(t testing.TB) *ownFuzz {
 	// Keep repeated ownership probes reaching handlers; quota enforcement has its own tests.
 	limits := auth.DefaultLimits()
 	limits.RunsPerMinute, limits.MessagesPerMinute, limits.ArtifactsPerMinute = math.MaxInt, math.MaxInt, math.MaxInt
+	limits.HistoryPerMinute = math.MaxInt
 	v.a.limits = &limits
 	v.a.h = rebuild(t, v.a, v.a.svc)
 	bob := v.a.user("bobby")

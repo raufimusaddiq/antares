@@ -68,5 +68,272 @@
    "html",
    "svg"
   ]
+ },
+ {
+  "name": "cap: 33 fences, only the first 32 count",
+  "repeat": [
+   {
+    "text": "```html\n<p>x</p>\n```\n",
+    "times": 32
+   },
+   {
+    "text": "```svg\n<svg/>\n```\n",
+    "times": 1
+   }
+  ],
+  "want": [
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html"
+  ]
+ },
+ {
+  "name": "cap: exactly 32 fences all count",
+  "repeat": [
+   {
+    "text": "```svg\n<svg/>\n```\n",
+    "times": 32
+   }
+  ],
+  "want": [
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg"
+  ]
+ },
+ {
+  "name": "cap: a body of exactly 512 KiB is kept",
+  "repeat": [
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "a",
+    "times": 524288
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```svg\n<svg/>\n```\n",
+    "times": 1
+   }
+  ],
+  "want": [
+   "html",
+   "svg"
+  ]
+ },
+ {
+  "name": "cap: a body one byte over 512 KiB is dropped and indexes shift",
+  "repeat": [
+   {
+    "text": "```html\n<p>small</p>\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "a",
+    "times": 524289
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```svg\n<svg/>\n```\n",
+    "times": 1
+   }
+  ],
+  "want": [
+   "html",
+   "svg"
+  ]
+ },
+ {
+  "name": "cap: size counts bytes, not characters (2-byte chars, exactly 512 KiB)",
+  "repeat": [
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "\u00e9",
+    "times": 262144
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   }
+  ],
+  "want": [
+   "html"
+  ]
+ },
+ {
+  "name": "cap: size counts bytes, not characters (one 2-byte char over)",
+  "repeat": [
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "\u00e9",
+    "times": 262145
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```svg\n<svg/>\n```\n",
+    "times": 1
+   }
+  ],
+  "want": [
+   "svg"
+  ]
+ },
+ {
+  "name": "cap: oversize fences do not use up the 32",
+  "repeat": [
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "a",
+    "times": 524289
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "a",
+    "times": 524289
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "a",
+    "times": 524289
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```html\n<p>x</p>\n```\n",
+    "times": 33
+   }
+  ],
+  "want": [
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html"
+  ]
  }
 ]

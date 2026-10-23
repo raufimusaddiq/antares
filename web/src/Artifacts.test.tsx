@@ -10,11 +10,12 @@ import { fileName, toMarkdown } from "./exportChat";
 const TEXT = "Look:\n```html\n<script>top.location='https://evil.example'</script>\n```\n```py\nx=1\n```\n```svg\n<svg onload='alert(1)'/>\n```\n```html\nstill streaming";
 
 // The same table internal/chat/artifacts_test.go runs against the Go parser.
-const shared = JSON.parse(readFileSync(join(__dirname, "../../internal/chat/testdata/artifact_cases.json"), "utf8")) as { name: string; text: string; want: string[] }[];
+const shared = JSON.parse(readFileSync(join(__dirname, "../../internal/chat/testdata/artifact_cases.json"), "utf8")) as { name: string; text?: string; repeat?: { text: string; times: number }[]; want: string[] }[];
 
 describe("artifact discovery matches the server", () => {
   it.each(shared.map((c) => [c.name, c] as const))("shared table: %s", (_n, c) => {
-    expect(findArtifacts(c.text).map((a) => a.kind)).toEqual(c.want);
+    const text = (c.text ?? "") + (c.repeat ?? []).map((r) => r.text.repeat(r.times)).join(""); // same assembly as the Go test
+    expect(findArtifacts(text).map((a) => a.kind)).toEqual(c.want);
   });
   it("counts only closed html/svg fences, in order", () => {
     expect(findArtifacts(TEXT)).toEqual([
