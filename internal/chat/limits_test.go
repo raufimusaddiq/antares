@@ -77,21 +77,21 @@ func TestConfiguredMessageAndRunLimits(t *testing.T) {
 	}
 }
 
-func TestUploadQuotaOnUnsupportedRoute(t *testing.T) {
+func TestUploadRateLimit(t *testing.T) {
 	limits := auth.DefaultLimits()
 	limits.UploadsPerMinute = 1
 	a := newApp(t, appOpts{limits: &limits})
 	alice, bob := a.user("alice"), a.user("bobby")
 	before := len(a.hx.requests())
-	if w := alice.do("POST", "/api/assets", nil, nil); w.Code != 501 {
+	if w := alice.do("POST", "/api/assets", audioHdr, webmBody); w.Code != 201 {
 		t.Fatalf("upload below limit: %d", w.Code)
 	}
-	requireLimit(t, alice.do("POST", "/api/assets", nil, nil))
-	if w := bob.do("POST", "/api/assets", nil, nil); w.Code != 501 {
+	requireLimit(t, alice.do("POST", "/api/assets", audioHdr, webmBody))
+	if w := bob.do("POST", "/api/assets", audioHdr, webmBody); w.Code != 201 {
 		t.Fatalf("A consumed B's upload quota: %d", w.Code)
 	}
 	if len(a.hx.requests()) != before {
-		t.Fatal("unsupported or refused uploads reached Hermes")
+		t.Fatal("uploads reached Hermes")
 	}
 }
 

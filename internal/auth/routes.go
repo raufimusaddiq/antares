@@ -47,6 +47,7 @@ var ChatRoutes = []Route{
 	{"GET", "/api/toolsets"},
 	{"POST", "/api/assets"},
 	{"GET", "/api/assets/{assetId}"},
+	{"DELETE", "/api/assets/{assetId}"},
 	{"GET", "/api/jobs"},
 	{"POST", "/api/jobs"},
 	{"GET", "/api/jobs/{jobId}"},

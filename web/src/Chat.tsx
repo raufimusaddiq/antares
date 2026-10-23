@@ -30,6 +30,7 @@ import { Notifications } from "./Notifications";
 import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 import { AntaresMark } from "./brand/AntaresMark";
+import { Recorder } from "./Recorder";
 import { loadDraft, matchTemplates, saveDraft, type Template } from "./drafts";
 
 const MAX_INPUT = 32_000;
@@ -789,6 +790,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             />
           </details>
         )}
+        <Recorder />
         <Composer value={draft} busy={busy} onChange={onDraft} onSubmit={onSubmit} />
       </main>
     </div>

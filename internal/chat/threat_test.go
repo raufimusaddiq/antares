@@ -49,7 +49,7 @@ var builtProbes = []probe{
 }
 
 // idFree are built routes with no id in the path: they must scope by the caller.
-var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget"}
+var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "POST /api/assets"}
 
 // notBuilt are the §25 / Phase 3 surfaces with no route in this build. Each is
 // an honest gap, not an omission: the test below proves the gap is real (no
@@ -63,7 +63,7 @@ var notBuilt = []struct {
 	{"templates", "UXP-ACC-005/009", "no template storage exists yet", []string{"/api/templates", "/api/templates/%s"}, false},
 	{"push subscriptions", "UXP-ACC-002/003", "no push subscription endpoint exists yet", []string{"/api/push/subscriptions", "/api/push/subscribe", "/api/push/subscriptions/%s"}, false},
 	{"exports", "UXP-ACC-016", "no export endpoint exists yet", []string{"/api/chats/%s/export", "/api/exports", "/api/exports/%s"}, false},
-	{"voice uploads", "UXP-ACC-006", "no voice/transcription endpoint exists yet; POST /api/assets is a 501 stub", []string{"/api/voice", "/api/transcribe", "/api/voice/%s"}, false},
+	{"voice uploads", "UXP-ACC-006", "no transcription endpoint exists: Hermes has no speech-to-text route (BLOCKED_BY_UPSTREAM); /api/assets only stages audio, see assets_test.go", []string{"/api/voice", "/api/transcribe", "/api/voice/%s"}, false},
 	{"preview sandbox", "UXP-ACC-015", "previews are served per chat turn (probed above); no free-standing preview/artifact id exists", []string{"/api/preview", "/api/preview/%s", "/api/artifacts/%s"}, false},
 	{"fork", "UXP-ACC-012", "POST /api/chats/{id}/fork is a 501 stub; Hermes forks only a whole session (docs/runbooks/turn-controls.md)", []string{"/api/chats/%s/fork"}, true},
 	{"delayed notifications", "UXP-ACC-002/019", "no notification outbox or endpoint exists yet", []string{"/api/notifications", "/api/notifications/%s"}, false},
@@ -373,6 +373,9 @@ func TestEveryChatRouteIsClassified(t *testing.T) {
 	}
 	for _, k := range idFree {
 		covered[k] = "caller-scoped list/create"
+	}
+	for _, k := range []string{"GET /api/assets/{assetId}", "DELETE /api/assets/{assetId}"} {
+		covered[k] = "cross-user probe in assets_test.go"
 	}
 	for k := range built {
 		if covered[k] == "" {
