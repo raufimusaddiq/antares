@@ -33,6 +33,12 @@ func main() {
 		}
 		return
 	}
+	if isAdminCmd(os.Args) {
+		if err := runAdminCmd(context.Background(), os.Args, os.Getenv, os.Stdout, os.Stderr); err != nil {
+			log.Fatal(err)
+		}
+		return
+	}
 	if err := run(); err != nil {
 		log.Fatal(err)
 	}

@@ -67,6 +67,7 @@ Rollback is redeploying the previous image tag. Keep the previous tag until the 
 
 The SQLite database is the only state Antares owns. Back it up before a migration, and verify a
 restore at least once per phase — an untested backup is a hope, not a backup.
+Commands, restore and corruption recovery: [`backup-restore.md`](backup-restore.md).
 
 ## Provisioning helper
 
