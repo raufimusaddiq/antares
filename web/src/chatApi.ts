@@ -37,6 +37,7 @@ const CODES = [
   "FORBIDDEN",
   "HISTORY_CHANGED",
   "SEARCH_TIMEOUT",
+  "BUDGET_REACHED",
 ] as const;
 
 /** Words shown for a code. The server's own message is never displayed. */
@@ -67,6 +68,8 @@ export function describeCode(code: string): string {
       return "This conversation changed while you were reading it.";
     case "SEARCH_TIMEOUT":
       return "The search took too long. Try more specific words.";
+    case "BUDGET_REACHED":
+      return "This conversation has reached its token budget, so it takes no new messages. Start a new chat to continue.";
     case "NETWORK":
       return "Could not reach Antares. Check your connection.";
     default:
@@ -262,4 +265,63 @@ export function searchChats(text: string, o: SearchOptions = {}) {
   if (o.cursor) p.set("cursor", o.cursor);
   const path = o.chatId ? `/api/chats/${encodeURIComponent(o.chatId)}/search` : "/api/search/chats";
   return call("GET", `${path}?${p.toString()}`, parseSearch);
+}
+
+/** Per-chat usage as Hermes reported it. null means Hermes reported nothing, which is not zero. */
+export interface ChatUsage {
+  tokens: { input: number; output: number; cacheRead: number; total: number } | null;
+  finishedRuns: number;
+  reportedRuns: number;
+  costIDR: number | null;
+  unpricedRuns: number;
+  priceListDate: string;
+  windowTokens: number | null;
+  budget: { limit: number; used: number; reached: boolean };
+}
+
+const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
+
+export function parseUsage(v: unknown): ChatUsage | null {
+  const o = obj(v);
+  const runs = obj(o?.runs);
+  const cost = obj(o?.cost);
+  const ctx = obj(o?.context);
+  const b = obj(o?.budget);
+  if (!o || !runs || !cost || !ctx || !b) return null;
+  const limit = num(b.limitTokens);
+  const used = num(b.usedTokens);
+  const finished = num(runs.finished);
+  const reported = num(runs.reported);
+  if (limit === null || used === null || finished === null || reported === null) return null;
+  const t = obj(o.tokens);
+  const tokens = t && num(t.input) !== null && num(t.output) !== null && num(t.total) !== null ? { input: num(t.input)!, output: num(t.output)!, cacheRead: num(t.cacheRead) ?? 0, total: num(t.total)! } : null;
+  return {
+    tokens,
+    finishedRuns: finished,
+    reportedRuns: reported,
+    costIDR: num(cost.amount),
+    unpricedRuns: num(cost.unpricedRuns) ?? 0,
+    priceListDate: str(cost.priceListDate),
+    windowTokens: num(ctx.windowTokens),
+    budget: { limit, used, reached: b.reached === true },
+  };
+}
+
+export const getUsage = (chatId: string) => call("GET", `/api/chats/${encodeURIComponent(chatId)}/usage`, parseUsage);
+
+const fmt = (n: number) => n.toLocaleString("en-US");
+
+/** The words shown for a chat's usage. Unknown is "—", cost is always labelled an estimate, the budget behaviour is stated. */
+export function describeUsage(u: ChatUsage): string[] {
+  const lines: string[] = [];
+  lines.push(u.tokens ? `Tokens: ${fmt(u.tokens.total)} (${fmt(u.tokens.input)} in, ${fmt(u.tokens.output)} out)` : "Tokens: — (Hermes reported none)");
+  lines.push(u.costIDR !== null ? `Estimated cost: about Rp ${fmt(Math.round(u.costIDR))}, from the provider price list of ${u.priceListDate}; not a bill` : "Estimated cost: — (no price for the model)");
+  lines.push(`Context in use: — (Hermes does not report it)${u.windowTokens !== null ? `; model window ${fmt(u.windowTokens)} tokens` : ""}`);
+  if (u.finishedRuns > u.reportedRuns) lines.push(`${u.finishedRuns - u.reportedRuns} finished ${u.finishedRuns - u.reportedRuns === 1 ? "reply" : "replies"} reported no usage and ${u.finishedRuns - u.reportedRuns === 1 ? "is" : "are"} not counted`);
+  lines.push(
+    u.budget.reached
+      ? `Budget reached (${fmt(u.budget.used)} of ${fmt(u.budget.limit)} tokens): this chat takes no new messages`
+      : `Budget: ${fmt(u.budget.used)} of ${fmt(u.budget.limit)} tokens; at the limit the chat stops taking new messages (a reply already running finishes)`,
+  );
+  return lines;
 }

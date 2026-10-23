@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Composer, Transcript } from "./Chat";
 import { Markdown, safeHref } from "./Markdown";
 import { indentInFence, wrapSelection } from "./composerEdit";
-import { describeCode, getMessages, listChats, sendMessage } from "./chatApi";
+import { describeCode, describeUsage, getMessages, listChats, parseUsage, sendMessage } from "./chatApi";
 import { isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 
 const md = (text: string) => renderToStaticMarkup(<Markdown text={text} />);
@@ -277,5 +277,29 @@ describe("api client", () => {
     vi.stubGlobal("fetch", f);
     expect(await listChats("p 1")).toMatchObject({ ok: true, value: { nextCursor: "n1" } });
     expect((f.mock.calls[0] as unknown as [string])[0]).toBe("/api/chats?cursor=p%201");
+  });
+});
+
+describe("usage text", () => {
+  const base = { tokens: { input: 1000, output: 200, cacheRead: 400, total: 1200 }, finishedRuns: 2, reportedRuns: 1, costIDR: 3.4, unpricedRuns: 0, priceListDate: "2026-10-23", windowTokens: 1000000, budget: { limit: 2000000, used: 1200, reached: false } };
+
+  it("labels cost as an estimate with its price date, and shows unknowns as a dash", () => {
+    const t = describeUsage(base).join("\n");
+    expect(t).toContain("Estimated cost: about Rp 3");
+    expect(t).toContain("2026-10-23");
+    expect(t).toContain("Context in use: —");
+    expect(t).toContain("1 finished reply reported no usage and is not counted");
+    expect(describeUsage({ ...base, tokens: null, costIDR: null }).join("\n")).toContain("Tokens: — (Hermes reported none)");
+  });
+
+  it("states what happens at the limit, and when it is reached", () => {
+    expect(describeUsage(base).join("\n")).toContain("at the limit the chat stops taking new messages");
+    expect(describeUsage({ ...base, budget: { limit: 2000000, used: 2000000, reached: true } }).join("\n")).toContain("takes no new messages");
+    expect(describeCode("BUDGET_REACHED")).toContain("token budget");
+  });
+
+  it("refuses a usage body it cannot read instead of guessing", () => {
+    expect(parseUsage({})).toBeNull();
+    expect(parseUsage({ runs: {}, cost: {}, context: {}, budget: { limitTokens: -1 } })).toBeNull();
   });
 });

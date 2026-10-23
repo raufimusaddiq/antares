@@ -3,14 +3,17 @@ import {
   cancelRun,
   createChat,
   describeCode,
+  describeUsage,
   getChat,
   getMessages,
   getRun,
+  getUsage,
   listChats,
   newIdempotencyKey,
   runEventsUrl,
   sendMessage,
   type ChatSummary,
+  type ChatUsage,
   type SearchResult,
   type Turn,
 } from "./chatApi";
@@ -627,6 +630,18 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   // A disconnected run still occupies the chat: reconnect or cancel it first.
   const busy = pending !== null || (run !== null && !isTerminal(run.phase));
 
+  // Usage is read from the server whenever the chat changes or a reply ends. A failed read shows nothing, never a number.
+  const [usage, setUsage] = useState<ChatUsage | null>(null);
+  useEffect(() => {
+    setUsage(null);
+    if (!current || busy) return;
+    let live = true;
+    void getUsage(current).then((r) => live && setUsage(r.ok ? r.value : null));
+    return () => {
+      live = false;
+    };
+  }, [current, busy]);
+
   const onSubmit = () => {
     const input = draft.trim();
     setDraft("");
@@ -729,6 +744,16 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           }}
           onResend={() => pending && void submit(pending.input, pending.key)}
         />
+        {usage && (
+          <details className="usage" open={usage.budget.reached}>
+            <summary>{usage.budget.reached ? "Budget reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens` : "Usage unavailable"}</summary>
+            <ul>
+              {describeUsage(usage).map((l) => (
+                <li key={l}>{l}</li>
+              ))}
+            </ul>
+          </details>
+        )}
         <Composer value={draft} busy={busy} onChange={onDraft} onSubmit={onSubmit} />
       </main>
     </div>

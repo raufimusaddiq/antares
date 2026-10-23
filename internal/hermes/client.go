@@ -321,6 +321,7 @@ type RunStatus struct {
 	State       string
 	Output      string
 	Interrupted bool // terminal, but not by completing
+	Usage       *Usage
 }
 
 // Terminal reports a state that will not change.
@@ -360,8 +361,10 @@ func (c *Client) GetRun(ctx context.Context, b Binding, runID string) (RunStatus
 		return RunStatus{}, err
 	}
 	var d struct {
-		Status string `json:"status"`
-		Output any    `json:"output"`
+		Status  string         `json:"status"`
+		Output  any            `json:"output"`
+		Usage   map[string]any `json:"usage"`
+		Runtime map[string]any `json:"runtime"`
 	}
 	if err := readJSON(resp, &d, maxOutput+maxAPIResponse); err != nil {
 		return RunStatus{}, err
@@ -371,7 +374,7 @@ func (c *Client) GetRun(ctx context.Context, b Binding, runID string) (RunStatus
 	if len(out) > maxOutput {
 		out = ""
 	}
-	return RunStatus{State: st, Output: out, Interrupted: intr}, nil
+	return RunStatus{State: st, Output: out, Interrupted: intr, Usage: parseUsage(d.Usage, d.Runtime)}, nil
 }
 
 // StopRun asks Hermes to stop the run (POST /v1/runs/{id}/stop). Stopping is

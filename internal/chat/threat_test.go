@@ -35,6 +35,7 @@ var builtProbes = []probe{
 	{"history/messages read", "GET /api/chats/{chatId}/messages"},
 	{"send message (run admission)", "POST /api/chats/{chatId}/messages"},
 	{"search within a chat", "GET /api/chats/{chatId}/search"},
+	{"chat usage and budget", "GET /api/chats/{chatId}/usage"},
 	{"run status", "GET /api/runs/{runId}"},
 	{"run events (SSE recovery)", "GET /api/runs/{runId}/events"},
 	{"run cancel", "POST /api/runs/{runId}/cancel"},

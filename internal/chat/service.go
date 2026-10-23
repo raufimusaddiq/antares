@@ -219,6 +219,13 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 			s.finish(l, store.RunFailed, hermes.CodeCapabilityNA, "")
 			return
 		case terminal != nil:
+			u := terminal.Usage
+			if u == nil { // the frame carried none: the poll is the documented source
+				if st, rerr := s.reconcile(ctx, userID, hid); rerr == nil && st.Terminal() {
+					u = st.Usage
+				}
+			}
+			s.recordUsage(l, u)
 			s.finishFromUpstream(l, hermes.RunStatus{State: terminal.State, Output: terminal.Output, Interrupted: terminal.Intr})
 			return
 		}
@@ -226,6 +233,7 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 		st, rerr := s.reconcile(ctx, userID, hid)
 		switch {
 		case rerr == nil && st.Terminal():
+			s.recordUsage(l, st.Usage)
 			s.finishFromUpstream(l, st)
 			return
 		case ctx.Err() != nil:

@@ -38,6 +38,7 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"GET /api/chats/{chatId}":           http.HandlerFunc(s.getChat),
 		"GET /api/chats/{chatId}/messages":  http.HandlerFunc(s.getMessages),
 		"GET /api/chats/{chatId}/search":    http.HandlerFunc(s.searchOne),
+		"GET /api/chats/{chatId}/usage":     http.HandlerFunc(s.chatUsage),
 		"GET /api/search/chats":             http.HandlerFunc(s.searchAll),
 		"POST /api/chats/{chatId}/messages": http.HandlerFunc(s.postMessage),
 		"GET /api/runs/{runId}":             http.HandlerFunc(s.getRun),
@@ -315,6 +316,15 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if _, _, err := s.gate(r.Context(), uid); err != nil { // no run is admitted for an account that could not start it
 		s.gateError(w, err)
+		return
+	}
+	// Budget: at or over the limit, the chat takes no new message (a reply already
+	// running is not interrupted). Decided here, before a run is admitted.
+	if over, err := s.budgetReached(r, uid, chatID); err != nil {
+		internalError(w, "chat budget", err)
+		return
+	} else if over {
+		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "This conversation has reached its token budget")
 		return
 	}
 	// A busy chat answers RUN_CONFLICT (or the replay of its own run) from AdmitRun;
