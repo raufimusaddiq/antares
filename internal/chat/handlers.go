@@ -40,6 +40,9 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}":         http.HandlerFunc(s.downloadArtifact),
 		"GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview": http.HandlerFunc(s.previewArtifact),
 		"GET /api/chats/{chatId}/search":                               http.HandlerFunc(s.searchOne),
+		"GET /api/chats/{chatId}/usage":                                http.HandlerFunc(s.chatUsage),
+		"GET /api/me/budget":                                           http.HandlerFunc(s.getBudget),
+		"PUT /api/me/budget":                                           http.HandlerFunc(s.putBudget),
 		"GET /api/search/chats":                                        http.HandlerFunc(s.searchAll),
 		"POST /api/chats/{chatId}/messages":                            http.HandlerFunc(s.postMessage),
 		"GET /api/runs/{runId}":                                        http.HandlerFunc(s.getRun),
@@ -330,8 +333,21 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	run, created, err := store.AdmitRun(r.Context(), s.db, uid, chatID, idem, s.now())
+	// Budget: a free chat at or over its limit takes no new message (a reply
+	// already running is not interrupted). A busy chat answers RUN_CONFLICT as
+	// before, and AdmitRunWithin hands a replayed key its original run.
+	var budget int64
+	if chat.ActiveRunID == "" {
+		if budget, err = store.TokenBudget(r.Context(), s.db, uid); err != nil {
+			internalError(w, "token budget", err)
+			return
+		}
+	}
+	run, created, err := store.AdmitRunWithin(r.Context(), s.db, uid, chatID, idem, s.now(), budget)
 	switch {
+	case errors.Is(err, store.ErrBudget):
+		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "This conversation has reached the token limit you set; raise or remove it to continue")
+		return
 	case errors.Is(err, store.ErrNoChat):
 		notFound(w)
 		return

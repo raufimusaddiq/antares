@@ -46,6 +46,7 @@ type fakeRun struct {
 	frames  chan string
 	status  string // what GET /v1/runs/{id} reports
 	output  string
+	usage   string // raw JSON for GET /v1/runs/{id} "usage"; "" omits it
 	stopped bool
 	opens   chan struct{} // one token per upstream stream subscription
 	ended   chan struct{} // one token per upstream stream that ended
@@ -225,9 +226,12 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case len(parts) == 1 && r.Method == "GET":
 			f.mu.Lock()
-			st, out := fr.status, fr.output
+			st, out, usage := fr.status, fr.output, fr.usage
 			f.mu.Unlock()
-			fmt.Fprintf(w, `{"run_id":%q,"status":%q,"output":%q}`, parts[0], st, out)
+			if usage != "" {
+				usage = `,"usage":` + usage
+			}
+			fmt.Fprintf(w, `{"run_id":%q,"status":%q,"output":%q%s}`, parts[0], st, out, usage)
 		case len(parts) == 2 && parts[1] == "stop" && r.Method == "POST":
 			f.mu.Lock()
 			fr.stopped, fr.status = true, "cancelled"

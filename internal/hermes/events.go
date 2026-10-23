@@ -28,6 +28,7 @@ type Normalized struct {
 	State   string // KindTerminal: one of the State* constants
 	Output  string // KindTerminal: final text, when Hermes sends it
 	Intr    bool   // KindTerminal: ended by interruption
+	Usage   *Usage // KindTerminal: what Hermes reported, nil when it reported none
 }
 
 const (
@@ -55,6 +56,11 @@ func Normalize(ev Event) Normalized {
 			}
 		}
 	}
+	usage := func() *Usage {
+		u, _ := d["usage"].(map[string]any)
+		r, _ := d["runtime"].(map[string]any)
+		return parseUsage(u, r)
+	}
 	switch typ {
 	case "assistant.delta", "message.delta", "response.output_text.delta":
 		if t := firstString(d, "delta", "text", "content"); t != "" {
@@ -67,13 +73,13 @@ func Normalize(ev Event) Normalized {
 	case "approval.required", "approval.requested", "run.approval_required":
 		return Normalized{Kind: KindApproval}
 	case "run.completed":
-		return Normalized{Kind: KindTerminal, State: StateCompleted, Output: clip(firstString(d, "output", "text"), maxOutput)}
+		return Normalized{Kind: KindTerminal, State: StateCompleted, Output: clip(firstString(d, "output", "text"), maxOutput), Usage: usage()}
 	case "run.failed":
-		return Normalized{Kind: KindTerminal, State: StateFailed}
+		return Normalized{Kind: KindTerminal, State: StateFailed, Usage: usage()}
 	case "run.cancelled", "run.canceled":
-		return Normalized{Kind: KindTerminal, State: StateCancelled}
+		return Normalized{Kind: KindTerminal, State: StateCancelled, Usage: usage()}
 	case "run.interrupted":
-		return Normalized{Kind: KindTerminal, State: StateFailed, Intr: true}
+		return Normalized{Kind: KindTerminal, State: StateFailed, Intr: true, Usage: usage()}
 	}
 	return Normalized{Kind: KindIgnore}
 }
