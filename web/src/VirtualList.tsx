@@ -30,9 +30,11 @@ interface Props<T> {
   /** Status for the top edge, e.g. "Loading older messages…"; may hold a Retry button. */
   topNote: ReactNode;
   onLoadMore: () => void;
+  /** Scroll this item (by key) to the top once it is held; once per distinct key. */
+  focusKey?: string;
 }
 
-export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore, loadingMore, topNote, onLoadMore }: Props<T>) {
+export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore, loadingMore, topNote, onLoadMore, focusKey }: Props<T>) {
   const scroller = useRef<HTMLDivElement | null>(null);
   const content = useRef<HTMLDivElement | null>(null);
   const heights = useRef(new Map<string, number>());
@@ -101,6 +103,20 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
     placed.current = { keys, lay, scrollHeight: el.scrollHeight };
     setTop(el.scrollTop);
     maybeLoadMore();
+  });
+
+  // A search result opens at its turn: bring that item to the top once, when it is in the list.
+  const focused = useRef<string | undefined>(undefined);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (!el || focusKey === undefined || focused.current === focusKey) return;
+    const i = keys.indexOf(focusKey);
+    if (i < 0) return;
+    focused.current = focusKey;
+    el.scrollTop = Math.max(0, lay.offsets[i]);
+    placed.current = { keys, lay, scrollHeight: el.scrollHeight };
+    setFollowing(false);
+    setTop(el.scrollTop);
   });
 
   // Content that grows with no render of ours (images, fonts, a streaming reply).

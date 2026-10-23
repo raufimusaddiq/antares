@@ -87,6 +87,8 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		// and its action POSTs, and the audit feed. /api/admin/system is not here because
 		// the route no longer exists.
 		"/api/admin/users": true, "/api/admin/users/": true, "/api/admin/audit": true,
+		// #60 chat search: /api/search/chats; the per-chat form is /api/chats/{id}/search, covered above.
+		"/api/search/chats": true,
 	}
 	pathRe := regexp.MustCompile(`/api/[A-Za-z0-9_/.-]*`)
 	badRe := regexp.MustCompile(`(?i)ciphertext|fingerprint|tenant_binding|profile_name|profileSlug|memory_scope|client_secret|api_key|apikey|hermes|authorization`)

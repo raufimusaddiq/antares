@@ -3,6 +3,7 @@ import {
   cancelRun,
   createChat,
   describeCode,
+  getChat,
   getMessages,
   getRun,
   listChats,
@@ -10,9 +11,11 @@ import {
   runEventsUrl,
   sendMessage,
   type ChatSummary,
+  type SearchResult,
   type Turn,
 } from "./chatApi";
-import { mergeNewest, prependOlder } from "./history";
+import { mergeNewest, prependOlder, reachOf } from "./history";
+import { SearchPanel } from "./Search";
 import { MessageBody } from "./MessageBody";
 import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
@@ -101,6 +104,8 @@ export interface TranscriptProps {
   loadingMore?: boolean;
   olderError?: string;
   onLoadMore?: () => void;
+  /** The turn a search result opened at: scrolled to and marked. */
+  focusSeq?: number | null;
   onCancel: () => void;
   onRetry: () => void;
   onReconnect: () => void;
@@ -110,15 +115,15 @@ export interface TranscriptProps {
 const never = () => {};
 
 export function Transcript(props: TranscriptProps) {
-  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never } = props;
+  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null } = props;
   const renderTurn = useCallback(
     (t: Turn) => (
-      <article className={`turn ${t.role}`}>
+      <article className={`turn ${t.role}`} data-found={t.seq === focusSeq ? "true" : undefined} aria-current={t.seq === focusSeq ? "location" : undefined}>
         <h2 className="who">{t.role === "user" ? "You" : "Assistant"}</h2>
         {t.role === "user" ? <p className="plain">{t.text}</p> : <MessageBody text={t.text} streaming={false} />}
       </article>
     ),
-    [],
+    [focusSeq],
   );
   const note = loadingMore ? (
     "Loading older messages…"
@@ -168,6 +173,7 @@ export function Transcript(props: TranscriptProps) {
       loadingMore={loadingMore}
       topNote={note}
       onLoadMore={onLoadMore}
+      focusKey={focusSeq === null ? undefined : String(focusSeq)}
     />
   );
 }
@@ -227,6 +233,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
   const [pending, setPending] = useState<Pending | null>(null);
   const [draft, setDraft] = useState("");
   const [banner, setBanner] = useState("");
+  const [focus, setFocus] = useState<{ chat: string; seq: number } | null>(null); // a search result being opened at its turn
 
   const es = useRef<EventSource | null>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -383,12 +390,49 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
       setTurnsError("");
       setPending(null);
       setBanner("");
+      setFocus(null);
       dispatch({ k: "clear" });
       void loadTurns(c.id, "replace");
       if (c.activeRunId) attach(c.activeRunId, c.id);
     },
     [attach, detach, loadTurns],
   );
+
+  // A search result: the owning chat, at the matching turn. The turn may be in an
+  // older page than the newest one, so pages are fetched back until it is held.
+  const openResult = useCallback(
+    async (r: SearchResult) => {
+      let c: ChatSummary | undefined = chats.find((x) => x.id === r.chatId);
+      if (!c) {
+        const got = await getChat(r.chatId);
+        if (!got.ok) {
+          setBanner(describeCode(got.code));
+          return;
+        }
+        c = got.value;
+      }
+      if (r.chatId !== currentRef.current) open(c);
+      if (r.turn !== null) setFocus({ chat: r.chatId, seq: r.turn });
+    },
+    [chats, open],
+  );
+
+  useEffect(() => {
+    if (!focus || focus.chat !== current) return;
+    if (turnsError) {
+      setFocus(null);
+      return;
+    }
+    switch (reachOf(turns, cursor, focus.seq)) {
+      case "older":
+        if (!loadingOlder && !olderError) void loadOlder();
+        break;
+      case "gone":
+        setFocus(null);
+        setBanner("That message is no longer in the conversation.");
+        break;
+    }
+  }, [focus, current, turns, cursor, loadingOlder, olderError, turnsError, loadOlder]);
 
   useEffect(() => {
     let live = true;
@@ -550,6 +594,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
         <button type="button" onClick={() => void startChat()}>
           New chat
         </button>
+        <SearchPanel current={current} onOpen={(r) => void openResult(r)} />
         {listState === "loading" && <p className="label">Loading…</p>}
         {listState === "ready" && chats.length === 0 && <p className="label">No conversations yet.</p>}
         <ul>
@@ -590,6 +635,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
           loadingMore={loadingOlder}
           olderError={olderError}
           onLoadMore={() => void loadOlder()}
+          focusSeq={focus && focus.chat === current && reachOf(turns, cursor, focus.seq) === "held" ? focus.seq : null}
           onCancel={onCancel}
           onRetry={() => {
             const last = [...turns].reverse().find((t) => t.role === "user");
