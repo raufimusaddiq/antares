@@ -490,6 +490,9 @@ func forbiddenInput(r *http.Request) string {
 
 func (a *Auth) apiError(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
 	if code == "RATE_LIMITED" {
+		if status != http.StatusTooManyRequests {
+			panic("auth: RATE_LIMITED requires HTTP 429")
+		}
 		WriteRateLimited(w, msg, 0)
 		return
 	}

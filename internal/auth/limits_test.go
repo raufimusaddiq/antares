@@ -191,3 +191,13 @@ func TestRateLimitedEnvelope(t *testing.T) {
 		}
 	}
 }
+
+func TestRateLimitedStatusInvariant(t *testing.T) {
+	defer func() {
+		if recover() == nil {
+			t.Fatal("RATE_LIMITED with a non-429 status was silently accepted")
+		}
+	}()
+	a := &Auth{}
+	a.apiError(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil), http.StatusServiceUnavailable, "RATE_LIMITED", "test limit")
+}

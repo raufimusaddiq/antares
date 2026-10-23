@@ -8,8 +8,6 @@ import (
 	"log/slog"
 	"strings"
 	"testing"
-
-	"github.com/raufimusaddiq/antares/internal/auth"
 )
 
 var goodKey = base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))
@@ -239,17 +237,17 @@ func TestTenantToolsetPolicyIsConfigurableButNotPastTheFloor(t *testing.T) {
 func TestRequestLimitsConfiguration(t *testing.T) {
 	base := map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey}
 	c, err := Load(env(base))
-	if err != nil || c.Limits != auth.DefaultLimits() {
+	if err != nil || c.Limits != (Limits{RunsPerMinute: 30, MessagesPerMinute: 60, UploadsPerMinute: 10, SSEConnections: 4}) {
 		t.Fatalf("defaults = %+v, %v", c.Limits, err)
 	}
 	for _, tc := range []struct {
 		name  string
-		value func(auth.Limits) int
+		value func(Limits) int
 	}{
-		{"ANTARES_RUNS_PER_MINUTE", func(l auth.Limits) int { return l.RunsPerMinute }},
-		{"ANTARES_MESSAGES_PER_MINUTE", func(l auth.Limits) int { return l.MessagesPerMinute }},
-		{"ANTARES_UPLOADS_PER_MINUTE", func(l auth.Limits) int { return l.UploadsPerMinute }},
-		{"ANTARES_SSE_CONNECTIONS", func(l auth.Limits) int { return l.SSEConnections }},
+		{"ANTARES_RUNS_PER_MINUTE", func(l Limits) int { return l.RunsPerMinute }},
+		{"ANTARES_MESSAGES_PER_MINUTE", func(l Limits) int { return l.MessagesPerMinute }},
+		{"ANTARES_UPLOADS_PER_MINUTE", func(l Limits) int { return l.UploadsPerMinute }},
+		{"ANTARES_SSE_CONNECTIONS", func(l Limits) int { return l.SSEConnections }},
 	} {
 		base[tc.name] = "2"
 		c, err = Load(env(base))

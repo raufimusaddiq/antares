@@ -12,7 +12,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/hermes"
 )
 
@@ -32,9 +31,16 @@ func (Secret) MarshalJSON() ([]byte, error) { return []byte(`"` + redacted + `"`
 func (Secret) MarshalText() ([]byte, error) { return []byte(redacted), nil }
 func (Secret) LogValue() slog.Value         { return slog.StringValue(redacted) }
 
+type Limits struct {
+	RunsPerMinute     int
+	MessagesPerMinute int
+	UploadsPerMinute  int
+	SSEConnections    int
+}
+
 // Config is the validated configuration.
 type Config struct {
-	Limits    auth.Limits
+	Limits    Limits
 	Addr      string
 	DBPath    string
 	StaticDir string // development override; empty serves the embedded bundle
@@ -76,7 +82,7 @@ func Load(getenv func(string) string) (Config, error) {
 		GoogleClientID: getenv("ANTARES_GOOGLE_CLIENT_ID"),
 	}
 	var problems []string
-	c.Limits = auth.DefaultLimits()
+	c.Limits = Limits{RunsPerMinute: 30, MessagesPerMinute: 60, UploadsPerMinute: 10, SSEConnections: 4}
 	for _, limit := range []struct {
 		name string
 		dst  *int

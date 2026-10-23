@@ -44,7 +44,8 @@ cancelled run; a failed status check leaves the run's outcome unknown.
 
 Counters live only in this single process and reset on restart. A mutex serializes admission and
 release. A request-driven sweep runs at most once a minute and removes expired accounts without
-open streams. The map holds at most 10,000 accounts; new accounts at capacity receive the same
+open streams. Cleanup has no background timer: an idle process retains entries until the next limited request.
+The map holds at most 10,000 accounts; new accounts at capacity receive the same
 `429` with an unknown wait (`retryAfterSeconds: null`, no `Retry-After`) until cleanup frees a slot.
 Existing accounts keep their budgets.
 Multiple replicas would require shared enforcement; this implementation is for the single-container
