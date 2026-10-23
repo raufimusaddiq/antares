@@ -129,7 +129,7 @@ func TestRootServesTheBuiltBundle(t *testing.T) {
 		if rec.Header().Get("Cache-Control") != "no-store" {
 			t.Errorf("%s shell must not be cached", p)
 		}
-		wantCSP := "default-src 'none'; script-src 'self'; style-src 'self' " + openUIStyleHash + "; connect-src 'self'; img-src 'self'; font-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		wantCSP := "default-src 'none'; script-src 'self'; style-src 'self' " + openUIStyleHash + "; connect-src 'self'; img-src 'self'; font-src 'self'; frame-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 		if got := rec.Header().Get("Content-Security-Policy"); got != wantCSP {
 			t.Errorf("%s CSP = %q, want %q", p, got, wantCSP)
 		}

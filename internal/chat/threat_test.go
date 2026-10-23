@@ -34,6 +34,8 @@ var builtProbes = []probe{
 	{"chat read", "GET /api/chats/{chatId}"},
 	{"history/messages read", "GET /api/chats/{chatId}/messages"},
 	{"send message (run admission)", "POST /api/chats/{chatId}/messages"},
+	{"artifact download", "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}"},
+	{"artifact preview", "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview"},
 	{"search within a chat", "GET /api/chats/{chatId}/search"},
 	{"run status", "GET /api/runs/{runId}"},
 	{"run events (SSE recovery)", "GET /api/runs/{runId}/events"},
@@ -56,7 +58,7 @@ var notBuilt = []struct {
 	{"push subscriptions", "UXP-ACC-002/003", "no push subscription endpoint exists yet", []string{"/api/push/subscriptions", "/api/push/subscribe", "/api/push/subscriptions/%s"}, false},
 	{"exports", "UXP-ACC-016", "no export endpoint exists yet", []string{"/api/chats/%s/export", "/api/exports", "/api/exports/%s"}, false},
 	{"voice uploads", "UXP-ACC-006", "no voice/transcription endpoint exists yet; POST /api/assets is a 501 stub", []string{"/api/voice", "/api/transcribe", "/api/voice/%s"}, false},
-	{"preview sandbox", "UXP-ACC-015", "no preview endpoint exists yet", []string{"/api/preview", "/api/preview/%s", "/api/artifacts/%s"}, false},
+	{"preview sandbox", "UXP-ACC-015", "previews are served per chat turn (probed above); no free-standing preview/artifact id exists", []string{"/api/preview", "/api/preview/%s", "/api/artifacts/%s"}, false},
 	{"rewind / fork", "UXP-ACC-012", "POST /api/chats/{id}/fork is a 501 stub; no Hermes rewind API is verified", []string{"/api/chats/%s/fork"}, true},
 	{"steer", "UXP-ACC-013", "POST /api/runs/{id}/steer is a 501 stub; no Hermes steer API is verified", []string{"/api/runs/%s/steer"}, true},
 	{"delayed notifications", "UXP-ACC-002/019", "no notification outbox or endpoint exists yet", []string{"/api/notifications", "/api/notifications/%s"}, false},
@@ -91,7 +93,7 @@ func newVictim(t testing.TB) *victim {
 	v.session = c.HermesSessionID
 	// Seed the transcript Hermes would return, then run one turn to completion.
 	a.hx.mu.Lock()
-	a.hx.msgs[v.session] = []map[string]any{{"role": "user", "content": "alice-private-question-2b8e"}, {"role": "assistant", "content": v.output}}
+	a.hx.msgs[v.session] = []map[string]any{{"role": "user", "content": "alice-private-question-2b8e"}, {"role": "assistant", "content": v.output + "\n```html\n<p>alice-artifact-secret-4e7a</p>\n```\n"}}
 	a.hx.mu.Unlock()
 	input := "alice-private-input-5d40"
 	v.runID = alice.send(v.chatID, input)
@@ -102,7 +104,7 @@ func newVictim(t testing.TB) *victim {
 	a.hx.push(fr, "run.completed", fmt.Sprintf(`{"output":%q}`, v.output))
 	s.waitFor(t, "run.completed")
 	<-s.done
-	v.markers = []string{v.chatID, v.runID, v.title, v.output, v.session, v.hermesRun, alice.profile, alice.key, alice.id,
+	v.markers = []string{v.chatID, v.runID, v.title, v.output, "alice-artifact-secret-4e7a", v.session, v.hermesRun, alice.profile, alice.key, alice.id,
 		"alice-private-question-2b8e", "alice-private-input-5d40", alice.cookie}
 	// Alice searches her own chats once, so her content is in the index (and her
 	// transcript has been read from Hermes) before anyone else probes.
@@ -172,6 +174,8 @@ func fill(key, chatID, runID string) (method, path string) {
 	method, path, _ = strings.Cut(key, " ")
 	path = strings.ReplaceAll(path, "{chatId}", chatID)
 	path = strings.ReplaceAll(path, "{runId}", runID)
+	path = strings.ReplaceAll(path, "{seq}", "1") // alice's seeded assistant turn
+	path = strings.ReplaceAll(path, "{n}", "0")
 	if strings.HasSuffix(path, "/search") { // a search with nothing to search for is a 400, not a test
 		path += "?q=alice-private"
 	}
