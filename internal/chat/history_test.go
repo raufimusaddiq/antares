@@ -2,12 +2,14 @@ package chat
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"sort"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/hermes"
 )
 
@@ -297,7 +299,9 @@ func TestChatListPagesByCursorAndIsOwnerScoped(t *testing.T) {
 // It fails if the median is over a (deliberately loose) budget, so a regression
 // to eager hydration cannot pass quietly.
 func TestMeasureOpenAndPageBack500TurnChat(t *testing.T) {
-	a := newApp(t)
+	limits := auth.DefaultLimits() // 400 back-to-back reads would meet the history budget; this measures latency, not the budget
+	limits.HistoryPerMinute = math.MaxInt
+	a := newApp(t, appOpts{limits: &limits})
 	u := a.user("alice")
 	chat := u.newChat()
 	seedTurns(t, a, u, chat, 500)

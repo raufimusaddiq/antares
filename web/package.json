@@ -7,6 +7,7 @@
     "dev": "vite",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "probe:sandbox": "node scripts/sandbox-probe.mjs",
     "build": "vite build && node scripts/stamp.mjs"
   },
   "dependencies": {

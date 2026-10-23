@@ -91,6 +91,8 @@ func Load(getenv func(string) string) (Config, error) {
 		{"ANTARES_RUNS_PER_MINUTE", &c.Limits.RunsPerMinute},
 		{"ANTARES_MESSAGES_PER_MINUTE", &c.Limits.MessagesPerMinute},
 		{"ANTARES_UPLOADS_PER_MINUTE", &c.Limits.UploadsPerMinute},
+		{"ANTARES_ARTIFACTS_PER_MINUTE", &c.Limits.ArtifactsPerMinute},
+		{"ANTARES_HISTORY_PER_MINUTE", &c.Limits.HistoryPerMinute},
 		{"ANTARES_SSE_CONNECTIONS", &c.Limits.SSEConnections},
 	} {
 		if raw := getenv(limit.name); raw != "" {

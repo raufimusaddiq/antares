@@ -276,7 +276,7 @@ func TestVAPIDIsAllOrNothing(t *testing.T) {
 func TestRequestLimitsConfiguration(t *testing.T) {
 	base := map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey}
 	c, err := Load(env(base))
-	if err != nil || c.Limits != (Limits{RunsPerMinute: 30, MessagesPerMinute: 60, UploadsPerMinute: 10, SSEConnections: 4}) {
+	if err != nil || c.Limits != (Limits{RunsPerMinute: 30, MessagesPerMinute: 60, UploadsPerMinute: 10, ArtifactsPerMinute: 60, HistoryPerMinute: 240, SSEConnections: 4}) {
 		t.Fatalf("defaults = %+v, %v", c.Limits, err)
 	}
 	for _, tc := range []struct {
@@ -286,6 +286,8 @@ func TestRequestLimitsConfiguration(t *testing.T) {
 		{"ANTARES_RUNS_PER_MINUTE", func(l Limits) int { return l.RunsPerMinute }},
 		{"ANTARES_MESSAGES_PER_MINUTE", func(l Limits) int { return l.MessagesPerMinute }},
 		{"ANTARES_UPLOADS_PER_MINUTE", func(l Limits) int { return l.UploadsPerMinute }},
+		{"ANTARES_ARTIFACTS_PER_MINUTE", func(l Limits) int { return l.ArtifactsPerMinute }},
+		{"ANTARES_HISTORY_PER_MINUTE", func(l Limits) int { return l.HistoryPerMinute }},
 		{"ANTARES_SSE_CONNECTIONS", func(l Limits) int { return l.SSEConnections }},
 	} {
 		base[tc.name] = "2"
