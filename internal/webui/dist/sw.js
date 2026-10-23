@@ -1,4 +1,4 @@
-const CACHE = "antares-public-1d80b60f7bb2d55badacf5cbe079c57723d48bc89c10c9f8b7d4d4dac63da14f";
+const CACHE = "antares-public-eaf31a80646c612e7ff584fb8be6aab22d724175e292d9dc2f2707a045934d3a";
 const PUBLIC = ["/offline.html","/assets/Block-LCtXQDcw.js","/assets/ci-info-Bauk7qhZ.js","/assets/index-BYWx39k6.css","/assets/index-Cjco4uY9.js","/assets/offline-52783b55d1fef27e.css","/assets/rolldown-runtime-BWaJ3C7D.js"];
 const allowed = new Set(PUBLIC.map(path => new URL(path, self.location.origin).href));
 
@@ -56,4 +56,41 @@ self.addEventListener("message", event => {
       }
     })());
   }
+});
+
+// ---- Subscription rotation ---------------------------------------------------------------
+// When the browser rotates its push subscription the old endpoint answers 404/410, the sender
+// drops the device row, and alerts stop silently. This takes a fresh subscription with the
+// same application server key and registers it with the session cookie. A failure is logged,
+// never swallowed; the notifications panel also shows a browser with no registered device.
+
+async function reregisterSubscription(event) {
+  const reg = self.registration;
+  let key = event.oldSubscription && event.oldSubscription.options && event.oldSubscription.options.applicationServerKey;
+  if (!key) {
+    // The browser did not hand over the old options: ask the server for the public key.
+    const res = await fetch("/api/push/public-key", { credentials: "include", headers: { Accept: "application/json" } });
+    if (!res.ok) throw new Error("public key unavailable: HTTP " + res.status);
+    const body = await res.json();
+    if (!body || typeof body.publicKey !== "string") throw new Error("public key unavailable: bad response");
+    const pad = "=".repeat((4 - (body.publicKey.length % 4)) % 4);
+    const bin = atob((body.publicKey + pad).replace(/-/g, "+").replace(/_/g, "/"));
+    key = Uint8Array.from(bin, c => c.charCodeAt(0));
+  }
+  const sub = event.newSubscription || (await reg.pushManager.getSubscription()) || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: key }));
+  const json = sub.toJSON();
+  if (!json.keys || !json.keys.p256dh || !json.keys.auth) throw new Error("subscription has no keys");
+  const res = await fetch("/api/push/subscriptions", {
+    method: "POST",
+    credentials: "include",
+    headers: { Accept: "application/json", "Content-Type": "application/json" },
+    body: JSON.stringify({ endpoint: sub.endpoint, keys: { p256dh: json.keys.p256dh, auth: json.keys.auth } }),
+  });
+  if (!res.ok) throw new Error("re-register refused: HTTP " + res.status);
+}
+
+self.addEventListener("pushsubscriptionchange", (event) => {
+  event.waitUntil(reregisterSubscription(event).catch((err) => {
+    console.error("Antares: push re-register failed; the notifications panel will offer to turn it back on.", err);
+  }));
 });
