@@ -81,6 +81,20 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("store: secure data dir: %w", err)
 	}
 	path = filepath.Join(realDir, filepath.Base(path))
+	// A shared flock on the data DIRECTORY, taken before the database file may be
+	// created and held until the *sql.DB is closed. Restore takes it exclusively,
+	// so it can prove nothing has the database open, and Open cannot create a new
+	// file under the live name while a restore has the old one moved aside.
+	lock, err := lockShared(realDir)
+	if err != nil {
+		return nil, err
+	}
+	attached := false
+	defer func() {
+		if !attached {
+			lock.Close()
+		}
+	}()
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("store: create database file: %w", err)
@@ -92,22 +106,16 @@ func Open(path string) (*sql.DB, error) {
 
 	dsn := fmt.Sprintf("file:%s?_txlock=immediate&_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)"+
 		"&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)", path, busyTimeout.Milliseconds())
-	// A shared flock on the database file for as long as the handle lives is
-	// what lets Restore prove that nothing has the database open (see lock.go).
-	lock, err := lockShared(path)
-	if err != nil {
-		return nil, err
-	}
 	// The registered driver instance, not a fresh one: it carries the SQL
 	// functions this package registers (ulower).
 	reg, err := sql.Open("sqlite", dsn)
 	if err != nil {
-		lock.Close()
 		return nil, err
 	}
 	drv := reg.Driver()
 	reg.Close()
 	db := sql.OpenDB(&lockedConnector{dsn: dsn, drv: drv, lock: lock})
+	attached = true // from here db.Close releases the lock
 	db.SetMaxOpenConns(maxConns)
 	db.SetMaxIdleConns(maxConns)
 	db.SetConnMaxLifetime(30 * time.Minute)

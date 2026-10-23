@@ -104,6 +104,9 @@ func runAdminCmd(ctx context.Context, args []string, getenv func(string) string,
 			for _, l := range append(rep.Integrity, rep.ForeignKey...) {
 				fmt.Fprintln(stdout, "  "+strings.TrimSpace(l))
 			}
+			if rep.Truncated {
+				fmt.Fprintln(stdout, "  (more problems exist than the 50 listed)")
+			}
 			return errors.New("integrity check failed; see docs/runbooks/backup-restore.md")
 		}
 		fmt.Fprintf(stdout, "ok %s\n", path)

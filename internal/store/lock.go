@@ -9,7 +9,7 @@ import (
 	"syscall"
 )
 
-// Open holds a shared flock on the database file until the *sql.DB is closed;
+// Open holds a shared flock on the data directory until the *sql.DB is closed;
 // Restore takes an exclusive one. flock conflicts between open file
 // descriptions, so this holds across processes and within one, and the kernel
 // drops it if the process dies. It is how "stop antares first" becomes
@@ -38,7 +38,7 @@ func flockFile(path string, how int) (*os.File, error) {
 func lockShared(path string) (*os.File, error) {
 	f, err := flockFile(path, syscall.LOCK_SH)
 	if errors.Is(err, errLocked) {
-		return nil, errors.New("store: the database is being restored (exclusive lock held); retry when the restore has finished")
+		return nil, errors.New("store: the data directory is locked by a restore in progress; retry when it has finished")
 	}
 	if err != nil {
 		return nil, fmt.Errorf("store: lock database: %w", err)

@@ -22,9 +22,39 @@ const BackupTempSuffix = ".backup-tmp"
 // RestoreTempSuffix names the staging file Restore uses next to the database.
 const RestoreTempSuffix = ".restore-tmp"
 
+// dsnPath refuses paths the driver would reinterpret when they are placed in a
+// "file:" URI ('?' starts parameters, '#' a fragment, '%' an escape), as Open does.
+func dsnPath(path string) error {
+	if path == "" || strings.ContainsAny(path, "?#%") {
+		return fmt.Errorf("invalid database path %q: '?', '#' and '%%' are not allowed", path)
+	}
+	return nil
+}
+
+// provesPath checks, through PRAGMA database_list, that the driver opened the
+// file the caller named and not whatever a rewritten URI resolved to.
+func provesPath(ctx context.Context, db *sql.DB, path string) error {
+	var seq int
+	var schema, opened string
+	if err := db.QueryRowContext(ctx, `PRAGMA database_list`).Scan(&seq, &schema, &opened); err != nil {
+		return fmt.Errorf("read database list: %w", err)
+	}
+	want, err1 := filepath.EvalSymlinks(path)
+	got, err2 := filepath.EvalSymlinks(opened)
+	if err1 != nil || err2 != nil || want != got {
+		return errors.New("driver opened a different file than the one named")
+	}
+	return nil
+}
+
 // openRO opens an existing SQLite file read-only through the driver. It never
 // creates the file, and never applies the WAL/pragma setup Open does.
-func openRO(path string) (*sql.DB, error) {
+func openRO(ctx context.Context, path string) (*sql.DB, error) {
+	if err := dsnPath(path); err != nil {
+		return nil, err
+	}
+	// mode=ro would also fail on a missing file, but with only "unable to open
+	// database file (14)"; the stat gives the operator the real reason.
 	if _, err := os.Stat(path); err != nil {
 		return nil, err
 	}
@@ -33,6 +63,10 @@ func openRO(path string) (*sql.DB, error) {
 		return nil, err
 	}
 	db.SetMaxOpenConns(1)
+	if err := provesPath(ctx, db, path); err != nil {
+		db.Close()
+		return nil, err
+	}
 	return db, nil
 }
 
@@ -40,6 +74,9 @@ func openRO(path string) (*sql.DB, error) {
 type Report struct {
 	Integrity  []string // lines from PRAGMA integrity_check; exactly ["ok"] when healthy
 	ForeignKey []string // violations from PRAGMA foreign_key_check, if any
+	// Truncated is set when either list hit its 50-line cap, so more problems
+	// exist than are listed.
+	Truncated bool
 }
 
 // OK reports whether the database is intact. integrity_check(50) returns the
@@ -52,9 +89,9 @@ func (r Report) OK() bool {
 // Check runs PRAGMA integrity_check and foreign_key_check on the file at path
 // and reports what SQLite said. A file SQLite cannot read at all is an error;
 // one that opens but is damaged is a Report whose OK is false. At most 50
-// problems of each kind are listed.
+// problems of each kind are listed; Truncated says when that cap was hit.
 func Check(ctx context.Context, path string) (Report, error) {
-	db, err := openRO(path)
+	db, err := openRO(ctx, path)
 	if err != nil {
 		return Report{}, err
 	}
@@ -68,6 +105,7 @@ func Check(ctx context.Context, path string) (Report, error) {
 		}
 		return Report{}, fmt.Errorf("integrity_check: %w", err)
 	}
+	r.Truncated = len(r.Integrity) >= 50
 	if !r.OK() {
 		return r, nil // table walks below are unreliable on a damaged file
 	}
@@ -76,7 +114,11 @@ func Check(ctx context.Context, path string) (Report, error) {
 		return Report{}, fmt.Errorf("foreign_key_check: %w", err)
 	}
 	defer rows.Close()
-	for rows.Next() && len(r.ForeignKey) < 50 {
+	for rows.Next() {
+		if len(r.ForeignKey) == 50 {
+			r.Truncated = true
+			break
+		}
 		var table, parent sql.NullString
 		var rowid sql.NullInt64
 		var fkid int
@@ -131,7 +173,7 @@ func VerifyBackup(ctx context.Context, path string, set Set) error {
 	if len(rep.ForeignKey) > 0 {
 		return fmt.Errorf("foreign_key_check failed: %s", strings.Join(rep.ForeignKey, "; "))
 	}
-	db, err := openRO(path)
+	db, err := openRO(ctx, path)
 	if err != nil {
 		return err
 	}
@@ -445,7 +487,7 @@ func sameFile(a, b string) (bool, error) {
 // requireIdle proves, as far as it can, that nothing is using the live
 // database, and returns a release func that keeps the proof in force.
 //
-//  1. An exclusive flock on the file: it fails while any store.Open handle
+//  1. An exclusive flock on the data directory: it fails while any store.Open handle
 //     (the running service, backup, another restore) holds the database, even
 //     one that is idle between transactions. This is the real check.
 //  2. A write transaction that begins and rolls back: catches a writer that
@@ -453,21 +495,32 @@ func sameFile(a, b string) (bool, error) {
 //
 // A file SQLite reports as corrupt or not a database (the case restore exists
 // for) does not fail step 2; every other failure means idleness is unproven.
-// A missing live file is an empty volume.
+// A missing live file is an empty volume. The lock is on the directory, not the
+// file, so it also covers the moment during the swap when the live name does
+// not exist: Open takes the shared lock before it may create the file.
 func requireIdle(ctx context.Context, path string) (func(), error) {
 	none := func() {}
-	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		return none, nil
-	} else if err != nil {
-		return none, fmt.Errorf("restore: cannot inspect the live database: %w", err)
+	dir, err := filepath.EvalSymlinks(filepath.Dir(path))
+	if err != nil {
+		return none, fmt.Errorf("restore: cannot resolve the data directory: %w", err)
 	}
-	lock, err := flockFile(path, syscall.LOCK_EX)
+	lock, err := flockFile(dir, syscall.LOCK_EX)
 	if errors.Is(err, errLocked) {
 		return none, errors.New("restore: the live database is in use (held open by antares or another store user); stop antares first")
 	} else if err != nil {
-		return none, fmt.Errorf("restore: cannot lock the live database: %w", err)
+		return none, fmt.Errorf("restore: cannot lock the data directory: %w", err)
 	}
 	release := func() { lock.Close() }
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		return release, nil
+	} else if err != nil {
+		release()
+		return none, fmt.Errorf("restore: cannot inspect the live database: %w", err)
+	}
+	if err := dsnPath(path); err != nil {
+		release()
+		return none, fmt.Errorf("restore: %w", err)
+	}
 	db, err := sql.Open("sqlite", "file:"+path+"?_txlock=immediate&_pragma=busy_timeout(500)")
 	if err != nil {
 		release()

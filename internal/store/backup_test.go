@@ -164,7 +164,7 @@ func TestBackupDuringActiveWriter(t *testing.T) {
 	if err := VerifyBackup(ctx, bak, migrationSet(t)); err != nil {
 		t.Fatal(err)
 	}
-	b, err := openRO(bak)
+	b, err := openRO(ctx, bak)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -370,7 +370,7 @@ func TestRestoreKeepsOldDatabaseAndRefusesWhileInUse(t *testing.T) {
 		t.Fatal("old database not kept")
 	}
 	kept := filepath.Join(keep, ents[0].Name())
-	if kdb, err := openRO(kept); err != nil {
+	if kdb, err := openRO(ctx, kept); err != nil {
 		t.Fatal(err)
 	} else {
 		defer kdb.Close()
@@ -612,7 +612,7 @@ func TestRestoreRefusesWhileDatabaseIsOpenButIdle(t *testing.T) {
 func TestOpenRefusesDuringRestoreLock(t *testing.T) {
 	db, live := migrated(t)
 	db.Close()
-	lock, err := flockFile(live, syscall.LOCK_EX)
+	lock, err := flockFile(filepath.Dir(live), syscall.LOCK_EX)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -673,4 +673,65 @@ func TestBackupRefusesDestinationInDataDir(t *testing.T) {
 		t.Fatalf("Open after refused backups: %v", err)
 	}
 	re.Close()
+}
+
+// The swap window: restore has moved the live file aside and not yet renamed
+// the new one in. A start-up then must not create an empty database under the
+// live name (it would be orphaned when the rename lands).
+func TestOpenCannotCreateDuringSwapWindow(t *testing.T) {
+	db, live := migrated(t)
+	db.Close()
+	lock, err := flockFile(filepath.Dir(live), syscall.LOCK_EX) // what Restore holds
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Close()
+	for _, suf := range dbSuffixes {
+		os.Rename(live+suf, live+RestoreTempSuffix+".old"+suf) // the aside step
+	}
+	if re, err := Open(live); err == nil {
+		re.Close()
+		t.Fatal("Open succeeded inside the swap window")
+	}
+	if _, err := os.Stat(live); err == nil {
+		t.Fatal("Open created the database file inside the swap window")
+	}
+}
+
+// 'check' must not report on a different file than the one named.
+func TestCheckRefusesDriverURICharactersAndProvesThePath(t *testing.T) {
+	ctx := context.Background()
+	db, _ := migrated(t)
+	dir := t.TempDir()
+	good := filepath.Join(dir, "name.sqlite")
+	if err := Backup(ctx, db, good); err != nil {
+		t.Fatal(err)
+	}
+	// A real file whose NAME contains a URI character, next to a valid database
+	// that the driver would read instead: "name?x.sqlite" -> "name" + parameters,
+	// "dot%2Esqlite" -> "dot.sqlite". The operator named the garbage file; an "ok"
+	// would be about the other one.
+	os.Rename(good, filepath.Join(dir, "name"))
+	copyFile(filepath.Join(dir, "name"), filepath.Join(dir, "dot.sqlite"), 0o600)
+	for _, bad := range []string{"name?x.sqlite", "name#x.sqlite", "dot%2Esqlite"} {
+		p := filepath.Join(dir, bad)
+		if err := os.WriteFile(p, bytes.Repeat([]byte("garbage "), 600), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if rep, err := Check(ctx, p); err == nil {
+			t.Errorf("Check verified something for %q: %+v", bad, rep)
+		}
+		if err := VerifyBackup(ctx, p, migrationSet(t)); err == nil {
+			t.Errorf("VerifyBackup accepted %q", bad)
+		}
+	}
+	if rep, err := Check(ctx, filepath.Join(dir, "name")); err != nil || !rep.OK() {
+		t.Errorf("valid path: %+v %v", rep, err)
+	}
+	// Through a symlink it still checks the target.
+	link := filepath.Join(dir, "link")
+	os.Symlink(filepath.Join(dir, "name"), link)
+	if rep, err := Check(ctx, link); err != nil || !rep.OK() {
+		t.Errorf("symlinked path: %+v %v", rep, err)
+	}
 }
