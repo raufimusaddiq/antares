@@ -70,7 +70,7 @@ describe("run state tells the truth", () => {
     expect(play([ev("run.failed", { code: "UPSTREAM_TIMEOUT", status: "TIMED_OUT" })]).timedOut).toBe(true);
     const cancelled = play([ev("run.cancelled")]);
     for (const terminal of [failed, cancelled]) {
-      for (const later of [ev("run.completed", { output: "x", status: "COMPLETED" }), ev("assistant.delta", { text: "more" }), ev("run.started"), ev("run.disconnected"), ev("stream.lost")]) {
+      for (const later of [ev("run.completed", { output: "x", status: "COMPLETED" }), ev("assistant.delta", { text: "more" }), ev("run.started"), ev("run.disconnected"), ev("stream.closed"), ev("stream.lost")]) {
         const after = reduce(terminal, later);
         expect(after).toBe(terminal);
         expect(isTerminal(after.phase)).toBe(true);
@@ -87,6 +87,15 @@ describe("run state tells the truth", () => {
     expect(play([ev("stream.lost")]).phase).toBe("reconnecting");
     // and it recovers into streaming, not completion
     expect(reduce(lost, ev("stream.open")).phase).toBe("streaming");
+  });
+
+  it("a dropped stream preserves the active response and can reconnect", () => {
+    const dropped = play([ev("assistant.delta", { text: "partial" }), ev("stream.closed")]);
+    expect(dropped.phase).toBe("detached");
+    expect(isTerminal(dropped.phase)).toBe(false);
+    expect(dropped.text).toBe("partial");
+    expect(runNotice(dropped)).toMatch(/run is still active/);
+    expect(reduce(dropped, ev("stream.open")).phase).toBe("streaming");
   });
 
   it("run.resumed clears text so a replay cannot duplicate it", () => {

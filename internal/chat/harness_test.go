@@ -264,13 +264,14 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 // ---- the app ------------------------------------------------------------------------
 
 type app struct {
-	t     testing.TB
-	db    *sql.DB
-	box   *secrets.Box
-	svc   *Service
-	hx    *fakeHermes
-	h     http.Handler
-	users map[string]*person
+	t      testing.TB
+	db     *sql.DB
+	box    *secrets.Box
+	svc    *Service
+	hx     *fakeHermes
+	h      http.Handler
+	users  map[string]*person
+	limits *auth.Limits
 
 	seenMu  sync.Mutex
 	seen    []string  // every response a browser would have received: headers and body
@@ -300,6 +301,7 @@ var logBuf = &syncBuf{}
 func init() { log.SetOutput(logBuf) }
 
 type appOpts struct {
+	limits    *auth.Limits
 	backoff   func(int) time.Duration
 	client    hermes.ClientOptions
 	heartbeat time.Duration
@@ -333,7 +335,7 @@ func newApp(t testing.TB, o ...appOpts) *app {
 		t.Fatal(err)
 	}
 	t.Cleanup(svc.Close)
-	ap := &app{t: t, db: db, box: box, svc: svc, hx: hx, users: map[string]*person{}}
+	ap := &app{t: t, db: db, box: box, svc: svc, hx: hx, users: map[string]*person{}, limits: opt.limits}
 	ap.h = rebuild(t, ap, svc)
 	logBuf.mu.Lock()
 	logBuf.b.Reset()
@@ -346,7 +348,7 @@ func newApp(t testing.TB, o ...appOpts) *app {
 func rebuild(t testing.TB, a *app, svc *Service) http.Handler {
 	t.Helper()
 	au, err := auth.New(auth.Options{DB: a.db, ClientID: "c", ClientSecret: "s", PublicOrigin: testOrigin,
-		Endpoints: auth.Endpoints{Issuer: "i", Auth: "https://a", Token: "https://t", JWKS: "https://j", Issued: []string{"i"}}, Chat: svc})
+		Endpoints: auth.Endpoints{Issuer: "i", Auth: "https://a", Token: "https://t", JWKS: "https://j", Issued: []string{"i"}}, Chat: svc, Limits: a.limits})
 	if err != nil {
 		t.Fatal(err)
 	}

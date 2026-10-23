@@ -69,9 +69,9 @@ func (a *Auth) Register(mux *http.ServeMux) {
 		key := rt.Method + " " + rt.Path
 		var h http.Handler = notBuilt
 		if bh, ok := built[key]; ok {
-			h = a.csrf(rt.Method, bh)
+			h = bh
 		}
-		mux.Handle(key, a.Active(h))
+		mux.Handle(key, a.Active(a.csrf(rt.Method, a.limit(key, h))))
 	}
 	// The whole admin tree is guarded. Anything not registered below is a plain
 	// 404, not a "not built yet" stub: /api/admin/system was removed rather than

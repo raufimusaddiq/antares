@@ -23,6 +23,9 @@ by forgetting a target.
 - `internal/chat/fuzz_test.go` — ownership over HTTP, and SSE recovery (`FuzzOwnershipOverHTTP`, `FuzzSSERecovery`).
 - `internal/store/ownership_fuzz_test.go` — ownership against a model of the store (`FuzzOwnership`).
 
+The HTTP ownership fixture uses maximum run/message quotas so repeated probes reach the ownership
+handlers. Quota enforcement is covered separately by the limits tests; ownership assertions are unchanged.
+
 ## Surfaces
 
 Built and probed with a foreign caller: chat read, history, send message, run status, run events, run

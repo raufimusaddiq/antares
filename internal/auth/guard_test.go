@@ -65,7 +65,7 @@ func TestEligibleUserPassesTheGuardAndAdminTreeIsAdminOnly(t *testing.T) {
 	h := newHarness(t)
 	active := h.userIn("s-active", "APPROVED", "READY", "USER", true)
 	for _, rt := range ChatRoutes {
-		if w := active.do(rt.Method, concrete(rt.Path), nil); w.Code != http.StatusNotImplemented {
+		if w := active.do(rt.Method, concrete(rt.Path), map[string]string{"Origin": testOrigin}); w.Code != http.StatusNotImplemented {
 			t.Errorf("%s %s as active user = %d (guard should pass to the placeholder)", rt.Method, rt.Path, w.Code)
 		}
 	}

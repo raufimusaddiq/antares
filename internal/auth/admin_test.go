@@ -552,14 +552,15 @@ func TestApprovingAUserProvisionsEndToEndAndNothingSecretReachesAnyResponse(t *t
 	note(admin.act(id, "approve", `{"profile":"x"}`))
 
 	mu.Lock()
+	profile := slug
 	var sealed []byte
 	h.db.QueryRow(`SELECT credential_ciphertext FROM tenant_bindings WHERE user_id = ?`, id).Scan(&sealed)
-	secretsToHide := []string{key, slug, sentinelCiphertext, hex.EncodeToString(sealed), base64.StdEncoding.EncodeToString(sealed), base64.RawURLEncoding.EncodeToString(sealed)}
+	secretsToHide := []string{key, profile, sentinelCiphertext, hex.EncodeToString(sealed), base64.StdEncoding.EncodeToString(sealed), base64.RawURLEncoding.EncodeToString(sealed)}
 	mu.Unlock()
 	if len(sealed) == 0 {
 		t.Fatal("no sealed credential stored")
 	}
-	if slug == "" {
+	if profile == "" {
 		t.Fatal("helper was never called")
 	}
 	for _, s := range secretsToHide {
