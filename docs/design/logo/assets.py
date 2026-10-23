@@ -59,9 +59,10 @@ with sync_playwright() as pw:
         pg = b.new_page(viewport={"width": px, "height": px})
         pg.set_content(ICON(px, MID, "transparent", 0.04))
         pg.screenshot(path=str(public / f"favicon-{px}.png"), omit_background=True)
-    pg = b.new_page(viewport={"width": 180, "height": 180})
-    pg.set_content(ICON(180, LIGHT, BASE, 0.2))
-    pg.screenshot(path=str(public / "apple-touch-icon.png"))
+    for px, filename in ((180, "apple-touch-icon.png"), (192, "icon-192.png"), (512, "icon-512.png")):
+        pg = b.new_page(viewport={"width": px, "height": px})
+        pg.set_content(ICON(px, LIGHT, BASE, 0.2))
+        pg.screenshot(path=str(public / filename))
     pg = b.new_page(viewport={"width": 1200, "height": 630})
     (public / "_og.html").write_text(OG)
     pg.goto(f"{base}/_og.html")
