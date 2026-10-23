@@ -70,6 +70,17 @@ describe("Recorder", () => {
     expect(screen.getByRole("alert").textContent).toContain("refused");
   });
 
+  it("releases the microphone when the recorder fails to start", async () => {
+    const start = vi.spyOn(FakeRecorder.prototype, "start").mockImplementation(() => {
+      throw new DOMException("bad state", "InvalidStateError");
+    });
+    render(<Recorder />);
+    await act(async () => fireEvent.click(screen.getByText("Record")));
+    expect(stopTrack).toHaveBeenCalled();
+    expect(screen.getByRole("alert")).toBeTruthy();
+    start.mockRestore();
+  });
+
   it("states that speech-to-text is unavailable rather than offering it", () => {
     render(<Recorder />);
     expect(screen.getByText(/Speech-to-text is unavailable/)).toBeTruthy();

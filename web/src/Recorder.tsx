@@ -52,20 +52,24 @@ export function Recorder() {
   }
 
   const start = async () => {
+    let stream: MediaStream | undefined;
     try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       const type = TYPES.find((t) => MediaRecorder.isTypeSupported(t));
-      const r = new MediaRecorder(stream, type ? { mimeType: type } : undefined);
+      const live = stream;
+      const r = new MediaRecorder(live, type ? { mimeType: type } : undefined);
       const chunks: Blob[] = [];
       r.ondataavailable = (e) => e.data.size > 0 && chunks.push(e.data);
       r.onstop = () => {
-        stream.getTracks().forEach((t) => t.stop());
+        live.getTracks().forEach((t) => t.stop());
         setPhase({ name: "ready", url: URL.createObjectURL(new Blob(chunks, { type: r.mimeType })) });
       };
       rec.current = r;
       r.start();
       setPhase({ name: "recording", seconds: 0 });
     } catch (e) {
+      stream?.getTracks().forEach((t) => t.stop()); // a take that never started must not leave the microphone on
+      rec.current = null;
       setPhase({ name: "error", message: failure(e) });
     }
   };

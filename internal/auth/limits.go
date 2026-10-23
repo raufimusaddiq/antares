@@ -34,13 +34,14 @@ func newRequestLimits(c Limits) *requestLimits {
 
 const (
 	artifactDownload = "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}"
+	assetRead        = "GET /api/assets/{assetId}"
 	historyRead      = "GET /api/chats/{chatId}/messages"
 	artifactPreview  = "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview"
 )
 
 func (a *Auth) limit(route string, next http.Handler) http.Handler {
 	switch route {
-	case "POST /api/chats/{chatId}/messages", "POST /api/assets", "GET /api/runs/{runId}/events", artifactDownload, artifactPreview, historyRead:
+	case "POST /api/chats/{chatId}/messages", "POST /api/assets", "GET /api/runs/{runId}/events", artifactDownload, artifactPreview, assetRead, historyRead:
 	default:
 		return next
 	}
@@ -94,8 +95,9 @@ func (l *requestLimits) acquire(id, route string, now time.Time) (int, func()) {
 			return retry, nil
 		}
 		b.uploads++
-	case artifactDownload, artifactPreview:
-		// Each one reads a whole transcript through a two-slot semaphore.
+	case artifactDownload, artifactPreview, assetRead:
+		// Each one reads a whole transcript through a two-slot semaphore; a staged recording
+		// is up to 10 MiB, so its reads share the bucket.
 		if b.artifacts >= l.config.ArtifactsPerMinute {
 			return retry, nil
 		}

@@ -9,3 +9,11 @@
 | Playing assistant audio | not built | Hermes returns no audio artifact reference on the deployed version (tts disabled). Playback of a recording the user just made is client-side. When Hermes returns audio, it must be ingested through an owned asset (MEDIA-002), not played from a provider URL. |
 
 Re-probe when the owner enables the `stt`/`tts` toolsets: capture a fixture before building on it.
+
+## Retention of staged audio
+
+Staged recordings do **not** expire and there is no cleanup job: they are deleted only by their
+owner with `DELETE /api/assets/{assetId}` (204; someone else's id is a 404). No UI calls it yet, so
+an account that fills its 50 MiB (`STORAGE_QUOTA`) can only recover through that API call. Nothing
+uploads from the UI today, so this cannot happen from the app. When a UI that uploads is added, it
+must ship with the delete control. Reads (`GET`) share the per-account artifact rate limit.

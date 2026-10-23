@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/raufimusaddiq/antares/internal/auth"
+	"github.com/raufimusaddiq/antares/internal/store"
 )
 
 func requireLimit(t *testing.T, w *httptest.ResponseRecorder, known ...bool) {
@@ -185,5 +186,20 @@ func TestOrdinaryHistoryReadingIsNotLimitedByDefault(t *testing.T) {
 		if w := alice.get("/api/chats/" + chat + "/messages"); w.Code != 200 {
 			t.Fatalf("read %d: %d %s", i, w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestAssetReadRateLimit(t *testing.T) {
+	limits := auth.DefaultLimits()
+	limits.ArtifactsPerMinute = 1
+	a := newApp(t, appOpts{limits: &limits})
+	alice, bob := a.user("alice"), a.user("bobby")
+	id := decodeBody[struct{ ID string }](t, alice.do("POST", "/api/assets", audioHdr, webmBody)).ID
+	if w := alice.get("/api/assets/" + id); w.Code != 200 {
+		t.Fatalf("read below limit: %d", w.Code)
+	}
+	requireLimit(t, alice.get("/api/assets/"+id))
+	if w := bob.get("/api/assets/" + store.NewID()); w.Code != 404 {
+		t.Fatalf("A consumed B's read quota: %d", w.Code)
 	}
 }
