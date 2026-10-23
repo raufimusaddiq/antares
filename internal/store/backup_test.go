@@ -385,7 +385,7 @@ func TestRestoreKeepsOldDatabaseAndRefusesWhileInUse(t *testing.T) {
 func TestOpenToleratesCrashResidue(t *testing.T) {
 	db, p := migrated(t)
 	db.Close()
-	for _, n := range []string{BackupTempSuffix, BackupTempSuffix + ".partial", BackupTempSuffix + "-journal",
+	for _, n := range []string{BackupTempSuffix, BackupTempSuffix + "-journal",
 		RestoreTempSuffix, RestoreTempSuffix + ".old", RestoreTempSuffix + ".old-wal"} {
 		if err := os.WriteFile(p+n, []byte("residue"), 0o600); err != nil {
 			t.Fatal(err)
@@ -396,6 +396,25 @@ func TestOpenToleratesCrashResidue(t *testing.T) {
 		t.Fatalf("Open refused crash residue: %v", err)
 	}
 	re.Close()
+	// A symlink wearing a residue name is not residue either.
+	linkName := p + BackupTempSuffix + "-wal"
+	os.Remove(linkName)
+	if err := os.Symlink("/etc/passwd", linkName); err != nil {
+		t.Fatal(err)
+	}
+	if re, err := Open(p); err == nil {
+		re.Close()
+		t.Fatal("Open accepted a symlink named like residue")
+	}
+	os.Remove(linkName)
+	// A name that merely starts like residue is not residue.
+	loose := p + BackupTempSuffix + "-anything"
+	os.WriteFile(loose, nil, 0o600)
+	if re, err := Open(p); err == nil {
+		re.Close()
+		t.Fatal("Open accepted a prefix-only match")
+	}
+	os.Remove(loose)
 	// A directory wearing a residue name is not residue.
 	dirName := p + RestoreTempSuffix + ".old"
 	os.Remove(dirName)
@@ -624,4 +643,34 @@ func TestSameFileSurfacesStatErrors(t *testing.T) {
 	if same, err := sameFile(filepath.Join(dir, "missing"), filepath.Join(dir, "other")); same || err != nil {
 		t.Errorf("missing source: %v %v", same, err)
 	}
+}
+
+// /data is the only writable path in the container, so a backup written there
+// is the reachable mistake: it must be refused, and Open must keep working.
+func TestBackupRefusesDestinationInDataDir(t *testing.T) {
+	ctx := context.Background()
+	db, p := migrated(t)
+	for _, dest := range []string{p + ".bak", filepath.Join(filepath.Dir(p), "other.bak")} {
+		err := Backup(ctx, db, dest)
+		if err == nil || !strings.Contains(err.Error(), "outside the data directory") {
+			t.Fatalf("Backup to %s: %v", dest, err)
+		}
+		if _, serr := os.Stat(dest); serr == nil {
+			t.Errorf("%s was written", dest)
+		}
+	}
+	// Through a symlinked directory too.
+	link := filepath.Join(t.TempDir(), "via")
+	if err := os.Symlink(filepath.Dir(p), link); err != nil {
+		t.Fatal(err)
+	}
+	if err := Backup(ctx, db, filepath.Join(link, "x.bak")); err == nil {
+		t.Error("Backup through a symlink to the data dir was accepted")
+	}
+	db.Close()
+	re, err := Open(p)
+	if err != nil {
+		t.Fatalf("Open after refused backups: %v", err)
+	}
+	re.Close()
 }

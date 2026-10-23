@@ -180,6 +180,11 @@ func Backup(ctx context.Context, db *sql.DB, dest string) error {
 	if !filepath.IsAbs(dest) {
 		return errors.New("backup: destination must be an absolute path")
 	}
+	if inLiveDir(db, dest) {
+		return errors.New("backup: the destination is inside the database's own data directory, which must hold only " +
+			"the database files (antares would refuse to start); write it outside the data directory, " +
+			"or stream it with `antares backup -`")
+	}
 	if _, err := os.Lstat(dest); err == nil {
 		return fmt.Errorf("backup: %s already exists; refusing to overwrite", dest)
 	}
@@ -204,9 +209,27 @@ func Backup(ctx context.Context, db *sql.DB, dest string) error {
 	}
 	// Without this the "verified" file can exist only in the page cache.
 	if err := syncDir(filepath.Dir(dest)); err != nil {
-		return fmt.Errorf("backup: sync directory: %w", err)
+		return fmt.Errorf("backup: the verified backup HAS been written to %s, but syncing its directory failed (%w); "+
+			"it may not survive a crash: run `antares check` on it, or take another", dest, err)
 	}
 	return nil
+}
+
+// inLiveDir reports whether dest would be created in the directory that holds
+// db's main database file. If either side cannot be resolved it answers true:
+// the refusal is the safe side.
+func inLiveDir(db *sql.DB, dest string) bool {
+	var seq int
+	var name, file string
+	if err := db.QueryRow(`PRAGMA database_list`).Scan(&seq, &name, &file); err != nil || file == "" {
+		return true
+	}
+	live, err1 := filepath.EvalSymlinks(filepath.Dir(file))
+	out, err2 := filepath.EvalSymlinks(filepath.Dir(dest))
+	if err1 != nil || err2 != nil {
+		return err1 != nil
+	}
+	return live == out
 }
 
 // snapshot writes a verified, fsynced 0600 VACUUM INTO copy of db at path,
@@ -344,31 +367,53 @@ func Restore(ctx context.Context, src, livePath string, set Set, opt RestoreOpti
 	// replayed onto the restored file it would corrupt it.
 	aside := livePath + RestoreTempSuffix + ".old"
 	var moved []string
-	undo := func() {
+	// undo puts the moved files back; a file that cannot be put back is named,
+	// because it is then still under its ".old" name and Open would start empty.
+	undo := func() string {
+		var stuck []string
 		for _, suf := range moved {
-			os.Rename(aside+suf, livePath+suf)
+			if err := os.Rename(aside+suf, livePath+suf); err != nil {
+				stuck = append(stuck, fmt.Sprintf("%s (%v)", aside+suf, err))
+			}
 		}
+		if len(stuck) > 0 {
+			return "; COULD NOT put back, rename by hand before starting antares: " + strings.Join(stuck, ", ")
+		}
+		return ""
 	}
 	for _, suf := range dbSuffixes {
 		if err := os.Rename(livePath+suf, aside+suf); err != nil {
 			if errors.Is(err, os.ErrNotExist) {
 				continue
 			}
-			undo()
-			return fmt.Errorf("restore: move %s aside: %w", filepath.Base(livePath)+suf, err)
+			return fmt.Errorf("restore: move %s aside: %w%s", filepath.Base(livePath)+suf, err, undo())
 		}
 		moved = append(moved, suf)
 	}
 	if err := os.Rename(staged, livePath); err != nil {
-		undo()
+		if left := undo(); left != "" {
+			return fmt.Errorf("restore: %w%s", err, left)
+		}
 		return fmt.Errorf("restore: %w (live database left as it was)", err)
 	}
-	if err := syncDir(dir); err != nil {
-		return fmt.Errorf("restore: the database HAS been replaced, but syncing the directory failed (%w); "+
-			"it may not survive a crash: run the restore again, or start antares and verify", err)
-	}
+	// The restored file is in place from here on. Do the cleanup whatever the
+	// directory sync says, then report everything that did not go cleanly.
+	syncErr := syncDir(dir)
+	var leftovers []string
 	for _, suf := range moved {
-		os.Remove(aside + suf)
+		if err := os.Remove(aside + suf); err != nil && !errors.Is(err, os.ErrNotExist) {
+			leftovers = append(leftovers, fmt.Sprintf("%s (%v)", aside+suf, err))
+		}
+	}
+	switch {
+	case syncErr != nil && len(leftovers) > 0:
+		return fmt.Errorf("restore: the database HAS been replaced, but syncing the directory failed (%w) and these old files remain: %s; "+
+			"run the restore again, or start antares and verify, then delete them", syncErr, strings.Join(leftovers, ", "))
+	case syncErr != nil:
+		return fmt.Errorf("restore: the database HAS been replaced, but syncing the directory failed (%w); "+
+			"it may not survive a crash: run the restore again, or start antares and verify", syncErr)
+	case len(leftovers) > 0:
+		return fmt.Errorf("restore: the database HAS been replaced; the old files could not be removed and are safe to delete once antares is verified: %s", strings.Join(leftovers, ", "))
 	}
 	return nil
 }

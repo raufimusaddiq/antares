@@ -167,14 +167,19 @@ func requireDedicated(dir, base string) error {
 		return fmt.Errorf("store: read data dir: %w", err)
 	}
 	own := map[string]bool{"lost+found": true, base: true, base + "-wal": true, base + "-shm": true, base + "-journal": true}
+	// The exact staging names backup and restore use (with SQLite's sidecars): a
+	// crash can leave any of these, and refusing to start over them would turn a
+	// failed backup into an outage. Regular files only; a symlink or directory
+	// by these names is not ours.
+	regularOnly := map[string]bool{}
+	for _, suf := range []string{"", "-wal", "-shm", "-journal"} {
+		for _, stem := range []string{base + BackupTempSuffix, base + RestoreTempSuffix, base + RestoreTempSuffix + ".old"} {
+			regularOnly[stem+suf] = true
+		}
+	}
 	for _, e := range entries {
-		// Staging files of backup/restore (and SQLite sidecars or ".old" swaps of them)
-		// that a crash left behind are ours too: refusing to start over them would
-		// turn a failed backup into an outage.
 		n := e.Name()
-		// Only regular files: a directory with such a name is not our residue.
-		residue := !e.IsDir() && (strings.HasPrefix(n, base+BackupTempSuffix) || strings.HasPrefix(n, base+RestoreTempSuffix))
-		if !own[n] && !residue {
+		if !own[n] && !(regularOnly[n] && e.Type().IsRegular()) {
 			return errors.New("store: data directory is not dedicated to Antares (it holds other files); " +
 				"set ANTARES_DB_PATH inside a directory used only for this database")
 		}

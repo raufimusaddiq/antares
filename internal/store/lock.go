@@ -54,6 +54,13 @@ type lockedConnector struct {
 	lock *os.File
 }
 
-func (c *lockedConnector) Connect(context.Context) (driver.Conn, error) { return c.drv.Open(c.dsn) }
-func (c *lockedConnector) Driver() driver.Driver                        { return c.drv }
-func (c *lockedConnector) Close() error                                 { return c.lock.Close() }
+// Connect honours ctx only up to the call: the driver's Open takes no context, so
+// a hung open is bounded by SQLite's busy_timeout (5 s, in the DSN), not by ctx.
+func (c *lockedConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	return c.drv.Open(c.dsn)
+}
+func (c *lockedConnector) Driver() driver.Driver { return c.drv }
+func (c *lockedConnector) Close() error          { return c.lock.Close() }

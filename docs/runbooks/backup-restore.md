@@ -5,7 +5,7 @@ its WAL. Tooling is built into the `antares` binary (the image has no shell or `
 
 | Command | What it does |
 |---|---|
-| `antares backup <file>` | Consistent snapshot of the live database via `VACUUM INTO`, safe beside active writers. Refuses to overwrite. Verified with `integrity_check` before it appears at `<file>`; mode 0600. |
+| `antares backup <file>` | Consistent snapshot of the live database via `VACUUM INTO`, safe beside active writers. Refuses to overwrite, and refuses a destination inside the data directory (Antares would then refuse to start; use `-` or another mount). Verified with `integrity_check` before it appears at `<file>`; mode 0600. |
 | `antares backup -` | Same, streamed to stdout (for the read-only container, where `/data` is the only writable path). |
 | `antares restore (-keep-old DIR \| -discard-old) <file>` | Verifies `<file>`, then replaces the database. **Antares must be stopped**; restore refuses if it is not (see below). |
 | `antares check [file]` | `integrity_check` + `foreign_key_check`; default file is `ANTARES_DB_PATH`. Exit 0 and `ok <path>`, or non-zero. |
