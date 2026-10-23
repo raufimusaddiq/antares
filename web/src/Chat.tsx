@@ -21,6 +21,7 @@ import { Notifications } from "./Notifications";
 import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 import { AntaresMark } from "./brand/AntaresMark";
+import { loadDraft, matchTemplates, saveDraft, type Template } from "./drafts";
 
 const MAX_INPUT = 32_000;
 const RECONNECT_TRIES = 5;
@@ -184,10 +185,16 @@ export function Transcript(props: TranscriptProps) {
 
 export function Composer(props: { value: string; busy: boolean; onChange: (v: string) => void; onSubmit: () => void }) {
   const empty = props.value.trim() === "";
+  const matches = matchTemplates(props.value);
+  const insert = (t: Template) => {
+    props.onChange(t.body);
+    document.getElementById("composer-input")?.focus();
+  };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
       e.preventDefault();
-      if (!empty && !props.busy) props.onSubmit();
+      if (matches.length > 0) insert(matches[0]); // an open template menu: Enter picks, it does not send "/sum"
+      else if (!empty && !props.busy) props.onSubmit();
     }
   };
   return (
@@ -198,6 +205,17 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
         if (!empty && !props.busy) props.onSubmit();
       }}
     >
+      {matches.length > 0 && (
+        <ul className="templates" aria-label="Templates">
+          {matches.map((t) => (
+            <li key={t.name}>
+              <button type="button" className="quiet" onClick={() => insert(t)}>
+                /{t.name}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
       <label htmlFor="composer-input" className="sr">
         Message
       </label>
@@ -236,8 +254,16 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const [run, dispatch] = useReducer(runReducer, null);
   const [pending, setPending] = useState<Pending | null>(null);
   const [draft, setDraft] = useState("");
+  // Typing writes the draft of the chat on screen. Switching chats loads that chat's draft;
+  // nothing else ever writes, so text typed in one chat cannot land in another's key.
+  const onDraft = (v: string) => {
+    setDraft(v);
+    saveDraft(email, currentRef.current, v);
+  };
   const [banner, setBanner] = useState("");
   const [focus, setFocus] = useState<{ chat: string; seq: number; nonce: number } | null>(null); // a search result being opened at its turn
+
+  useEffect(() => setDraft(loadDraft(email, current)), [email, current]);
 
   const es = useRef<EventSource | null>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -581,6 +607,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const onSubmit = () => {
     const input = draft.trim();
     setDraft("");
+    saveDraft(email, currentRef.current, "");
     void submit(input, newIdempotencyKey());
   };
 
@@ -679,7 +706,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           }}
           onResend={() => pending && void submit(pending.input, pending.key)}
         />
-        <Composer value={draft} busy={busy} onChange={setDraft} onSubmit={onSubmit} />
+        <Composer value={draft} busy={busy} onChange={onDraft} onSubmit={onSubmit} />
       </main>
     </div>
   );

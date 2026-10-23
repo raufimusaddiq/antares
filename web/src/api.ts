@@ -1,3 +1,4 @@
+import { purgeDrafts } from "./drafts";
 import { purgeUserState } from "./pwa";
 
 // The browser's whole view of the backend for this slice: who am I, and sign out.
@@ -28,12 +29,16 @@ export async function loadSession(loginFailed: boolean, signal?: AbortSignal): P
     const res = await fetch("/api/me", { credentials: "same-origin", headers: { Accept: "application/json" }, signal });
     if (res.status === 401) {
       purgeUserState();
+      purgeDrafts();
       return { kind: "anonymous", loginFailed };
     }
     if (!res.ok) return { kind: "unreachable" };
     const body: unknown = await res.json();
     const account = parseAccount(body);
-    if (account?.state === "SUSPENDED") purgeUserState();
+    if (account?.state === "SUSPENDED") {
+      purgeUserState();
+      purgeDrafts();
+    }
     return account ? { kind: "account", account } : { kind: "unreachable" };
   } catch {
     return { kind: "unreachable" };
@@ -59,7 +64,10 @@ export async function signOut(): Promise<boolean> {
   try {
     const res = await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
     const ok = res.status === 204 || res.status === 401;
-    if (ok) purgeUserState();
+    if (ok) {
+      purgeUserState();
+      purgeDrafts();
+    }
     return ok;
   } catch {
     return false;
