@@ -153,6 +153,7 @@ func run() error {
 		Tenants:      tenants,
 		Chat:         chats,
 		Push:         pusher,
+		Limits:       &cfg.Limits,
 	})
 	if err != nil {
 		return err

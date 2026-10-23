@@ -47,7 +47,8 @@ called on the live container. Every decoder fails closed:
 
 Every Hermes call runs `Service.gate` → `store.ActiveBinding`: APPROVED + tenant READY + binding READY and
 verified, read from the database each time. Open SSE streams re-check every heartbeat (15 s) and close on
-suspension. One active run per chat (partial unique index), 4 active runs and 30 sends/minute per user.
+suspension. One active run per chat (partial unique index) and 4 active runs per user.
+Configurable per-account request rates and SSE quotas: [rate-limits.md](rate-limits.md).
 
 ## History paging (slice 5, `HIST-002`/`HIST-003`, `PERF-001`)
 

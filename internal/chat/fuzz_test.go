@@ -3,6 +3,7 @@ package chat
 import (
 	"encoding/json"
 	"fmt"
+	"math"
 	"net/url"
 	"strings"
 	"sync"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -52,6 +54,11 @@ type ownFuzz struct {
 
 func newOwnFuzz(t testing.TB) *ownFuzz {
 	v := newVictim(t)
+	// Keep repeated ownership probes reaching handlers; quota enforcement has its own tests.
+	limits := auth.DefaultLimits()
+	limits.RunsPerMinute, limits.MessagesPerMinute = math.MaxInt, math.MaxInt
+	v.a.limits = &limits
+	v.a.h = rebuild(t, v.a, v.a.svc)
 	bob := v.a.user("bobby")
 	o := &ownFuzz{v: v, bob: bob, routes: builtProbes, baseline: map[string]string{}}
 	o.bobChat = bob.newChat()
@@ -122,6 +129,19 @@ func TestOwnershipOverHTTPProperty(t *testing.T) {
 			o.try(t, uint8(ri), id)
 		}
 	}
+}
+
+func TestOwnershipOverHTTPRepeatedProbes(t *testing.T) {
+	o := newOwnFuzz(t)
+	for ri, p := range o.routes {
+		if p.key == "POST /api/chats/{chatId}/messages" {
+			for range 64 {
+				o.try(t, uint8(ri), o.v.chatID)
+			}
+			return
+		}
+	}
+	t.Fatal("run admission probe is missing")
 }
 
 func FuzzOwnershipOverHTTP(f *testing.F) {

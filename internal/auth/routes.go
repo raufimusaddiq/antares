@@ -81,9 +81,9 @@ func (a *Auth) Register(mux *http.ServeMux) {
 		key := rt.Method + " " + rt.Path
 		var h http.Handler = notBuilt
 		if bh, ok := built[key]; ok {
-			h = a.csrf(rt.Method, bh)
+			h = bh
 		}
-		mux.Handle(key, a.Active(h))
+		mux.Handle(key, a.Active(a.csrf(rt.Method, a.limit(key, h))))
 	}
 	if a.push != nil {
 		pushHandlers := a.push.Handlers()

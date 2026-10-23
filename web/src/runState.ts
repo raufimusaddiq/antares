@@ -5,7 +5,7 @@
 // lost their connection, are each shown as exactly that, and a terminal state
 // never changes afterwards.
 
-export type Phase = "streaming" | "reconnecting" | "completed" | "failed" | "cancelled" | "disconnected";
+export type Phase = "streaming" | "reconnecting" | "completed" | "failed" | "cancelled" | "disconnected" | "detached";
 
 export interface Tool {
   id: string;
@@ -35,6 +35,7 @@ export type RunEvent =
   | { type: "run.failed"; code: string; status: string }
   | { type: "run.cancelled" }
   | { type: "run.disconnected" }
+  | { type: "stream.closed" }
   | { type: "stream.lost" }
   | { type: "stream.open" };
 
@@ -118,6 +119,8 @@ export function reduce(state: LiveRun, ev: RunEvent): LiveRun {
       return { ...state, phase: "cancelled" };
     case "run.disconnected":
       return { ...state, phase: "disconnected" };
+    case "stream.closed":
+      return { ...state, phase: "detached" };
     case "stream.lost":
       return { ...state, phase: "reconnecting" };
   }
@@ -134,6 +137,8 @@ export function runNotice(r: LiveRun): string {
       return r.maybeStillRunning
         ? "Cancelled. The assistant did not confirm it stopped and may still be working."
         : "Cancelled before the response finished.";
+    case "detached":
+      return "Live updates disconnected. The run is still active. Reconnect to resume updates.";
     case "disconnected":
       return "Connection to the assistant was lost. The response may still be in progress.";
     case "reconnecting":
