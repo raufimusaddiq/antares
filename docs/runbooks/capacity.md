@@ -220,6 +220,7 @@ SSE streams, the §14.2 light-load shape), 3 s hold, 2,000-byte reply, and sampl
 
 | Metric | Target (§14.2) | Run 1 | Run 2 | Met? |
 |---|---|---|---|---|
+| Commit measured at | | `3ebf0a8` | `3ebf0a8` | |
 | Light-load RSS P95 | ≤ 256 MiB | **23.8 MiB** | **24.1 MiB** | yes, ~10x headroom |
 | Light-load RSS peak | reported | **23.8 MiB** | **24.1 MiB** | n/a |
 | Idle RSS (10 s window) | recorded | 21.2 MiB | 21.6 MiB | n/a |
@@ -231,11 +232,23 @@ SSE streams, the §14.2 light-load shape), 3 s hold, 2,000-byte reply, and sampl
 runbook move by about ±1 MiB). Two runs of the same command differed by 0.36 MiB at P95 and by 0.4 MiB idle. That is
 **n = 2**; it supports the stated tolerance, it does not prove it. Run latency reproduces to within 0.05 s.
 
-**Baseline and what moved the number.** The comparable earlier measurement is §2, N = 10: 26.6 MiB mean / 29.8 max
-over 60 s (commit `be9e8eb`), against 23.5 mean / 24.1 max here for N = 2. The difference is the load, not the code:
-5x fewer concurrent runs, and the retained-journal window (5 min, ~6.7 KB per finished run) has not filled in a 30 s
-window. Nothing in Antares changed between the two. No code optimisation was done for this target; the target was met
-with no work.
+**Baseline and what moved the number.** The comparable earlier measurement is §2, N = 10, 60 s window: 26.6 MiB
+mean / 29.8 max, measured at commit `be9e8eb`. The table above was measured at `3ebf0a8` (23.5 mean / 24.1 max, N = 2).
+**These are two different code versions, and the baseline was not re-measured at `3ebf0a8`.** Between them, server
+code changed (`git diff be9e8eb 3ebf0a8`, 128 added lines, no deletions): `internal/auth/routes.go` (3 lines: regenerate/
+edit/rewind routes), `internal/chat/handlers.go` (68: `steerRun`, `noTurnMutation`), `internal/chat/service.go` (29:
+`Steer`), `internal/hermes/client.go` (28). All of it serves mid-run steer and the 501 routes, none of it is on the
+send/stream path the harness drives, so I expect no effect, but **that is a reading of the diff, not a measurement**.
+The lower figure here is consistent with the load difference (5x fewer concurrent runs, and the 5-minute retained-journal
+window, ~6.7 KB per finished run, has not filled in a 30 s window), but this runbook does not prove the load explains it
+and does not rule out a code effect. Treat the comparison as indicative only. No code optimisation was done for this
+target; the target was met with no work.
+
+**Which profile runs where.** Smoke (10 s idle, 30 s load): by hand, tabled above. CI profile (60 s idle, 300 s load):
+job `bench` in `.github/workflows/ci.yml`, on pushes to `main` and manual dispatch only, never on pull requests. Full §14.2 profile (10 min + 30 min): not yet
+recorded. The harness exits 0 only if runs completed, none failed, RSS was sampled and the P95 is non-zero and within the
+limit; exit 1 if the target is missed or nothing was measured; exit 2 (JSON `{"error":...}`) if the scratch server never
+listened.
 
 **What this does NOT measure.**
 
