@@ -1,3 +1,5 @@
+import { purgeUserState } from "./pwa";
+
 // The browser's whole view of the backend for this slice: who am I, and sign out.
 // The server decides the state; nothing here computes eligibility.
 
@@ -24,10 +26,14 @@ export type Session =
 export async function loadSession(loginFailed: boolean, signal?: AbortSignal): Promise<Session> {
   try {
     const res = await fetch("/api/me", { credentials: "same-origin", headers: { Accept: "application/json" }, signal });
-    if (res.status === 401) return { kind: "anonymous", loginFailed };
+    if (res.status === 401) {
+      purgeUserState();
+      return { kind: "anonymous", loginFailed };
+    }
     if (!res.ok) return { kind: "unreachable" };
     const body: unknown = await res.json();
     const account = parseAccount(body);
+    if (account?.state === "SUSPENDED") purgeUserState();
     return account ? { kind: "account", account } : { kind: "unreachable" };
   } catch {
     return { kind: "unreachable" };
@@ -52,7 +58,9 @@ export function parseAccount(body: unknown): Account | null {
 export async function signOut(): Promise<boolean> {
   try {
     const res = await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
-    return res.status === 204 || res.status === 401;
+    const ok = res.status === 204 || res.status === 401;
+    if (ok) purgeUserState();
+    return ok;
   } catch {
     return false;
   }
