@@ -58,8 +58,14 @@ func TestAdminCmdsBackupRestoreCheck(t *testing.T) {
 	if _, err := run("restore", "-discard-old", garbage); err == nil {
 		t.Error("garbage restore accepted")
 	}
-	if out, err := run("check", garbage); err == nil {
-		t.Errorf("check passed garbage: %s", out)
+	if out, err := run("check", garbage); err == nil || !strings.HasPrefix(out, "CORRUPT ") {
+		t.Errorf("check on garbage: want a CORRUPT report, got %q %v", out, err)
+	}
+	bb, _ := os.ReadFile(bak)
+	trunc := filepath.Join(t.TempDir(), "t")
+	os.WriteFile(trunc, bb[:len(bb)/2], 0o600)
+	if out, err := run("check", trunc); err == nil || !strings.HasPrefix(out, "CORRUPT ") {
+		t.Errorf("check on truncated: want a CORRUPT report, got %q %v", out, err)
 	}
 	if out, err := run("restore", "-discard-old", bak); err != nil {
 		t.Fatal(out, err)
@@ -72,5 +78,21 @@ func TestAdminCmdsBackupRestoreCheck(t *testing.T) {
 	var n int
 	if err := d2.QueryRow(`SELECT COUNT(*) FROM schema_migrations`).Scan(&n); err != nil || n == 0 {
 		t.Fatalf("restored db: %d %v", n, err)
+	}
+}
+
+func TestBackupRefusesWrongDatabasePath(t *testing.T) {
+	typo := filepath.Join(t.TempDir(), "voume", "antares.sqlite")
+	env := func(string) string { return typo }
+	dest := filepath.Join(t.TempDir(), "x.bak")
+	err := runAdminCmd(context.Background(), []string{"antares", "backup", dest}, env, &bytes.Buffer{}, &bytes.Buffer{})
+	if err == nil {
+		t.Fatal("backup of a nonexistent database reported success")
+	}
+	if _, serr := os.Stat(dest); serr == nil {
+		t.Error("a backup file was written")
+	}
+	if _, serr := os.Stat(filepath.Dir(typo)); serr == nil {
+		t.Error("the typo'd directory was created")
 	}
 }

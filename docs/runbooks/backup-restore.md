@@ -20,8 +20,13 @@ Before it changes anything, restore requires the file to be readable SQLite, pas
 identical checksums. An **older** schema is accepted (startup migrates it forward). Refused, with a
 message and the live database untouched: garbage, truncated, empty, non-Antares SQLite, and a backup
 from a newer binary. It then stages a copy beside the live file, re-verifies it, refuses if another
-process holds the live write lock, saves the current files (`-keep-old`), deletes the live `-wal`/`-shm`
-(a stale WAL replayed onto a restored file corrupts it) and renames the copy into place.
+process holds the live write lock, saves the current files (`-keep-old`), renames the live
+files aside (a stale WAL replayed onto a restored file corrupts it), renames the copy into place,
+fsyncs the directory and only then deletes the old files; if the swap fails they are put back. An
+unexplained failure to open the live file (permissions, I/O) also refuses: only "locked" or a file
+SQLite calls corrupt/not-a-database lets restore proceed. If a restore is killed mid-swap, the live
+name may be absent and the old files sit as `antares.sqlite.restore-tmp.old*`: rename them back (or
+restore again) before starting Antares, which would otherwise create an empty database.
 
 `-keep-old` or `-discard-old` is mandatory so that throwing the current database away is a decision.
 
@@ -62,7 +67,10 @@ rows reference Hermes sessions, which a restore does not touch.
 
 ## Integrity check fails (corruption)
 
-Symptoms: `/readyz` 503, "database disk image is malformed", `antares check` prints `CORRUPT`.
+Symptoms: `/readyz` 503, "database disk image is malformed" in the logs, `antares check` prints
+`CORRUPT <path>` followed by SQLite's findings and exits 1. (A file that is not SQLite at all and a
+file damaged inside both report this way; `check` fails with a plain error only when it cannot open the
+file, e.g. wrong path or permissions.)
 
 1. Stop Antares. Do not delete anything.
 2. `antares check` and record the output. Copy `antares.sqlite*` out of the volume (including `-wal`) to
@@ -83,16 +91,38 @@ Symptoms: `/readyz` 503, "database disk image is malformed", `antares check` pri
 
 ## What was run (scratch database, local binary, not the live host)
 
+Paths shortened; output is verbatim. `/dev/shm` is a different filesystem from the database.
+
 ```
-antares check                                  -> ok .../data/antares.sqlite
-antares backup .../run/antares-1.bak           -> backup written and verified
-antares backup - > .../run/antares-2.bak ; antares check .../antares-2.bak   -> ok
-antares restore -discard-old trunc.bak         -> exit 1: ...malformed (11)   (first 3000 bytes of a backup)
-antares restore antares-1.bak                  -> exit 1: give ... exactly one of -keep-old or -discard-old
-antares restore -keep-old .../old antares-1.bak-> restored; old copy in .../old/antares.sqlite.<stamp>
-(first 8 bytes of the database overwritten)
-antares check                                  -> exit 1: file is not a database (26)
+$ antares check
+ok run/data/antares.sqlite                                     [exit 0]
+$ antares backup /dev/shm/abk/a1.bak
+backup written and verified: /dev/shm/abk/a1.bak               [exit 0]
+$ antares backup - > run/a2.bak ; antares check run/a2.bak
+ok run/a2.bak                                                  [exit 0]
+$ head -c 3000 run/a2.bak > run/trunc.bak ; antares check run/trunc.bak
+CORRUPT run/trunc.bak
+  database disk image is malformed (11)
+... integrity check failed; see docs/runbooks/backup-restore.md [exit 1]
+$ antares restore -discard-old run/trunc.bak
+restore: refusing run/trunc.bak: integrity_check failed: database disk image is malformed (11)   [exit 1]
+$ antares restore run/a2.bak
+usage: antares restore (-keep-old DIR | -discard-old) <backup-file>   (stop antares first)
+restore: give a backup file and exactly one of -keep-old or -discard-old   [exit 1]
+$ antares restore -keep-old run/old run/a2.bak
+restored run/data/antares.sqlite from run/a2.bak; start antares and check /readyz   [exit 0]
+  (kept: run/old/antares.sqlite.20261023T035116.291329Z; run/data holds only antares.sqlite)
+(first 8 bytes of the database overwritten with X)
+$ antares check
+CORRUPT run/data/antares.sqlite
+  file is not a database (26)
+... integrity check failed; see docs/runbooks/backup-restore.md [exit 1]
+$ ANTARES_DB_PATH=run/typo/antares.sqlite antares backup run/x.bak
+backup: database run/typo/antares.sqlite: stat run/typo/antares.sqlite: no such file or directory   [exit 1]
 ```
+
+Backup never creates the database: a wrong `ANTARES_DB_PATH` fails instead of writing an empty
+"verified" backup.
 
 CI proves the loop without the host: `go test ./internal/store -run 'Backup|Restore|Check'` and
 `go test ./cmd/antares -run AdminCmds` (data → backup → destroy → restore, chat and messages back;

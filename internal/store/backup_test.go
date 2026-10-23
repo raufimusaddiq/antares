@@ -10,6 +10,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"testing"
 )
 
@@ -263,7 +264,7 @@ func TestRestoreRefusesBadBackupsAndLeavesLiveUntouched(t *testing.T) {
 func snapshotFiles(t *testing.T, live string) string {
 	t.Helper()
 	var sb strings.Builder
-	for _, suf := range []string{"", "-wal"} {
+	for _, suf := range []string{"", "-wal", "-shm"} {
 		b, _ := os.ReadFile(live + suf)
 		fmt.Fprintf(&sb, "%s:%d:%x|", suf, len(b), b)
 	}
@@ -296,8 +297,8 @@ func TestCheckReportsCorruptionAndRestoreRefusesIt(t *testing.T) {
 	bad := filepath.Join(t.TempDir(), "bad.db")
 	os.WriteFile(bad, b, 0o600)
 	rep, err := Check(ctx, bad)
-	if err == nil && rep.OK() {
-		t.Fatal("corruption reported as ok")
+	if err != nil || rep.OK() || len(rep.Integrity) == 0 {
+		t.Fatalf("corruption must be a non-OK report, not an error: %+v %v", rep, err)
 	}
 	t.Logf("check: %+v err=%v", rep, err)
 	if err := VerifyBackup(ctx, bad, migrationSet(t)); err == nil {
@@ -353,5 +354,168 @@ func TestRestoreKeepsOldDatabaseAndRefusesWhileInUse(t *testing.T) {
 		if countRows(t, kdb, `SELECT COUNT(*) FROM users WHERE id='`+u2+`'`) != 1 {
 			t.Error("kept copy lacks the pre-restore row")
 		}
+	}
+}
+
+// A crash mid-backup or mid-restore must never make the next start refuse the
+// data directory (the exact names the code itself stages and swaps).
+func TestOpenToleratesCrashResidue(t *testing.T) {
+	db, p := migrated(t)
+	db.Close()
+	for _, n := range []string{BackupTempSuffix, BackupTempSuffix + ".partial", BackupTempSuffix + "-journal",
+		RestoreTempSuffix, RestoreTempSuffix + ".old", RestoreTempSuffix + ".old-wal"} {
+		if err := os.WriteFile(p+n, []byte("residue"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	re, err := Open(p)
+	if err != nil {
+		t.Fatalf("Open refused crash residue: %v", err)
+	}
+	re.Close()
+	// A stranger is still refused.
+	os.WriteFile(filepath.Join(filepath.Dir(p), "other.txt"), nil, 0o600)
+	if re, err := Open(p); err == nil {
+		re.Close()
+		t.Fatal("Open accepted an unrelated file")
+	}
+}
+
+// Backup must publish to a different filesystem than the data directory.
+func TestBackupToAnotherFilesystem(t *testing.T) {
+	ctx := context.Background()
+	db, p := migrated(t)
+	other, err := os.MkdirTemp("/dev/shm", "antares-bak")
+	if err != nil {
+		t.Skipf("no second filesystem available: %v", err)
+	}
+	defer os.RemoveAll(other)
+	var a, b os.FileInfo
+	if a, err = os.Stat(filepath.Dir(p)); err != nil {
+		t.Fatal(err)
+	}
+	b, _ = os.Stat(other)
+	if sameDev(a, b) {
+		t.Skip("/dev/shm is on the same device as the temp dir")
+	}
+	dest := filepath.Join(other, "x.bak")
+	if err := Backup(ctx, db, dest); err != nil {
+		t.Fatalf("cross-device backup: %v", err)
+	}
+	if err := VerifyBackup(ctx, dest, migrationSet(t)); err != nil {
+		t.Fatal(err)
+	}
+	if ents, _ := os.ReadDir(other); len(ents) != 1 {
+		t.Errorf("leftovers: %v", ents)
+	}
+}
+
+func sameDev(a, b os.FileInfo) bool {
+	return a.Sys().(*syscall.Stat_t).Dev == b.Sys().(*syscall.Stat_t).Dev
+}
+
+// A wrong ANTARES_DB_PATH must not produce a valid, empty, "verified" backup.
+func TestOpenForBackupRefusesMissingOrUninitialised(t *testing.T) {
+	ctx := context.Background()
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "typo", "antares.sqlite")
+	if _, err := OpenForBackup(ctx, missing); err == nil {
+		t.Fatal("missing database accepted")
+	}
+	if _, err := os.Stat(filepath.Dir(missing)); err == nil {
+		t.Error("OpenForBackup created the directory")
+	}
+	empty := filepath.Join(dir, "empty", "antares.sqlite")
+	db, err := Open(empty) // what a mistyped path used to produce
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if _, err := OpenForBackup(ctx, empty); err == nil {
+		t.Fatal("uninitialised database accepted")
+	}
+	good, gp := migrated(t)
+	good.Close()
+	g, err := OpenForBackup(ctx, gp)
+	if err != nil {
+		t.Fatal(err)
+	}
+	g.Close()
+}
+
+func TestRestoreIdleProbe(t *testing.T) {
+	ctx := context.Background()
+	db, live := migrated(t)
+	bak := filepath.Join(t.TempDir(), "b.bak")
+	if err := Backup(ctx, db, bak); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+
+	// Unprovable idleness (permission error) refuses and touches nothing.
+	if os.Geteuid() != 0 {
+		before := snapshotFiles(t, live)
+		os.Chmod(live, 0)
+		err := Restore(ctx, bak, live, migrationSet(t), RestoreOptions{})
+		os.Chmod(live, 0o600)
+		if err == nil {
+			t.Fatal("restore passed the in-use gate on an unreadable live file")
+		}
+		if snapshotFiles(t, live) != before {
+			t.Error("live files changed")
+		}
+	}
+	// A corrupt live file is exactly what restore is for.
+	if err := os.WriteFile(live, bytes.Repeat([]byte("corrupt!"), 1000), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := Restore(ctx, bak, live, migrationSet(t), RestoreOptions{}); err != nil {
+		t.Fatalf("restore over a corrupt live file: %v", err)
+	}
+	if err := VerifyBackup(ctx, live, migrationSet(t)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// If swapping the restored file in fails, the live database and its WAL are
+// exactly as they were.
+func TestRestoreFailureLeavesLiveFilesIntact(t *testing.T) {
+	ctx := context.Background()
+	db, live := migrated(t)
+	bak := filepath.Join(t.TempDir(), "b.bak")
+	if err := Backup(ctx, db, bak); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	os.WriteFile(live, bytes.Repeat([]byte("main"), 100), 0o600)
+	os.WriteFile(live+"-shm", []byte("shared memory"), 0o600)
+	// Make moving a sidecar aside fail after the main file already moved.
+	block := live + RestoreTempSuffix + ".old-shm"
+	os.MkdirAll(filepath.Join(block, "x"), 0o700)
+	before := snapshotFiles(t, live)
+	if err := Restore(ctx, bak, live, migrationSet(t), RestoreOptions{}); err == nil {
+		t.Fatal("restore succeeded despite a blocked swap")
+	}
+	if snapshotFiles(t, live) != before {
+		t.Error("live files not restored after failed swap")
+	}
+}
+
+func TestRestoreTwiceInOneSecondKeepsBothCopies(t *testing.T) {
+	ctx := context.Background()
+	db, live := migrated(t)
+	bak := filepath.Join(t.TempDir(), "b.bak")
+	if err := Backup(ctx, db, bak); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	keep := filepath.Join(t.TempDir(), "old")
+	for i := 0; i < 2; i++ {
+		if err := Restore(ctx, bak, live, migrationSet(t), RestoreOptions{KeepOldDir: keep}); err != nil {
+			t.Fatalf("restore %d: %v", i, err)
+		}
+	}
+	if ents, _ := os.ReadDir(keep); len(ents) != 2 {
+		t.Errorf("kept %d copies, want 2", len(ents))
 	}
 }

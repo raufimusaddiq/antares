@@ -42,7 +42,7 @@ func runAdminCmd(ctx context.Context, args []string, getenv func(string) string,
 		if dbPath == "" {
 			return errors.New("ANTARES_DB_PATH is required")
 		}
-		db, err := store.Open(dbPath)
+		db, err := store.OpenForBackup(ctx, dbPath)
 		if err != nil {
 			return err
 		}

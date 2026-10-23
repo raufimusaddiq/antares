@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"modernc.org/sqlite"
 )
 
 // BackupTempSuffix names the staging file a streamed backup uses next to the
@@ -39,7 +41,9 @@ type Report struct {
 	ForeignKey []string // violations from PRAGMA foreign_key_check, if any
 }
 
-// OK reports whether the database is intact.
+// OK reports whether the database is intact. integrity_check(50) returns the
+// single row "ok" when healthy and otherwise one row per problem, so exactly
+// ["ok"] is the only healthy answer.
 func (r Report) OK() bool {
 	return len(r.Integrity) == 1 && r.Integrity[0] == "ok" && len(r.ForeignKey) == 0
 }
@@ -56,6 +60,11 @@ func Check(ctx context.Context, path string) (Report, error) {
 	defer db.Close()
 	var r Report
 	if r.Integrity, err = pragmaLines(ctx, db, `PRAGMA integrity_check(50)`); err != nil {
+		if damaged(err) {
+			// SQLite could not even walk the file: that is the finding, not a
+			// failure to run the check.
+			return Report{Integrity: []string{err.Error()}}, nil
+		}
 		return Report{}, fmt.Errorf("integrity_check: %w", err)
 	}
 	if !r.OK() {
@@ -76,6 +85,17 @@ func Check(ctx context.Context, path string) (Report, error) {
 		r.ForeignKey = append(r.ForeignKey, fmt.Sprintf("table %s rowid %d references missing row in %s", table.String, rowid.Int64, parent.String))
 	}
 	return r, rows.Err()
+}
+
+// damaged reports whether err is SQLite saying the file is corrupt (11) or not
+// a database at all (26).
+func damaged(err error) bool {
+	var se *sqlite.Error
+	if errors.As(err, &se) {
+		c := se.Code() & 0xff
+		return c == 11 || c == 26
+	}
+	return false
 }
 
 func pragmaLines(ctx context.Context, db *sql.DB, q string) ([]string, error) {
@@ -152,8 +172,9 @@ func VerifyBackup(ctx context.Context, path string, set Set) error {
 // Backup writes a consistent snapshot of the live database db to dest using
 // VACUUM INTO, which reads inside one transaction and so is safe beside active
 // writers and WAL (a plain file copy is not). dest must not exist. The snapshot
-// is staged under a temporary name, checked with integrity_check, set to 0600
-// and only then renamed into place, so dest is either a verified backup or absent.
+// is staged beside dest under a temporary name, checked with integrity_check,
+// set to 0600 and only then published, so dest is either a verified backup or
+// absent.
 func Backup(ctx context.Context, db *sql.DB, dest string) error {
 	if !filepath.IsAbs(dest) {
 		return errors.New("backup: destination must be an absolute path")
@@ -162,39 +183,61 @@ func Backup(ctx context.Context, db *sql.DB, dest string) error {
 		return fmt.Errorf("backup: %s already exists; refusing to overwrite", dest)
 	}
 	tmp := dest + ".partial"
-	os.Remove(tmp)
 	defer os.Remove(tmp)
-	// The path is a bind parameter; VACUUM INTO accepts an expression.
-	if _, err := db.ExecContext(ctx, `VACUUM INTO ?`, tmp); err != nil {
-		return fmt.Errorf("backup: %w", err)
-	}
-	if err := os.Chmod(tmp, 0o600); err != nil {
+	if err := snapshot(ctx, db, tmp); err != nil {
 		return err
 	}
-	rep, err := Check(ctx, tmp)
+	// tmp is in dest's directory, so this never crosses a filesystem. Link
+	// cannot replace a dest created meanwhile; where the filesystem has no hard
+	// links, fall back to rename after re-checking dest is still absent.
+	if err := os.Link(tmp, dest); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return fmt.Errorf("backup: %s already exists; refusing to overwrite", dest)
+		}
+		if _, lerr := os.Lstat(dest); lerr == nil {
+			return fmt.Errorf("backup: %s already exists; refusing to overwrite", dest)
+		}
+		if err := os.Rename(tmp, dest); err != nil {
+			return fmt.Errorf("backup: %w", err)
+		}
+	}
+	// Without this the "verified" file can exist only in the page cache.
+	if err := syncDir(filepath.Dir(dest)); err != nil {
+		return fmt.Errorf("backup: sync directory: %w", err)
+	}
+	return nil
+}
+
+// snapshot writes a verified, fsynced 0600 VACUUM INTO copy of db at path,
+// which must not exist.
+func snapshot(ctx context.Context, db *sql.DB, path string) error {
+	os.Remove(path) // residue of an earlier crash
+	// The path is a bind parameter; VACUUM INTO accepts an expression.
+	if _, err := db.ExecContext(ctx, `VACUUM INTO ?`, path); err != nil {
+		os.Remove(path)
+		return fmt.Errorf("backup: %w", err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		return err
+	}
+	rep, err := Check(ctx, path)
 	if err != nil {
 		return fmt.Errorf("backup: verify snapshot: %w", err)
 	}
 	if !rep.OK() {
 		return fmt.Errorf("backup: snapshot failed integrity_check: %s", strings.Join(append(rep.Integrity, rep.ForeignKey...), "; "))
 	}
-	if err := syncFile(tmp); err != nil {
-		return err
-	}
-	// Link then unlink: unlike rename it cannot replace a dest created meanwhile.
-	if err := os.Link(tmp, dest); err != nil {
-		return fmt.Errorf("backup: %w", err)
-	}
-	return nil
+	return syncFile(path)
 }
 
 // BackupTo streams a verified snapshot of db to w, staging it in the database's
-// own directory (the only writable place in the read-only container).
+// own directory (the only writable place in the read-only container). The
+// stage is a single file named dbPath+BackupTempSuffix; a crash can leave only
+// that name (or a SQLite sidecar of it), which Open tolerates.
 func BackupTo(ctx context.Context, db *sql.DB, dbPath string, w io.Writer) error {
 	stage := dbPath + BackupTempSuffix
-	os.Remove(stage)
 	defer os.Remove(stage)
-	if err := Backup(ctx, db, stage); err != nil {
+	if err := snapshot(ctx, db, stage); err != nil {
 		return err
 	}
 	f, err := os.Open(stage)
@@ -204,6 +247,31 @@ func BackupTo(ctx context.Context, db *sql.DB, dbPath string, w io.Writer) error
 	defer f.Close()
 	_, err = io.Copy(w, f)
 	return err
+}
+
+// OpenForBackup opens the live database for backup. Unlike Open it never
+// creates anything: a mistyped ANTARES_DB_PATH or an unmounted volume must fail,
+// not yield a valid but empty snapshot that "verifies". The file must exist and
+// already record migrations.
+func OpenForBackup(ctx context.Context, path string) (*sql.DB, error) {
+	if fi, err := os.Stat(path); err != nil {
+		return nil, fmt.Errorf("backup: database %s: %w", path, err)
+	} else if !fi.Mode().IsRegular() {
+		return nil, fmt.Errorf("backup: %s is not a regular file", path)
+	}
+	db, err := Open(path)
+	if err != nil {
+		return nil, err
+	}
+	var n int
+	if err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM schema_migrations`).Scan(&n); err != nil || n == 0 {
+		db.Close()
+		if err == nil {
+			err = errors.New("schema_migrations is empty")
+		}
+		return nil, fmt.Errorf("backup: %s is not an initialised Antares database (wrong ANTARES_DB_PATH?): %w", path, err)
+	}
+	return db, nil
 }
 
 // RestoreOptions control Restore.
@@ -252,46 +320,88 @@ func Restore(ctx context.Context, src, livePath string, set Set, opt RestoreOpti
 		if err := os.MkdirAll(opt.KeepOldDir, 0o700); err != nil {
 			return err
 		}
-		stamp := time.Now().UTC().Format("20060102T150405Z")
-		for _, suf := range []string{"", "-wal", "-shm", "-journal"} {
+		stamp := time.Now().UTC().Format("20060102T150405.000000Z")
+		for _, suf := range dbSuffixes {
 			err := copyFile(livePath+suf, filepath.Join(opt.KeepOldDir, filepath.Base(livePath)+suf+"."+stamp), 0o600)
 			if err != nil && !errors.Is(err, os.ErrNotExist) { // absent live files (fresh volume) have nothing to keep
 				return fmt.Errorf("restore: keep old %s: %w", filepath.Base(livePath)+suf, err)
 			}
 		}
 	}
-	for _, suf := range []string{"-wal", "-shm", "-journal"} {
-		if err := os.Remove(livePath + suf); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
+	// Swap, never delete first: the live files (WAL included) are renamed aside
+	// and only removed once the restored file is in place, so a failed rename
+	// puts every committed row back. The WAL must not stay under the live name:
+	// replayed onto the restored file it would corrupt it.
+	aside := livePath + RestoreTempSuffix + ".old"
+	var moved []string
+	undo := func() {
+		for _, suf := range moved {
+			os.Rename(aside+suf, livePath+suf)
 		}
 	}
+	for _, suf := range dbSuffixes {
+		if err := os.Rename(livePath+suf, aside+suf); err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			undo()
+			return fmt.Errorf("restore: move %s aside: %w", filepath.Base(livePath)+suf, err)
+		}
+		moved = append(moved, suf)
+	}
 	if err := os.Rename(staged, livePath); err != nil {
-		return fmt.Errorf("restore: %w", err)
+		undo()
+		return fmt.Errorf("restore: %w (live database left as it was)", err)
+	}
+	if err := syncDir(dir); err != nil {
+		return fmt.Errorf("restore: sync directory: %w", err)
+	}
+	for _, suf := range moved {
+		os.Remove(aside + suf)
 	}
 	return nil
 }
 
-// requireIdle refuses when another process holds the live database's write
-// lock. A live file SQLite cannot open at all (the corruption case) is not an
-// obstacle: that is what restore is for.
+var dbSuffixes = []string{"", "-wal", "-shm", "-journal"}
+
+// requireIdle refuses unless it can prove nobody holds the live database's
+// write lock: only a transaction that begins and rolls back proves it. A file
+// SQLite reports as corrupt or not a database (the case restore exists for) is
+// the one error that does not block; every other failure (busy, permission,
+// I/O) means idleness is unproven. A missing live file is an empty volume.
 func requireIdle(ctx context.Context, path string) error {
-	if _, err := os.Stat(path); err != nil {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
 		return nil
+	} else if err != nil {
+		return fmt.Errorf("restore: cannot inspect the live database: %w", err)
 	}
 	db, err := sql.Open("sqlite", "file:"+path+"?_txlock=immediate&_pragma=busy_timeout(500)")
 	if err != nil {
-		return nil
+		return fmt.Errorf("restore: cannot open the live database to test it: %w", err)
 	}
 	defer db.Close()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
+		if damaged(err) {
+			return nil
+		}
 		if strings.Contains(err.Error(), "locked") || strings.Contains(err.Error(), "busy") {
 			return errors.New("restore: the live database is in use; stop antares first")
 		}
-		return nil
+		return fmt.Errorf("restore: cannot prove the live database is idle: %w", err)
 	}
 	tx.Rollback()
 	return nil
+}
+
+// syncDir makes a create/rename in dir durable.
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return err
+	}
+	defer d.Close()
+	return d.Sync()
 }
 
 func syncFile(path string) error {
