@@ -257,6 +257,46 @@ func Backup(ctx context.Context, db *sql.DB, dest string) error {
 	return nil
 }
 
+// resolveLoose resolves symlinks in path even when its tail does not exist yet:
+// it resolves the nearest existing ancestor and re-appends the rest, so a
+// directory that MkdirAll is about to create is judged by where it would land.
+func resolveLoose(path string) (string, error) {
+	path, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	var rest []string
+	for p := path; ; p = filepath.Dir(p) {
+		if r, err := filepath.EvalSymlinks(p); err == nil {
+			for i := len(rest) - 1; i >= 0; i-- {
+				r = filepath.Join(r, rest[i])
+			}
+			return r, nil
+		} else if !errors.Is(err, os.ErrNotExist) {
+			return "", err
+		}
+		if filepath.Dir(p) == p {
+			return "", fmt.Errorf("cannot resolve %s", path)
+		}
+		rest = append(rest, filepath.Base(p))
+	}
+}
+
+// isUnder reports whether path is dir or lies anywhere beneath it, after
+// resolving symlinks on both sides. A path that cannot be resolved is reported
+// as an error so the caller refuses.
+func isUnder(dir, path string) (bool, error) {
+	d, err := resolveLoose(dir)
+	if err != nil {
+		return false, err
+	}
+	p, err := resolveLoose(path)
+	if err != nil {
+		return false, err
+	}
+	return p == d || strings.HasPrefix(p, d+string(filepath.Separator)), nil
+}
+
 // inLiveDir reports whether dest would be created in the directory that holds
 // db's main database file. If either side cannot be resolved it answers true:
 // the refusal is the safe side.
@@ -266,12 +306,8 @@ func inLiveDir(db *sql.DB, dest string) bool {
 	if err := db.QueryRow(`PRAGMA database_list`).Scan(&seq, &name, &file); err != nil || file == "" {
 		return true
 	}
-	live, err1 := filepath.EvalSymlinks(filepath.Dir(file))
-	out, err2 := filepath.EvalSymlinks(filepath.Dir(dest))
-	if err1 != nil || err2 != nil {
-		return err1 != nil
-	}
-	return live == out
+	under, err := isUnder(filepath.Dir(file), dest)
+	return err != nil || under
 }
 
 // snapshot writes a verified, fsynced 0600 VACUUM INTO copy of db at path,
@@ -367,6 +403,20 @@ func Restore(ctx context.Context, src, livePath string, set Set, opt RestoreOpti
 	} else if same {
 		return errors.New("restore: source and destination are the same file")
 	}
+	// Argument checks first, before any staging or locking. The keep-old copies
+	// must not land anywhere in the data directory: store.Open refuses a data
+	// directory holding other entries, so a "successful" restore would leave a
+	// service that cannot start.
+	if opt.KeepOldDir != "" {
+		under, err := isUnder(filepath.Dir(livePath), opt.KeepOldDir)
+		if err != nil {
+			return fmt.Errorf("restore: cannot resolve the keep-old directory: %w", err)
+		}
+		if under {
+			return errors.New("restore: the keep-old directory must be outside the data directory (it is, or is under, the directory holding the database); " +
+				"antares would refuse to start; choose a path on another mount or elsewhere")
+		}
+	}
 	if err := VerifyBackup(ctx, src, set); err != nil {
 		return fmt.Errorf("restore: refusing %s: %w", src, err)
 	}
@@ -389,9 +439,6 @@ func Restore(ctx context.Context, src, livePath string, set Set, opt RestoreOpti
 	}
 	defer release() // held through the swap: nothing can Open the old inode meanwhile
 	if opt.KeepOldDir != "" {
-		if filepath.Clean(opt.KeepOldDir) == filepath.Clean(dir) {
-			return errors.New("restore: the keep-old directory must not be the data directory")
-		}
 		if err := os.MkdirAll(opt.KeepOldDir, 0o700); err != nil {
 			return err
 		}

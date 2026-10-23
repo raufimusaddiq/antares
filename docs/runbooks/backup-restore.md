@@ -29,6 +29,9 @@ name may be absent and the old files sit as `antares.sqlite.restore-tmp.old*`: r
 restore again) before starting Antares, which would otherwise create an empty database.
 
 `-keep-old` or `-discard-old` is mandatory so that throwing the current database away is a decision.
+`-keep-old DIR` must be **outside** the data directory — not the directory itself, not a subdirectory, not a
+symlink into it (all resolved before the check). Antares refuses to start over a data directory that holds
+other entries, so restore rejects such a path up front, before staging or locking, and changes nothing.
 
 ## "Stopped" is enforced, within limits
 

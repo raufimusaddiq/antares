@@ -735,3 +735,53 @@ func TestCheckRefusesDriverURICharactersAndProvesThePath(t *testing.T) {
 		t.Errorf("symlinked path: %+v %v", rep, err)
 	}
 }
+
+// -keep-old inside the data directory would let restore succeed and then stop
+// the service from starting (Open refuses a directory with other entries).
+func TestRestoreRefusesKeepOldInsideDataDir(t *testing.T) {
+	ctx := context.Background()
+	db, live := migrated(t)
+	bak := filepath.Join(t.TempDir(), "b.bak")
+	if err := Backup(ctx, db, bak); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	dir := filepath.Dir(live)
+	link := filepath.Join(t.TempDir(), "into")
+	if err := os.Symlink(dir, link); err != nil {
+		t.Fatal(err)
+	}
+	before := snapshotFiles(t, live)
+	cases := map[string]string{
+		"the data dir itself": dir,
+		"subdirectory":        filepath.Join(dir, "old"),
+		"nested subdirectory": filepath.Join(dir, "a", "b"),
+		"via symlink":         link,
+		"subdir via symlink":  filepath.Join(link, "old"),
+		"unclean spelling":    filepath.Join(dir, "x", "..", "old"),
+	}
+	for name, keep := range cases {
+		err := Restore(ctx, bak, live, migrationSet(t), RestoreOptions{KeepOldDir: keep})
+		if err == nil || !strings.Contains(err.Error(), "outside the data directory") {
+			t.Errorf("%s (%s): %v", name, keep, err)
+			continue
+		}
+		if snapshotFiles(t, live) != before {
+			t.Errorf("%s: live files changed", name)
+		}
+	}
+	if ents, _ := os.ReadDir(dir); len(ents) != 1 {
+		t.Errorf("data dir holds %d entries after refusals, want just the database", len(ents))
+	}
+	re, err := Open(live)
+	if err != nil {
+		t.Fatalf("Open after refused restores: %v", err)
+	}
+	re.Close()
+	// A sibling that merely shares the name prefix is outside and is accepted.
+	out := dir + "-old"
+	if err := Restore(ctx, bak, live, migrationSet(t), RestoreOptions{KeepOldDir: out}); err != nil {
+		t.Fatalf("keep-old outside the data dir: %v", err)
+	}
+	os.RemoveAll(out)
+}

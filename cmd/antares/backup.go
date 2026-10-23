@@ -56,7 +56,7 @@ func runAdminCmd(ctx context.Context, args []string, getenv func(string) string,
 		return nil
 
 	case "restore":
-		keep := fs.String("keep-old", "", "directory to copy the current database into before replacing it")
+		keep := fs.String("keep-old", "", "directory OUTSIDE the data directory to copy the current database into before replacing it (a path in or under it is refused)")
 		discard := fs.Bool("discard-old", false, "replace without keeping a copy of the current database")
 		fs.Usage = func() {
 			fmt.Fprintln(stderr, "usage: antares restore (-keep-old DIR | -discard-old) <backup-file>   (stop antares first)")
