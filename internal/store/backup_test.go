@@ -553,3 +553,75 @@ func TestRestoreTwiceInOneSecondKeepsBothCopies(t *testing.T) {
 		t.Errorf("kept %d copies, want 2", len(ents))
 	}
 }
+
+// A running service with an idle pool (no open transaction) must still block
+// restore: otherwise it keeps serving from an unlinked file.
+func TestRestoreRefusesWhileDatabaseIsOpenButIdle(t *testing.T) {
+	ctx := context.Background()
+	db, live := migrated(t)
+	user := mkUser(t, db, "idle", "USER", "APPROVED", "READY")
+	bak := filepath.Join(t.TempDir(), "b.bak")
+	if err := Backup(ctx, db, bak); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.PingContext(ctx); err != nil { // pool holds a live connection, no transaction
+		t.Fatal(err)
+	}
+	before := snapshotFiles(t, live)
+	err := Restore(ctx, bak, live, migrationSet(t), RestoreOptions{})
+	if err == nil || !strings.Contains(err.Error(), "in use") {
+		t.Fatalf("restore with an idle open pool: %v", err)
+	}
+	if snapshotFiles(t, live) != before {
+		t.Error("live files changed")
+	}
+	if _, err := os.Stat(live + RestoreTempSuffix + ".old"); err == nil {
+		t.Error("live file was moved aside")
+	}
+	// The service keeps working, and once it is closed the restore goes through.
+	if n := countRows(t, db, `SELECT COUNT(*) FROM users WHERE id='`+user+`'`); n != 1 {
+		t.Error("live data changed")
+	}
+	db.Close()
+	if err := Restore(ctx, bak, live, migrationSet(t), RestoreOptions{}); err != nil {
+		t.Fatalf("restore after close: %v", err)
+	}
+}
+
+// While a restore holds the exclusive lock, Open refuses instead of attaching
+// to the file that is about to be replaced.
+func TestOpenRefusesDuringRestoreLock(t *testing.T) {
+	db, live := migrated(t)
+	db.Close()
+	lock, err := flockFile(live, syscall.LOCK_EX)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if re, err := Open(live); err == nil {
+		re.Close()
+		t.Fatal("Open succeeded under an exclusive lock")
+	}
+	lock.Close()
+	re, err := Open(live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	re.Close()
+}
+
+func TestSameFileSurfacesStatErrors(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root can stat everything")
+	}
+	dir := t.TempDir()
+	os.Mkdir(filepath.Join(dir, "d"), 0o700)
+	os.WriteFile(filepath.Join(dir, "d", "f"), nil, 0o600)
+	os.Chmod(filepath.Join(dir, "d"), 0)
+	defer os.Chmod(filepath.Join(dir, "d"), 0o700)
+	if _, err := sameFile(filepath.Join(dir, "d", "f"), filepath.Join(dir, "other")); err == nil {
+		t.Error("stat permission error swallowed")
+	}
+	if same, err := sameFile(filepath.Join(dir, "missing"), filepath.Join(dir, "other")); same || err != nil {
+		t.Errorf("missing source: %v %v", same, err)
+	}
+}

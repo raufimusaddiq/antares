@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"modernc.org/sqlite"
@@ -296,7 +297,9 @@ func Restore(ctx context.Context, src, livePath string, set Set, opt RestoreOpti
 	}
 	// Restoring the live file onto itself would stage a plain copy without its
 	// WAL, then move the WAL aside: committed, uncheckpointed rows would vanish.
-	if same, err := sameFile(src, livePath); err != nil || same {
+	if same, err := sameFile(src, livePath); err != nil {
+		return fmt.Errorf("restore: cannot inspect the backup file or the database: %w", err)
+	} else if same {
 		return errors.New("restore: source and destination are the same file")
 	}
 	if err := VerifyBackup(ctx, src, set); err != nil {
@@ -315,9 +318,11 @@ func Restore(ctx context.Context, src, livePath string, set Set, opt RestoreOpti
 	if err := VerifyBackup(ctx, staged, set); err != nil {
 		return fmt.Errorf("restore: staged copy failed verification: %w", err)
 	}
-	if err := requireIdle(ctx, livePath); err != nil {
+	release, err := requireIdle(ctx, livePath)
+	if err != nil {
 		return err
 	}
+	defer release() // held through the swap: nothing can Open the old inode meanwhile
 	if opt.KeepOldDir != "" {
 		if filepath.Clean(opt.KeepOldDir) == filepath.Clean(dir) {
 			return errors.New("restore: the keep-old directory must not be the data directory")
@@ -378,8 +383,10 @@ func sameFile(a, b string) (bool, error) {
 		return true, nil
 	}
 	fa, err := os.Stat(a)
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
 		return false, nil // a missing source is reported by VerifyBackup
+	} else if err != nil {
+		return false, err
 	}
 	fb, err := os.Stat(b)
 	if errors.Is(err, os.ErrNotExist) {
@@ -390,34 +397,51 @@ func sameFile(a, b string) (bool, error) {
 	return os.SameFile(fa, fb), nil
 }
 
-// requireIdle refuses unless it can prove nobody holds the live database's
-// write lock: only a transaction that begins and rolls back proves it. A file
-// SQLite reports as corrupt or not a database (the case restore exists for) is
-// the one error that does not block; every other failure (busy, permission,
-// I/O) means idleness is unproven. A missing live file is an empty volume.
-func requireIdle(ctx context.Context, path string) error {
+// requireIdle proves, as far as it can, that nothing is using the live
+// database, and returns a release func that keeps the proof in force.
+//
+//  1. An exclusive flock on the file: it fails while any store.Open handle
+//     (the running service, backup, another restore) holds the database, even
+//     one that is idle between transactions. This is the real check.
+//  2. A write transaction that begins and rolls back: catches a writer that
+//     does not go through store.Open (the sqlite3 CLI).
+//
+// A file SQLite reports as corrupt or not a database (the case restore exists
+// for) does not fail step 2; every other failure means idleness is unproven.
+// A missing live file is an empty volume.
+func requireIdle(ctx context.Context, path string) (func(), error) {
+	none := func() {}
 	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
-		return nil
+		return none, nil
 	} else if err != nil {
-		return fmt.Errorf("restore: cannot inspect the live database: %w", err)
+		return none, fmt.Errorf("restore: cannot inspect the live database: %w", err)
 	}
+	lock, err := flockFile(path, syscall.LOCK_EX)
+	if errors.Is(err, errLocked) {
+		return none, errors.New("restore: the live database is in use (held open by antares or another store user); stop antares first")
+	} else if err != nil {
+		return none, fmt.Errorf("restore: cannot lock the live database: %w", err)
+	}
+	release := func() { lock.Close() }
 	db, err := sql.Open("sqlite", "file:"+path+"?_txlock=immediate&_pragma=busy_timeout(500)")
 	if err != nil {
-		return fmt.Errorf("restore: cannot open the live database to test it: %w", err)
+		release()
+		return none, fmt.Errorf("restore: cannot open the live database to test it: %w", err)
 	}
 	defer db.Close()
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		if damaged(err) {
-			return nil
+			return release, nil
 		}
+		release()
 		if strings.Contains(err.Error(), "locked") || strings.Contains(err.Error(), "busy") {
-			return errors.New("restore: the live database is in use; stop antares first")
+			return none, errors.New("restore: the live database is in use (a writer holds its lock); stop whatever is using it first")
 		}
-		return fmt.Errorf("restore: cannot prove the live database is idle: %w", err)
+		return none, fmt.Errorf("restore: cannot prove the live database is idle: %w", err)
 	}
 	tx.Rollback()
-	return nil
+	return release, nil
 }
 
 // syncDir makes a create/rename in dir durable.

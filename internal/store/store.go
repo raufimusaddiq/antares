@@ -92,10 +92,22 @@ func Open(path string) (*sql.DB, error) {
 
 	dsn := fmt.Sprintf("file:%s?_txlock=immediate&_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)"+
 		"&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)", path, busyTimeout.Milliseconds())
-	db, err := sql.Open("sqlite", dsn)
+	// A shared flock on the database file for as long as the handle lives is
+	// what lets Restore prove that nothing has the database open (see lock.go).
+	lock, err := lockShared(path)
 	if err != nil {
 		return nil, err
 	}
+	// The registered driver instance, not a fresh one: it carries the SQL
+	// functions this package registers (ulower).
+	reg, err := sql.Open("sqlite", dsn)
+	if err != nil {
+		lock.Close()
+		return nil, err
+	}
+	drv := reg.Driver()
+	reg.Close()
+	db := sql.OpenDB(&lockedConnector{dsn: dsn, drv: drv, lock: lock})
 	db.SetMaxOpenConns(maxConns)
 	db.SetMaxIdleConns(maxConns)
 	db.SetConnMaxLifetime(30 * time.Minute)

@@ -64,7 +64,7 @@ func runAdminCmd(ctx context.Context, args []string, getenv func(string) string,
 		if err := fs.Parse(args[2:]); err != nil {
 			return err
 		}
-		if fs.NArg() != 1 || (*keep == "") == !*discard {
+		if fs.NArg() != 1 || (*keep != "") == *discard {
 			fs.Usage()
 			return errors.New("restore: give a backup file and exactly one of -keep-old or -discard-old")
 		}

@@ -7,7 +7,7 @@ its WAL. Tooling is built into the `antares` binary (the image has no shell or `
 |---|---|
 | `antares backup <file>` | Consistent snapshot of the live database via `VACUUM INTO`, safe beside active writers. Refuses to overwrite. Verified with `integrity_check` before it appears at `<file>`; mode 0600. |
 | `antares backup -` | Same, streamed to stdout (for the read-only container, where `/data` is the only writable path). |
-| `antares restore (-keep-old DIR \| -discard-old) <file>` | Verifies `<file>`, then replaces the database. **Antares must be stopped.** |
+| `antares restore (-keep-old DIR \| -discard-old) <file>` | Verifies `<file>`, then replaces the database. **Antares must be stopped**; restore refuses if it is not (see below). |
 | `antares check [file]` | `integrity_check` + `foreign_key_check`; default file is `ANTARES_DB_PATH`. Exit 0 and `ok <path>`, or non-zero. |
 
 Never back up by copying `antares.sqlite` while Antares runs: in WAL mode committed rows live in
@@ -20,7 +20,7 @@ Before it changes anything, restore requires the file to be readable SQLite, pas
 identical checksums. An **older** schema is accepted (startup migrates it forward). Refused, with a
 message and the live database untouched: garbage, truncated, empty, non-Antares SQLite, and a backup
 from a newer binary. It then stages a copy beside the live file, re-verifies it, refuses if another
-process holds the live write lock, saves the current files (`-keep-old`), renames the live
+process holds the live database (exclusive lock, see below), saves the current files (`-keep-old`), renames the live
 files aside (a stale WAL replayed onto a restored file corrupts it), renames the copy into place,
 fsyncs the directory and only then deletes the old files; if the swap fails they are put back. An
 unexplained failure to open the live file (permissions, I/O) also refuses: only "locked" or a file
@@ -29,6 +29,19 @@ name may be absent and the old files sit as `antares.sqlite.restore-tmp.old*`: r
 restore again) before starting Antares, which would otherwise create an empty database.
 
 `-keep-old` or `-discard-old` is mandatory so that throwing the current database away is a decision.
+
+## "Stopped" is enforced, within limits
+
+`store.Open` holds a shared `flock` on the database file for as long as the handle is open, and restore
+takes an exclusive one before touching anything. So a running Antares — even with an idle connection
+pool and no transaction — makes restore refuse with "the live database is in use"; so does a concurrent
+`antares backup`. The lock is released by the kernel if the process dies. Restore also checks that no
+writer holds SQLite's write lock, which catches tools that bypass `store.Open` (the `sqlite3` CLI).
+
+Limits: a process that has the file open **read-only without `store.Open`** (a `sqlite3` shell, a
+copy running in the background) is not detected; `flock` is advisory and not reliable on network
+filesystems. Stopping Antares remains the operator's step — the lock only turns forgetting it into an
+error instead of data loss. While restore holds the lock, `Open` (and so `antares` start-up) refuses.
 
 ## Secrets travel separately
 
