@@ -36,6 +36,12 @@ jobs:
       - name: Vet
         if: steps.detect.outputs.present == 'true'
         run: go vet ./...
+      # scripts/capacity sits behind a build tag, so the steps above never see it (#76).
+      - name: Vet and test the capacity harness
+        if: steps.detect.outputs.present == 'true'
+        run: |
+          go vet -tags capacity ./...
+          go test -race -count=1 -tags capacity ./scripts/capacity
       - name: Test
         if: steps.detect.outputs.present == 'true'
         run: go test -race -count=1 ./...

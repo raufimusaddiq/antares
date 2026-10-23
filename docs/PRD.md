@@ -1141,6 +1141,8 @@ networks:
 
 **DoD:** No P0 security issue open, deployment/restore walkthrough demonstrated, measured resource envelope recorded, upgrade smoke tests pass.
 
+Recorded resource envelope (idle, concurrent chat load at N=10/50/100, database size, per-SSE-stream cost, disk growth; measured on a scratch instance with a fabricated Hermes): [`docs/runbooks/capacity.md`](runbooks/capacity.md).
+
 ---
 
 ## 17. Acceptance matrix / QA checklist
