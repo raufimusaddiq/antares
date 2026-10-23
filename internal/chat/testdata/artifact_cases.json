@@ -1,0 +1,339 @@
+[
+ {
+  "name": "ascii",
+  "text": "```html\n<p>A</p>\n```\n```svg\n<svg>B</svg>\n```",
+  "want": [
+   "html",
+   "svg"
+  ]
+ },
+ {
+  "name": "nbsp after opening fence: that line is not a fence",
+  "text": "```html\u00a0\n<p>A</p>\n```\n```svg\n<svg>B</svg>\n```\n```html\n<p>C</p>\n```",
+  "want": [
+   "html"
+  ]
+ },
+ {
+  "name": "em space after opening fence",
+  "text": "```html\u2003\n<p>A</p>\n```\n```html\n<p>C</p>\n```",
+  "want": []
+ },
+ {
+  "name": "nbsp before info string",
+  "text": "```\u00a0html\n<p>A</p>\n```\n```svg\n<svg/>\n```",
+  "want": []
+ },
+ {
+  "name": "nbsp indent",
+  "text": "\u00a0```html\n<p>A</p>\n```\n```svg\n<svg/>\n```",
+  "want": []
+ },
+ {
+  "name": "nbsp after closing fence keeps the block open",
+  "text": "```html\n<p>A</p>\n```\u00a0\n```svg\n<svg/>\n```\n```html\n<p>C</p>\n```",
+  "want": [
+   "html",
+   "html"
+  ]
+ },
+ {
+  "name": "vertical tab after closing fence",
+  "text": "```html\n<p>A</p>\n```\u000b\n```svg\n<svg/>\n```",
+  "want": [
+   "html"
+  ]
+ },
+ {
+  "name": "form feed after opening fence",
+  "text": "```html\f\n<p>A</p>\n```\n```svg\n<svg/>\n```",
+  "want": []
+ },
+ {
+  "name": "tabs and spaces are whitespace",
+  "text": "  ```html \t\n<p>A</p>\n \t```\t\n",
+  "want": [
+   "html"
+  ]
+ },
+ {
+  "name": "four-space indent is not a fence",
+  "text": "    ```html\n<p>A</p>\n```\n",
+  "want": []
+ },
+ {
+  "name": "crlf and cr",
+  "text": "```html\r\n<p>A</p>\r\n```\r```svg\r<svg/>\r```",
+  "want": [
+   "html",
+   "svg"
+  ]
+ },
+ {
+  "name": "cap: 33 fences, only the first 32 count",
+  "repeat": [
+   {
+    "text": "```html\n<p>x</p>\n```\n",
+    "times": 32
+   },
+   {
+    "text": "```svg\n<svg/>\n```\n",
+    "times": 1
+   }
+  ],
+  "want": [
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html"
+  ]
+ },
+ {
+  "name": "cap: exactly 32 fences all count",
+  "repeat": [
+   {
+    "text": "```svg\n<svg/>\n```\n",
+    "times": 32
+   }
+  ],
+  "want": [
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg",
+   "svg"
+  ]
+ },
+ {
+  "name": "cap: a body of exactly 512 KiB is kept",
+  "repeat": [
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "a",
+    "times": 524288
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```svg\n<svg/>\n```\n",
+    "times": 1
+   }
+  ],
+  "want": [
+   "html",
+   "svg"
+  ]
+ },
+ {
+  "name": "cap: a body one byte over 512 KiB is dropped and indexes shift",
+  "repeat": [
+   {
+    "text": "```html\n<p>small</p>\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "a",
+    "times": 524289
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```svg\n<svg/>\n```\n",
+    "times": 1
+   }
+  ],
+  "want": [
+   "html",
+   "svg"
+  ]
+ },
+ {
+  "name": "cap: size counts bytes, not characters (2-byte chars, exactly 512 KiB)",
+  "repeat": [
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "\u00e9",
+    "times": 262144
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   }
+  ],
+  "want": [
+   "html"
+  ]
+ },
+ {
+  "name": "cap: size counts bytes, not characters (one 2-byte char over)",
+  "repeat": [
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "\u00e9",
+    "times": 262145
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```svg\n<svg/>\n```\n",
+    "times": 1
+   }
+  ],
+  "want": [
+   "svg"
+  ]
+ },
+ {
+  "name": "cap: oversize fences do not use up the 32",
+  "repeat": [
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "a",
+    "times": 524289
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "a",
+    "times": 524289
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```html\n",
+    "times": 1
+   },
+   {
+    "text": "a",
+    "times": 524289
+   },
+   {
+    "text": "\n```\n",
+    "times": 1
+   },
+   {
+    "text": "```html\n<p>x</p>\n```\n",
+    "times": 33
+   }
+  ],
+  "want": [
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html",
+   "html"
+  ]
+ }
+]

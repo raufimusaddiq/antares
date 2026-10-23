@@ -108,6 +108,29 @@ jobs:
           fi
           echo "committed bundle matches a fresh build"
 
+  # Real-browser proof that a hostile HTML/SVG artifact preview cannot reach the app (#83).
+  # It gates the build: the browser version is pinned and its path is fixed (not parsed from
+  # installer output), so a red run means the isolation claim failed or the setup broke.
+  sandbox-probe:
+    name: sandbox probe (real browser)
+    runs-on: ubuntu-latest
+    env:
+      CHROME_VERSION: 138.0.7204.94
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch chrome-headless-shell
+        run: |
+          npx --yes @puppeteer/browsers@2.10.5 install "chrome-headless-shell@$CHROME_VERSION" --path "$RUNNER_TEMP/browsers"
+          CHROME="$RUNNER_TEMP/browsers/chrome-headless-shell/linux-$CHROME_VERSION/chrome-headless-shell-linux64/chrome-headless-shell"
+          test -x "$CHROME" || { echo "::error::expected browser at $CHROME"; exit 1; }
+          echo "CHROME=$CHROME" >> "$GITHUB_ENV"
+      - name: Probe
+        run: node scripts/sandbox-probe.mjs
+        working-directory: web
+
   # These two run from the first commit and never skip: they are the rules in
   # AGENTS.md that can be checked mechanically.
   security:

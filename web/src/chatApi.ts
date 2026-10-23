@@ -17,6 +17,8 @@ export interface Turn {
   seq: number;
   role: "user" | "assistant";
   text: string;
+  /** The server's hash of this turn; quoted back to name it (artifact links). Absent on turns not read from history. */
+  ref?: string;
 }
 
 export type ApiResult<T> = { ok: true; value: T } | { ok: false; code: string; status: number };
@@ -135,7 +137,7 @@ export function parseHistory(v: unknown): HistoryPage | null {
     if (!mo || (mo.role !== "user" && mo.role !== "assistant")) continue;
     // A turn without a usable position cannot be placed: the page is refused, not guessed at.
     if (typeof mo.seq !== "number" || !Number.isInteger(mo.seq) || mo.seq < 0) return null;
-    turns.push({ seq: mo.seq, role: mo.role, text: str(mo.text) });
+    turns.push({ seq: mo.seq, role: mo.role, text: str(mo.text), ref: str(mo.ref) || undefined });
   }
   for (let i = 1; i < turns.length; i++) if (turns[i].seq <= turns[i - 1].seq) return null;
   return { turns, nextCursor: str(o.nextCursor), total: typeof o.total === "number" ? o.total : turns.length };
@@ -146,7 +148,10 @@ export interface ChatList {
   nextCursor: string;
 }
 
-const q = (cursor?: string) => (cursor ? `?cursor=${encodeURIComponent(cursor)}` : "");
+const q = (cursor?: string, limit?: number) => {
+  const p = [cursor ? `cursor=${encodeURIComponent(cursor)}` : "", limit ? `limit=${limit}` : ""].filter(Boolean);
+  return p.length ? `?${p.join("&")}` : "";
+};
 
 export const listChats = (cursor?: string) =>
   call("GET", `/api/chats${q(cursor)}`, (b): ChatList | null => {
@@ -160,7 +165,8 @@ export const getChat = (chatId: string) => call("GET", `/api/chats/${encodeURICo
 export const createChat = () => call("POST", "/api/chats", parseChat, {});
 
 /** The newest page, or the page before `cursor`. The page size is the server's. */
-export const getMessages = (chatId: string, cursor?: string) => call("GET", `/api/chats/${encodeURIComponent(chatId)}/messages${q(cursor)}`, parseHistory);
+export const getMessages = (chatId: string, cursor?: string, limit?: number) =>
+  call("GET", `/api/chats/${encodeURIComponent(chatId)}/messages${q(cursor, limit)}`, parseHistory);
 
 export interface RunRef {
   runId: string;

@@ -2,6 +2,7 @@ package chat
 
 import (
 	"net/http/httptest"
+	"net/url"
 	"testing"
 
 	"github.com/raufimusaddiq/antares/internal/auth"
@@ -132,5 +133,57 @@ func TestUpstreamRateLimitUsesSharedEnvelope(t *testing.T) {
 	body := decodeBody[map[string]map[string]any](t, w)
 	if hint, exists := body["error"]["retryAfterSeconds"]; !exists || hint != nil || len(body["error"]) != 4 {
 		t.Fatalf("upstream limit envelope differs: %s", w.Body.String())
+	}
+}
+
+// An export reads one history page per 100 turns and every page rebuilds the whole
+// transcript, so history has its own per-account budget: one export fits, a repeat does not,
+// and an ordinary read of the newest page is nowhere near it.
+func TestRepeatedExportIsRefused(t *testing.T) {
+	limits := auth.DefaultLimits()
+	limits.HistoryPerMinute = 12
+	a := newApp(t, appOpts{limits: &limits})
+	alice, bob := a.user("alice"), a.user("bobby")
+	chat, bobChat := alice.newChat(), bob.newChat()
+	seedTurns(t, a, alice, chat, 500) // 1000 messages: 10 pages of 100
+	seedTurns(t, a, bob, bobChat, 500)
+
+	export := func(p *person, id string) (pages int, last int) {
+		cursor := ""
+		for {
+			w := p.get("/api/chats/" + id + "/messages?limit=100" + cursor)
+			if w.Code != 200 {
+				return pages, w.Code
+			}
+			pages++
+			page := decodeBody[historyPage](t, w)
+			if page.NextCursor == "" {
+				return pages, 200
+			}
+			cursor = "&cursor=" + url.QueryEscape(page.NextCursor)
+		}
+	}
+	if pages, code := export(alice, chat); pages != 10 || code != 200 {
+		t.Fatalf("first export: %d pages, last status %d", pages, code)
+	}
+	pages, code := export(alice, chat)
+	if code != 429 || pages >= 10 {
+		t.Fatalf("repeat export: %d pages, last status %d, want it refused with 429 before finishing", pages, code)
+	}
+	requireLimit(t, alice.get("/api/chats/"+chat+"/messages"))
+	if pages, code := export(bob, bobChat); pages != 10 || code != 200 {
+		t.Fatalf("A's exports consumed B's budget: %d pages, %d", pages, code)
+	}
+}
+
+func TestOrdinaryHistoryReadingIsNotLimitedByDefault(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	seedTurns(t, a, alice, chat, 200)
+	for i := range 60 { // an hour of scrolling back and forth, in a minute
+		if w := alice.get("/api/chats/" + chat + "/messages"); w.Code != 200 {
+			t.Fatalf("read %d: %d %s", i, w.Code, w.Body.String())
+		}
 	}
 }
