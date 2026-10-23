@@ -215,6 +215,13 @@ func TestRestoreRefusesBadBackupsAndLeavesLiveUntouched(t *testing.T) {
 		t.Fatal(err)
 	}
 	goodBytes, _ := os.ReadFile(good)
+	// Make the live main file a valid database on its own, then commit one more
+	// row that exists only in the WAL: restoring the live file onto itself would
+	// verify fine and then silently drop that row.
+	if _, err := db.Exec(`PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+		t.Fatal(err)
+	}
+	walOnly := mkUser(t, db, "wal-only", "USER", "APPROVED", "READY")
 
 	dir := t.TempDir()
 	write := func(name string, b []byte) string {
@@ -269,7 +276,7 @@ func TestRestoreRefusesBadBackupsAndLeavesLiveUntouched(t *testing.T) {
 			t.Errorf("%s: live database files changed", name)
 		}
 	}
-	if n := countRows(t, db, `SELECT COUNT(*) FROM users WHERE id = '`+user+`'`); n != 1 {
+	if n := countRows(t, db, `SELECT COUNT(*) FROM users WHERE id IN ('`+user+`','`+walOnly+`')`); n != 2 {
 		t.Error("live data changed")
 	}
 	if _, err := os.Stat(live + RestoreTempSuffix); err == nil {
