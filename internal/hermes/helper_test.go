@@ -156,3 +156,27 @@ func TestNewHelperValidation(t *testing.T) {
 		t.Error("accepted a short token")
 	}
 }
+
+func TestOnlyRotateMissingProfileOrKeyAllowsProvisionFallback(t *testing.T) {
+	for _, path := range []string{"/rotate", "/provision"} {
+		for _, status := range []int{400, 401, 403, 404, 409, 502} {
+			t.Run(fmt.Sprintf("%s/%d", path, status), func(t *testing.T) {
+				h, _ := fakeHelper(t, func(w http.ResponseWriter, _ *http.Request, _ helperCall) {
+					w.WriteHeader(status)
+					w.Write([]byte(keyA))
+				})
+				_, err := h.issue(context.Background(), path, slA)
+				want := path == "/rotate" && (status == 404 || status == 409)
+				if errors.Is(err, ErrNotProvisioned) != want {
+					t.Fatalf("fallback classification: %v", err)
+				}
+				if want && (!errors.Is(err, ErrPermanent) || errors.Is(err, ErrKeyExists)) {
+					t.Fatalf("unexpected failure classes: %v", err)
+				}
+				if err == nil || strings.Contains(err.Error(), keyA) {
+					t.Fatal("helper error missing or leaked response content")
+				}
+			})
+		}
+	}
+}

@@ -14,6 +14,9 @@
 @font-face { font-family: "Inter Fallback"; src: local("Arial"), local("Liberation Sans"), local("Helvetica"); size-adjust: 107%; ascent-override: 90.5%; descent-override: 22.5%; line-gap-override: 0%; }
 @font-face { font-family: "Space Grotesk Fallback"; src: local("Arial"), local("Liberation Sans"), local("Helvetica"); size-adjust: 109.7%; ascent-override: 89.7%; descent-override: 26.6%; line-gap-override: 0%; }
 
+.pwa-notice { position: relative; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .75rem 1.25rem; background: var(--solid-raised); color: var(--text); border-bottom: 1px solid var(--solid-border); }
+.pwa-notice p { flex: 1 1 18rem; margin: 0; }
+
 :root {
   color-scheme: dark;
 
@@ -161,6 +164,8 @@ body {
   isolation: isolate;
 }
 body.chat { height: 100vh; overflow: hidden; }
+body.chat #root { height: 100%; display: flex; flex-direction: column; }
+body.chat .chat-app { flex: 1; min-height: 0; height: auto; }
 
 /* Ambient layer: fixed, inert, static. Fields differ in hue so the blur behind each pane
    picks up a different tint; the rings give the glass an edge to bend around. */
@@ -449,3 +454,17 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
 @supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
   :root { --chrome-fill: var(--solid); --raised-fill: var(--solid-raised); --raised-fill-hover: var(--solid-raised); --rest-fill: var(--solid); }
 }
+
+/* ---- search (UXP-003) ---------------------------------------------------------- */
+.search { margin: 0.6rem 0 0; }
+.search input[type="search"] { width: 100%; box-sizing: border-box; }
+.search-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.8rem; margin: 0.35rem 0; font-size: 0.85rem; color: var(--text-2); }
+.search-results ul { list-style: none; margin: 0.4rem 0; padding: 0; }
+.side button.hit { display: grid; gap: 0.1rem; width: 100%; margin: 0.15rem 0; text-align: left; white-space: normal; background: none; border-color: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; border-radius: var(--r-md); color: var(--text-2); }
+.side button.hit:hover:not(:disabled) { background: var(--raised-fill); color: var(--text); }
+.hit-chat { font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hit-who { font-size: 0.75rem; }
+.hit-text { font-size: 0.85rem; overflow-wrap: anywhere; }
+.search mark { background: var(--accent); color: var(--accent-ink); border-radius: 2px; padding: 0 0.1em; }
+.turn[data-found] { outline: 2px solid var(--accent); outline-offset: 2px; }
+@media (max-width: 760px) { .search { flex: none; width: min(22rem, 80vw); margin: 0; } }

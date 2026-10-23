@@ -93,10 +93,13 @@ func ValidateAllowedToolsets(names []string) error {
 
 // Result is one check's outcome. Reason is a fixed phrase, never upstream text.
 type Result struct {
-	Check  string
-	Passed bool
-	Reason string
+	Check       string
+	Passed      bool
+	Reason      string
+	Remediation string // fixed helper action for a demonstrated divergence
 }
+
+const ReapplyToolsetPolicy = "reapply_toolset_policy"
 
 // Report is the outcome of a whole verification.
 type Report []Result
@@ -236,7 +239,7 @@ func (v *Verifier) expectRefusalOr(ctx context.Context, path, key, what string, 
 // sees everything that is wrong at once; it never returns OK on partial data.
 func (v *Verifier) Verify(ctx context.Context, t Target) Report {
 	if !ValidSlug(t.Profile) || t.Key == "" {
-		return Report{{CheckEndpoint, false, "no profile to verify"}}
+		return Report{{Check: CheckEndpoint, Reason: "no profile to verify"}}
 	}
 	sib := t.Siblings
 	if len(sib) > maxSiblingProbes {
@@ -244,7 +247,7 @@ func (v *Verifier) Verify(ctx context.Context, t Target) Report {
 	}
 	for _, s := range sib {
 		if !ValidSlug(s) || s == t.Profile {
-			return Report{{CheckIsolation, false, "invalid sibling target"}}
+			return Report{{Check: CheckIsolation, Reason: "invalid sibling target"}}
 		}
 	}
 	caps, capsOK := v.capabilities(ctx, t)
@@ -282,20 +285,20 @@ func (v *Verifier) capabilities(ctx context.Context, t Target) (capsDoc, bool) {
 // shape.
 func (v *Verifier) endpoint(ctx context.Context, t Target, capsOK bool) Result {
 	if !capsOK {
-		return Result{CheckEndpoint, false, "capabilities endpoint did not answer as expected"}
+		return Result{Check: CheckEndpoint, Reason: "capabilities endpoint did not answer as expected"}
 	}
 	r, err := v.get(ctx, route(t.Profile)+"/v1/models", t.Key)
 	if err != nil || r.status != http.StatusOK {
-		return Result{CheckEndpoint, false, "models endpoint did not answer"}
+		return Result{Check: CheckEndpoint, Reason: "models endpoint did not answer"}
 	}
 	var m struct {
 		Object string            `json:"object"`
 		Data   []json.RawMessage `json:"data"`
 	}
 	if json.Unmarshal(r.body, &m) != nil || m.Object != "list" || m.Data == nil {
-		return Result{CheckEndpoint, false, "models endpoint answered in an unexpected shape"}
+		return Result{Check: CheckEndpoint, Reason: "models endpoint answered in an unexpected shape"}
 	}
-	return Result{CheckEndpoint, true, ""}
+	return Result{Check: CheckEndpoint, Passed: true}
 }
 
 // identity: the profile route is its own namespace. Hermes' verified API has no
@@ -304,12 +307,12 @@ func (v *Verifier) endpoint(ctx context.Context, t Target, capsOK bool) Result {
 // route and a never-provisioned route must not accept the tenant's key.
 func (v *Verifier) identity(ctx context.Context, t Target) Result {
 	if why := v.expectRefusal(ctx, "/v1/models", t.Key, "the default profile route (tenant key)"); why != "" {
-		return Result{CheckIdentity, false, why}
+		return Result{Check: CheckIdentity, Reason: why}
 	}
 	if why := v.expectRefusalOr(ctx, route(absentSlug)+"/v1/models", t.Key, "an unprovisioned profile route (tenant key)", true); why != "" {
-		return Result{CheckIdentity, false, why}
+		return Result{Check: CheckIdentity, Reason: why}
 	}
-	return Result{CheckIdentity, true, ""}
+	return Result{Check: CheckIdentity, Passed: true}
 }
 
 // isolation: a missing key, a wrong key and every sibling's route refuse this
@@ -317,18 +320,18 @@ func (v *Verifier) identity(ctx context.Context, t Target) Result {
 func (v *Verifier) isolation(ctx context.Context, t Target, siblings []string) Result {
 	own := route(t.Profile) + "/v1/models"
 	if why := v.expectRefusal(ctx, own, "", "the profile route (no key)"); why != "" {
-		return Result{CheckIsolation, false, why}
+		return Result{Check: CheckIsolation, Reason: why}
 	}
 	sum := sha256.Sum256([]byte("antares-verify-wrong-key:" + t.Key))
 	if why := v.expectRefusal(ctx, own, hex.EncodeToString(sum[:]), "the profile route (wrong key)"); why != "" {
-		return Result{CheckIsolation, false, why}
+		return Result{Check: CheckIsolation, Reason: why}
 	}
 	for _, sib := range siblings {
 		if why := v.expectRefusal(ctx, route(sib)+"/v1/models", t.Key, "another tenant's route (tenant key)"); why != "" {
-			return Result{CheckIsolation, false, why}
+			return Result{Check: CheckIsolation, Reason: why}
 		}
 	}
-	return Result{CheckIsolation, true, ""}
+	return Result{Check: CheckIsolation, Passed: true}
 }
 
 // sessions: the profile lists its own sessions, no other tenant's route lists
@@ -341,23 +344,23 @@ func (v *Verifier) isolation(ctx context.Context, t Target, siblings []string) R
 func (v *Verifier) sessions(ctx context.Context, t Target, siblings []string) Result {
 	r, err := v.get(ctx, route(t.Profile)+"/api/sessions?limit=1&offset=0", t.Key)
 	if err != nil || r.status != http.StatusOK {
-		return Result{CheckSessions, false, "sessions endpoint did not answer"}
+		return Result{Check: CheckSessions, Reason: "sessions endpoint did not answer"}
 	}
 	if t.Fresh {
 		n, ok := sessionCount(r.body)
 		if !ok {
-			return Result{CheckSessions, false, "sessions endpoint answered in an unrecognised shape"}
+			return Result{Check: CheckSessions, Reason: "sessions endpoint answered in an unrecognised shape"}
 		}
 		if n != 0 {
-			return Result{CheckSessions, false, "new profile already holds sessions"}
+			return Result{Check: CheckSessions, Reason: "new profile already holds sessions"}
 		}
 	}
 	for _, sib := range siblings {
 		if why := v.expectRefusal(ctx, route(sib)+"/api/sessions?limit=1&offset=0", t.Key, "another tenant's sessions (tenant key)"); why != "" {
-			return Result{CheckSessions, false, why}
+			return Result{Check: CheckSessions, Reason: why}
 		}
 	}
-	return Result{CheckSessions, true, ""}
+	return Result{Check: CheckSessions, Passed: true}
 }
 
 // sessionCount accepts the deployed envelope
@@ -392,7 +395,7 @@ func sessionCount(b []byte) (int, bool) {
 func (v *Verifier) toolsets(ctx context.Context, t Target) Result {
 	r, err := v.get(ctx, route(t.Profile)+"/v1/toolsets", t.Key)
 	if err != nil || r.status != http.StatusOK {
-		return Result{CheckToolsets, false, "toolsets endpoint did not answer"}
+		return Result{Check: CheckToolsets, Reason: "toolsets endpoint did not answer"}
 	}
 	var d struct {
 		Object string `json:"object"`
@@ -402,12 +405,12 @@ func (v *Verifier) toolsets(ctx context.Context, t Target) Result {
 		} `json:"data"`
 	}
 	if json.Unmarshal(r.body, &d) != nil || d.Object != "list" || len(d.Data) == 0 {
-		return Result{CheckToolsets, false, "toolsets endpoint answered in an unexpected shape"}
+		return Result{Check: CheckToolsets, Reason: "toolsets endpoint answered in an unexpected shape"}
 	}
 	seen := map[string]bool{}
 	for _, ts := range d.Data {
 		if ts.Name == "" || ts.Enabled == nil {
-			return Result{CheckToolsets, false, "toolsets endpoint answered in an unexpected shape"}
+			return Result{Check: CheckToolsets, Reason: "toolsets endpoint answered in an unexpected shape"}
 		}
 		seen[ts.Name] = true
 		if !*ts.Enabled {
@@ -415,21 +418,21 @@ func (v *Verifier) toolsets(ctx context.Context, t Target) Result {
 		}
 		for _, den := range DeniedToolsets {
 			if ts.Name == den {
-				return Result{CheckToolsets, false, "boundary-crossing toolset " + den + " is enabled"}
+				return Result{Check: CheckToolsets, Reason: "boundary-crossing toolset " + den + " is enabled", Remediation: ReapplyToolsetPolicy}
 			}
 		}
 		if !v.allowed[ts.Name] {
-			return Result{CheckToolsets, false, "toolset " + safeName(ts.Name) + " is enabled but not allowed"}
+			return Result{Check: CheckToolsets, Reason: "toolset " + safeName(ts.Name) + " is enabled but not allowed", Remediation: ReapplyToolsetPolicy}
 		}
 	}
 	// A denied toolset the profile does not report at all cannot be shown to be
 	// off; the deployed API lists every toolset, so absence is a changed contract.
 	for _, den := range DeniedToolsets {
 		if !seen[den] {
-			return Result{CheckToolsets, false, "toolset " + den + " is not reported, so its state is unknown"}
+			return Result{Check: CheckToolsets, Reason: "toolset " + den + " is not reported, so its state is unknown"}
 		}
 	}
-	return Result{CheckToolsets, true, ""}
+	return Result{Check: CheckToolsets, Passed: true}
 }
 
 // safeName keeps an upstream toolset name printable and short before it enters
@@ -456,16 +459,16 @@ func safeName(s string) string {
 // proof of filesystem isolation, and is documented as such.
 func (v *Verifier) memory(c capsDoc, ok bool) Result {
 	if !ok {
-		return Result{CheckMemory, false, "capabilities unavailable"}
+		return Result{Check: CheckMemory, Reason: "capabilities unavailable"}
 	}
 	if c.Features.MemoryWriteAPI == nil || *c.Features.MemoryWriteAPI {
-		return Result{CheckMemory, false, "a memory write API is exposed or its state is unknown"}
+		return Result{Check: CheckMemory, Reason: "a memory write API is exposed or its state is unknown"}
 	}
 	if c.Features.AdminConfigRW == nil || *c.Features.AdminConfigRW {
-		return Result{CheckMemory, false, "profile configuration is writable through the API or its state is unknown"}
+		return Result{Check: CheckMemory, Reason: "profile configuration is writable through the API or its state is unknown"}
 	}
 	if c.Auth.Required == nil || !*c.Auth.Required {
-		return Result{CheckMemory, false, "the API does not require authentication"}
+		return Result{Check: CheckMemory, Reason: "the API does not require authentication"}
 	}
-	return Result{CheckMemory, true, ""}
+	return Result{Check: CheckMemory, Passed: true}
 }
