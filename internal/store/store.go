@@ -154,7 +154,9 @@ func requireDedicated(dir, base string) error {
 	if err != nil {
 		return fmt.Errorf("store: read data dir: %w", err)
 	}
-	own := map[string]bool{"lost+found": true, base: true, base + "-wal": true, base + "-shm": true, base + "-journal": true}
+	own := map[string]bool{"lost+found": true, base: true, base + "-wal": true, base + "-shm": true, base + "-journal": true,
+		// A streamed backup (BackupTempSuffix) is staged here; one left by a crash is harmless.
+		base + BackupTempSuffix: true, base + RestoreTempSuffix: true}
 	for _, e := range entries {
 		if !own[e.Name()] {
 			return errors.New("store: data directory is not dedicated to Antares (it holds other files); " +

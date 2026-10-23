@@ -1,0 +1,357 @@
+package store
+
+import (
+	"bytes"
+	"context"
+	"database/sql"
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"sync/atomic"
+	"testing"
+)
+
+func countRows(t *testing.T, db *sql.DB, q string) int {
+	t.Helper()
+	var n int
+	if err := db.QueryRow(q).Scan(&n); err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+func addMessage(t *testing.T, db *sql.DB, user, chat, id, role string) {
+	t.Helper()
+	if _, err := db.Exec(`INSERT INTO messages (id, user_id, chat_id, role, hermes_message_id, created_at) VALUES (?,?,?,?,?,?)`,
+		id, user, chat, role, "h-"+id, ts(t0)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func migrationSet(t *testing.T) Set {
+	t.Helper()
+	set, err := LoadMigrations(Migrations())
+	if err != nil {
+		t.Fatal(err)
+	}
+	return set
+}
+
+// The full loop the operator relies on: data -> backup -> destroy -> restore.
+func TestBackupRestoreRoundTripKeepsChatAndMessages(t *testing.T) {
+	ctx := context.Background()
+	d, u := setupTwo(t)
+	db := d.DB
+	addMessage(t, db, u.a, u.chatA.ID, "m1", "user")
+	addMessage(t, db, u.a, u.chatA.ID, "m2", "assistant")
+	livePath := dbFile(t, db)
+
+	bak := filepath.Join(t.TempDir(), "antares.bak")
+	if err := Backup(ctx, db, bak); err != nil {
+		t.Fatal(err)
+	}
+	if fi, err := os.Stat(bak); err != nil || fi.Mode().Perm() != 0o600 {
+		t.Fatalf("backup mode: %v %v", fi, err)
+	}
+	if err := Backup(ctx, db, bak); err == nil {
+		t.Fatal("backup overwrote an existing file")
+	}
+
+	// Destroy: lose everything, then also leave a stale WAL behind.
+	db.Close()
+	for _, suf := range []string{"", "-wal", "-shm"} {
+		os.Remove(livePath + suf)
+	}
+	if err := os.WriteFile(livePath+"-wal", []byte("stale junk that must not be replayed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := Restore(ctx, bak, livePath, migrationSet(t), RestoreOptions{}); err != nil {
+		t.Fatal(err)
+	}
+	re, err := Open(livePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer re.Close()
+	if _, err := Migrate(ctx, re, Migrations()); err != nil {
+		t.Fatal(err)
+	}
+	if err := SchemaCurrent(ctx, re, migrationSet(t)); err != nil {
+		t.Fatal(err)
+	}
+	if n := countRows(t, re, `SELECT COUNT(*) FROM users`); n != 2 {
+		t.Errorf("users = %d", n)
+	}
+	if n := countRows(t, re, `SELECT COUNT(*) FROM tenant_bindings`); n != 2 {
+		t.Errorf("bindings = %d", n)
+	}
+	got, err := GetChat(ctx, re, u.a, u.chatA.ID)
+	if err != nil || got.Title != "A's chat" {
+		t.Fatalf("chat: %+v %v", got, err)
+	}
+	if n := countRows(t, re, `SELECT COUNT(*) FROM messages WHERE chat_id = '`+u.chatA.ID+`'`); n != 2 {
+		t.Errorf("messages = %d", n)
+	}
+	rep, err := Check(ctx, livePath)
+	if err != nil || !rep.OK() {
+		t.Errorf("restored db check: %+v %v", rep, err)
+	}
+}
+
+func dbFile(t *testing.T, db *sql.DB) string {
+	t.Helper()
+	var seq int
+	var name, file string
+	if err := db.QueryRow(`PRAGMA database_list`).Scan(&seq, &name, &file); err != nil {
+		t.Fatal(err)
+	}
+	return file
+}
+
+// DoD: a backup taken while a writer is committing passes integrity_check and
+// holds the latest row committed before the backup began.
+func TestBackupDuringActiveWriter(t *testing.T) {
+	ctx := context.Background()
+	db, _ := migrated(t)
+	user := mkUser(t, db, "w", "USER", "APPROVED", "READY")
+	bind := mkBinding(t, db, user, "u_wwwwwwwwww", "READY")
+	chat, err := CreateChat(ctx, db, user, bind, "sess-w", "w", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var written atomic.Int64
+	stop := make(chan struct{})
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		for i := 1; ; i++ {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+			if _, err := db.Exec(`INSERT INTO messages (id, user_id, chat_id, role, created_at) VALUES (?,?,?,?,?)`,
+				fmt.Sprintf("w%06d", i), user, chat.ID, "user", ts(t0)); err != nil {
+				t.Error(err)
+				return
+			}
+			written.Store(int64(i))
+		}
+	}()
+	for written.Load() < 50 {
+	}
+	floor := written.Load() // committed before the backup starts
+	bak := filepath.Join(t.TempDir(), "live.bak")
+	err = Backup(ctx, db, bak)
+	close(stop)
+	wg.Wait()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyBackup(ctx, bak, migrationSet(t)); err != nil {
+		t.Fatal(err)
+	}
+	b, err := openRO(bak)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer b.Close()
+	if n := countRows(t, b, `SELECT COUNT(*) FROM messages`); int64(n) < floor {
+		t.Errorf("backup has %d messages, %d were committed before it started", n, floor)
+	}
+	var last string
+	if err := b.QueryRow(`SELECT id FROM messages WHERE id = ?`, fmt.Sprintf("w%06d", floor)).Scan(&last); err != nil {
+		t.Errorf("latest committed row missing: %v", err)
+	}
+}
+
+func TestBackupToStreamsAVerifiableSnapshot(t *testing.T) {
+	ctx := context.Background()
+	db, p := migrated(t)
+	var buf bytes.Buffer
+	if err := BackupTo(ctx, db, p, &buf); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(p + BackupTempSuffix); err == nil {
+		t.Error("staging file left behind")
+	}
+	out := filepath.Join(t.TempDir(), "s.bak")
+	if err := os.WriteFile(out, buf.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := VerifyBackup(ctx, out, migrationSet(t)); err != nil {
+		t.Fatal(err)
+	}
+	// The data dir must still be acceptable to Open (dedicated-directory rule).
+	db.Close()
+	if re, err := Open(p); err != nil {
+		t.Fatal(err)
+	} else {
+		re.Close()
+	}
+}
+
+// DoD: garbage, truncated and foreign files are refused and the live database
+// is byte-for-byte untouched.
+func TestRestoreRefusesBadBackupsAndLeavesLiveUntouched(t *testing.T) {
+	ctx := context.Background()
+	db, live := migrated(t)
+	user := mkUser(t, db, "keep", "USER", "APPROVED", "READY")
+	good := filepath.Join(t.TempDir(), "good.bak")
+	if err := Backup(ctx, db, good); err != nil {
+		t.Fatal(err)
+	}
+	goodBytes, _ := os.ReadFile(good)
+
+	dir := t.TempDir()
+	write := func(name string, b []byte) string {
+		p := filepath.Join(dir, name)
+		if err := os.WriteFile(p, b, 0o600); err != nil {
+			t.Fatal(err)
+		}
+		return p
+	}
+	// A valid SQLite file that is not Antares'.
+	foreign := filepath.Join(dir, "foreign.db")
+	f, err := sql.Open("sqlite", "file:"+foreign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.Exec(`CREATE TABLE t (x)`)
+	f.Close()
+	// An Antares file claiming a migration this binary does not have.
+	future := filepath.Join(dir, "future.db")
+	copyFile(good, future, 0o600)
+	fd, _ := sql.Open("sqlite", "file:"+future)
+	if _, err := fd.Exec(`INSERT INTO schema_migrations VALUES (9999,'9999_x','abc','now')`); err != nil {
+		t.Fatal(err)
+	}
+	fd.Close()
+
+	cases := map[string]string{
+		"garbage":   write("garbage.db", bytes.Repeat([]byte("not a database "), 500)),
+		"truncated": write("trunc.db", goodBytes[:len(goodBytes)/2]),
+		"empty":     write("empty.db", nil),
+		"foreign":   foreign,
+		"future":    future,
+		"missing":   filepath.Join(dir, "nope.db"),
+	}
+	before := snapshotFiles(t, live)
+	for name, src := range cases {
+		err := Restore(ctx, src, live, migrationSet(t), RestoreOptions{})
+		if err == nil {
+			t.Errorf("%s: restore accepted it", name)
+			continue
+		}
+		t.Logf("%s: %v", name, err)
+		if after := snapshotFiles(t, live); after != before {
+			t.Errorf("%s: live database files changed", name)
+		}
+	}
+	if n := countRows(t, db, `SELECT COUNT(*) FROM users WHERE id = '`+user+`'`); n != 1 {
+		t.Error("live data changed")
+	}
+	if _, err := os.Stat(live + RestoreTempSuffix); err == nil {
+		t.Error("staging file left behind")
+	}
+}
+
+func snapshotFiles(t *testing.T, live string) string {
+	t.Helper()
+	var sb strings.Builder
+	for _, suf := range []string{"", "-wal"} {
+		b, _ := os.ReadFile(live + suf)
+		fmt.Fprintf(&sb, "%s:%d:%x|", suf, len(b), b)
+	}
+	return sb.String()
+}
+
+// A bit-flipped page inside an otherwise openable file must be caught by
+// integrity_check, reported honestly, and refused by restore.
+func TestCheckReportsCorruptionAndRestoreRefusesIt(t *testing.T) {
+	ctx := context.Background()
+	db, _ := migrated(t)
+	user := mkUser(t, db, "c", "USER", "APPROVED", "READY")
+	bind := mkBinding(t, db, user, "u_cccccccccc", "READY")
+	chat, _ := CreateChat(ctx, db, user, bind, "s", "c", t0)
+	for i := 0; i < 400; i++ {
+		addMessage(t, db, user, chat.ID, fmt.Sprintf("c%04d", i), "user")
+	}
+	bak := filepath.Join(t.TempDir(), "c.bak")
+	if err := Backup(ctx, db, bak); err != nil {
+		t.Fatal(err)
+	}
+	if rep, err := Check(ctx, bak); err != nil || !rep.OK() {
+		t.Fatalf("healthy backup: %+v %v", rep, err)
+	}
+	b, _ := os.ReadFile(bak)
+	// Zero out a page in the middle, leaving the header and schema readable.
+	for i := len(b) / 2; i < len(b)/2+4096 && i < len(b); i++ {
+		b[i] = 0xFF
+	}
+	bad := filepath.Join(t.TempDir(), "bad.db")
+	os.WriteFile(bad, b, 0o600)
+	rep, err := Check(ctx, bad)
+	if err == nil && rep.OK() {
+		t.Fatal("corruption reported as ok")
+	}
+	t.Logf("check: %+v err=%v", rep, err)
+	if err := VerifyBackup(ctx, bad, migrationSet(t)); err == nil {
+		t.Fatal("corrupt file verified")
+	}
+}
+
+func TestRestoreKeepsOldDatabaseAndRefusesWhileInUse(t *testing.T) {
+	ctx := context.Background()
+	db, live := migrated(t)
+	u1 := mkUser(t, db, "before", "USER", "APPROVED", "READY")
+	bak := filepath.Join(t.TempDir(), "b.bak")
+	if err := Backup(ctx, db, bak); err != nil {
+		t.Fatal(err)
+	}
+	u2 := mkUser(t, db, "after", "USER", "APPROVED", "READY") // not in the backup
+	keep := filepath.Join(t.TempDir(), "old")
+
+	// An open write transaction in another connection = a running service.
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := tx.Exec(`UPDATE users SET email = email WHERE id = ?`, u1); err != nil {
+		t.Fatal(err)
+	}
+	if err := Restore(ctx, bak, live, migrationSet(t), RestoreOptions{KeepOldDir: keep}); err == nil || !strings.Contains(err.Error(), "in use") {
+		t.Fatalf("restore with active writer: %v", err)
+	}
+	tx.Rollback()
+	db.Close()
+
+	if err := Restore(ctx, bak, live, migrationSet(t), RestoreOptions{KeepOldDir: keep}); err != nil {
+		t.Fatal(err)
+	}
+	re, err := Open(live)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer re.Close()
+	if countRows(t, re, `SELECT COUNT(*) FROM users WHERE id='`+u1+`'`) != 1 || countRows(t, re, `SELECT COUNT(*) FROM users WHERE id='`+u2+`'`) != 0 {
+		t.Error("restored content is not the backup's")
+	}
+	ents, _ := os.ReadDir(keep)
+	if len(ents) == 0 {
+		t.Fatal("old database not kept")
+	}
+	kept := filepath.Join(keep, ents[0].Name())
+	if kdb, err := openRO(kept); err != nil {
+		t.Fatal(err)
+	} else {
+		defer kdb.Close()
+		if countRows(t, kdb, `SELECT COUNT(*) FROM users WHERE id='`+u2+`'`) != 1 {
+			t.Error("kept copy lacks the pre-restore row")
+		}
+	}
+}
