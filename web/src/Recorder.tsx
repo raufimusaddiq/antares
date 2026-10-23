@@ -19,10 +19,14 @@ function failure(e: unknown): string {
 export function Recorder() {
   const [phase, setPhase] = useState<Phase>({ name: "idle" });
   const rec = useRef<MediaRecorder | null>(null);
+  const pending = useRef(false); // set synchronously: a start awaiting permission blocks a second one
+  const mounted = useRef(true);
+  const [starting, setStarting] = useState(false);
   const supported = typeof MediaRecorder !== "undefined" && !!navigator.mediaDevices?.getUserMedia;
 
   useEffect(
     () => () => {
+      mounted.current = false; // a permission grant that lands after this is stopped in start()
       if (rec.current && rec.current.state !== "inactive") {
         rec.current.onstop = null;
         rec.current.stop();
@@ -31,6 +35,9 @@ export function Recorder() {
     },
     [],
   );
+  useEffect(() => {
+    mounted.current = true; // re-armed for StrictMode's mount/unmount/mount
+  }, []);
   useEffect(() => {
     if (phase.name !== "ready") return;
     return () => URL.revokeObjectURL(phase.url);
@@ -52,9 +59,17 @@ export function Recorder() {
   }
 
   const start = async () => {
+    if (pending.current || rec.current?.state === "recording") return;
+    pending.current = true;
+    setStarting(true);
     let stream: MediaStream | undefined;
     try {
       stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      if (!mounted.current) {
+        // unmounted while the permission prompt was open: no capture without a UI to stop it
+        stream.getTracks().forEach((t) => t.stop());
+        return;
+      }
       const type = TYPES.find((t) => MediaRecorder.isTypeSupported(t));
       const live = stream;
       const r = new MediaRecorder(live, type ? { mimeType: type } : undefined);
@@ -70,7 +85,10 @@ export function Recorder() {
     } catch (e) {
       stream?.getTracks().forEach((t) => t.stop()); // a take that never started must not leave the microphone on
       rec.current = null;
-      setPhase({ name: "error", message: failure(e) });
+      if (mounted.current) setPhase({ name: "error", message: failure(e) });
+    } finally {
+      pending.current = false;
+      if (mounted.current) setStarting(false);
     }
   };
   const clock = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
@@ -87,7 +105,7 @@ export function Recorder() {
           </button>
         </>
       ) : (
-        <button type="button" onClick={() => void start()}>
+        <button type="button" disabled={starting} onClick={() => void start()}>
           {phase.name === "ready" ? "Record again" : "Record"}
         </button>
       )}

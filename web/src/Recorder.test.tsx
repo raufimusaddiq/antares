@@ -81,6 +81,50 @@ describe("Recorder", () => {
     start.mockRestore();
   });
 
+  it("stops a stream that resolves after unmount and starts no recorder", async () => {
+    let grant!: (s: unknown) => void;
+    const lateTrack = vi.fn();
+    (navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>).mockReturnValue(new Promise((r) => (grant = r)));
+    const made = vi.fn();
+    class Spy extends FakeRecorder {
+      constructor() {
+        super();
+        made();
+      }
+    }
+    vi.stubGlobal("MediaRecorder", Spy);
+    const { unmount } = render(<Recorder />);
+    fireEvent.click(screen.getByText("Record"));
+    unmount();
+    await act(async () => grant({ getTracks: () => [{ stop: lateTrack }] }));
+    expect(lateTrack).toHaveBeenCalledTimes(1);
+    expect(made).not.toHaveBeenCalled();
+  });
+
+  it("allows one getUserMedia call and one recorder while permission is pending", async () => {
+    let grant!: (s: unknown) => void;
+    const gum = navigator.mediaDevices.getUserMedia as ReturnType<typeof vi.fn>;
+    gum.mockReturnValue(new Promise((r) => (grant = r)));
+    const made = vi.fn();
+    class Spy extends FakeRecorder {
+      constructor() {
+        super();
+        made();
+      }
+    }
+    vi.stubGlobal("MediaRecorder", Spy);
+    render(<Recorder />);
+    const btn = screen.getByText("Record");
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    fireEvent.click(btn);
+    expect((btn as HTMLButtonElement).disabled).toBe(true);
+    await act(async () => grant({ getTracks: () => [{ stop: stopTrack }] }));
+    expect(gum).toHaveBeenCalledTimes(1);
+    expect(made).toHaveBeenCalledTimes(1);
+    expect(screen.getByRole("timer")).toBeTruthy();
+  });
+
   it("states that speech-to-text is unavailable rather than offering it", () => {
     render(<Recorder />);
     expect(screen.getByText(/Speech-to-text is unavailable/)).toBeTruthy();
