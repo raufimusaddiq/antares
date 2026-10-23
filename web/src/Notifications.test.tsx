@@ -109,6 +109,14 @@ describe("the notification opt-in", () => {
     expect((screen.getByRole("combobox") as HTMLSelectElement).value).toBe("off");
   });
 
+  it("says that turning off removes one device while the choice covers all of them", async () => {
+    push.thisDevice.mockResolvedValue(DEVICE);
+    push.loadNotifications.mockResolvedValue(ok(state({ devices: [DEVICE] })));
+    await openPanel();
+    await screen.findByText(/removes only this device/);
+    expect(screen.getByText(/applies to all your devices/)).toBeTruthy();
+  });
+
   it("does not show the muted line when alerts are on", async () => {
     push.thisDevice.mockResolvedValue(DEVICE);
     push.loadNotifications.mockResolvedValue(ok(state({ devices: [DEVICE] })));

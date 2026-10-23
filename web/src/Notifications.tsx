@@ -64,13 +64,14 @@ export function Notifications() {
               {device ? (
                 <>
                   <label>
-                    Alert me about{" "}
+                    Alert me about (applies to all your devices){" "}
                     <select value={state.mode} disabled={busy} onChange={(e) => void run(() => setMode(e.target.value as Mode))}>
                       <option value="all">Finished and failed replies</option>
                       <option value="failures">Failed replies only</option>
                       <option value="off">Nothing (muted)</option>
                     </select>
                   </label>
+                  <p className="label">Turning off on this device removes only this device. Muting and the choice above apply to every device on your account.</p>
                   {state.mode === "off" && <p className="label">Alerts are muted for your account, on every device. Pick what to be alerted about to resume them.</p>}
                   <button type="button" disabled={busy} onClick={() => void run(() => disable(device))}>
                     Turn off on this device

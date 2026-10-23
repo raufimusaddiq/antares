@@ -44,14 +44,18 @@ func SetPushMode(ctx context.Context, db *sql.DB, userID, mode string, now time.
 	return err
 }
 
+// ErrEndpointHeld means the endpoint is already registered to another account.
+var ErrEndpointHeld = errors.New("store: push endpoint is registered to another account")
+
 // ErrTooManyDevices means the account is at MaxPushSubscriptions.
 var ErrTooManyDevices = errors.New("store: too many push subscriptions")
 
 // SavePushSub registers a device for userID and, in the same transaction, sets the mode to
 // "all" if the account never chose one (the first opt-in gesture). A mode the user already
-// chose, including "off", is kept: adding a device does not undo a mute. A subscription for the
-// same endpoint held by another account is removed first: the browser is now
-// signed in as userID, so the previous holder must stop receiving on it.
+// chose, including "off", is kept: adding a device does not undo a mute. The same account
+// registering an endpoint it already holds replaces its own row. An endpoint held by another
+// account is ErrEndpointHeld: nothing is deleted, and the holder keeps receiving; the caller
+// must use a fresh subscription.
 // s.ID is the new row id; the caller sealed the secrets with it as additional data.
 func SavePushSub(ctx context.Context, db *sql.DB, s PushSub, now time.Time) (id string, err error) {
 	tx, err := db.BeginTx(ctx, nil)
@@ -61,8 +65,10 @@ func SavePushSub(ctx context.Context, db *sql.DB, s PushSub, now time.Time) (id 
 	defer tx.Rollback()
 	var oldID, oldUser string
 	switch err := tx.QueryRowContext(ctx, `SELECT id, user_id FROM push_subscriptions WHERE endpoint_hash = ?`, s.EndpointHash).Scan(&oldID, &oldUser); {
+	case err == nil && oldUser != s.UserID:
+		return "", ErrEndpointHeld
 	case err == nil:
-		if _, err := tx.ExecContext(ctx, `DELETE FROM push_subscriptions WHERE id = ?`, oldID); err != nil {
+		if _, err := tx.ExecContext(ctx, `DELETE FROM push_subscriptions WHERE id = ? AND user_id = ?`, oldID, s.UserID); err != nil {
 			return "", err
 		}
 	case !errors.Is(err, sql.ErrNoRows):

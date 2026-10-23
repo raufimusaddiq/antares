@@ -115,6 +115,9 @@ func (s *Service) RunFinished(userID, runID, chatID, status string) {
 func (s *Service) notify(userID, runID, chatID, kind string) {
 	ctx, cancel := context.WithTimeout(s.base, 2*time.Minute)
 	defer cancel()
+	if err := store.PrunePushDeliveries(ctx, s.db, userID, s.now().Add(-deliveryRetention)); err != nil {
+		log.Printf("push: prune delivery records: %v", err)
+	}
 	// Only a user who is still APPROVED with a READY binding gets anything.
 	if _, err := store.ActiveBinding(ctx, s.db, userID); err != nil {
 		return
@@ -122,9 +125,6 @@ func (s *Service) notify(userID, runID, chatID, kind string) {
 	mode, err := store.PushMode(ctx, s.db, userID)
 	if err != nil || mode == store.PushOff || (mode == store.PushFailures && kind != KindFailed) {
 		return
-	}
-	if err := store.PrunePushDeliveries(ctx, s.db, userID, s.now().Add(-deliveryRetention)); err != nil {
-		log.Printf("push: prune delivery records: %v", err)
 	}
 	subs, err := store.ListPushSubs(ctx, s.db, userID)
 	if err != nil {
@@ -155,7 +155,10 @@ func (s *Service) notify(userID, runID, chatID, kind string) {
 		default:
 			// The claim stays: delivered_at is NULL, and a re-reported terminal status does not
 			// send again. Delivery is at most once per {device, run, kind}, not guaranteed.
-			log.Printf("push: delivery to %s failed: %v", sub.ID, err)
+			// A claim without delivered_at is a notification that was not delivered; it is never retried
+			// for this run (docs/runbooks/push.md). retryable says whether the attempt budget was spent
+			// on a transient failure (true) or the push service refused it outright (false).
+			log.Printf("push: delivery to %s failed (retryable=%v): %v", sub.ID, errors.Is(err, ErrTransient), err)
 		}
 	}
 }
@@ -163,7 +166,7 @@ func (s *Service) notify(userID, runID, chatID, kind string) {
 func (s *Service) sendWithRetry(ctx context.Context, t Target, p Payload) error {
 	var err error
 	for attempt := 0; attempt < sendAttempts; attempt++ {
-		if err = s.sender.Send(ctx, t, p); !errors.Is(err, ErrTransient) {
+		if err = s.sender.Send(ctx, t, p); !errors.Is(err, ErrTransient) || attempt == sendAttempts-1 {
 			return err
 		}
 		select {
@@ -369,6 +372,9 @@ func (s *Service) subscribe(w http.ResponseWriter, r *http.Request) {
 	_, err = store.SavePushSub(r.Context(), s.db, store.PushSub{ID: id, UserID: u.ID, EndpointHash: hex.EncodeToString(sum[:]),
 		SealedEndpoint: sealedEP, SealedKeys: sealedKeys}, s.now())
 	switch {
+	case errors.Is(err, store.ErrEndpointHeld):
+		apiError(w, http.StatusConflict, "ENDPOINT_IN_USE", "This browser subscription is already in use; create a new one")
+		return
 	case errors.Is(err, store.ErrTooManyDevices):
 		apiError(w, http.StatusConflict, "TOO_MANY_DEVICES", "Remove a device before adding another")
 		return

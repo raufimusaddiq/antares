@@ -243,3 +243,19 @@ func TestAudienceHasNoDefaultPort(t *testing.T) {
 		}
 	}
 }
+
+func TestRetryDoesNotWaitAfterTheFinalAttempt(t *testing.T) {
+	ua, auth := browserKeys(t)
+	var hits int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits++; w.WriteHeader(503) }))
+	defer srv.Close()
+	var waits []int
+	s := &Service{sender: NewSender(newVAPID(t), srv.Client()), backoff: func(n int) time.Duration { waits = append(waits, n); return time.Millisecond }}
+	err := s.sendWithRetry(context.Background(), Target{Endpoint: srv.URL, P256dh: ua.PublicKey().Bytes(), Auth: auth}, Payload{V: 1, Kind: KindCompleted})
+	if !errors.Is(err, ErrTransient) || hits != sendAttempts {
+		t.Fatalf("err=%v hits=%d", err, hits)
+	}
+	if len(waits) != sendAttempts-1 {
+		t.Fatalf("waited %v between %d attempts, want %d waits", waits, sendAttempts, sendAttempts-1)
+	}
+}

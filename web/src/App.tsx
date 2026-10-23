@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { loadSession, signOut, type Session } from "./api";
 import { AdminScreens, AdminShell, Forbidden } from "./Admin";
 import { Chat } from "./Chat";
@@ -58,9 +58,12 @@ export function App() {
   const [failed] = useState(loginFailed);
   const [path, setPath] = useState(() => window.location.pathname);
   // The chat a notification pointed at: from the address, or remembered across sign-in.
-  // Resolved once, when the account first becomes active, so Chat mounts with it.
-  const [addressLink] = useState(() => chatIdFromPath(window.location.pathname));
-  const deepLink = useRef<string | null | undefined>(undefined);
+  // undefined = not resolved yet: Chat mounts only once it is, so it opens with the link.
+  const [deepLink, setDeepLink] = useState<string | null | undefined>(() => chatIdFromPath(window.location.pathname) ?? undefined);
+  const active = session.kind === "account" && session.account.state === "ACTIVE";
+  useEffect(() => {
+    if (active && deepLink === undefined) setDeepLink(takeLink()); // reads and clears the sign-in round trip's key
+  }, [active, deepLink]);
 
   useEffect(() => {
     const onPop = () => setPath(window.location.pathname);
@@ -109,9 +112,8 @@ export function App() {
     if (view) document.title = documentTitle(view);
   }, [view]);
 
-  if (!view) return <main className="screen" aria-busy="true"><p>Loading…</p></main>;
+  if (!view || (active && deepLink === undefined)) return <main className="screen" aria-busy="true"><p>Loading…</p></main>;
   if (session.kind === "account" && session.account.state === "ACTIVE") {
-    if (deepLink.current === undefined) deepLink.current = addressLink ?? takeLink();
     if (isAdminPath(path)) {
       const route = parseAdminPath(path);
       return (
@@ -121,7 +123,7 @@ export function App() {
         </AdminShell>
       );
     }
-    return <Chat initialChatId={deepLink.current ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onSignOut={onSignOut} />;
+    return <Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onSignOut={onSignOut} />;
   }
   return (
     <Screen

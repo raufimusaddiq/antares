@@ -130,6 +130,11 @@ export async function thisDevice(n: Notifications): Promise<Device | null> {
   }
 }
 
+function save(sub: PushSubscription) {
+  const json = sub.toJSON();
+  return api<{ id: string }>("POST", "/api/push/subscriptions", { endpoint: sub.endpoint, keys: { p256dh: json.keys?.p256dh ?? bytesToB64url(sub.getKey("p256dh")), auth: json.keys?.auth ?? bytesToB64url(sub.getKey("auth")) } });
+}
+
 /** Must be called from a click: it is what asks for permission. */
 export async function enable(): Promise<Result<true>> {
   if (unsupportedReason() !== null) return { ok: false, code: "UNSUPPORTED" };
@@ -138,16 +143,28 @@ export async function enable(): Promise<Result<true>> {
   const key = await api<{ publicKey?: string }>("GET", "/api/push/public-key");
   if (!key.ok) return key;
   if (typeof key.value.publicKey !== "string") return { ok: false, code: "ERROR" };
+  let reg: ServiceWorkerRegistration;
   let sub: PushSubscription;
+  const fresh = () => reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(key.value.publicKey as string) });
   try {
-    const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" });
+    reg = await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" });
     await navigator.serviceWorker.ready;
-    sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(key.value.publicKey) }));
+    sub = (await reg.pushManager.getSubscription()) ?? (await fresh());
   } catch {
     return { ok: false, code: "SUBSCRIBE_FAILED" };
   }
-  const json = sub.toJSON();
-  const saved = await api<{ id: string }>("POST", "/api/push/subscriptions", { endpoint: sub.endpoint, keys: { p256dh: json.keys?.p256dh ?? bytesToB64url(sub.getKey("p256dh")), auth: json.keys?.auth ?? bytesToB64url(sub.getKey("auth")) } });
+  let saved = await save(sub);
+  if (!saved.ok && saved.code === "ENDPOINT_IN_USE") {
+    // This browser's subscription is registered to another account (a shared browser whose previous
+    // user did not sign out cleanly). The server will not move it; drop it and take a fresh one.
+    try {
+      await sub.unsubscribe();
+      sub = await fresh();
+    } catch {
+      return { ok: false, code: "SUBSCRIBE_FAILED" };
+    }
+    saved = await save(sub);
+  }
   if (!saved.ok) {
     await sub.unsubscribe().catch(() => false); // never leave a subscription the server does not know
     return saved;

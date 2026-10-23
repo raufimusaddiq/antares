@@ -526,21 +526,53 @@ func TestGoneSubscriptionIsDroppedAndTransientFailureIsBounded(t *testing.T) {
 	}
 }
 
-func TestResubscribingOnASharedBrowserMovesTheDevice(t *testing.T) {
+// An endpoint is a capability, but presenting one must not let a request revoke someone else's
+// device: a foreign endpoint is a conflict the client resolves explicitly, and the holder keeps it.
+func TestForeignEndpointRegistrationDoesNotSilentlyRevokeTheOtherAccount(t *testing.T) {
 	a := newApp(t)
 	ps := newPushService(t)
 	withPush(t, a, ps, allowAny)
 	alice, bob := a.user("alice"), a.user("bobby")
 	d := newDevice(t, "/shared-browser")
-	alice.subscribe(t, ps, d)
-	bob.subscribe(t, ps, d) // the same browser, now signed in as Bob
-	if v := decodeBody[struct{ Devices []any }](t, alice.get("/api/me/notifications")); len(v.Devices) != 0 {
-		t.Fatalf("alice still holds the shared browser: %v", v.Devices)
+	aliceSub := alice.subscribe(t, ps, d)
+
+	w := bob.do("POST", "/api/push/subscriptions", nil, map[string]any{
+		"endpoint": ps.srv.URL + d.path,
+		"keys": map[string]string{
+			"p256dh": base64.RawURLEncoding.EncodeToString(d.key.PublicKey().Bytes()),
+			"auth":   base64.RawURLEncoding.EncodeToString(d.auth),
+		},
+	})
+	if w.Code != 409 || errCode(t, w) != "ENDPOINT_IN_USE" {
+		t.Fatalf("bob presenting alice's endpoint = %d %s", w.Code, w.Body.String())
 	}
-	chat := alice.newChat()
-	finishRun(t, a, alice, chat, "alice after handover", "run.completed", `{}`)
-	if n := len(ps.requests()); n != 0 {
-		t.Fatalf("alice's alert reached the browser bob now uses (%d)", n)
+	if v := decodeBody[struct{ Devices []struct{ ID string } }](t, alice.get("/api/me/notifications")); len(v.Devices) != 1 || v.Devices[0].ID != aliceSub {
+		t.Fatalf("alice's device was revoked by bob's request: %+v", v)
+	}
+	if v := decodeBody[struct{ Devices []any }](t, bob.get("/api/me/notifications")); len(v.Devices) != 0 {
+		t.Fatalf("bob holds a device on alice's endpoint: %v", v.Devices)
+	}
+	finishRun(t, a, alice, alice.newChat(), "alice still notified", "run.completed", `{}`)
+	if n := len(ps.requests()); n != 1 {
+		t.Fatalf("alice got %d push(es) after the refused registration, want 1", n)
+	}
+	if strings.Contains(w.Body.String(), "alice") {
+		t.Errorf("the conflict answer names the holder: %s", w.Body.String())
+	}
+}
+
+// The same account registering the same endpoint again replaces its own row (fresh keys), once.
+func TestSameAccountReRegistrationReplacesItsOwnDevice(t *testing.T) {
+	a := newApp(t)
+	ps := newPushService(t)
+	withPush(t, a, ps, allowAny)
+	alice := a.user("alice")
+	d := newDevice(t, "/phone")
+	first := alice.subscribe(t, ps, d)
+	second := alice.subscribe(t, ps, d)
+	v := decodeBody[struct{ Devices []struct{ ID string } }](t, alice.get("/api/me/notifications"))
+	if first == second || len(v.Devices) != 1 || v.Devices[0].ID != second {
+		t.Fatalf("devices after re-registering = %+v (first %s, second %s)", v, first, second)
 	}
 }
 
@@ -602,6 +634,13 @@ func TestDeliveryRecordsAreBoundedAndUnreadableSubscriptionsAreLogged(t *testing
 		t.Fatal(err)
 	}
 	finishRun(t, a, alice, chat, "second", "run.completed", `{}`)
+	// Pruning does not wait for the account to be unmuted.
+	alice.do("PUT", "/api/me/notifications", nil, map[string]string{"mode": "off"})
+	if _, err := a.db.Exec(`INSERT INTO push_delivery_events (id, user_id, subscription_id, run_id, event_kind, created_at)
+		SELECT 'old-muted', user_id, ?, id, 'failed', '2020-01-01T00:00:00.000000000Z' FROM runs LIMIT 1`, subID); err != nil {
+		t.Fatal(err)
+	}
+	finishRun(t, a, alice, chat, "third, muted", "run.completed", `{}`)
 	var old int
 	a.db.QueryRow(`SELECT COUNT(*) FROM push_delivery_events WHERE created_at < '2021'`).Scan(&old)
 	if old != 0 {

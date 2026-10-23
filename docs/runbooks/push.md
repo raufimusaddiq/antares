@@ -30,7 +30,7 @@ Nothing is requested until the reader presses "Turn on for this device" (that cl
 permission, registers `/sw.js`, subscribes, and stores the device; the first device sets mode `all`).
 "Turn off on this device" deletes the server row first, so delivery stops even if the browser call fails.
 Signing out revokes this browser's device first (best effort), so a shared browser does not keep the
-previous account's alerts. A browser re-subscribing under another account moves the device to that account.
+previous account's alerts. An endpoint registered to another account is refused (`409 ENDPOINT_IN_USE`) and the holder keeps it: presenting an endpoint never revokes someone else's device. The panel then drops that browser subscription and registers a fresh one. The same account re-registering an endpoint replaces its own row.
 Mute from the same panel (`off`) keeps devices but sends nothing, and adding a device does not undo it (the panel says so).
 
 ## Deep link
