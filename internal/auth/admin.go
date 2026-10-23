@@ -8,6 +8,9 @@ import (
 	"net/http"
 	"regexp"
 	"strconv"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	"github.com/raufimusaddiq/antares/internal/store"
 )
@@ -130,14 +133,28 @@ func page(r *http.Request) (limit, offset int, ok bool) {
 	return limit, offset, true
 }
 
+// validSearch bounds a directory search: short, printable, nothing the SQL layer must trust.
+func validSearch(s string) bool {
+	if utf8.RuneCountInString(s) > 100 {
+		return false
+	}
+	for _, c := range s {
+		if unicode.IsControl(c) {
+			return false
+		}
+	}
+	return true
+}
+
 func (a *Auth) adminList(w http.ResponseWriter, r *http.Request) {
 	limit, offset, ok := page(r)
 	status := r.URL.Query().Get("status")
-	if !ok || (status != "" && !approvalFilters[status]) {
-		a.apiError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "Invalid status, limit or offset")
+	search := strings.TrimSpace(r.URL.Query().Get("q"))
+	if !ok || (status != "" && !approvalFilters[status]) || !validSearch(search) {
+		a.apiError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "Invalid status, search, limit or offset")
 		return
 	}
-	users, err := store.ListAdminUsers(r.Context(), a.db, status, limit, offset)
+	users, err := store.ListAdminUsers(r.Context(), a.db, status, search, limit, offset)
 	if err != nil {
 		log.Printf("auth: admin list failed: %v", err)
 		a.apiError(w, r, http.StatusInternalServerError, "INTERNAL", "Could not list users")
@@ -226,13 +243,40 @@ func (a *Auth) adminRequeue(mode string) http.HandlerFunc {
 	}
 }
 
+// auditCursor is "<created_at>|<id>" of the last entry on the previous page. It
+// is only ever a position in the feed: the store binds both halves as values.
+func auditCursor(s string) (at, id string, ok bool) {
+	if s == "" {
+		return "", "", true
+	}
+	at, id, found := strings.Cut(s, "|")
+	if !found || at == "" || id == "" || len(at) > 64 || len(id) > 64 {
+		return "", "", false
+	}
+	for _, c := range at + id {
+		if unicode.IsControl(c) {
+			return "", "", false
+		}
+	}
+	return at, id, true
+}
+
 func (a *Auth) adminAudit(w http.ResponseWriter, r *http.Request) {
-	limit, offset, ok := page(r)
-	if !ok {
-		a.apiError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "Invalid limit or offset")
+	limit := 50
+	if v := r.URL.Query().Get("limit"); v != "" {
+		n, err := strconv.Atoi(v)
+		if err != nil || n < 1 || n > 200 {
+			a.apiError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "Invalid limit or before")
+			return
+		}
+		limit = n
+	}
+	at, id, ok := auditCursor(r.URL.Query().Get("before"))
+	if !ok || r.URL.Query().Has("offset") {
+		a.apiError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "Invalid limit or before")
 		return
 	}
-	rows, err := store.ListAudit(r.Context(), a.db, limit, offset)
+	rows, more, err := store.ListAudit(r.Context(), a.db, limit, at, id)
 	if err != nil {
 		log.Printf("auth: audit list failed: %v", err)
 		a.apiError(w, r, http.StatusInternalServerError, "INTERNAL", "Could not read the audit feed")
@@ -243,7 +287,12 @@ func (a *Auth) adminAudit(w http.ResponseWriter, r *http.Request) {
 		out = append(out, AuditView{ID: e.ID, Actor: e.Actor, Action: e.Action, TargetID: e.TargetID,
 			Outcome: e.Outcome, RequestID: e.RequestID, CreatedAt: e.CreatedAt})
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"entries": out, "limit": limit, "offset": offset})
+	next := ""
+	if more && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		next = last.CreatedAt + "|" + last.ID
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"entries": out, "limit": limit, "next": next})
 }
 
 func (a *Auth) adminError(w http.ResponseWriter, r *http.Request, err error) {

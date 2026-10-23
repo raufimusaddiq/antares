@@ -83,6 +83,10 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 	allowed := map[string]bool{
 		"/api/me": true, "/api/auth/logout": true, "/api/auth/google/start": true,
 		"/api/chats": true, "/api/chats/": true, "/api/runs/": true,
+		// #47 adds the admin screens, again one by one: the user list, /api/admin/users/{id}
+		// and its action POSTs, and the audit feed. /api/admin/system is not here because
+		// the route no longer exists.
+		"/api/admin/users": true, "/api/admin/users/": true, "/api/admin/audit": true,
 	}
 	pathRe := regexp.MustCompile(`/api/[A-Za-z0-9_/.-]*`)
 	badRe := regexp.MustCompile(`(?i)ciphertext|fingerprint|tenant_binding|profile_name|profileSlug|memory_scope|client_secret|api_key|apikey|hermes|authorization`)

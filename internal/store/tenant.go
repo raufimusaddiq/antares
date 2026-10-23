@@ -3,10 +3,13 @@ package store
 import (
 	"context"
 	"database/sql"
+	"database/sql/driver"
 	"errors"
 	"strings"
 	"time"
 	"unicode"
+
+	"modernc.org/sqlite"
 )
 
 // Errors the admin and provisioning layers translate into API answers.
@@ -78,9 +81,27 @@ func scanAdmin(row interface{ Scan(...any) error }) (AdminUser, error) {
 	return a, err
 }
 
+// SQLite's built-in LOWER() folds ASCII only, while strings.ToLower folds all of Unicode, so
+// lowering the term in Go and the column in SQL disagreed for names like "Ünal". ulower is the
+// same Go fold, applied to the column, so both sides of the comparison fold identically.
+// (LIKE itself is only ASCII case-insensitive, which is fine: both operands are already lowered.)
+func init() {
+	sqlite.RegisterDeterministicScalarFunction("ulower", 1, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		switch v := args[0].(type) {
+		case string:
+			return strings.ToLower(v), nil
+		case []byte:
+			return strings.ToLower(string(v)), nil
+		}
+		return args[0], nil
+	})
+}
+
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 // ListAdminUsers returns accounts oldest request first, optionally filtered by
 // approval status. limit is clamped to 1..200.
-func ListAdminUsers(ctx context.Context, db *sql.DB, approval string, limit, offset int) ([]AdminUser, error) {
+func ListAdminUsers(ctx context.Context, db *sql.DB, approval, search string, limit, offset int) ([]AdminUser, error) {
 	if limit < 1 || limit > 200 {
 		limit = 50
 	}
@@ -89,9 +110,19 @@ func ListAdminUsers(ctx context.Context, db *sql.DB, approval string, limit, off
 	}
 	q := `SELECT ` + adminCols + adminFrom
 	var args []any
+	var where []string
 	if approval != "" {
-		q += ` WHERE u.approval_status = ?`
+		where = append(where, `u.approval_status = ?`)
 		args = append(args, approval)
+	}
+	if search != "" {
+		// A substring match on identity metadata only; %, _ and the escape itself are literals.
+		like := "%" + likeEscaper.Replace(strings.ToLower(search)) + "%"
+		where = append(where, `(ulower(u.email) LIKE ? ESCAPE '\' OR ulower(COALESCE(u.display_name,'')) LIKE ? ESCAPE '\')`)
+		args = append(args, like, like)
+	}
+	if len(where) > 0 {
+		q += ` WHERE ` + strings.Join(where, ` AND `)
 	}
 	q += ` ORDER BY u.created_at, u.id LIMIT ? OFFSET ?`
 	rows, err := db.QueryContext(ctx, q, append(args, limit, offset)...)
@@ -612,26 +643,41 @@ type AuditEntry struct {
 
 // ListAudit returns the audit feed newest first. It carries no content: only
 // who did what to which account and with what outcome.
-func ListAudit(ctx context.Context, db *sql.DB, limit, offset int) ([]AuditEntry, error) {
+//
+// Paging is by keyset, not offset: the feed is written to while an admin reads
+// it, and an offset into a newest-first list shifts with every new row, so a
+// page would repeat entries already seen and hide others. A page starts strictly
+// after (beforeAt, beforeID) in the feed's own order; both empty means the
+// newest page. more reports whether older entries exist.
+func ListAudit(ctx context.Context, db *sql.DB, limit int, beforeAt, beforeID string) (out []AuditEntry, more bool, err error) {
 	if limit < 1 || limit > 200 {
 		limit = 50
 	}
-	if offset < 0 {
-		offset = 0
+	q := `SELECT id, COALESCE(actor_user_id,''), action, COALESCE(target_kind,''), COALESCE(target_id,''),
+		outcome, COALESCE(request_id,''), created_at FROM audit_log`
+	var args []any
+	if beforeAt != "" || beforeID != "" {
+		q += ` WHERE (created_at < ? OR (created_at = ? AND id < ?))`
+		args = append(args, beforeAt, beforeAt, beforeID)
 	}
-	rows, err := db.QueryContext(ctx, `SELECT id, COALESCE(actor_user_id,''), action, COALESCE(target_kind,''), COALESCE(target_id,''),
-		outcome, COALESCE(request_id,''), created_at FROM audit_log ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?`, limit, offset)
+	q += ` ORDER BY created_at DESC, id DESC LIMIT ?`
+	rows, err := db.QueryContext(ctx, q, append(args, limit+1)...)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 	defer rows.Close()
-	var out []AuditEntry
 	for rows.Next() {
 		var e AuditEntry
 		if err := rows.Scan(&e.ID, &e.Actor, &e.Action, &e.TargetKind, &e.TargetID, &e.Outcome, &e.RequestID, &e.CreatedAt); err != nil {
-			return nil, err
+			return nil, false, err
 		}
 		out = append(out, e)
 	}
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, false, err
+	}
+	if len(out) > limit {
+		out, more = out[:limit], true
+	}
+	return out, more, nil
 }

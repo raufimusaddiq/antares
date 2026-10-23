@@ -212,7 +212,7 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
 
 // ---- the app --------------------------------------------------------------------
 
-export function Chat({ email, onSignOut }: { email: string; onSignOut: () => void }) {
+export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: string; onSignOut: () => void; canAdmin?: boolean; onAdmin?: () => void }) {
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [listState, setListState] = useState<"loading" | "ready" | "error">("loading");
   const [current, setCurrent] = useState<string | null>(null);
@@ -537,6 +537,11 @@ export function Chat({ email, onSignOut }: { email: string; onSignOut: () => voi
           Antares
         </strong>
         <span className="who-am-i">{email}</span>
+        {canAdmin && onAdmin && (
+          <button type="button" className="quiet" onClick={onAdmin}>
+            Admin
+          </button>
+        )}
         <button type="button" className="quiet" onClick={onSignOut}>
           Sign out
         </button>
