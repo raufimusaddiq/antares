@@ -54,8 +54,8 @@ type Segment struct {
 }
 
 type searchResult struct {
-	ChatID    string    `json:"chatId"`
-	ChatTitle string    `json:"chatTitle"`
+	ChatID    string `json:"chatId"`
+	ChatTitle string `json:"chatTitle"`
 	// CreatedAt is the turn's own timestamp when Hermes gave one; for a title hit, when the chat was created.
 	Kind      string    `json:"kind"` // "title" | "message"
 	Turn      *int      `json:"turn,omitempty"`

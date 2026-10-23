@@ -535,6 +535,9 @@ type Message struct {
 	Role      string `json:"role"`
 	Text      string `json:"text"`
 	CreatedAt string `json:"createdAt,omitempty"`
+	// Ref is the turn hash the history API stamps on a page (never read from Hermes). A
+	// client quotes it back to name this exact turn; see chat.turnHash.
+	Ref string `json:"ref,omitempty"`
 }
 
 // ErrHistoryTooLarge means the transcript exceeds what the adapter will hold.

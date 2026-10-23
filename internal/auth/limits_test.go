@@ -201,3 +201,23 @@ func TestRateLimitedStatusInvariant(t *testing.T) {
 	a := &Auth{}
 	a.apiError(httptest.NewRecorder(), httptest.NewRequest("GET", "/", nil), http.StatusServiceUnavailable, "RATE_LIMITED", "test limit")
 }
+
+func TestArtifactRoutesAreRateLimitedPerAccount(t *testing.T) {
+	for _, route := range []string{artifactDownload, artifactPreview} {
+		a := &Auth{now: func() time.Time { return time.Unix(100, 0) }, limits: newRequestLimits(Limits{RunsPerMinute: 9, MessagesPerMinute: 9, UploadsPerMinute: 9, SSEConnections: 9, ArtifactsPerMinute: 3})}
+		calls := 0
+		h := a.limit(route, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { calls++; w.WriteHeader(204) }))
+		for range 3 {
+			if w := limitRequest(h, "a"); w.Code != 204 {
+				t.Fatalf("%s: early limit %d", route, w.Code)
+			}
+		}
+		assertLimited(t, limitRequest(h, "a"))
+		if w := limitRequest(h, "b"); w.Code != 204 {
+			t.Fatalf("%s: another account was limited: %d", route, w.Code)
+		}
+		if calls != 4 {
+			t.Fatalf("%s: refused request reached handler: %d calls", route, calls)
+		}
+	}
+}
