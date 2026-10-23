@@ -225,7 +225,7 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 					u = st.Usage
 				}
 			}
-			s.recordUsage(l, u)
+			s.recordUsage(userID, runID, u)
 			s.finishFromUpstream(l, hermes.RunStatus{State: terminal.State, Output: terminal.Output, Interrupted: terminal.Intr})
 			return
 		}
@@ -233,7 +233,7 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 		st, rerr := s.reconcile(ctx, userID, hid)
 		switch {
 		case rerr == nil && st.Terminal():
-			s.recordUsage(l, st.Usage)
+			s.recordUsage(userID, runID, st.Usage)
 			s.finishFromUpstream(l, st)
 			return
 		case ctx.Err() != nil:
@@ -399,6 +399,11 @@ func (s *Service) Cancel(ctx context.Context, userID, runID string) (run store.R
 	}
 	if run.HermesRunID != "" {
 		upstreamStopped = s.stopUpstream(userID, run.HermesRunID)
+		// What the run spent before it stopped still counts against the budget:
+		// read Hermes' usage once. Nothing reported records nothing.
+		if st, rerr := s.reconcile(ctx, userID, run.HermesRunID); rerr == nil {
+			s.recordUsage(userID, runID, st.Usage)
+		}
 	} else {
 		upstreamStopped = true // never reached Hermes as far as we recorded; runNew stops it if it did
 	}
@@ -480,7 +485,7 @@ func (s *Service) attach(ctx context.Context, run store.Run) (*liveRun, error) {
 	}
 	switch {
 	case st.Terminal():
-		s.recordUsage(l, st.Usage)
+		s.recordUsage(run.UserID, run.ID, st.Usage)
 		s.finishFromUpstream(l, st)
 		s.register(l)
 		return l, nil

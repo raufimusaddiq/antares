@@ -318,21 +318,6 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 		s.gateError(w, err)
 		return
 	}
-	// Budget: at or over the limit, the chat takes no new message (a reply already
-	// running is not interrupted). Decided here, before a run is admitted.
-	// A replay of a key that already made a run gets that run back, as before.
-	replay, err := store.RunExists(r.Context(), s.db, uid, chatID, idem)
-	if err != nil {
-		internalError(w, "check replay", err)
-		return
-	}
-	if over, err := s.budgetReached(r, uid, chatID); err != nil {
-		internalError(w, "chat budget", err)
-		return
-	} else if over && !replay {
-		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "This conversation has reached its token budget")
-		return
-	}
 	// A busy chat answers RUN_CONFLICT (or the replay of its own run) from AdmitRun;
 	// the per-user cap only decides about a chat that is free.
 	if chat.ActiveRunID == "" {
@@ -344,8 +329,18 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	run, created, err := store.AdmitRun(r.Context(), s.db, uid, chatID, idem, s.now())
+	// Budget: a free chat at or over its limit takes no new message (a reply
+	// already running is not interrupted). A busy chat answers RUN_CONFLICT as
+	// before, and AdmitRunWithin hands a replayed key its original run.
+	budget := chatTokenBudget
+	if chat.ActiveRunID != "" {
+		budget = 0
+	}
+	run, created, err := store.AdmitRunWithin(r.Context(), s.db, uid, chatID, idem, s.now(), budget)
 	switch {
+	case errors.Is(err, store.ErrBudget):
+		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "This conversation has reached its token budget")
+		return
 	case errors.Is(err, store.ErrNoChat):
 		notFound(w)
 		return

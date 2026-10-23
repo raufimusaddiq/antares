@@ -294,7 +294,8 @@ describe("usage text", () => {
   });
 
   it("states what happens at the limit, and when it is reached", () => {
-    expect(describeUsage(base).join("\n")).toContain("at the limit the chat stops taking new messages");
+    expect(describeUsage(base).join("\n")).toContain("At the limit the chat stops taking new messages")
+    expect(describeUsage(base).join("\n")).toContain("per chat");
     expect(describeUsage({ ...base, budget: { limit: 2000000, used: 2000000, reached: true } }).join("\n")).toContain("takes no new messages");
     expect(describeCode("BUDGET_REACHED")).toContain("token budget");
   });

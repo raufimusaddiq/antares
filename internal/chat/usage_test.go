@@ -270,3 +270,55 @@ func TestBudgetReplayReturnsTheOriginalRun(t *testing.T) {
 		t.Fatalf("fresh key at the limit: %d", w.Code)
 	}
 }
+
+// A cancelled run still spent tokens; send-cancel-repeat must not keep the budget at zero.
+func TestCancelledRunUsageIsCounted(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	run := alice.send(chat, "cancel me")
+	_, fr := a.hx.runWithInput(t, "cancel me")
+	recv(t, fr.opens, "stream")
+	a.hx.mu.Lock()
+	fr.usage = `{"input_tokens":700,"output_tokens":50,"total_tokens":750,"cache_read_tokens":0,"cache_write_tokens":0}`
+	a.hx.mu.Unlock()
+	if w := alice.do("POST", "/api/runs/"+run+"/cancel", nil, nil); w.Code != 200 {
+		t.Fatalf("cancel: %d %s", w.Code, w.Body.String())
+	}
+	if u := alice.usage(chat); u.b.Tokens == nil || u.b.Tokens.Total != 750 || u.b.Budget.UsedTokens != 750 {
+		t.Fatalf("cancelled run's usage not counted: %+v", u.b)
+	}
+}
+
+// unpricedRuns counts replies, not models.
+func TestUnpricedRunsCountsReplies(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	for _, q := range []string{"a", "b", "c"} {
+		runWithUsage(t, a, alice, chat, q, `{"usage":{"input_tokens":5,"output_tokens":1},"runtime":{"model":"some-unpriced-model"}}`)
+	}
+	if u := alice.usage(chat); u.b.Cost.UnpricedRuns != 3 || u.b.Cost.Amount != nil {
+		t.Fatalf("want 3 unpriced replies, got %+v", u.b.Cost)
+	}
+}
+
+// At the limit a chat with a run in flight is busy (409), not over budget (403).
+func TestBusyChatAtLimitIsRunConflict(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	done := runWithUsage(t, a, alice, chat, "seed", usageFrame)
+	if err := store.RecordRunUsage(context.Background(), a.db, alice.id, done, store.RunUsage{Input: chatTokenBudget, Output: 1}); err != nil {
+		t.Fatal(err)
+	}
+	// Put a run in flight directly: the budget gate would refuse a normal send.
+	if _, err := a.db.Exec(`INSERT INTO runs (id, user_id, chat_id, idempotency_key, status, created_at, updated_at)
+		VALUES (?, ?, ?, 'idem-inflight-1', 'RUNNING', 'x', 'x')`, store.NewID(), alice.id, chat); err != nil {
+		t.Fatal(err)
+	}
+	w := alice.do("POST", "/api/chats/"+chat+"/messages", map[string]string{"Idempotency-Key": nextIdem()}, map[string]string{"input": "x"})
+	if w.Code != 409 || errCode(t, w) != "RUN_CONFLICT" {
+		t.Fatalf("busy chat at the limit: %d %s", w.Code, w.Body.String())
+	}
+}

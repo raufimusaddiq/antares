@@ -113,7 +113,7 @@ func buildUsage(chatID string, cu store.ChatUsage) usageView {
 			sum += estimateIDR(p, m.RunUsage)
 			priced = true
 		} else {
-			v.Cost.UnpricedRuns++
+			v.Cost.UnpricedRuns += m.Runs
 		}
 	}
 	t.Total = t.Input + t.Output
@@ -148,24 +148,15 @@ func (s *Service) chatUsage(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, buildUsage(chatID, cu))
 }
 
-// budgetReached reports whether the chat has used up its token budget.
-func (s *Service) budgetReached(r *http.Request, uid, chatID string) (bool, error) {
-	cu, err := store.GetChatUsage(r.Context(), s.db, uid, chatID)
-	if err != nil {
-		return false, err
-	}
-	return buildUsage(chatID, cu).Budget.Reached, nil
-}
-
 // recordUsage stores what Hermes reported for a finished run. Nothing reported
 // stores nothing: the run stays "unknown", it is not recorded as zero.
-func (s *Service) recordUsage(l *liveRun, u *hermes.Usage) {
+func (s *Service) recordUsage(userID, runID string, u *hermes.Usage) {
 	if u == nil {
 		return
 	}
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(s.base), 10*time.Second)
 	defer cancel()
-	if err := store.RecordRunUsage(ctx, s.db, l.userID, l.runID, store.RunUsage{Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, Model: u.Model}); err != nil {
-		log.Printf("chat: run %s: could not record usage: %v", l.runID, err)
+	if err := store.RecordRunUsage(ctx, s.db, userID, runID, store.RunUsage{Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, Model: u.Model}); err != nil {
+		log.Printf("chat: run %s: could not record usage: %v", runID, err)
 	}
 }

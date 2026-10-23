@@ -322,7 +322,7 @@ export function describeUsage(u: ChatUsage): string[] {
   lines.push(
     u.budget.reached
       ? `Budget reached (${fmt(u.budget.used)} of ${fmt(u.budget.limit)} tokens): this chat takes no new messages`
-      : `Budget: ${fmt(u.budget.used)} of ${fmt(u.budget.limit)} tokens; at the limit the chat stops taking new messages (a reply already running finishes)`,
+      : `Budget: ${fmt(u.budget.used)} of ${fmt(u.budget.limit)} tokens; this limit is per chat (a new chat starts at zero), so it caps one conversation's size, not total spend. At the limit the chat stops taking new messages (a reply already running finishes)`,
   );
   return lines;
 }
