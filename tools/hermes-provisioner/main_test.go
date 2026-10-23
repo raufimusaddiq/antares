@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"runtime/debug"
 	"strings"
 	"testing"
 )
@@ -481,5 +482,61 @@ func TestRotateFailsClosedWhenToolsetPolicyFails(t *testing.T) {
 	rec := do(t, newServer(f, testToken), "/rotate", "Bearer "+testToken, `{"slug":"u_existing1"}`)
 	if rec.Code != http.StatusBadGateway || strings.Contains(rec.Body.String(), `"key"`) || f.called("python3") {
 		t.Fatalf("got %d %s", rec.Code, rec.Body)
+	}
+}
+
+func TestRevisionFrom(t *testing.T) {
+	cases := []struct {
+		name     string
+		settings []debug.BuildSetting
+		rev      string
+		modified bool
+	}{
+		{"clean", []debug.BuildSetting{{Key: "vcs.revision", Value: "abc123"}, {Key: "vcs.modified", Value: "false"}}, "abc123", false},
+		{"dirty", []debug.BuildSetting{{Key: "vcs.revision", Value: "abc123"}, {Key: "vcs.modified", Value: "true"}}, "abc123", true},
+		{"no vcs stamp", []debug.BuildSetting{{Key: "-buildmode", Value: "exe"}}, revisionUnavailable, false},
+	}
+	for _, c := range cases {
+		rev, mod := revisionFrom(&debug.BuildInfo{Settings: c.settings})
+		if rev != c.rev || mod != c.modified {
+			t.Errorf("%s: got (%q,%v), want (%q,%v)", c.name, rev, mod, c.rev, c.modified)
+		}
+	}
+}
+
+func TestHealthReportsRevisionFields(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	newServer(&fakeRunner{}, testToken).routes().ServeHTTP(rec, req)
+	var got map[string]any
+	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	// go test binaries carry no vcs stamp, so this also pins the honest fallback.
+	if got["revision"] != revisionUnavailable {
+		t.Fatalf("revision = %v, want %q (never a fabricated value)", got["revision"], revisionUnavailable)
+	}
+	if _, ok := got["modified"].(bool); !ok {
+		t.Fatalf("modified missing or not a bool: %v", got)
+	}
+}
+
+type downRunner struct{}
+
+func (downRunner) Run(context.Context, string, ...string) (string, string, error) {
+	return "", "", context.DeadlineExceeded
+}
+
+func TestHealthReportsRevisionWhenHermesDown(t *testing.T) {
+	req := httptest.NewRequest(http.MethodGet, "/health", nil)
+	rec := httptest.NewRecorder()
+	newServer(downRunner{}, testToken).routes().ServeHTTP(rec, req)
+	var got map[string]any
+	_ = json.Unmarshal(rec.Body.Bytes(), &got)
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("want 503, got %d", rec.Code)
+	}
+	if _, ok := got["revision"]; !ok {
+		t.Fatalf("503 body lacks revision: %s", rec.Body)
 	}
 }

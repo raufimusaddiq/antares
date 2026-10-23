@@ -50,6 +50,10 @@ The service exposes a health endpoint that reports readiness — including wheth
 Hermes — without leaking configuration. A deploy is verified by that endpoint plus one real
 authenticated request, not by the container being "up".
 
+The provisioning helper is deployed separately from the image (see below). Its `/health` reports the
+`vcs.revision` it was built from, and a deploy is **failed** unless `deploy/verify-helper-revision.sh <deployed sha>`
+passes: a stale helper answers `200` and looks healthy (#50).
+
 Rollback is redeploying the previous image tag. Keep the previous tag until the new one is verified.
 
 ## Backups
@@ -76,3 +80,18 @@ Per-user Hermes profiles are created by `tools/hermes-provisioner/`, a small Go 
   non-empty residue directory the helper will not delete; investigate, then `rmdir` it manually
   (owner approval applies). A lost `/provision` response is recovered with `/rotate`. Details in the
   helper README.
+
+### Deploying the helper (every deploy)
+
+The helper is not in the container image; nothing rebuilds it but the operator. In this order, because
+the running process holds the old inode:
+
+1. `cd tools/hermes-provisioner && go build -o /tmp/hermes-provisioner .` (from a clean checkout of the deployed commit)
+2. `systemctl stop hermes-provisioner`
+3. `install -m 0755 -o root -g root /tmp/hermes-provisioner /opt/antares/bin/hermes-provisioner`
+4. `systemctl start hermes-provisioner`
+5. `deploy/verify-helper-revision.sh <deployed sha>` must pass.
+
+`deploy/install-provisioner.sh` performs 2-5 and enforces that `/opt/antares` and `/opt/antares/bin` are
+`root:root 0755` (so `antares-prov` can traverse to `ExecStart`) while the env files stay `600 root:root`.
+A coding agent does not run any of this; it is the operator's step (see above).
