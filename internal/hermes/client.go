@@ -37,6 +37,7 @@ const (
 	CodeRunConflict       = "RUN_CONFLICT"
 	CodeRateLimited       = "RATE_LIMITED"
 	CodeCapabilityNA      = "CAPABILITY_UNAVAILABLE"
+	CodeSteerRefused      = "STEER_REFUSED"
 )
 
 const (
@@ -387,6 +388,33 @@ func (c *Client) StopRun(ctx context.Context, b Binding, runID string) error {
 	}
 	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 	return resp.Body.Close()
+}
+
+// SteerRun sends guidance into a running run (POST /v1/runs/{id}/steer). Hermes
+// answers 409 when the run is not accepting steer text (finished, stopping, or the
+// agent declined it); that is STEER_REFUSED, not a run conflict. The text is the
+// user's own and is sent as "input", the first field Hermes reads.
+func (c *Client) SteerRun(ctx context.Context, b Binding, runID, text string) error {
+	if !ValidID(runID) {
+		return fail(CodeHermesUnavailable)
+	}
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	resp, err := c.do(ctx, b, http.MethodPost, "/v1/runs/"+url.PathEscape(runID)+"/steer", nil, map[string]string{"input": text})
+	if err != nil {
+		if CodeOf(err) == CodeRunConflict {
+			return fail(CodeSteerRefused)
+		}
+		return err
+	}
+	var out struct {
+		Accepted bool `json:"accepted"`
+	}
+	err = readJSON(resp, &out, maxAPIResponse)
+	if err != nil || !out.Accepted {
+		return fail(CodeSteerRefused)
+	}
+	return nil
 }
 
 // Event is one upstream SSE frame, undecoded.

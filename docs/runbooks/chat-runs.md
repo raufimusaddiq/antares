@@ -81,9 +81,11 @@ read. Native scroll anchoring is off (`overflow-anchor:none`). While the reader 
 follows the newest content (including a streaming reply); once they scroll up it stops and "Jump to latest"
 appears. `scripts/browser-check.mjs` measures all of this in a real browser.
 
+Steer is built; regenerate, edit and rewind have no Hermes route: `docs/runbooks/turn-controls.md`.
+
 ## Not in this slice
 
-Rename/delete chat, model picker, approvals, clarify, steer, assets, jobs (still `CAPABILITY_UNAVAILABLE`
+Rename/delete chat, model picker, approvals, clarify, assets, jobs (still `CAPABILITY_UNAVAILABLE`
 behind the guard). Attaching the versioned OpenUI instruction to a run (PRD §7.2): the renderer is here, the
 per-request instruction mechanism has no verified Hermes shape, so nothing is sent (`docs/runbooks/openui.md`).
 Journals are in memory: after a restart the text streamed so far is rebuilt from Hermes' transcript when the

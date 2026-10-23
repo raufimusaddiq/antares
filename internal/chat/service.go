@@ -403,6 +403,35 @@ func (s *Service) Cancel(ctx context.Context, userID, runID string) (run store.R
 	return run, upstreamStopped, nil
 }
 
+// ErrNotSteerable is a steer for a run that is already over or never reached Hermes.
+var ErrNotSteerable = errors.New("chat: run is not steerable")
+
+// Steer sends the user's guidance into their own running run. Ownership comes
+// first (a foreign run is ErrNoChat, before Hermes is contacted), then the stored
+// status, then the gate. Success is Hermes' own acceptance and is announced on the
+// run's journal as run.steered; nothing is appended to the transcript, and the
+// guidance text is not echoed (Hermes records what it did with it).
+func (s *Service) Steer(ctx context.Context, userID, runID, text string) error {
+	run, err := store.GetRun(ctx, s.db, userID, runID)
+	if err != nil {
+		return err
+	}
+	if store.RunTerminal(run.Status) || run.HermesRunID == "" {
+		return ErrNotSteerable
+	}
+	b, _, err := s.gate(ctx, userID)
+	if err != nil {
+		return err
+	}
+	if err := s.hx.SteerRun(ctx, b, run.HermesRunID, text); err != nil {
+		return err
+	}
+	if l := s.liveFor(runID); l != nil {
+		l.emit("run.steered", map[string]any{"runId": runID, "accepted": true}, false)
+	}
+	return nil
+}
+
 // attach returns the journal for a run, creating the worker that fills it when
 // there is none: after a restart, after the worker gave up, or for a run that
 // is already terminal (a one-event journal built from the stored status).
