@@ -47,8 +47,9 @@ func SetPushMode(ctx context.Context, db *sql.DB, userID, mode string, now time.
 // ErrTooManyDevices means the account is at MaxPushSubscriptions.
 var ErrTooManyDevices = errors.New("store: too many push subscriptions")
 
-// SavePushSub registers a device for userID and, in the same transaction, turns
-// the mode on if it was off (an explicit opt-in gesture). A subscription for the
+// SavePushSub registers a device for userID and, in the same transaction, sets the mode to
+// "all" if the account never chose one (the first opt-in gesture). A mode the user already
+// chose, including "off", is kept: adding a device does not undo a mute. A subscription for the
 // same endpoint held by another account is removed first: the browser is now
 // signed in as userID, so the previous holder must stop receiving on it.
 // s.ID is the new row id; the caller sealed the secrets with it as additional data.
@@ -79,7 +80,7 @@ func SavePushSub(ctx context.Context, db *sql.DB, s PushSub, now time.Time) (id 
 		return "", err
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO user_preferences (user_id, push_mode, updated_at) VALUES (?, 'all', ?)
-		ON CONFLICT(user_id) DO UPDATE SET push_mode = 'all', updated_at = excluded.updated_at WHERE push_mode = 'off'`, s.UserID, ts(now)); err != nil {
+		ON CONFLICT(user_id) DO NOTHING`, s.UserID, ts(now)); err != nil {
 		return "", err
 	}
 	return s.ID, tx.Commit()
@@ -146,9 +147,8 @@ func MarkPushDelivered(ctx context.Context, db *sql.DB, subID, runID, kind strin
 	return err
 }
 
-// ReleasePushClaim drops a claim whose send failed, so a later attempt may retry.
-func ReleasePushClaim(ctx context.Context, db *sql.DB, subID, runID, kind string) error {
-	_, err := db.ExecContext(ctx, `DELETE FROM push_delivery_events WHERE subscription_id = ? AND run_id = ? AND event_kind = ? AND delivered_at IS NULL`,
-		subID, runID, kind)
+// PrunePushDeliveries drops delivery records older than cutoff.
+func PrunePushDeliveries(ctx context.Context, db *sql.DB, cutoff time.Time) error {
+	_, err := db.ExecContext(ctx, `DELETE FROM push_delivery_events WHERE created_at < ?`, ts(cutoff))
 	return err
 }

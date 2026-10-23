@@ -18,6 +18,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/raufimusaddiq/antares/internal/push/pushtest"
 )
 
 func newVAPID(t *testing.T) *VAPID {
@@ -55,15 +57,15 @@ func TestEncryptRoundTripsThroughTheBrowserSide(t *testing.T) {
 	if strings.Contains(string(body), "completed") {
 		t.Fatal("ciphertext contains the plaintext")
 	}
-	got, err := Decrypt(body, ua, auth)
+	got, err := pushtest.Decrypt(body, ua, auth)
 	if err != nil || string(got) != string(msg) {
 		t.Fatalf("round trip: %q %v", got, err)
 	}
 	other, _ := browserKeys(t)
-	if _, err := Decrypt(body, other, auth); err == nil {
+	if _, err := pushtest.Decrypt(body, other, auth); err == nil {
 		t.Fatal("another browser's key opened the message")
 	}
-	if _, err := Decrypt(body, ua, make([]byte, 16)); err == nil {
+	if _, err := pushtest.Decrypt(body, ua, make([]byte, 16)); err == nil {
 		t.Fatal("a wrong auth secret opened the message")
 	}
 }
@@ -191,7 +193,7 @@ func TestSendClassifiesPushServiceAnswers(t *testing.T) {
 	if got.Header.Get("Content-Encoding") != "aes128gcm" || !strings.HasPrefix(got.Header.Get("Authorization"), "vapid t=") || got.Header.Get("TTL") == "" {
 		t.Fatalf("headers = %v", got.Header)
 	}
-	plain, err := Decrypt(body, ua, auth)
+	plain, err := pushtest.Decrypt(body, ua, auth)
 	if err != nil || !strings.Contains(string(plain), `"kind":"failed"`) {
 		t.Fatalf("plain = %q %v", plain, err)
 	}

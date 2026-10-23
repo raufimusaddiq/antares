@@ -34,7 +34,11 @@ type Options struct {
 	ValidateEndpoint func(string) error
 }
 
-const sendAttempts = 3
+const (
+	sendAttempts = 3
+	// deliveryRetention bounds push_delivery_events; it only has to outlast a re-reported terminal status.
+	deliveryRetention = 30 * 24 * time.Hour
+)
 
 // Service owns the push routes and the completion notifier.
 type Service struct {
@@ -122,6 +126,9 @@ func (s *Service) notify(userID, runID, chatID, kind string) {
 	if err != nil || mode == store.PushOff || (mode == store.PushFailures && kind != KindFailed) {
 		return
 	}
+	if err := store.PrunePushDeliveries(ctx, s.db, s.now().Add(-deliveryRetention)); err != nil {
+		log.Printf("push: prune delivery records: %v", err)
+	}
 	subs, err := store.ListPushSubs(ctx, s.db, userID)
 	if err != nil {
 		log.Printf("push: list subscriptions: %v", err)
@@ -138,8 +145,8 @@ func (s *Service) notify(userID, runID, chatID, kind string) {
 		}
 		t, err := s.open(sub)
 		if err != nil {
-			log.Printf("push: cannot open a subscription")
-			_ = store.ReleasePushClaim(ctx, s.db, sub.ID, runID, kind)
+			// Typically a rotated ANTARES_SECRET_KEY. The error names the box, never the endpoint.
+			log.Printf("push: cannot open subscription %s: %v", sub.ID, err)
 			continue
 		}
 		err = s.sendWithRetry(ctx, t, p)
@@ -149,8 +156,9 @@ func (s *Service) notify(userID, runID, chatID, kind string) {
 		case errors.Is(err, ErrGone):
 			_ = store.DeletePushSub(ctx, s.db, userID, sub.ID)
 		default:
-			_ = store.ReleasePushClaim(ctx, s.db, sub.ID, runID, kind)
-			log.Printf("push: delivery failed: %v", err)
+			// The claim stays: delivered_at is NULL, and a re-reported terminal status does not
+			// send again. Delivery is at most once per {device, run, kind}, not guaranteed.
+			log.Printf("push: delivery to %s failed: %v", sub.ID, err)
 		}
 	}
 }
@@ -223,6 +231,16 @@ func internalError(w http.ResponseWriter, what string, err error) {
 	apiError(w, http.StatusInternalServerError, "INTERNAL", "Something went wrong")
 }
 
+// owner is the signed-in account. The Active guard has run before any handler, so a miss here
+// is a wiring mistake; it is answered, not assumed away.
+func owner(w http.ResponseWriter, r *http.Request) (store.User, bool) {
+	u, ok := auth.UserFrom(r.Context())
+	if !ok {
+		apiError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Sign in")
+	}
+	return u, ok
+}
+
 func (s *Service) publicKey(w http.ResponseWriter, r *http.Request) {
 	if s.vapid == nil {
 		notConfigured(w)
@@ -244,9 +262,8 @@ type notificationsView struct {
 }
 
 func (s *Service) getNotifications(w http.ResponseWriter, r *http.Request) {
-	u, ok := auth.UserFrom(r.Context())
+	u, ok := owner(w, r)
 	if !ok {
-		apiError(w, http.StatusUnauthorized, "UNAUTHENTICATED", "Sign in")
 		return
 	}
 	mode, err := store.PushMode(r.Context(), s.db, u.ID)
@@ -267,7 +284,10 @@ func (s *Service) getNotifications(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) putNotifications(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r.Context())
+	u, ok := owner(w, r)
+	if !ok {
+		return
+	}
 	var in struct {
 		Mode string `json:"mode"`
 	}
@@ -304,7 +324,10 @@ func decode(w http.ResponseWriter, r *http.Request, v any) bool {
 }
 
 func (s *Service) subscribe(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r.Context())
+	u, ok := owner(w, r)
+	if !ok {
+		return
+	}
 	if s.vapid == nil {
 		notConfigured(w)
 		return
@@ -360,7 +383,10 @@ func (s *Service) subscribe(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) unsubscribe(w http.ResponseWriter, r *http.Request) {
-	u, _ := auth.UserFrom(r.Context())
+	u, ok := owner(w, r)
+	if !ok {
+		return
+	}
 	err := store.DeletePushSub(r.Context(), s.db, u.ID, r.PathValue("subId"))
 	switch {
 	case errors.Is(err, store.ErrNoSubscription):

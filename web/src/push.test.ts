@@ -115,6 +115,17 @@ describe("the service worker shows fixed text and nothing from the payload", () 
   });
 });
 
+describe("notifications for different chats do not replace each other", () => {
+  it("tags each by chat", async () => {
+    const w = worker();
+    const other = "fedcba9876543210fedcba9876543210";
+    await w.push({ v: 1, kind: "completed", chatId: ID });
+    await w.push({ v: 1, kind: "completed", chatId: other });
+    const tags = w.shown.map((s) => (s.opts as unknown as { tag: string }).tag);
+    expect(tags).toEqual([`antares-run-${ID}`, `antares-run-${other}`]);
+  });
+});
+
 describe("the push handlers cannot cache or intercept anything private", () => {
   it("touch neither fetch nor the cache, and use no storage", async () => {
     const w = worker();

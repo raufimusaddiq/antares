@@ -15,7 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/push"
+	"github.com/raufimusaddiq/antares/internal/push/pushtest"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -75,7 +77,7 @@ func newDevice(t *testing.T, path string) *device {
 
 func (d *device) open(t *testing.T, r pushReq) map[string]any {
 	t.Helper()
-	plain, err := push.Decrypt(r.Body, d.key, d.auth)
+	plain, err := pushtest.Decrypt(r.Body, d.key, d.auth)
 	if err != nil {
 		t.Fatalf("device cannot open the push: %v", err)
 	}
@@ -141,10 +143,8 @@ func TestPushRoutesNeedAnEligibleAccount(t *testing.T) {
 	a := newApp(t)
 	withPush(t, a, newPushService(t), allowAny)
 	pending := a.account("pendingp", "USER", "PENDING", "UNPROVISIONED")
-	for _, rt := range []struct{ m, path string }{
-		{"GET", "/api/push/public-key"}, {"POST", "/api/push/subscriptions"}, {"DELETE", "/api/push/subscriptions/" + store.NewID()},
-		{"GET", "/api/me/notifications"}, {"PUT", "/api/me/notifications"},
-	} {
+	for _, r := range auth.PushRoutes {
+		rt := struct{ m, path string }{r.Method, strings.ReplaceAll(r.Path, "{subId}", store.NewID())}
 		if w := pending.do(rt.m, rt.path, nil, map[string]string{"mode": "all"}); w.Code != 403 {
 			t.Errorf("pending %s %s = %d", rt.m, rt.path, w.Code)
 		}
@@ -427,7 +427,7 @@ func TestOnlyTheOwnersDevicesAreNotified(t *testing.T) {
 	if d := da.open(t, reqs[0]); d["chatId"] != chatA {
 		t.Errorf("payload = %v", d)
 	}
-	if _, err := push.Decrypt(reqs[0].Body, db.key, db.auth); err == nil {
+	if _, err := pushtest.Decrypt(reqs[0].Body, db.key, db.auth); err == nil {
 		t.Error("bob's device can read alice's notification")
 	}
 }
@@ -503,6 +503,22 @@ func TestGoneSubscriptionIsDroppedAndTransientFailureIsBounded(t *testing.T) {
 	if v := decodeBody[struct{ Devices []any }](t, alice.get("/api/me/notifications")); len(v.Devices) != 1 {
 		t.Fatalf("a transient failure dropped the device")
 	}
+	// The failed attempt keeps its claim, so a re-reported terminal status does not send again:
+	// delivery is at most once per {device, run, kind}, and delivered_at tells the two states apart.
+	var runID string
+	if err := a.db.QueryRow(`SELECT id FROM runs WHERE user_id = ?`, alice.id).Scan(&runID); err != nil {
+		t.Fatal(err)
+	}
+	a.push.RunFinished(alice.id, runID, chat, store.RunCompleted)
+	a.push.Wait()
+	if n := len(ps.requests()); n != 3 {
+		t.Fatalf("a re-reported status after a failed send sent again (%d requests)", n)
+	}
+	var claims, delivered int
+	a.db.QueryRow(`SELECT COUNT(*), COUNT(delivered_at) FROM push_delivery_events WHERE run_id = ?`, runID).Scan(&claims, &delivered)
+	if claims != 1 || delivered != 0 {
+		t.Fatalf("claims=%d delivered=%d, want 1 and 0", claims, delivered)
+	}
 	ps.setCode(410)
 	finishRun(t, a, alice, chat, "device gone", "run.completed", `{}`)
 	if v := decodeBody[struct{ Devices []any }](t, alice.get("/api/me/notifications")); len(v.Devices) != 0 {
@@ -525,5 +541,76 @@ func TestResubscribingOnASharedBrowserMovesTheDevice(t *testing.T) {
 	finishRun(t, a, alice, chat, "alice after handover", "run.completed", `{}`)
 	if n := len(ps.requests()); n != 0 {
 		t.Fatalf("alice's alert reached the browser bob now uses (%d)", n)
+	}
+}
+
+// Muting is the account's choice; adding a device (the per-device opt-in) must not undo it.
+func TestAddingADeviceKeepsAMute(t *testing.T) {
+	a := newApp(t)
+	ps := newPushService(t)
+	withPush(t, a, ps, allowAny)
+	alice := a.user("alice")
+	first, second := newDevice(t, "/first"), newDevice(t, "/second")
+	alice.subscribe(t, ps, first)
+	alice.do("PUT", "/api/me/notifications", nil, map[string]string{"mode": "off"})
+	alice.subscribe(t, ps, second)
+	if v := decodeBody[struct{ Mode string }](t, alice.get("/api/me/notifications")); v.Mode != "off" {
+		t.Fatalf("mode after adding a device = %q, want off", v.Mode)
+	}
+	finishRun(t, a, alice, alice.newChat(), "while muted, two devices", "run.completed", `{}`)
+	if n := len(ps.requests()); n != 0 {
+		t.Fatalf("a muted account with two devices got %d push(es)", n)
+	}
+}
+
+// Every PushRoutes entry has a handler and every handler has an entry, so neither a table row
+// without a handler nor a handler outside the guarded table can exist unnoticed.
+func TestPushRouteTableMatchesHandlers(t *testing.T) {
+	a := newApp(t)
+	withPush(t, a, newPushService(t), allowAny)
+	want := map[string]bool{}
+	for _, rt := range auth.PushRoutes {
+		want[rt.Method+" "+rt.Path] = true
+	}
+	got := a.push.Handlers()
+	for k := range want {
+		if got[k] == nil {
+			t.Errorf("PushRoutes lists %s but the service has no handler", k)
+		}
+	}
+	for k := range got {
+		if !want[k] {
+			t.Errorf("handler %s is not in PushRoutes, so it would not be mounted", k)
+		}
+	}
+}
+
+func TestDeliveryRecordsAreBoundedAndUnreadableSubscriptionsAreLogged(t *testing.T) {
+	a := newApp(t)
+	ps := newPushService(t)
+	withPush(t, a, ps, allowAny)
+	alice := a.user("alice")
+	subID := alice.subscribe(t, ps, newDevice(t, "/phone"))
+	chat := alice.newChat()
+	finishRun(t, a, alice, chat, "first", "run.completed", `{}`)
+	// Age the record past retention; the next notification prunes it.
+	if _, err := a.db.Exec(`UPDATE push_delivery_events SET created_at = '2020-01-01T00:00:00.000000000Z'`); err != nil {
+		t.Fatal(err)
+	}
+	// A subscription that cannot be opened (a rotated secret key) says so, with its id.
+	if _, err := a.db.Exec(`UPDATE push_subscriptions SET sealed_endpoint = x'00' WHERE id = ?`, subID); err != nil {
+		t.Fatal(err)
+	}
+	finishRun(t, a, alice, chat, "second", "run.completed", `{}`)
+	var old int
+	a.db.QueryRow(`SELECT COUNT(*) FROM push_delivery_events WHERE created_at < '2021'`).Scan(&old)
+	if old != 0 {
+		t.Errorf("%d expired delivery record(s) survived", old)
+	}
+	if !strings.Contains(logBuf.String(), "cannot open subscription "+subID) {
+		t.Errorf("no diagnosable log line for an unreadable subscription: %q", logBuf.String())
+	}
+	if strings.Contains(logBuf.String(), ps.srv.URL) {
+		t.Error("the log carries the endpoint")
 	}
 }

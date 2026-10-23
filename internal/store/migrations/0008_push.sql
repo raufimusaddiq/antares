@@ -34,3 +34,4 @@ CREATE TABLE push_delivery_events (
   delivered_at    TEXT,
   UNIQUE (subscription_id, run_id, event_kind)
 );
+CREATE INDEX push_delivery_events_created ON push_delivery_events (created_at);

@@ -71,6 +71,7 @@ export function Notifications() {
                       <option value="off">Nothing (muted)</option>
                     </select>
                   </label>
+                  {state.mode === "off" && <p className="label">Alerts are muted for your account, on every device. Pick what to be alerted about to resume them.</p>}
                   <button type="button" disabled={busy} onClick={() => void run(() => disable(device))}>
                     Turn off on this device
                   </button>

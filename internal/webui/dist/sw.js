@@ -1,5 +1,5 @@
-const CACHE = "antares-public-a4ec0c77db84cb2bb01dafb6e046053f235d638fe35ed797c2f8c3f46ab5ac7c";
-const PUBLIC = ["/offline.html","/assets/Block-DRLMydCl.js","/assets/ci-info-Bauk7qhZ.js","/assets/index-Civ-T-dP.css","/assets/index-DbH55SRl.js","/assets/offline-52783b55d1fef27e.css","/assets/rolldown-runtime-BWaJ3C7D.js"];
+const CACHE = "antares-public-ee8862dc6e2a60d8d6f6b86a779468482a55db0ed6ee9e52478c0fec55873cb3";
+const PUBLIC = ["/offline.html","/assets/Block-DYzPxDBq.js","/assets/ci-info-Bauk7qhZ.js","/assets/index-Civ-T-dP.css","/assets/index-D4mbLIIz.js","/assets/offline-52783b55d1fef27e.css","/assets/rolldown-runtime-BWaJ3C7D.js"];
 const allowed = new Set(PUBLIC.map(path => new URL(path, self.location.origin).href));
 
 self.addEventListener("install", event => {
@@ -90,7 +90,7 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification("Antares", {
       body,
       icon: "/apple-touch-icon.png",
-      tag: "antares-run",
+      tag: p && p.chatId ? "antares-run-" + p.chatId : "antares-run", // one per chat: a second chat does not replace the first
       data: { chatId: p ? p.chatId : "" },
     }),
   );

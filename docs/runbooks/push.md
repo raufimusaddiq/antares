@@ -17,8 +17,12 @@ never renders the payload: its text is fixed per `kind`. Tests: `TestPayloadIsAC
 Only from a **stored** terminal status (`finish` in `internal/chat/service.go`): `COMPLETED` → `completed`,
 `FAILED`/`TIMED_OUT` → `failed`. `CANCELLED` and `DISCONNECTED` never notify. The sender re-checks that the
 account is APPROVED with a READY, verified binding, then the user's mode (`off` by default; `all`;
-`failures`), then each device. One claim row per `{device, run, kind}` makes it at most once. Transient
-failures (network, 429, 5xx) are tried 3 times; 404/410 delete the device. Delivery is best effort.
+`failures`), then each device. One claim row per `{device, run, kind}` is written before the send and **kept** whatever happens, so
+the notification is sent at most once per device and run: a failed send is retried only inside the same
+attempt (network, 429, 5xx: 3 tries), never when a terminal status is reported again. `delivered_at` is
+set only when the push service accepted it, so a claim without it is a notification that was not delivered
+(also what a crash mid-send leaves). 404/410 delete the device. Delivery is best effort, not guaranteed.
+Delivery records older than 30 days are pruned on each notification.
 
 ## Opt-in and revoke
 
@@ -27,7 +31,7 @@ permission, registers `/sw.js`, subscribes, and stores the device; the first dev
 "Turn off on this device" deletes the server row first, so delivery stops even if the browser call fails.
 Signing out revokes this browser's device first (best effort), so a shared browser does not keep the
 previous account's alerts. A browser re-subscribing under another account moves the device to that account.
-Mute from the same panel (`off`) keeps devices but sends nothing.
+Mute from the same panel (`off`) keeps devices but sends nothing, and adding a device does not undo it (the panel says so).
 
 ## Deep link
 
@@ -52,4 +56,4 @@ Changing the key invalidates every stored subscription (browsers bind to the pub
 ## Not done
 
 Purging devices when an account is suspended (they are skipped while ineligible and work again on
-reactivation); a notification for `unknown` run state; per-chat mute; a delivery-event retention job.
+reactivation); a notification for `unknown` run state; per-chat mute.

@@ -90,7 +90,7 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification("Antares", {
       body,
       icon: "/apple-touch-icon.png",
-      tag: "antares-run",
+      tag: p && p.chatId ? "antares-run-" + p.chatId : "antares-run", // one per chat: a second chat does not replace the first
       data: { chatId: p ? p.chatId : "" },
     }),
   );
