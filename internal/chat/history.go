@@ -158,6 +158,12 @@ func (s *Service) getMessages(w http.ResponseWriter, r *http.Request) {
 		s.indexTranscript(r.Context(), uid, c, all, read)
 	}
 	page, next, err := pageHistory(c.ID, all, before, limit, hash)
+	if err == nil {
+		page = append([]hermes.Message(nil), page...) // stamp a copy, not the transcript
+		for i := range page {
+			page[i].Ref = turnHash(c.ID, page[i])
+		}
+	}
 	if err != nil {
 		apiError(w, http.StatusConflict, CodeHistoryChanged, "The conversation changed; reload it")
 		return

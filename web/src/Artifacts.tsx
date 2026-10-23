@@ -9,7 +9,7 @@ import { artifactUrl, findArtifacts } from "./artifacts";
  * with a CSP `sandbox` and `default-src 'none'`. Never add `allow-scripts` together
  * with `allow-same-origin`, and never inline the markup into this document.
  */
-export function Artifacts({ chatId, seq, text }: { chatId: string; seq: number; text: string }) {
+export function Artifacts({ chatId, seq, turnRef, text }: { chatId: string; seq: number; turnRef: string; text: string }) {
   const [open, setOpen] = useState<number | null>(null);
   const items = findArtifacts(text);
   if (items.length === 0) return null;
@@ -23,7 +23,7 @@ export function Artifacts({ chatId, seq, text }: { chatId: string; seq: number; 
           <button type="button" className="quiet" aria-expanded={open === a.index} onClick={() => setOpen(open === a.index ? null : a.index)}>
             {open === a.index ? "Hide preview" : "Preview"}
           </button>{" "}
-          <a className="btn" href={artifactUrl(chatId, seq, a.index)} download={`antares-turn${seq}-artifact${a.index + 1}.${a.kind}`}>
+          <a className="btn" href={artifactUrl(chatId, seq, turnRef, a.index)} download={`antares-turn${seq}-artifact${a.index + 1}.${a.kind}`}>
             Download
           </a>
           {open === a.index && (
@@ -33,7 +33,7 @@ export function Artifacts({ chatId, seq, text }: { chatId: string; seq: number; 
               sandbox=""
               referrerPolicy="no-referrer"
               loading="lazy"
-              src={artifactUrl(chatId, seq, a.index, true)}
+              src={artifactUrl(chatId, seq, turnRef, a.index, true)}
             />
           )}
         </li>

@@ -34,5 +34,6 @@ export function findArtifacts(text: string): ArtifactRef[] {
   return out;
 }
 
-export const artifactUrl = (chatId: string, seq: number, index: number, preview = false) =>
-  `/api/chats/${encodeURIComponent(chatId)}/messages/${seq}/artifacts/${index}${preview ? "/preview" : ""}`;
+/** `ref` is the turn's hash: a seq alone shifts under compaction, and the server refuses a stale pair. */
+export const artifactUrl = (chatId: string, seq: number, ref: string, index: number, preview = false) =>
+  `/api/chats/${encodeURIComponent(chatId)}/messages/${seq}/artifacts/${index}${preview ? "/preview" : ""}?ref=${encodeURIComponent(ref)}`;

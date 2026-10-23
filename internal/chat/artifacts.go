@@ -13,7 +13,7 @@ import (
 
 // Artifacts (PRD §21.8). An artifact is a closed fenced block tagged `html` or
 // `svg` in a turn of the caller's own transcript. It has no id of its own: it is
-// named by (chat, turn seq, index within the turn), and every read goes through
+// named by (chat, turn seq, index within the turn) plus the turn's ref, and every read goes through
 // the owner-scoped chat lookup and the caller's own Hermes transcript, so a
 // reference into someone else's chat is the same 404 as one that never existed.
 //
@@ -87,11 +87,15 @@ func (s *Service) artifactFor(w http.ResponseWriter, r *http.Request) (artifact,
 		upstreamError(w, err)
 		return artifact{}, 0, 0, false
 	}
+	// seq alone is a position, and compaction moves positions: the caller must also quote
+	// the turn's hash (the ref the history API stamped on it), so a stale seq is a 404
+	// rather than another turn's artifact.
+	ref := r.URL.Query().Get("ref")
 	for _, m := range all {
 		if m.Seq != seq {
 			continue
 		}
-		if m.Role == "assistant" {
+		if m.Role == "assistant" && ref != "" && ref == turnHash(c.ID, m) {
 			if as := findArtifacts(m.Text); n < len(as) {
 				return as[n], seq, n, true
 			}

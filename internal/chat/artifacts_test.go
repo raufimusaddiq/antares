@@ -19,6 +19,18 @@ func seedArtifacts(t *testing.T, a *app, p *person, chatID string) {
 	a.hx.mu.Unlock()
 }
 
+// turnRef is the ref the history API stamps on turn seq.
+func turnRef(t *testing.T, p *person, chatID string, seq int) string {
+	t.Helper()
+	for _, m := range decodeBody[historyPage](t, p.get("/api/chats/"+chatID+"/messages")).Messages {
+		if m.Seq == seq {
+			return m.Ref
+		}
+	}
+	t.Fatalf("no turn %d", seq)
+	return ""
+}
+
 func TestFindArtifactsOnlyClosedHTMLAndSVGFences(t *testing.T) {
 	got := findArtifacts("```html\n<p>a</p>\n```\n```py\nx\n```\n````svg\n<svg/>\n```\n````\n```html\nopen")
 	if len(got) != 2 || got[0].kind != "html" || got[0].body != "<p>a</p>" || got[1].kind != "svg" || got[1].body != "<svg/>\n```" {
@@ -31,9 +43,10 @@ func TestArtifactPreviewIsSandboxedAndDownloadIsAnAttachment(t *testing.T) {
 	u := a.user("alice")
 	chat := u.newChat()
 	seedArtifacts(t, a, u, chat)
+	q := "?ref=" + turnRef(t, u, chat, 1)
 	base := "/api/chats/" + chat + "/messages/1/artifacts/"
 
-	w := u.get(base + "0/preview")
+	w := u.get(base + "0/preview" + q)
 	if w.Code != 200 || w.Body.String() != hostileHTML {
 		t.Fatalf("preview: %d %q", w.Code, w.Body.String())
 	}
@@ -49,11 +62,11 @@ func TestArtifactPreviewIsSandboxedAndDownloadIsAnAttachment(t *testing.T) {
 	if w.Header().Get("X-Content-Type-Options") != "nosniff" || !strings.HasPrefix(w.Header().Get("Content-Type"), "text/html") {
 		t.Errorf("preview headers: %v", w.Header())
 	}
-	if ct := u.get(base + "1/preview").Header().Get("Content-Type"); !strings.HasPrefix(ct, "image/svg+xml") {
+	if ct := u.get(base + "1/preview" + q).Header().Get("Content-Type"); !strings.HasPrefix(ct, "image/svg+xml") {
 		t.Errorf("svg preview type %q", ct)
 	}
 
-	w = u.get(base + "1")
+	w = u.get(base + "1" + q)
 	if w.Code != 200 || !strings.HasPrefix(w.Header().Get("Content-Disposition"), "attachment; filename=\"antares-turn1-artifact2.svg\"") ||
 		w.Header().Get("Content-Type") != "application/octet-stream" || w.Header().Get("Content-Security-Policy") != "sandbox" {
 		t.Errorf("download: %d %v", w.Code, w.Header())
@@ -65,22 +78,54 @@ func TestArtifactRefusals(t *testing.T) {
 	alice, bob := a.user("alice"), a.user("bobby")
 	chat := alice.newChat()
 	seedArtifacts(t, a, alice, chat)
+	q := "?ref=" + turnRef(t, alice, chat, 1)
 	for _, suffix := range []string{"", "/preview"} {
-		ok := "/api/chats/" + chat + "/messages/1/artifacts/0" + suffix
+		ok := "/api/chats/" + chat + "/messages/1/artifacts/0" + suffix + q
 		if w := alice.get(ok); w.Code != 200 {
 			t.Fatalf("owner %s: %d", ok, w.Code)
 		}
 		// Another user's reference is refused, identically to one that never existed.
 		got := bob.get(ok)
-		absent := bob.get("/api/chats/" + store.NewID() + "/messages/1/artifacts/0" + suffix)
+		absent := bob.get("/api/chats/" + store.NewID() + "/messages/1/artifacts/0" + suffix + q)
 		if got.Code != 404 || strings.Contains(got.Body.String(), "fetch(") || !sameAnswer(got, absent) {
 			t.Errorf("foreign %s: %d %s (absent: %d %s)", ok, got.Code, got.Body.String(), absent.Code, absent.Body.String())
 		}
 		// Things that are not artifacts: a user turn, a non-html fence, an unterminated fence, junk indexes.
 		for _, p := range []string{"/messages/0/artifacts/0", "/messages/1/artifacts/2", "/messages/1/artifacts/3", "/messages/9/artifacts/0", "/messages/1/artifacts/-1", "/messages/x/artifacts/0"} {
-			if w := alice.get("/api/chats/" + chat + p + suffix); w.Code != 404 {
+			if w := alice.get("/api/chats/" + chat + p + suffix + q); w.Code != 404 {
 				t.Errorf("%s%s: %d, want 404", p, suffix, w.Code)
 			}
 		}
+	}
+}
+
+// Compaction shifts positions. A seq quoted with the ref of the turn that used to be there
+// must not resolve to whatever turn sits there now; a missing or wrong ref is a 404 too.
+func TestArtifactStaleSeqIsRefusedAfterCompaction(t *testing.T) {
+	a := newApp(t)
+	u := a.user("alice")
+	chat := u.newChat()
+	seedArtifacts(t, a, u, chat)
+	path := "/api/chats/" + chat + "/messages/1/artifacts/0"
+	stale := "?ref=" + turnRef(t, u, chat, 1)
+	if w := u.get(path + stale); w.Code != 200 {
+		t.Fatalf("before compaction: %d", w.Code)
+	}
+	a.hx.mu.Lock() // an older turn is compacted in: seq 1 is now a different assistant turn
+	sid := decodeSession(t, a, u, chat)
+	a.hx.msgs[sid] = append([]map[string]any{
+		{"role": "user", "content": "q"}, {"role": "assistant", "content": "```html\n<p>other turn</p>\n```"},
+	}, a.hx.msgs[sid]...)
+	a.hx.mu.Unlock()
+	if w := u.get(path + stale); w.Code != 404 || strings.Contains(w.Body.String(), "other turn") {
+		t.Fatalf("stale ref resolved: %d %s", w.Code, w.Body.String())
+	}
+	for _, q := range []string{"", "?ref=", "?ref=0000000000000000"} {
+		if w := u.get(path + q); w.Code != 404 {
+			t.Errorf("ref %q: %d, want 404", q, w.Code)
+		}
+	}
+	if w := u.get(path + "?ref=" + turnRef(t, u, chat, 1)); w.Code != 200 || !strings.Contains(w.Body.String(), "other turn") {
+		t.Fatalf("fresh ref: %d %s", w.Code, w.Body.String())
 	}
 }

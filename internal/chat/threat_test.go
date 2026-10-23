@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/raufimusaddiq/antares/internal/auth"
+	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -66,12 +67,14 @@ var notBuilt = []struct {
 
 // ---- the fixture ----------------------------------------------------------------------
 
+type hermesMsg = hermes.Message
+
 type victim struct {
 	a                          *app
 	alice                      *person
 	chatID, runID              string
 	title, output, session     string
-	hermesRun                  string
+	hermesRun, ref             string
 	markers                    []string // anything that must never appear in a refusal
 	runRows, chatRows, hxAlice int
 }
@@ -110,6 +113,14 @@ func newVictim(t testing.TB) *victim {
 	// transcript has been read from Hermes) before anyone else probes.
 	if w := alice.get("/api/search/chats?q=alice-private"); w.Code != 200 {
 		t.Fatalf("alice's own search: %d %s", w.Code, w.Body.String())
+	}
+	for _, m := range decodeBody[struct{ Messages []hermesMsg }](t, alice.get("/api/chats/"+v.chatID+"/messages")).Messages {
+		if m.Seq == 1 {
+			v.ref = m.Ref
+		}
+	}
+	if v.ref == "" {
+		t.Fatal("history stamped no ref on alice's assistant turn")
 	}
 	v.snapshot(t)
 	return v
@@ -170,6 +181,16 @@ func (v *victim) untouched(t testing.TB, what string) {
 	}
 }
 
+// fill is the path for a probe, including alice's real turn ref on artifact routes, so a
+// refusal is about the caller and not about a missing ref.
+func (v *victim) fill(key, chatID, runID string) (string, string) {
+	m, p := fill(key, chatID, runID)
+	if strings.Contains(p, "/artifacts/") {
+		p += "?ref=" + v.ref
+	}
+	return m, p
+}
+
 func fill(key, chatID, runID string) (method, path string) {
 	method, path, _ = strings.Cut(key, " ")
 	path = strings.ReplaceAll(path, "{chatId}", chatID)
@@ -218,10 +239,10 @@ func TestCrossUserThreatBuiltSurfaces(t *testing.T) {
 		for _, p := range builtProbes {
 			t.Run(who+"/"+p.surface, func(t *testing.T) {
 				before := len(a.hx.requests())
-				mtd, path := fill(p.key, v.chatID, v.runID)
+				mtd, path := v.fill(p.key, v.chatID, v.runID)
 				hdr := map[string]string{"Idempotency-Key": nextIdem()}
 				got := atk.do(mtd, path, hdr, requestBody(mtd))
-				_, absent := fill(p.key, store.NewID(), store.NewID())
+				_, absent := v.fill(p.key, store.NewID(), store.NewID())
 				want := atk.do(mtd, absent, map[string]string{"Idempotency-Key": nextIdem()}, requestBody(mtd))
 				if got.Code != http.StatusNotFound && got.Code != http.StatusForbidden {
 					t.Fatalf("SURFACE BROKEN [%s]: foreign caller got %d, want 404/403: %s", p.surface, got.Code, got.Body.String())
@@ -272,7 +293,7 @@ func TestCrossUserThreatBuiltSurfaces(t *testing.T) {
 			if p.key == "GET /api/runs/{runId}/events" || strings.HasPrefix(p.key, "POST") {
 				continue
 			}
-			mtd, path := fill(p.key, v.chatID, v.runID)
+			mtd, path := v.fill(p.key, v.chatID, v.runID)
 			if w := v.alice.do(mtd, path, nil, nil); w.Code != 200 {
 				t.Errorf("owner %s %s = %d %s", mtd, path, w.Code, w.Body.String())
 			}
@@ -294,7 +315,7 @@ func TestCrossUserThreatInactiveAndAnonymous(t *testing.T) {
 	for who, atk := range cases {
 		for _, p := range builtProbes {
 			t.Run(who+"/"+p.surface, func(t *testing.T) {
-				mtd, path := fill(p.key, v.chatID, v.runID)
+				mtd, path := v.fill(p.key, v.chatID, v.runID)
 				w := atk.do(mtd, path, map[string]string{"Idempotency-Key": nextIdem()}, requestBody(mtd))
 				if w.Code < 400 || w.Code >= 500 {
 					t.Fatalf("SURFACE BROKEN [%s]: %s got %d: %s", p.surface, who, w.Code, w.Body.String())
@@ -308,7 +329,7 @@ func TestCrossUserThreatInactiveAndAnonymous(t *testing.T) {
 	}
 	t.Run("anonymous", func(t *testing.T) {
 		for _, p := range builtProbes {
-			mtd, path := fill(p.key, v.chatID, v.runID)
+			mtd, path := v.fill(p.key, v.chatID, v.runID)
 			r := httptest.NewRequest(mtd, testOrigin+path, nil)
 			if mtd != "GET" {
 				r.Header.Set("Origin", testOrigin)

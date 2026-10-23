@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Turn } from "./chatApi";
 import { fileName, loadAllTurns, saveText, toMarkdown } from "./exportChat";
@@ -13,7 +13,17 @@ export function ExportChat({ chatId, title }: { chatId: string; title: string })
   const [state, setState] = useState<{ busy: string } | { error: string } | null>(null);
   const [printing, setPrinting] = useState<Turn[] | null>(null);
 
-  useEffect(() => setState(null), [chatId]);
+  // The chat that is open right now. ExportChat outlives a chat switch, so a run must compare
+  // against this, not against the id its own closure captured.
+  const open = useRef<string | null>(chatId);
+  useEffect(() => {
+    open.current = chatId;
+    setState(null);
+    setPrinting(null);
+    return () => {
+      open.current = null;
+    };
+  }, [chatId]);
   useEffect(() => {
     if (printing === null) return;
     const done = () => setPrinting(null);
@@ -25,8 +35,8 @@ export function ExportChat({ chatId, title }: { chatId: string; title: string })
   const run = async (kind: "md" | "pdf") => {
     const id = chatId;
     setState({ busy: "Exporting…" });
-    const r = await loadAllTurns(id, (n, total) => setState({ busy: `Exporting ${n} of ${total}…` }));
-    if (id !== chatId) return; // the user moved on; nothing is saved from a chat they left
+    const r = await loadAllTurns(id, (n, total) => open.current === id && setState({ busy: `Exporting ${n} of ${total}…` }), () => open.current !== id);
+    if (open.current !== id) return; // the user moved on; nothing is saved or printed from a chat they left
     if (!r.ok) return setState({ error: r.error });
     setState(null);
     if (kind === "md") saveText(fileName(title, "md"), toMarkdown(title, r.turns, new Date()));

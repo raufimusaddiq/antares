@@ -17,7 +17,7 @@ describe("artifact discovery matches the server", () => {
     expect(findArtifacts("no fences")).toEqual([]);
   });
   it("names an artifact by chat, turn and index only", () => {
-    expect(artifactUrl("c1", 3, 1, true)).toBe("/api/chats/c1/messages/3/artifacts/1/preview");
+    expect(artifactUrl("c1", 3, "h/1", 1, true)).toBe("/api/chats/c1/messages/3/artifacts/1/preview?ref=h%2F1");
   });
 });
 
@@ -25,27 +25,27 @@ afterEach(cleanup);
 
 describe("the preview frame", () => {
   it("is a token-less sandbox pointed at the server, never inline markup", () => {
-    const { container } = render(<Artifacts chatId="c1" seq={1} text={TEXT} />);
+    const { container } = render(<Artifacts chatId="c1" seq={1} turnRef="r1" text={TEXT} />);
     expect(container.querySelector("iframe")).toBeNull(); // nothing loads until asked
     fireEvent.click(screen.getAllByRole("button", { name: "Preview" })[0]);
     const f = container.querySelector("iframe")!;
     // sandbox="" : no scripts, no same-origin, no forms, popups, top navigation, downloads.
     expect(f.getAttribute("sandbox")).toBe("");
     expect(f.hasAttribute("srcdoc")).toBe(false);
-    expect(f.getAttribute("src")).toBe("/api/chats/c1/messages/1/artifacts/0/preview");
+    expect(f.getAttribute("src")).toBe("/api/chats/c1/messages/1/artifacts/0/preview?ref=r1");
     expect(f.getAttribute("referrerpolicy")).toBe("no-referrer");
     // The model's markup never enters this document.
     expect(container.innerHTML).not.toContain("evil.example");
     expect(container.querySelector("script")).toBeNull();
   });
   it("offers a named download of the owner's artifact", () => {
-    render(<Artifacts chatId="c1" seq={1} text={TEXT} />);
+    render(<Artifacts chatId="c1" seq={1} turnRef="r1" text={TEXT} />);
     const links = screen.getAllByRole("link", { name: "Download" });
-    expect(links.map((l) => l.getAttribute("href"))).toEqual(["/api/chats/c1/messages/1/artifacts/0", "/api/chats/c1/messages/1/artifacts/1"]);
+    expect(links.map((l) => l.getAttribute("href"))).toEqual(["/api/chats/c1/messages/1/artifacts/0?ref=r1", "/api/chats/c1/messages/1/artifacts/1?ref=r1"]);
     expect(links[1].getAttribute("download")).toBe("antares-turn1-artifact2.svg");
   });
   it("renders nothing for a turn without artifacts", () => {
-    const { container } = render(<Artifacts chatId="c1" seq={1} text={"plain"} />);
+    const { container } = render(<Artifacts chatId="c1" seq={1} turnRef="r1" text={"plain"} />);
     expect(container.innerHTML).toBe("");
   });
 });

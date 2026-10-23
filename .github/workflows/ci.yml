@@ -102,6 +102,26 @@ jobs:
           fi
           echo "committed bundle matches a fresh build"
 
+  # Real-browser proof that a hostile HTML/SVG artifact preview cannot reach the app (#83).
+  # Needs a browser download, so it is its own job and not a required check: a red run here
+  # is visible on the PR and must be read, not skipped.
+  sandbox-probe:
+    name: sandbox probe (real browser)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch chrome-headless-shell
+        run: |
+          npx --yes @puppeteer/browsers@2 install chrome-headless-shell@stable --path "$RUNNER_TEMP/browsers" | tee "$RUNNER_TEMP/install.txt"
+          echo "CHROME=$(awk '{print $2}' "$RUNNER_TEMP/install.txt" | tail -1)" >> "$GITHUB_ENV"
+      - name: Probe
+        run: node scripts/sandbox-probe.mjs
+        working-directory: web
+
   # These two run from the first commit and never skip: they are the rules in
   # AGENTS.md that can be checked mechanically.
   security:

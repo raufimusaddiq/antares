@@ -130,7 +130,7 @@ export function Transcript(props: TranscriptProps) {
       <article className={`turn ${t.role}`} data-found={t.seq === focusSeq ? "true" : undefined} aria-current={t.seq === focusSeq ? "location" : undefined}>
         <h2 className="who">{t.role === "user" ? "You" : "Assistant"}</h2>
         {t.role === "user" ? <p className="plain">{t.text}</p> : <MessageBody text={t.text} streaming={false} />}
-        {t.role === "assistant" && chatId && <Artifacts chatId={chatId} seq={t.seq} text={t.text} />}
+        {t.role === "assistant" && chatId && t.ref && <Artifacts chatId={chatId} seq={t.seq} turnRef={t.ref} text={t.text} />}
       </article>
     ),
     [focusSeq, chatId],

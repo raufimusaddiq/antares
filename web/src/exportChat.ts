@@ -5,15 +5,18 @@
 
 import { describeCode, getMessages, type Turn } from "./chatApi";
 
+// MAX_PAGES x the server's 50-turn page is 20000 turns: keep it equal to the transcript
+// ceiling (maxTranscriptMsgs in the Go client) so an export never silently stops short of what exists.
 const MAX_PAGES = 400;
 
 export type Loaded = { ok: true; turns: Turn[] } | { ok: false; error: string };
 
 /** Every turn of a chat, oldest first. */
-export async function loadAllTurns(chatId: string, onProgress: (loaded: number, total: number) => void = () => {}): Promise<Loaded> {
+export async function loadAllTurns(chatId: string, onProgress: (loaded: number, total: number) => void = () => {}, stop: () => boolean = () => false): Promise<Loaded> {
   let cursor = "";
   let turns: Turn[] = [];
   for (let page = 0; page < MAX_PAGES; page++) {
+    if (stop()) return { ok: false, error: "cancelled" }; // the chat is no longer the open one: fetch nothing more
     const r = await getMessages(chatId, cursor || undefined);
     if (!r.ok) return { ok: false, error: describeCode(r.code) };
     turns = [...r.value.turns, ...turns];
