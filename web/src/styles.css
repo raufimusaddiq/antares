@@ -14,6 +14,9 @@
 @font-face { font-family: "Inter Fallback"; src: local("Arial"), local("Liberation Sans"), local("Helvetica"); size-adjust: 107%; ascent-override: 90.5%; descent-override: 22.5%; line-gap-override: 0%; }
 @font-face { font-family: "Space Grotesk Fallback"; src: local("Arial"), local("Liberation Sans"), local("Helvetica"); size-adjust: 109.7%; ascent-override: 89.7%; descent-override: 26.6%; line-gap-override: 0%; }
 
+.pwa-notice { position: relative; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .75rem 1.25rem; background: var(--solid-raised); color: var(--text); border-bottom: 1px solid var(--solid-border); }
+.pwa-notice p { flex: 1 1 18rem; margin: 0; }
+
 :root {
   color-scheme: dark;
 
@@ -161,6 +164,8 @@ body {
   isolation: isolate;
 }
 body.chat { height: 100vh; overflow: hidden; }
+body.chat #root { height: 100%; display: flex; flex-direction: column; }
+body.chat .chat-app { flex: 1; min-height: 0; height: auto; }
 
 /* Ambient layer: fixed, inert, static. Fields differ in hue so the blur behind each pane
    picks up a different tint; the rings give the glass an edge to bend around. */

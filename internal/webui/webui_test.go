@@ -51,7 +51,7 @@ func TestBundleIsNotStale(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	files = append(files, "index.html", "package.json", "package-lock.json", "vite.config.ts", "tsconfig.json")
+	files = append(files, "index.html", "package.json", "package-lock.json", "vite.config.ts", "tsconfig.json", "scripts/stamp.mjs")
 	sort.Strings(files)
 	h := sha256.New()
 	for _, f := range files {

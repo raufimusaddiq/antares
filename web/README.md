@@ -3,6 +3,33 @@
 React + Vite front end. `npm run typecheck`, `npm test`, `npm run build` (the build writes the
 bundle into `internal/webui/dist` and stamps the source hash that `go test ./internal/webui` checks).
 
+## PWA
+
+`public/manifest.webmanifest` installs at `/` with 192/512 B · Rival icons. The manifest uses the dark
+launch background; the light/dark `theme-color` media queries in both HTML documents follow the device scheme.
+Regenerate the icons with the existing `docs/design/logo/assets.py` script.
+
+The production build stamps `public/sw.js` with the source fingerprint and a list of hashed JS/CSS
+assets plus `/offline.html`. The offline stylesheet is hashed during stamping. The stamp script itself
+is included in the fingerprint. Development mode does not register a worker.
+
+Only that public list is precached, with anonymous requests. There is no runtime cache write. Every API
+request (including admin endpoints) and every foreign-origin request bypasses interception. A root-scoped
+worker cannot exclude subpaths from its registration scope; the fetch handler excludes them explicitly.
+Navigations use the network and fall back to the separate anonymous offline document on network failure.
+No account status, chats, sessions, drafts, settings or uploaded assets are saved for offline access.
+Logout, expired sessions and observed suspension send `PURGE_USER_STATE` to all registered workers;
+the worker removes unexpected entries from its cache. Server authorization remains the boundary.
+
+A waiting update displays a status notice and a keyboard-accessible reload button. Only that explicit
+action activates the update and reloads the requesting tab, including when a reply is running. Other tabs
+keep running. The notice and offline shell introduce no animation and use both existing theme colours.
+Browsers without service workers keep the normal online app; a first visit requires a network connection.
+
+CSP retains `default-src 'none'`, with exactly `worker-src 'self'` and `manifest-src 'self'` added.
+`internal/server/server_test.go` pins the complete policy, including the offline document. The worker and
+manifest revalidate; the app document and API responses retain `no-store`.
+
 ## Liquid Glass styling
 
 All styling lives in `src/styles.css`. The material is CSS only (`backdrop-filter` blur + saturate,
