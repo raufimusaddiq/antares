@@ -47,6 +47,18 @@ var ChatRoutes = []Route{
 	{"POST", "/api/jobs/{jobId}/run"},
 }
 
+// PushRoutes are the Web Push routes (PRD §22, UXP-002). They touch no Hermes data
+// but only an eligible owner may use them, so they sit behind the same Active guard
+// and same-origin check as ChatRoutes. They are mounted only when a push service is
+// supplied, and a handler the service does not provide is not mounted at all.
+var PushRoutes = []Route{
+	{"GET", "/api/push/public-key"},
+	{"POST", "/api/push/subscriptions"},
+	{"DELETE", "/api/push/subscriptions/{subId}"},
+	{"GET", "/api/me/notifications"},
+	{"PUT", "/api/me/notifications"},
+}
+
 // Register mounts the identity routes and the guarded placeholders. The status
 // screens are the React app (web/); it reads /api/me.
 func (a *Auth) Register(mux *http.ServeMux) {
@@ -70,6 +82,14 @@ func (a *Auth) Register(mux *http.ServeMux) {
 			h = a.csrf(rt.Method, bh)
 		}
 		mux.Handle(key, a.Active(h))
+	}
+	if a.push != nil {
+		pushHandlers := a.push.Handlers()
+		for _, rt := range PushRoutes {
+			if h, ok := pushHandlers[rt.Method+" "+rt.Path]; ok {
+				mux.Handle(rt.Method+" "+rt.Path, a.Active(a.csrf(rt.Method, h)))
+			}
+		}
 	}
 	// The whole admin tree is guarded. Anything not registered below is a plain
 	// 404, not a "not built yet" stub: /api/admin/system was removed rather than

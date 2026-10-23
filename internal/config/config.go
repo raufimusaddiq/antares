@@ -52,6 +52,11 @@ type Config struct {
 	// floor in hermes.DeniedToolsets cannot be allowed by configuration.
 	TenantToolsets []string
 
+	// Web Push (UXP-002). Both set, or neither: with neither, notifications are
+	// reported as not configured and nothing is ever sent.
+	VAPIDPrivateKey Secret // raw 32-byte P-256 scalar
+	VAPIDSubject    string // mailto: or https: contact for the push services
+
 	// Admin bootstrap. All three are set, or none (no bootstrap).
 	AdminIssuer string
 	AdminSub    string
@@ -142,6 +147,24 @@ func Load(getenv func(string) string) (Config, error) {
 	if err := hermes.ValidateAllowedToolsets(c.TenantToolsets); err != nil {
 		problems = append(problems, "ANTARES_TENANT_ALLOWED_TOOLSETS: "+err.Error())
 	}
+	rawVAPID, subject := getenv("ANTARES_VAPID_PRIVATE_KEY"), getenv("ANTARES_VAPID_SUBJECT")
+	switch {
+	case rawVAPID == "" && subject == "":
+	case rawVAPID == "" || subject == "":
+		problems = append(problems, "ANTARES_VAPID_PRIVATE_KEY and ANTARES_VAPID_SUBJECT must be set together")
+	default:
+		key, err := base64.RawURLEncoding.DecodeString(strings.TrimRight(rawVAPID, "="))
+		if err != nil || len(key) != 32 {
+			problems = append(problems, "ANTARES_VAPID_PRIVATE_KEY must be base64url of exactly 32 bytes")
+		} else {
+			c.VAPIDPrivateKey = key
+		}
+		if !strings.HasPrefix(subject, "mailto:") && !strings.HasPrefix(subject, "https://") {
+			problems = append(problems, "ANTARES_VAPID_SUBJECT must be a mailto: or https:// URL")
+		} else {
+			c.VAPIDSubject = subject
+		}
+	}
 	if (c.AdminSub == "") != (c.AdminEmail == "") {
 		problems = append(problems, "ANTARES_ADMIN_GOOGLE_SUB and ANTARES_ADMIN_EMAIL must be set together")
 	}
@@ -162,6 +185,9 @@ func normalizeOrigin(raw string) (string, error) {
 	}
 	return "https://" + strings.ToLower(u.Host), nil
 }
+
+// PushConfigured reports whether a VAPID key pair is set.
+func (c Config) PushConfigured() bool { return len(c.VAPIDPrivateKey) > 0 }
 
 // BootstrapAdmin reports whether an admin identity is configured.
 func (c Config) BootstrapAdmin() bool { return c.AdminSub != "" }

@@ -194,6 +194,9 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, name string) 
 		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' "+openUIStyleHash+"; connect-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 		h.Set("Referrer-Policy", "no-referrer")
 		h.Set("Cache-Control", "no-store")
+	} else if name == "sw.js" {
+		// The worker must be re-checked on every load so a fix reaches every browser.
+		h.Set("Cache-Control", "no-cache")
 	} else if strings.HasPrefix(name, "assets/") { // content-hashed by the build
 		h.Set("Cache-Control", "public, max-age=31536000, immutable")
 	}

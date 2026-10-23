@@ -170,3 +170,23 @@ func TestDotSegmentsUnderReservedRootsAre404NotARedirect(t *testing.T) {
 		t.Errorf("/api/ -> %d", rec.Code)
 	}
 }
+
+// The push worker is a static file at the root (its scope is the whole origin), checked
+// for updates on every load, and never answered with the app shell.
+func TestServiceWorkerIsServedFreshAndIsNotTheShell(t *testing.T) {
+	h := New(func(context.Context) error { return nil }, "").WithAssets(webui.FS()).Routes()
+	rec := get(h, "/sw.js")
+	if rec.Code != 200 || !strings.Contains(rec.Header().Get("Content-Type"), "javascript") {
+		t.Fatalf("sw.js = %d %q", rec.Code, rec.Header().Get("Content-Type"))
+	}
+	if rec.Header().Get("Cache-Control") != "no-cache" || rec.Header().Get("X-Content-Type-Options") != "nosniff" {
+		t.Errorf("headers = %v", rec.Header())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "showNotification") || strings.Contains(body, "<div id=\"root\">") {
+		t.Errorf("sw.js is not the worker: %.80s", body)
+	}
+	if strings.Contains(body, "addEventListener(\"fetch\"") {
+		t.Error("the worker intercepts fetches")
+	}
+}

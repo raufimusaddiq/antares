@@ -233,3 +233,42 @@ func TestTenantToolsetPolicyIsConfigurableButNotPastTheFloor(t *testing.T) {
 		}
 	}
 }
+
+func TestVAPIDIsAllOrNothing(t *testing.T) {
+	base := map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey}
+	with := func(kv ...string) func(string) string {
+		m := map[string]string{}
+		for k, v := range base {
+			m[k] = v
+		}
+		for i := 0; i < len(kv); i += 2 {
+			m[kv[i]] = kv[i+1]
+		}
+		return env(m)
+	}
+	key := base64.RawURLEncoding.EncodeToString([]byte(strings.Repeat("v", 32)))
+
+	c, err := Load(with())
+	if err != nil || c.PushConfigured() {
+		t.Fatalf("no VAPID settings: configured=%v err=%v", c.PushConfigured(), err)
+	}
+	c, err = Load(with("ANTARES_VAPID_PRIVATE_KEY", key, "ANTARES_VAPID_SUBJECT", "mailto:ops@example.test"))
+	if err != nil || !c.PushConfigured() || len(c.VAPIDPrivateKey) != 32 {
+		t.Fatalf("valid VAPID settings: %v", err)
+	}
+	if strings.Contains(fmt.Sprintf("%v %+v %s", c.VAPIDPrivateKey, c, c.VAPIDPrivateKey), strings.Repeat("v", 8)) {
+		t.Error("the VAPID private key is printable")
+	}
+	for name, kv := range map[string][]string{
+		"key only":     {"ANTARES_VAPID_PRIVATE_KEY", key},
+		"subject only": {"ANTARES_VAPID_SUBJECT", "mailto:ops@example.test"},
+		"short key":    {"ANTARES_VAPID_PRIVATE_KEY", "AAAA", "ANTARES_VAPID_SUBJECT", "mailto:ops@example.test"},
+		"bad subject":  {"ANTARES_VAPID_PRIVATE_KEY", key, "ANTARES_VAPID_SUBJECT", "ops@example.test"},
+	} {
+		if _, err := Load(with(kv...)); err == nil {
+			t.Errorf("%s was accepted", name)
+		} else if strings.Contains(err.Error(), key) {
+			t.Errorf("%s: the error repeats the key", name)
+		}
+	}
+}

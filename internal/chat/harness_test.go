@@ -20,6 +20,7 @@ import (
 
 	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/hermes"
+	"github.com/raufimusaddiq/antares/internal/push"
 	"github.com/raufimusaddiq/antares/internal/secrets"
 	"github.com/raufimusaddiq/antares/internal/server"
 	"github.com/raufimusaddiq/antares/internal/store"
@@ -271,6 +272,7 @@ type app struct {
 	hx    *fakeHermes
 	h     http.Handler
 	users map[string]*person
+	push  *push.Service // set by withPush; nil leaves the push routes unmounted
 
 	seenMu  sync.Mutex
 	seen    []string  // every response a browser would have received: headers and body
@@ -346,7 +348,7 @@ func newApp(t *testing.T, o ...appOpts) *app {
 func rebuild(t *testing.T, a *app, svc *Service) http.Handler {
 	t.Helper()
 	au, err := auth.New(auth.Options{DB: a.db, ClientID: "c", ClientSecret: "s", PublicOrigin: testOrigin,
-		Endpoints: auth.Endpoints{Issuer: "i", Auth: "https://a", Token: "https://t", JWKS: "https://j", Issued: []string{"i"}}, Chat: svc})
+		Endpoints: auth.Endpoints{Issuer: "i", Auth: "https://a", Token: "https://t", JWKS: "https://j", Issued: []string{"i"}}, Chat: svc, Push: pushHandlers(a)})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -613,4 +615,13 @@ func eventually(t *testing.T, cond func() bool, what string) {
 		time.Sleep(5 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s", what)
+}
+
+// pushHandlers is the push service as auth.Options wants it: a nil interface, not a nil
+// pointer inside one, when the app has none.
+func pushHandlers(a *app) auth.ChatHandlers {
+	if a.push == nil {
+		return nil
+	}
+	return a.push
 }
