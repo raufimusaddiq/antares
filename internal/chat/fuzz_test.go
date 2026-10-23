@@ -27,19 +27,24 @@ import (
 // real ids (and the wrong kind of them), a bystander's, unknown well-formed
 // ids, and malformed or hostile strings.
 func foreignIDPool(v *victim, bob, raw string) []string {
-	pool := []string{v.chatID, v.runID, v.session, v.hermesRun, v.alice.id, store.NewID(), raw,
+	pool := []string{v.chatID, v.runID, v.session, v.hermesRun, v.alice.id, bob, store.NewID(), raw,
 		strings.ToUpper(v.chatID), strings.ToUpper(v.runID), v.chatID[:31], v.runID + "0", v.chatID + v.runID,
 		" " + v.chatID, v.chatID + " ", v.chatID + "\x00", v.chatID + "%00", "%2e%2e", "..", ".", "", "null",
 		"'" + v.chatID + "' OR 1=1", v.chatID + "/messages", "*", v.chatID[:16] + strings.Repeat("0", 16)}
 	return pool
 }
 
-func aliceFingerprint(v *victim) string {
+func aliceFingerprint(t testing.TB, v *victim) string {
+	t.Helper()
 	var runs, chats string
-	v.a.db.QueryRow(`SELECT COALESCE(group_concat(id||status||updated_at||COALESCE(error_code,'')||COALESCE(hermes_run_id,'')), '') FROM
-		(SELECT * FROM runs WHERE user_id = ? ORDER BY id)`, v.alice.id).Scan(&runs)
-	v.a.db.QueryRow(`SELECT COALESCE(group_concat(id||status||updated_at||title||hermes_session_id), '') FROM
-		(SELECT * FROM chats WHERE user_id = ? ORDER BY id)`, v.alice.id).Scan(&chats)
+	if err := v.a.db.QueryRow(`SELECT COALESCE(group_concat(id||status||updated_at||COALESCE(error_code,'')||COALESCE(hermes_run_id,'')), '') FROM
+		(SELECT * FROM runs WHERE user_id = ? ORDER BY id)`, v.alice.id).Scan(&runs); err != nil {
+		t.Fatalf("alice's runs fingerprint: %v", err)
+	}
+	if err := v.a.db.QueryRow(`SELECT COALESCE(group_concat(id||status||updated_at||title||hermes_session_id), '') FROM
+		(SELECT * FROM chats WHERE user_id = ? ORDER BY id)`, v.alice.id).Scan(&chats); err != nil {
+		t.Fatalf("alice's chats fingerprint: %v", err)
+	}
 	return runs + "|" + chats
 }
 
@@ -63,8 +68,8 @@ func newOwnFuzz(t testing.TB) *ownFuzz {
 	o := &ownFuzz{v: v, bob: bob, routes: builtProbes, baseline: map[string]string{}}
 	o.bobChat = bob.newChat()
 	o.bobRun = bob.send(o.bobChat, "bob-input-1")
-	o.fingerprint = aliceFingerprint(v)
-	v.snapshot()
+	o.fingerprint = aliceFingerprint(t, v)
+	v.snapshot(t)
 	return o
 }
 
@@ -110,7 +115,7 @@ func (o *ownFuzz) try(t testing.TB, ri uint8, id string) {
 			t.Fatalf("SURFACE BROKEN [%s]: bob's request for id %q reached Hermes as %s with %q", p.surface, id, r.Path, r.Auth)
 		}
 	}
-	if got := aliceFingerprint(v); got != o.fingerprint {
+	if got := aliceFingerprint(t, v); got != o.fingerprint {
 		t.Fatalf("SURFACE BROKEN [%s]: alice's rows changed after bob's request for id %q:\n before %s\n after  %s", p.surface, id, o.fingerprint, got)
 	}
 	if n := v.aliceHermesReqs(); n != v.hxAlice {
