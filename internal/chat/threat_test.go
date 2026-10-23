@@ -41,6 +41,10 @@ var builtProbes = []probe{
 	{"run status", "GET /api/runs/{runId}"},
 	{"run events (SSE recovery)", "GET /api/runs/{runId}/events"},
 	{"run cancel", "POST /api/runs/{runId}/cancel"},
+	{"steer", "POST /api/runs/{runId}/steer"},
+	{"regenerate", "POST /api/chats/{chatId}/regenerate"},
+	{"edit turn", "POST /api/chats/{chatId}/edit-turn"},
+	{"rewind", "POST /api/chats/{chatId}/rewind"},
 }
 
 // idFree are built routes with no id in the path: they must scope by the caller.
@@ -60,8 +64,7 @@ var notBuilt = []struct {
 	{"exports", "UXP-ACC-016", "no export endpoint exists yet", []string{"/api/chats/%s/export", "/api/exports", "/api/exports/%s"}, false},
 	{"voice uploads", "UXP-ACC-006", "no voice/transcription endpoint exists yet; POST /api/assets is a 501 stub", []string{"/api/voice", "/api/transcribe", "/api/voice/%s"}, false},
 	{"preview sandbox", "UXP-ACC-015", "previews are served per chat turn (probed above); no free-standing preview/artifact id exists", []string{"/api/preview", "/api/preview/%s", "/api/artifacts/%s"}, false},
-	{"rewind / fork", "UXP-ACC-012", "POST /api/chats/{id}/fork is a 501 stub; no Hermes rewind API is verified", []string{"/api/chats/%s/fork"}, true},
-	{"steer", "UXP-ACC-013", "POST /api/runs/{id}/steer is a 501 stub; no Hermes steer API is verified", []string{"/api/runs/%s/steer"}, true},
+	{"fork", "UXP-ACC-012", "POST /api/chats/{id}/fork is a 501 stub; Hermes forks only a whole session (docs/runbooks/turn-controls.md)", []string{"/api/chats/%s/fork"}, true},
 	{"delayed notifications", "UXP-ACC-002/019", "no notification outbox or endpoint exists yet", []string{"/api/notifications", "/api/notifications/%s"}, false},
 }
 

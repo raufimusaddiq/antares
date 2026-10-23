@@ -233,6 +233,18 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 			fr.stopped, fr.status = true, "cancelled"
 			f.mu.Unlock()
 			fmt.Fprint(w, `{"status":"stopping"}`)
+		case len(parts) == 2 && parts[1] == "steer" && r.Method == "POST":
+			// Hermes: 200 {"object":"hermes.run.steer","accepted":true} while running, else 409
+			// run_not_accepting_steer (api_server_runs.py _steer_refused).
+			f.mu.Lock()
+			running := fr.status == "running" && !fr.stopped
+			f.mu.Unlock()
+			if !running {
+				w.WriteHeader(http.StatusConflict)
+				fmt.Fprint(w, `{"error":{"code":"run_not_accepting_steer"}}`)
+				return
+			}
+			fmt.Fprintf(w, `{"object":"hermes.run.steer","run_id":%q,"accepted":true}`, parts[0])
 		case len(parts) == 2 && parts[1] == "events" && r.Method == "GET":
 			w.Header().Set("Content-Type", "text/event-stream")
 			w.WriteHeader(200)
