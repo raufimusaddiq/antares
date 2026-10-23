@@ -39,6 +39,7 @@ var builtProbes = []probe{
 	{"artifact preview", "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview"},
 	{"search within a chat", "GET /api/chats/{chatId}/search"},
 	{"chat usage and budget", "GET /api/chats/{chatId}/usage"},
+	{"set chat model", "PUT /api/chats/{chatId}/model"},
 	{"run status", "GET /api/runs/{runId}"},
 	{"run events (SSE recovery)", "GET /api/runs/{runId}/events"},
 	{"run cancel", "POST /api/runs/{runId}/cancel"},
@@ -51,7 +52,7 @@ var builtProbes = []probe{
 }
 
 // idFree are built routes with no id in the path: they must scope by the caller.
-var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "GET /api/capabilities", "POST /api/assets"}
+var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "GET /api/capabilities", "POST /api/assets", "GET /api/models"}
 
 // notBuilt are the §25 / Phase 3 surfaces with no route in this build. Each is
 // an honest gap, not an omission: the test below proves the gap is real (no
@@ -313,7 +314,7 @@ func TestCrossUserThreatBuiltSurfaces(t *testing.T) {
 			t.Errorf("owner's global search does not find her own chat: %d %s", w.Code, w.Body.String())
 		}
 		for _, p := range builtProbes {
-			if p.key == "GET /api/runs/{runId}/events" || strings.HasPrefix(p.key, "POST") || strings.HasPrefix(p.key, "DELETE") { // the owner's own delete is proven in assets_test.go
+			if p.key == "GET /api/runs/{runId}/events" || strings.HasPrefix(p.key, "POST") || strings.HasPrefix(p.key, "PUT") || strings.HasPrefix(p.key, "DELETE") { // the owner's own delete is proven in assets_test.go, her own model choice in models_test.go
 				continue
 			}
 			mtd, path := v.fill(p.key, v.chatID, v.runID)

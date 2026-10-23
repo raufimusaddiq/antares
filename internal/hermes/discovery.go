@@ -121,22 +121,29 @@ func available(id, label string) Capability {
 	return Capability{ID: id, Label: label, Status: StatusAvailable}
 }
 
+// discoveryDoc reads GET /v1/capabilities, the single source of the feature flags and the
+// advertised route table, for Discover and for the model picker. An unusable document is
+// the zero value with ok false, so every flag reads false and no route resolves.
+func (c *Client) discoveryDoc(ctx context.Context, b Binding) (caps discoveryCaps, ok, tenant bool) {
+	ok, tenant = c.getJSON(ctx, b, "/v1/capabilities", &caps, maxAPIResponse)
+	if ok && caps.Object != "hermes.api_server.capabilities" {
+		ok = false
+	}
+	if !ok {
+		caps = discoveryCaps{}
+	}
+	return caps, ok, tenant
+}
+
 // Discover builds the inventory for the binding. It returns an error only when
 // Hermes refuses the binding (CodeTenantNotReady): then nothing may be shown. Any
 // other failure leaves the affected capabilities unsupported, with a reason.
 func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 	inv := Inventory{Toolsets: []Toolset{}, Providers: []Provider{}, Skills: []Skill{}}
 
-	var caps discoveryCaps
-	capsOK, tenant := c.getJSON(ctx, b, "/v1/capabilities", &caps, maxAPIResponse)
+	caps, capsOK, tenant := c.discoveryDoc(ctx, b)
 	if tenant {
 		return Inventory{}, fail(CodeTenantNotReady)
-	}
-	if capsOK && caps.Object != "hermes.api_server.capabilities" {
-		capsOK = false
-	}
-	if !capsOK {
-		caps = discoveryCaps{}
 	}
 	why := func(feature string) string {
 		if !capsOK {

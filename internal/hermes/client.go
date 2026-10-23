@@ -278,6 +278,9 @@ type RunRequest struct {
 	Input          string
 	SessionKey     string
 	IdempotencyKey string
+	// Optional per-run model choice, sent as body provider/model/model_options (the fields
+	// _request_agent_overrides reads). Empty means the profile's default.
+	Provider, Model, Reasoning, ServiceTier string
 }
 
 // CreateRun starts a run (PRD §6.2 step 4) and returns Hermes' run id.
@@ -290,7 +293,7 @@ func (c *Client) CreateRun(ctx context.Context, b Binding, r RunRequest) (string
 	resp, err := c.do(ctx, b, http.MethodPost, "/v1/runs", map[string]string{
 		"Idempotency-Key":      r.IdempotencyKey,
 		"X-Hermes-Session-Key": r.SessionKey,
-	}, map[string]string{"session_id": r.SessionID, "input": r.Input})
+	}, runBody(r))
 	if err != nil {
 		return "", err
 	}
@@ -652,4 +655,27 @@ func contentText(v any) string {
 		s = s[:maxMessageText]
 	}
 	return strings.ToValidUTF8(s, "�")
+}
+
+// runBody builds the POST /v1/runs body. The model fields are added only when set, so a
+// chat with no choice sends exactly what it always did.
+func runBody(r RunRequest) map[string]any {
+	body := map[string]any{"session_id": r.SessionID, "input": r.Input}
+	if r.Model != "" {
+		body["model"] = r.Model
+		if r.Provider != "" {
+			body["provider"] = r.Provider
+		}
+	}
+	opts := map[string]any{}
+	if r.Reasoning != "" {
+		opts["reasoning"] = map[string]any{"enabled": true, "effort": r.Reasoning}
+	}
+	if r.ServiceTier != "" {
+		opts["service_tier"] = r.ServiceTier
+	}
+	if len(opts) > 0 {
+		body["model_options"] = opts
+	}
+	return body
 }

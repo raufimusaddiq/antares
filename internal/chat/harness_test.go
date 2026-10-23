@@ -66,7 +66,8 @@ type fakeHermes struct {
 	// It is a model of the property under test, not Hermes itself (docs/runbooks/memory-scoping.md).
 	mem map[string]string
 
-	canned map[string]string // GET path -> JSON body, for the discovery routes
+	options map[string]string // profile -> raw GET /api/model/options body; defaultOptions if unset
+	canned  map[string]string // GET path -> JSON body, for the discovery routes
 
 	failNext map[string]int // "METHOD suffix" -> status to return once (sticky when negative)
 	hang     map[string]bool
@@ -186,6 +187,17 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	switch {
+	case r.Method == "GET" && path == "/api/model/options":
+		f.mu.Lock()
+		opts, set := f.options[profile]
+		f.mu.Unlock()
+		if !set {
+			opts = f.cannedBody(path) // discovery tests serve their own
+		}
+		if opts == "" {
+			opts = defaultOptions
+		}
+		_, _ = io.WriteString(w, opts)
 	case r.Method == "POST" && path == "/api/sessions":
 		f.mu.Lock()
 		f.n++
@@ -194,9 +206,10 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, `{"id":%q}`, id)
 	case r.Method == "POST" && path == "/v1/runs":
 		var in struct{ SessionID, Input string }
-		var raw map[string]string
+		var raw map[string]any
 		_ = json.Unmarshal(body, &raw)
-		in.SessionID, in.Input = raw["session_id"], raw["input"]
+		in.SessionID, _ = raw["session_id"].(string)
+		in.Input, _ = raw["input"].(string)
 		f.mu.Lock()
 		f.n++
 		id := fmt.Sprintf("run_%d", f.n)
@@ -653,3 +666,14 @@ func pushHandlers(a *app) auth.ChatHandlers {
 	}
 	return a.push
 }
+
+// defaultOptions has the shape of GET /api/model/options (hermes_cli/inventory.py
+// build_model_options_payload); every value is fabricated. "alpha" is configured with
+// one reasoning model that lists a priority tier, one that does not, and a quota; "beta"
+// is an unconfigured skeleton row, which Hermes marks authenticated:false with no models.
+const defaultOptions = `{"model":"m-reason","provider":"alpha","providers":[
+ {"slug":"alpha","name":"Alpha","is_current":true,"models":["m-reason","m-plain"],
+  "capabilities":{"m-reason":{"fast":true,"reasoning":true},"m-plain":{"fast":false,"reasoning":false}},
+  "pricing":{"m-reason":{"input":"$1.00","output":"$2.00","cache":null,"free":false}},
+  "usage":{"windows":[{"label":"5h","used_percent":42.5,"resets_at":"2026-10-24T10:00:00+00:00","scope":"account"}]}},
+ {"slug":"beta","name":"Beta","is_current":false,"authenticated":false,"models":[],"warning":"paste BETA_KEY to activate"}]}`

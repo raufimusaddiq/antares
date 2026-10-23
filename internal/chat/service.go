@@ -153,8 +153,14 @@ func (s *Service) runNew(ctx context.Context, l *liveRun, run store.Run, input s
 		s.finish(l, store.RunFailed, hermes.CodeOf(err), "")
 		return
 	}
+	choice, err := store.GetChatModel(ctx, s.db, run.UserID, run.ChatID)
+	if err != nil {
+		s.finish(l, store.RunFailed, hermes.CodeHermesUnavailable, "")
+		return
+	}
 	hid, err := s.hx.CreateRun(ctx, b, hermes.RunRequest{
 		SessionID: run.HermesSession, Input: input, SessionKey: sessionKey(run.UserID), IdempotencyKey: "antares-" + run.ID,
+		Provider: choice.Provider, Model: choice.Model, Reasoning: choice.Reasoning, ServiceTier: choice.ServiceTier,
 	})
 	if err != nil {
 		if ctx.Err() != nil { // cancelled while admitting
