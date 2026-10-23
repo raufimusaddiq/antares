@@ -497,7 +497,7 @@ All endpoints begin with `/api/`. Every private endpoint resolves the identity f
 | `DELETE` | `/api/chats/{chatId}` | Active owner | Delete with upstream reconciliation |
 | `GET` | `/api/chats/{chatId}/messages` | Active owner | Owned Hermes transcript proxy |
 | `POST` | `/api/chats/{chatId}/messages` | Active owner | Submit run with idempotency |
-| `GET` | `/api/chats/{chatId}/usage` | Active owner | Own chat tokens as Hermes reported them, estimated cost with price date, opt-in per-chat token limit (off by default; `GET`/`PUT /api/me/budget`) (UXP-008/009) |
+| `GET` | `/api/chats/{chatId}/usage` | Active owner | Own chat tokens as Hermes reported them, estimated cost with price date, opt-in per-user token limit across all the user's chats, plus per-reply usage (off by default; `GET`/`PUT /api/me/budget`) (UXP-008/009) |
 | `GET` | `/api/runs/{runId}` | Active owner | Run status |
 | `GET` | `/api/runs/{runId}/events` | Active owner | SSE stream/reconnect |
 | `POST` | `/api/runs/{runId}/cancel` | Active owner | Cancel upstream run |
@@ -537,7 +537,7 @@ All endpoints begin with `/api/`. Every private endpoint resolves the identity f
 }
 ```
 
-Codes include: `UNAUTHENTICATED` (401), `ACCOUNT_PENDING` (403), `ACCOUNT_REJECTED` (403), `ACCOUNT_SUSPENDED` (403), `TENANT_NOT_READY` (409/503), `FORBIDDEN` (403), `NOT_FOUND` (404 for foreign resources), `CAPABILITY_UNAVAILABLE` (409/501), `RATE_LIMITED` (429), `HERMES_UNAVAILABLE` (503), `RUN_CONFLICT` (409), `UPSTREAM_TIMEOUT` (504), `BUDGET_REACHED` (403, the chat has used the per-chat token limit the user opted into via `PUT /api/me/budget`; new messages are refused until the limit is raised or removed, a running reply finishes). Never echo bearer tokens, raw upstream URLs, or secret diagnostics.
+Codes include: `UNAUTHENTICATED` (401), `ACCOUNT_PENDING` (403), `ACCOUNT_REJECTED` (403), `ACCOUNT_SUSPENDED` (403), `TENANT_NOT_READY` (409/503), `FORBIDDEN` (403), `NOT_FOUND` (404 for foreign resources), `CAPABILITY_UNAVAILABLE` (409/501), `RATE_LIMITED` (429), `HERMES_UNAVAILABLE` (503), `RUN_CONFLICT` (409), `UPSTREAM_TIMEOUT` (504), `BUDGET_REACHED` (403, the user has used the token limit they opted into, summed across all their chats via `PUT /api/me/budget`; new messages are refused until the limit is raised or removed, a running reply finishes). Never echo bearer tokens, raw upstream URLs, or secret diagnostics.
 
 ---
 

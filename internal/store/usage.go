@@ -26,6 +26,30 @@ type ChatUsage struct {
 	Reported  int // of those, runs with reported usage (never more than Finished)
 	ByModel   []ModelUsage
 	LastModel string // model of the newest run that reported one
+	// Turns are the chat's newest finished runs, oldest first, one per reply. Tokens
+	// are the numbers Hermes reported for that run; Reported is false when it gave none.
+	Turns          []TurnUsage
+	TurnsTruncated bool
+}
+
+// MaxTurns bounds the per-turn list a usage read returns.
+const MaxTurns = 100
+
+// TurnUsage is the usage of one run (one reply).
+type TurnUsage struct {
+	RunID    string
+	Status   string
+	Reported bool
+	RunUsage
+}
+
+// UserReportedTokens is the input+output tokens Hermes reported across all of the
+// user's chats, and whether any run reported at all (unknown is not zero).
+func UserReportedTokens(ctx context.Context, db *sql.DB, userID string) (used int64, known bool, err error) {
+	var n sql.NullInt64
+	err = db.QueryRowContext(ctx, `SELECT SUM(input_tokens + output_tokens) FROM runs
+		WHERE user_id = ? AND input_tokens IS NOT NULL`, userID).Scan(&n)
+	return n.Int64, n.Valid, err
 }
 
 // RecordRunUsage stores what Hermes reported for the user's own run.
@@ -66,8 +90,34 @@ func GetChatUsage(ctx context.Context, db *sql.DB, userID, chatID string) (ChatU
 		AND usage_model IS NOT NULL ORDER BY created_at DESC, id DESC LIMIT 1`, userID, chatID).Scan(&cu.LastModel)
 	if err == sql.ErrNoRows {
 		err = nil
+	} else if err != nil {
+		return cu, err
 	}
-	return cu, err
+	trows, err := db.QueryContext(ctx, `SELECT id, status, input_tokens IS NOT NULL, COALESCE(input_tokens,0), COALESCE(output_tokens,0),
+		COALESCE(cache_read_tokens,0), COALESCE(cache_write_tokens,0), COALESCE(usage_model,'') FROM runs
+		WHERE user_id = ? AND chat_id = ? AND status IN ('COMPLETED','FAILED','CANCELLED','TIMED_OUT')
+		ORDER BY created_at DESC, id DESC LIMIT ?`, userID, chatID, MaxTurns+1)
+	if err != nil {
+		return cu, err
+	}
+	defer trows.Close()
+	for trows.Next() {
+		var t TurnUsage
+		if err := trows.Scan(&t.RunID, &t.Status, &t.Reported, &t.Input, &t.Output, &t.CacheRead, &t.CacheWrite, &t.Model); err != nil {
+			return cu, err
+		}
+		cu.Turns = append(cu.Turns, t)
+	}
+	if err := trows.Err(); err != nil {
+		return cu, err
+	}
+	if len(cu.Turns) > MaxTurns {
+		cu.Turns, cu.TurnsTruncated = cu.Turns[:MaxTurns], true
+	}
+	for i, j := 0, len(cu.Turns)-1; i < j; i, j = i+1, j-1 {
+		cu.Turns[i], cu.Turns[j] = cu.Turns[j], cu.Turns[i]
+	}
+	return cu, nil
 }
 
 // TokenBudget returns the user's per-chat token limit; 0 means they set none.

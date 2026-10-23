@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { Composer, Transcript } from "./Chat";
 import { Markdown, safeHref } from "./Markdown";
 import { indentInFence, wrapSelection } from "./composerEdit";
-import { describeCode, describeUsage, getMessages, listChats, parseUsage, sendMessage } from "./chatApi";
+import { describeCode, describeTurns, describeUsage, getMessages, listChats, parseLimitInput, parseUsage, sendMessage } from "./chatApi";
 import { isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 
 const md = (text: string) => renderToStaticMarkup(<Markdown text={text} />);
@@ -281,7 +281,7 @@ describe("api client", () => {
 });
 
 describe("usage text", () => {
-  const base = { tokens: { input: 1000, output: 200, cacheRead: 400, cacheWrite: 0, total: 1200 }, finishedRuns: 2, reportedRuns: 1, costIDR: 3.4, unpricedRuns: 0, priceListDate: "2026-10-23", windowTokens: 1000000, budget: { limit: 2000000 as number | null, used: 1200 as number | null, enforced: true, reached: false, basis: "" } };
+  const base = { tokens: { input: 1000, output: 200, cacheRead: 400, cacheWrite: 0, total: 1200 }, finishedRuns: 2, reportedRuns: 1, costIDR: 3.4, unpricedRuns: 0, unknownModelRuns: 0, turns: [] as { runId: string; status: string; tokens: { input: number; output: number; total: number } | null }[], turnsTruncated: false, priceListDate: "2026-10-23", windowTokens: 1000000, budget: { limit: 2000000 as number | null, used: 1200 as number | null, enforced: true, reached: false, basis: "" } };
 
   it("labels cost as an estimate with its price date, and shows unknowns as a dash", () => {
     const t = describeUsage(base).join("\n");
@@ -295,7 +295,7 @@ describe("usage text", () => {
 
   it("states the limit, its basis and what happens at it", () => {
     const t = describeUsage(base).join("\n");
-    expect(t).toContain("per chat");
+    expect(t).toContain("across all your chats");
     expect(t).toContain("input includes cache reads");
     expect(t).toContain("At the limit the chat stops taking new messages");
     expect(describeUsage({ ...base, budget: { ...base.budget, used: 2000000, reached: true } }).join("\n")).toContain("raise or remove the limit");
@@ -308,6 +308,18 @@ describe("usage text", () => {
     expect(t).toContain("usage is unknown");
     expect(t).toContain("not being applied");
     expect(t).not.toContain("0 of");
+  });
+
+  it("refuses a limit that is not a whole number in range instead of sending it", () => {
+    expect(parseLimitInput("")).toBeNull();
+    expect(parseLimitInput("50,000")).toBe(50000);
+    for (const bad of ["abc", "5.5", "-20000", "9999", "1000000001", "1e5", "NaN", "0x10000"]) expect(parseLimitInput(bad)).toBeUndefined();
+  });
+
+  it("says no cost is estimated for polled replies, and lists each reply", () => {
+    expect(describeUsage({ ...base, unpricedRuns: 1, unknownModelRuns: 1, costIDR: null }).join("\n")).toContain("did not report which model answered");
+    const turns = [{ runId: "a", status: "COMPLETED", tokens: { input: 5, output: 1, total: 6 } }, { runId: "b", status: "COMPLETED", tokens: null }];
+    expect(describeTurns({ ...base, turns })).toEqual(["Reply 1: 6 tokens (5 in, 1 out)", "Reply 2: — (no usage reported)"]);
   });
 
   it("keeps cache writes and nulls from the server", () => {

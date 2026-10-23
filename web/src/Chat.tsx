@@ -3,7 +3,9 @@ import {
   cancelRun,
   createChat,
   describeCode,
+  describeTurns,
   describeUsage,
+  parseLimitInput,
   getChat,
   getMessages,
   getRun,
@@ -771,6 +773,16 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
                 <li key={l}>{l}</li>
               ))}
             </ul>
+            {usage.turns.length > 0 && (
+              <details>
+                <summary>Per reply{usage.turnsTruncated ? " (newest 100)" : ""}</summary>
+                <ul>
+                  {describeTurns(usage).map((l) => (
+                    <li key={l}>{l}</li>
+                  ))}
+                </ul>
+              </details>
+            )}
             <BudgetForm
               limit={usage.budget.limit}
               onSaved={() => current && void getUsage(current).then((r) => setUsage(r.ok ? r.value : null))}
@@ -797,12 +809,16 @@ function BudgetForm({ limit, onSaved }: { limit: number | null; onSaved: () => v
     <form
       onSubmit={(e) => {
         e.preventDefault();
-        const n = Number(text.replace(/[,\s]/g, ""));
-        void save(text.trim() === "" ? null : n);
+        const v = parseLimitInput(text);
+        if (v === undefined) {
+          setErr("Enter a whole number from 10,000 to 1,000,000,000, or leave it empty for no limit. Nothing was changed.");
+          return;
+        }
+        void save(v);
       }}
     >
       <label>
-        Token limit per chat (empty = none){" "}
+        Token limit across all your chats (empty = none){" "}
         <input inputMode="numeric" value={text} onChange={(e) => setText(e.target.value)} />
       </label>{" "}
       <button type="submit">Save limit</button>

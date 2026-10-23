@@ -201,11 +201,12 @@ func AdmitRun(ctx context.Context, db *sql.DB, userID, chatID, idemKey string, n
 	return AdmitRunWithin(ctx, db, userID, chatID, idemKey, now, 0)
 }
 
-// ErrBudget means the chat has already used maxTokens, so no new run is admitted.
+// ErrBudget means the user has already used maxTokens, so no new run is admitted.
 var ErrBudget = errors.New("store: the chat has used its token budget")
 
-// AdmitRunWithin is AdmitRun with a token budget: when maxTokens > 0 and the
-// chat's reported input+output tokens have reached it, a new run is refused with
+// AdmitRunWithin is AdmitRun with a per-user token budget: when maxTokens > 0 and the
+// user's reported input+output tokens across all their chats have reached it (a new
+// chat does not reset it), a new run is refused with
 // ErrBudget. A replay of an existing key is decided first and is never refused,
 // so it still gets its original run back.
 func AdmitRunWithin(ctx context.Context, db *sql.DB, userID, chatID, idemKey string, now time.Time, maxTokens int64) (run Run, created bool, err error) {
@@ -227,7 +228,7 @@ func AdmitRunWithin(ctx context.Context, db *sql.DB, userID, chatID, idemKey str
 	if maxTokens > 0 {
 		var used int64
 		if err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM runs
-			WHERE user_id = ? AND chat_id = ?`, userID, chatID).Scan(&used); err != nil {
+			WHERE user_id = ?`, userID).Scan(&used); err != nil {
 			return Run{}, false, err
 		}
 		if used >= maxTokens {

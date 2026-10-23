@@ -17,14 +17,19 @@ const usageFrame = `{"usage":{"input_tokens":1000,"output_tokens":200,"total_tok
 
 type usageBody struct {
 	Tokens *struct{ Input, Output, CacheRead, CacheWrite, Total int64 }
-	Runs   struct{ Finished, Reported int }
-	Cost   struct {
-		Estimated       bool
-		Currency        string
-		Amount          *float64
-		UnpricedRuns    int
-		PriceListDate   string
-		PriceListSource string
+	Turns  []struct {
+		RunID, Status, Model string
+		Tokens               *struct{ Input, Output, CacheRead, CacheWrite, Total int64 }
+	}
+	Runs struct{ Finished, Reported int }
+	Cost struct {
+		Estimated        bool
+		Currency         string
+		Amount           *float64
+		UnpricedRuns     int
+		PriceListDate    string
+		PriceListSource  string
+		UnknownModelRuns int
 	}
 	Context struct{ WindowTokens, CarriedTokens *int64 }
 	Budget  struct {
@@ -137,7 +142,7 @@ func TestUsageFallsBackToThePoll(t *testing.T) {
 		t.Fatalf("polled usage not recorded: %+v", u.b)
 	}
 	// No model reported: tokens are shown, the cost is not guessed.
-	if u.b.Cost.Amount != nil || u.b.Cost.UnpricedRuns != 1 {
+	if u.b.Cost.Amount != nil || u.b.Cost.UnpricedRuns != 1 || u.b.Cost.UnknownModelRuns != 1 {
 		t.Fatalf("unpriced run must not get a cost: %+v", u.b.Cost)
 	}
 }
@@ -437,5 +442,64 @@ func TestReportedNeverExceedsFinished(t *testing.T) {
 	}
 	if u := alice.usage(chat); u.b.Runs.Reported > u.b.Runs.Finished {
 		t.Fatalf("reported %d > finished %d", u.b.Runs.Reported, u.b.Runs.Finished)
+	}
+}
+
+// A value the server cannot read as a limit is refused and never clears the limit the user has.
+func TestInvalidLimitDoesNotClearTheLimit(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	setLimit(t, alice, 50_000)
+	for _, raw := range []string{`{"limitTokens":"abc"}`, `{"limitTokens":"50000"}`, `{"limitTokens":5.5}`, `{"limitTokens":1e5}`, `{}`, `{"limitTokens":true}`, `{"limitTokens":[1]}`} {
+		w := alice.do("PUT", "/api/me/budget", nil, raw)
+		if w.Code != 400 {
+			t.Fatalf("%s accepted: %d %s", raw, w.Code, w.Body.String())
+		}
+		if v := decodeBody[struct{ LimitTokens *int64 }](t, alice.get("/api/me/budget")); v.LimitTokens == nil || *v.LimitTokens != 50_000 {
+			t.Fatalf("%s changed the limit: %+v", raw, v)
+		}
+	}
+	if w := alice.do("PUT", "/api/me/budget", nil, `{"limitTokens":null}`); w.Code != 200 {
+		t.Fatalf("explicit null: %d", w.Code)
+	}
+}
+
+// The limit is the user's: tokens spent in one chat count against a new chat.
+func TestBudgetIsPerUserAcrossChats(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	old := alice.newChat()
+	runID := runWithUsage(t, a, alice, old, "seed", usageFrame)
+	if err := store.RecordRunUsage(context.Background(), a.db, alice.id, runID, store.RunUsage{Input: 20_000, Output: 1}); err != nil {
+		t.Fatal(err)
+	}
+	setLimit(t, alice, 10_000)
+	fresh := alice.newChat()
+	if w := alice.do("POST", "/api/chats/"+fresh+"/messages", map[string]string{"Idempotency-Key": nextIdem()}, map[string]string{"input": "new chat"}); w.Code != 403 {
+		t.Fatalf("a new chat escaped the user's limit: %d %s", w.Code, w.Body.String())
+	}
+	u := alice.usage(fresh)
+	if !u.b.Budget.Reached || u.b.Budget.UsedTokens == nil || *u.b.Budget.UsedTokens != 20_001 || u.b.Tokens != nil {
+		t.Fatalf("new chat's view: budget %+v tokens %+v", u.b.Budget, u.b.Tokens)
+	}
+}
+
+// Per-turn usage is exposed next to the aggregate; a reply that reported none is null, not zero.
+func TestPerTurnUsage(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	runWithUsage(t, a, alice, chat, "one", usageFrame)
+	runWithUsage(t, a, alice, chat, "two", `{"runtime":{"model":"deepseek-v4-1-flash"}}`)
+	u := alice.usage(chat)
+	if len(u.b.Turns) != 2 || u.b.Turns[0].Tokens == nil || u.b.Turns[0].Tokens.Total != 1200 || u.b.Turns[1].Tokens != nil {
+		t.Fatalf("turns: %+v", u.b.Turns)
+	}
+	if u.b.Tokens == nil || u.b.Tokens.Total != 1200 {
+		t.Fatalf("aggregate: %+v", u.b.Tokens)
+	}
+	bob := a.user("bobby")
+	if w := bob.get("/api/chats/" + chat + "/usage"); w.Code != 404 {
+		t.Fatalf("bob reads alice's turns: %d", w.Code)
 	}
 }
