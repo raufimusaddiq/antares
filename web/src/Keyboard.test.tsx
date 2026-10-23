@@ -10,13 +10,13 @@ import { Chat } from "./Chat";
 
 afterEach(cleanup);
 
-it("reaches the composer with Alt+Shift+M outside fields and preserves typing, selection and IME input inside them", async () => {
+it.each(["M", "Â"])("reaches the composer with Alt+Shift+M (key %s) outside fields and preserves typing, selection and IME input inside them", async (key) => {
   render(<Chat email="test@example.test" onSignOut={() => {}} />);
   await screen.findByText("No conversations yet.");
   const composer = screen.getByRole("textbox", { name: "Message" });
   const newChat = screen.getByRole("button", { name: "New chat" });
   newChat.focus();
-  const shortcut = { key: "M", altKey: true, shiftKey: true };
+  const shortcut = { key, code: "KeyM", altKey: true, shiftKey: true };
   expect(fireEvent.keyDown(newChat, shortcut)).toBe(false);
   expect(document.activeElement).toBe(composer);
   for (const field of [screen.getByRole("searchbox"), screen.getByRole("combobox"), composer]) {
@@ -33,7 +33,7 @@ it("reaches the composer with Alt+Shift+M outside fields and preserves typing, s
   expect(fireEvent.keyDown(child, shortcut)).toBe(true);
   expect(document.activeElement).toBe(editable);
   editable.remove();
-  for (const event of [{ ...shortcut, ctrlKey: true }, { ...shortcut, metaKey: true }, { ...shortcut, isComposing: true }, { key: "m" }, { key: "M", shiftKey: true }]) {
+  for (const event of [{ ...shortcut, ctrlKey: true }, { ...shortcut, metaKey: true }, { ...shortcut, isComposing: true }, { ...shortcut, code: "KeyN" }, { ...shortcut, altKey: false }, { ...shortcut, shiftKey: false }]) {
     newChat.focus();
     expect(fireEvent.keyDown(newChat, event)).toBe(true);
     expect(document.activeElement).toBe(newChat);

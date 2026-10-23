@@ -11,22 +11,25 @@ retains the existing message anchor; Jump to latest resumes following.
 
 Alt+Shift+M focuses Message outside input, textarea, select and contenteditable
 elements. It ignores IME composition, already-handled events and extra Ctrl/Meta
-modifiers. A modified shortcut avoids taking over ordinary character keys. Its
-description is on the composer, which is also reachable through ordinary Tab order.
+modifiers. A modified shortcut avoids taking over ordinary character keys. The
+shortcut is exposed through `aria-keyshortcuts`; the composer is also reachable
+through ordinary Tab order. Matching uses physical `code: "KeyM"`, so macOS
+Option+Shift+M also works when the generated `key` is `Â`.
 
 The phone header wraps its existing controls instead of overflowing. The composer
 does not shrink, long message words wrap, the transcript can shrink, and the shell
-uses dynamic viewport height plus CSS `env(safe-area-inset-*)` padding. The viewport
-tag retains the exact Phase 1 shell contract; it does not request `viewport-fit`
-or `interactive-widget` behavior. Keyboard viewport resizing remains browser-dependent.
+uses dynamic viewport height and ordinary 0.5rem phone padding. It does not provide
+custom safe-area handling. The viewport tag retains the exact Phase 1 shell
+contract; it does not request `viewport-fit` or `interactive-widget` behavior.
+Keyboard viewport resizing remains browser-dependent.
 
 ## Regression evidence
 
-With the final tests and the original `Chat.tsx` / `VirtualList.tsx` from `3ebf0a8`,
-the targeted suite produces three failures: shortcut focus, the missing jump
+With the initial tests and the original `Chat.tsx` / `VirtualList.tsx` from `3ebf0a8`,
+the targeted suite produced three failures: shortcut focus, the missing jump
 control before a scroll event, and following after viewport shrink (800 instead
-of 950). Restoring the implementation passes all four tests. The full frontend
-suite passes 225 tests across 27 files.
+of 950). Restoring the initial implementation passed all four tests. Its full
+frontend suite passed 225 tests across 27 files; round 2 adds macOS key coverage.
 
 Commands run from `web/`:
 
@@ -55,8 +58,8 @@ The browser harness uses the already-installed browser tooling, not a project
 dependency. It runs the real React app against intercepted local API fixtures and
 dispatches assistant delta events through an EventSource fixture. It asserts
 hold/follow/jump behavior, shortcut focus, typing protection, Tab access, page
-overflow and composer bounds. A wait for bottom alignment lets browser resize
-and measurement settle before streaming assertions.
+overflow and composer bounds. A wait for bottom alignment and the following UI
+state lets browser resize and measurement settle before streaming assertions.
 
 Browser: headless Chromium **148.0.7778.96**, CSS viewport pixels, reduced motion.
 Screenshots were opened and inspected:
@@ -93,9 +96,10 @@ were not tested; browser support for keyboard viewport resizing varies.
 Restored exactly `<meta name="viewport" content="width=device-width,initial-scale=1" />`
 and rebuilt the embedded bundle with `cd web && npm ci && npm run build` (exit 0).
 `TestPhase1Gate/5` failed before this change and passes afterwards; the gate test
-is unchanged. CSS, including `100dvh`, `min-height: 0`, control wrapping and
-`env(safe-area-inset-*)` padding, is unchanged. No JavaScript keyboard-viewport
-workaround was added; physical keyboard/browser behavior remains unverified.
+is unchanged. That round retained `100dvh`, `min-height: 0` and control wrapping.
+The inactive safe-area padding retained in round 1 was removed in round 2; custom
+safe-area handling is not provided. No JavaScript keyboard-viewport workaround
+was added; physical keyboard/browser behavior remains unverified.
 
 Round results:
 
@@ -127,3 +131,40 @@ previously `/sw.js` returned the HTML shell and caused an unsupported-MIME conso
 error. `MOBILE_WIDTH` selects the requested phone test width. Browser assertions
 and timing limits are unchanged. These broader local checks are not claimed green;
 their failures remain visible for review.
+
+## PR #94 fix round 2
+
+The shortcut now matches `code: "KeyM"` with the existing Alt+Shift / no Ctrl+Meta
+guards. Unit tests use both `key: "M"` and macOS-style `key: "Â"`, cover protected
+fields and IME input for each, and reject another physical code even when its
+generated key is `M`. Against `22c3aad`, both cases fail; after this fix both pass.
+The browser harness also dispatches the macOS-style event and verifies focus.
+This emulates the event on Linux Chromium; actual macOS hardware was not tested.
+After a width change, the harness waits for both bottom alignment and the following
+UI state before emitting a delta; its scroll assertions are unchanged.
+
+Safe-area choice: removed the inactive `env(...)` override and its claim. The
+existing phone `padding: 0.5rem` remains, so there is no duplicate declaration.
+No viewport or Phase 1 gate change. The duplicate composer `title` is removed;
+the Message label and `aria-keyshortcuts` remain. All round fixes are batched in
+one commit, preserving the existing reviewed history.
+
+Commands and results:
+
+- `cd web && npm test -- src/Keyboard.test.tsx`: 2 tests PASS (both failed before).
+- `cd web && npm ci && npm run typecheck && npm run build && npm test`: PASS;
+  226 tests / 27 files. Rebuilt assets and source fingerprint are committed.
+- `go test ./internal/chat -run TestPhase1Gate -v`: PASS, all six subtests.
+- `go test -race -count=1 ./...`: run for this round; final output is recorded in
+  [PR #94](https://github.com/raufimusaddiq/antares/pull/94).
+- `PLAYWRIGHT_MODULE=/tmp/c05-browser-tools/node_modules/playwright-core/index.mjs
+  CHROMIUM_EXECUTABLE=/home/ubuntu/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome
+  node /tmp/t85-fix94b-layout/verify.mjs`: PASS. This is a copy of the committed
+  harness so original screenshots remain intact. It verifies hold/follow/jump,
+  physical-key and emulated macOS shortcuts, typing/Tab access, 390px and 1440px
+  layouts, plus overflow/composer bounds at 320/640/768/1024/1920px. Chromium
+  148.0.7778.96. Phone and desktop captures inspected.
+- `git diff --check`: PASS.
+
+Not checked: physical phones, actual macOS keyboards, Safari, Firefox and physical
+keyboard viewport behavior. No custom safe-area support is claimed.

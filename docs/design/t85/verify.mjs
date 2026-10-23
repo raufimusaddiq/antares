@@ -50,7 +50,7 @@ for (const [name, width, height] of [['phone', 390, 844], ['desktop', 1440, 1000
   const feed = page.getByRole('feed');
   await feed.evaluate(el => { el.scrollTop = el.scrollHeight; });
   await page.waitForTimeout(150);
-  await page.waitForFunction(() => { const el = document.querySelector('.log'); return Math.abs(el.scrollHeight - el.clientHeight - el.scrollTop) < 2; });
+  await page.waitForFunction(() => { const el = document.querySelector('.log'); return Math.abs(el.scrollHeight - el.clientHeight - el.scrollTop) < 2 && !document.querySelector('.vjump'); });
   console.log(name, 'before stream', await geometry(), await page.getByRole('button', { name: 'Jump to latest' }).count());
   await delta('Streaming verification fixture.\n\n' + 'Content arrives while the reader stays at the bottom. '.repeat(18));
   await page.waitForFunction(() => { const el = document.querySelector('.log'); return Math.abs(el.scrollHeight - el.clientHeight - el.scrollTop) < 2; });
@@ -70,6 +70,9 @@ for (const [name, width, height] of [['phone', 390, 844], ['desktop', 1440, 1000
   await page.getByRole('button', { name: 'New chat', exact: true }).focus();
   await page.keyboard.press('Alt+Shift+M');
   assert(await page.locator('#composer-input').evaluate(el => el === document.activeElement));
+  await page.getByRole('button', { name: 'New chat', exact: true }).focus();
+  await page.evaluate(() => document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Â', code: 'KeyM', altKey: true, shiftKey: true, bubbles: true, cancelable: true })));
+  assert(await page.locator('#composer-input').evaluate(el => el === document.activeElement), 'macOS Option+Shift+M reaches composer by physical code');
   await page.locator('#composer-input').fill('');
   await page.keyboard.type('Local fixture draft / preserved while typing');
   const search = page.getByRole('searchbox');
@@ -95,6 +98,7 @@ for (const width of [320, 640, 768, 1024, 1920]) {
   const g = await geometry();
   assert(g.overflow <= width, `${width}: no horizontal overflow`);
   assert(g.composer.x >= 0 && g.composer.right <= width && g.composer.bottom <= 800, `${width}: composer fits`);
+  console.log('layout', width, g);
 }
 await page.setViewportSize({ width: 390, height: 500 });
 await page.emulateMedia({ colorScheme: 'light' });

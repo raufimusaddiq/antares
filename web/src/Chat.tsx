@@ -197,7 +197,7 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
   const area = useRef<HTMLTextAreaElement>(null);
   useEffect(() => {
     const onShortcut = (e: globalThis.KeyboardEvent) => {
-      if (e.key.toLowerCase() !== "m" || !e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey || e.defaultPrevented || e.isComposing) return;
+      if (e.code !== "KeyM" || !e.altKey || !e.shiftKey || e.ctrlKey || e.metaKey || e.defaultPrevented || e.isComposing) return;
       if (e.target instanceof HTMLElement && e.target.closest("input, textarea, select, [contenteditable]")) return;
       e.preventDefault();
       area.current?.focus();
@@ -255,7 +255,6 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
         ref={area}
         id="composer-input"
         aria-keyshortcuts="Alt+Shift+M"
-        title="Message (Alt+Shift+M to focus outside a text field)"
         rows={2}
         maxLength={MAX_INPUT}
         value={props.value}
