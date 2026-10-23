@@ -186,7 +186,7 @@ func (a *Auth) start(w http.ResponseWriter, r *http.Request) {
 	state, nonce, verifier, browser := randomToken(), randomToken(), randomToken(), randomToken()
 	now := a.now()
 	if !a.flows.put(hashToken(state), flow{nonce: nonce, verifier: verifier, browserHash: hashToken(browser), expires: now.Add(flowTTL)}, now) {
-		a.apiError(w, r, http.StatusServiceUnavailable, "RATE_LIMITED", "Too many sign-ins in progress; try again shortly")
+		a.apiError(w, r, http.StatusTooManyRequests, "RATE_LIMITED", "Too many sign-ins in progress; try again shortly")
 		return
 	}
 	a.setCookie(w, flowCookie, browser, flowTTL)
@@ -489,6 +489,10 @@ func forbiddenInput(r *http.Request) string {
 // ---- JSON ---------------------------------------------------------------------
 
 func (a *Auth) apiError(w http.ResponseWriter, r *http.Request, status int, code, msg string) {
+	if code == "RATE_LIMITED" {
+		WriteRateLimited(w, msg, 0)
+		return
+	}
 	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": msg, "requestId": newRequestID()}})
 }
 

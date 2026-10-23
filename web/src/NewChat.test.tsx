@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ChatSummary } from "./chatApi";
 
 const api = vi.hoisted(() => ({
@@ -153,5 +153,37 @@ describe("New chat", () => {
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(2));
     expect(api.sendMessage.mock.calls[1]).toEqual(["c2", "first", firstKey]);
     expect(api.createChat).toHaveBeenCalledTimes(1);
+  });
+});
+
+
+describe("SSE refusals", () => {
+  it.each(["RUNNING", "PENDING"])("keeps a %s run active when EventSource is refused", async (status) => {
+    api.getRun.mockResolvedValue(ok({ runId: "r1", status }));
+    await mount([chat("c1", { title: "Busy", activeRunId: "r1" })]);
+    await waitFor(() => expect(FakeSource.all).toHaveLength(1));
+    const source = FakeSource.all[0];
+    source.readyState = FakeSource.CLOSED;
+    act(() => source.onerror?.());
+    expect(await screen.findByText("Live updates disconnected. The run is still active. Reconnect to resume updates.")).toBeTruthy();
+    expect(api.getRun).toHaveBeenCalledWith("r1");
+    expect(screen.queryByRole("button", { name: "Try again" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeTruthy();
+    expect(api.cancelRun).not.toHaveBeenCalled();
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "Reconnect" }));
+    await waitFor(() => expect(FakeSource.all).toHaveLength(2));
+    expect(FakeSource.all[1].url).toContain("r1");
+  });
+
+  it("still reports a confirmed run failure after a stream refusal", async () => {
+    api.getRun.mockResolvedValue(ok({ runId: "r1", status: "FAILED" }));
+    await mount([chat("c1", { title: "Busy", activeRunId: "r1" })]);
+    await waitFor(() => expect(FakeSource.all).toHaveLength(1));
+    FakeSource.all[0].readyState = FakeSource.CLOSED;
+    act(() => FakeSource.all[0].onerror?.());
+    expect(await screen.findByText("This response did not finish: the assistant reported an error.")).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Try again" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Reconnect" })).toBeNull();
   });
 });

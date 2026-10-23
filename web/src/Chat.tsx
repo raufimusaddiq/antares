@@ -47,6 +47,7 @@ interface Pending {
 export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun; onCancel: () => void; onRetry: () => void; onReconnect: () => void }) {
   const notice = runNotice(run);
   const live = run.phase === "streaming" || run.phase === "reconnecting";
+  const disconnected = run.phase === "disconnected" || run.phase === "detached";
   return (
     <article className={`turn assistant run-${run.phase}`} aria-label="Assistant reply">
       <h2 className="who">Assistant</h2>
@@ -71,12 +72,12 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
           {notice}
         </p>
       )}
-      {(live || run.phase === "disconnected") && (
+      {(live || disconnected) && (
         <button type="button" className="quiet" onClick={onCancel}>
           Cancel
         </button>
       )}
-      {run.phase === "disconnected" && (
+      {disconnected && (
         <button type="button" className="quiet" onClick={onReconnect}>
           Reconnect
         </button>
@@ -360,6 +361,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
             } else if (r.ok && r.value.status === "CANCELLED") dispatch({ k: "event", ev: { type: "run.cancelled" } });
             else if (r.ok && (r.value.status === "FAILED" || r.value.status === "TIMED_OUT")) {
               dispatch({ k: "event", ev: { type: "run.failed", code: "", status: r.value.status } });
+            } else if (r.ok && (r.value.status === "RUNNING" || r.value.status === "PENDING")) {
+              dispatch({ k: "event", ev: { type: "stream.closed" } });
             } else dispatch({ k: "event", ev: { type: "run.disconnected" } });
           });
         } else dispatch({ k: "event", ev: { type: "stream.lost" } });

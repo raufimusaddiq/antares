@@ -52,17 +52,10 @@ func (a *Auth) limit(route string, next http.Handler) http.Handler {
 		return next
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		u, ok := UserFrom(r.Context())
-		if !ok {
-			a.apiError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Sign in required")
-			return
-		}
+		u, _ := UserFrom(r.Context())
 		retry, release := a.limits.acquire(u.ID, route, a.now())
-		if retry > 0 {
-			w.Header().Set("Retry-After", strconv.Itoa(retry))
-			writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": map[string]any{
-				"code": "RATE_LIMITED", "message": "Account request limit reached; retry later", "requestId": newRequestID(), "retryAfterSeconds": retry,
-			}})
+		if retry != 0 {
+			WriteRateLimited(w, "Account request limit reached; retry later", retry)
 			return
 		}
 		if release != nil {
@@ -86,7 +79,7 @@ func (l *requestLimits) acquire(id, route string, now time.Time) (int, func()) {
 	b := l.accounts[id]
 	if b == nil {
 		if len(l.accounts) >= maxLimitAccounts {
-			return 60, nil
+			return -1, nil
 		}
 		b = &accountLimit{start: now}
 		l.accounts[id] = b
@@ -110,10 +103,24 @@ func (l *requestLimits) acquire(id, route string, now time.Time) (int, func()) {
 		b.uploads++
 	case "GET /api/runs/{runId}/events":
 		if b.streams >= l.config.SSEConnections {
-			return 1, nil
+			return -1, nil // A live connection has no known release time.
 		}
 		b.streams++
 		return 0, func() { l.mu.Lock(); b.streams--; l.mu.Unlock() }
 	}
 	return 0, nil
+}
+
+// WriteRateLimited uses null when capacity depends on work finishing rather than a known deadline.
+func WriteRateLimited(w http.ResponseWriter, message string, retry int) {
+	var hint *int
+	if retry > 0 {
+		hint = &retry
+		w.Header().Set("Retry-After", strconv.Itoa(retry))
+	} else {
+		w.Header().Del("Retry-After")
+	}
+	writeJSON(w, http.StatusTooManyRequests, map[string]any{"error": map[string]any{
+		"code": "RATE_LIMITED", "message": message, "requestId": newRequestID(), "retryAfterSeconds": hint,
+	}})
 }

@@ -22,19 +22,33 @@ func limitRequest(h http.Handler, id string) *httptest.ResponseRecorder {
 	return w
 }
 
-func assertLimited(t *testing.T, w *httptest.ResponseRecorder) {
+func assertLimited(t *testing.T, w *httptest.ResponseRecorder, known ...bool) {
 	t.Helper()
 	var body struct {
 		Error struct {
 			Code              string
-			RetryAfterSeconds int
+			RetryAfterSeconds *int
 		}
 	}
 	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
 		t.Fatal(err)
 	}
+	if w.Code != 429 || body.Error.Code != "RATE_LIMITED" {
+		t.Fatalf("rate limit response: %d %s", w.Code, w.Body.String())
+	}
+	if len(known) > 0 && !known[0] {
+		var raw map[string]map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &raw); err != nil {
+			t.Fatal(err)
+		}
+		hint, exists := raw["error"]["retryAfterSeconds"]
+		if !exists || hint != nil || w.Header().Get("Retry-After") != "" {
+			t.Fatalf("unknown wait: %v %s", w.Header(), w.Body.String())
+		}
+		return
+	}
 	retry, err := strconv.Atoi(w.Header().Get("Retry-After"))
-	if w.Code != 429 || body.Error.Code != "RATE_LIMITED" || err != nil || retry < 1 || body.Error.RetryAfterSeconds != retry {
+	if err != nil || retry < 1 || body.Error.RetryAfterSeconds == nil || *body.Error.RetryAfterSeconds != retry {
 		t.Fatalf("rate limit response: %d %v %s", w.Code, w.Header(), w.Body.String())
 	}
 }
@@ -101,7 +115,7 @@ func TestSSEQuotaReleasedAfterHandlerReturns(t *testing.T) {
 	var wg sync.WaitGroup
 	wg.Go(func() { limitRequest(h, "a") })
 	<-entered
-	assertLimited(t, limitRequest(h, "a"))
+	assertLimited(t, limitRequest(h, "a"), false)
 	wg.Go(func() { limitRequest(h, "b") })
 	<-entered
 	close(release)
@@ -120,7 +134,7 @@ func TestRequestLimitsBoundedAndEvicted(t *testing.T) {
 			t.Fatalf("account %d: %d", i, w.Code)
 		}
 	}
-	assertLimited(t, limitRequest(h, "overflow"))
+	assertLimited(t, limitRequest(h, "overflow"), false)
 	if len(a.limits.accounts) != maxLimitAccounts {
 		t.Fatalf("map grew to %d", len(a.limits.accounts))
 	}
@@ -145,7 +159,7 @@ func TestSSEQuotaSurvivesCounterExpiry(t *testing.T) {
 		if retry, _ := l.acquire("b", "POST /api/assets", now); retry != 0 {
 			t.Fatal("B denied")
 		}
-		if retry, _ := l.acquire("a", "GET /api/runs/{runId}/events", now); retry != 1 {
+		if retry, _ := l.acquire("a", "GET /api/runs/{runId}/events", now); retry != -1 {
 			t.Fatalf("active stream expired: retry %d", retry)
 		}
 		release()
@@ -154,5 +168,26 @@ func TestSSEQuotaSurvivesCounterExpiry(t *testing.T) {
 		t.Fatal("released slot still occupied")
 	} else {
 		release()
+	}
+}
+
+func TestRateLimitedEnvelope(t *testing.T) {
+	for _, retry := range []int{12, 0, -1} {
+		w := httptest.NewRecorder()
+		w.Header().Set("Retry-After", "999")
+		WriteRateLimited(w, "test limit", retry)
+		assertLimited(t, w, retry > 0)
+		var body map[string]map[string]any
+		if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+		e := body["error"]
+		requestID, ok := e["requestId"].(string)
+		if len(e) != 4 || e["message"] != "test limit" || !ok || requestID == "" {
+			t.Fatalf("wrong envelope: %s", w.Body.String())
+		}
+		if retry > 0 && w.Header().Get("Retry-After") != strconv.Itoa(retry) {
+			t.Fatalf("retry hint: %v", w.Header())
+		}
 	}
 }

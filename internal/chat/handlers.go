@@ -55,6 +55,10 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 }
 
 func apiError(w http.ResponseWriter, status int, code, msg string) {
+	if code == hermes.CodeRateLimited {
+		auth.WriteRateLimited(w, msg, 0)
+		return
+	}
 	b := make([]byte, 8)
 	_, _ = rand.Read(b)
 	writeJSON(w, status, map[string]any{"error": map[string]string{"code": code, "message": msg, "requestId": "req_" + hex.EncodeToString(b)}})
@@ -308,7 +312,6 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 			internalError(w, "count runs", err)
 			return
 		} else if n >= maxActiveRunsPerUser {
-			w.Header().Set("Retry-After", "1")
 			apiError(w, http.StatusTooManyRequests, hermes.CodeRateLimited, "Too many runs in progress; retry after a run finishes")
 			return
 		}

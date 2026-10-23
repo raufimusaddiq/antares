@@ -7,15 +7,21 @@ import (
 	"github.com/raufimusaddiq/antares/internal/auth"
 )
 
-func requireLimit(t *testing.T, w *httptest.ResponseRecorder) {
+func requireLimit(t *testing.T, w *httptest.ResponseRecorder, known ...bool) {
 	t.Helper()
 	var body = decodeBody[struct {
 		Error struct {
 			Code              string
-			RetryAfterSeconds int
+			RetryAfterSeconds *int
 		}
 	}](t, w)
-	if w.Code != 429 || body.Error.Code != "RATE_LIMITED" || body.Error.RetryAfterSeconds < 1 || w.Header().Get("Retry-After") == "" {
+	if len(known) > 0 && !known[0] {
+		if w.Code != 429 || body.Error.Code != "RATE_LIMITED" || body.Error.RetryAfterSeconds != nil || w.Header().Get("Retry-After") != "" {
+			t.Fatalf("unknown wait: %d %v %s", w.Code, w.Header(), w.Body.String())
+		}
+		return
+	}
+	if w.Code != 429 || body.Error.Code != "RATE_LIMITED" || body.Error.RetryAfterSeconds == nil || *body.Error.RetryAfterSeconds < 1 || w.Header().Get("Retry-After") == "" {
 		t.Fatalf("limit response: %d %v %s", w.Code, w.Header(), w.Body.String())
 	}
 }
@@ -98,7 +104,7 @@ func TestSSEQuotaThroughAuthenticatedRoute(t *testing.T) {
 	streamA := alice.open(runA, "")
 	recv(t, frA.opens, "first stream")
 	streamA.waitFor(t, "run.started")
-	requireLimit(t, alice.get("/api/runs/"+runA+"/events"))
+	requireLimit(t, alice.get("/api/runs/"+runA+"/events"), false)
 	runB := bob.send(bob.newChat(), "stream B")
 	_, frB := a.hx.runWithInput(t, "stream B")
 	streamB := bob.open(runB, "")
@@ -112,5 +118,19 @@ func TestSSEQuotaThroughAuthenticatedRoute(t *testing.T) {
 		if w := alice.get(path); w.Code != 404 {
 			t.Fatalf("slot not released: %d %s", w.Code, w.Body.String())
 		}
+	}
+}
+
+func TestUpstreamRateLimitUsesSharedEnvelope(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	a.hx.mu.Lock()
+	a.hx.failNext["POST /api/sessions"] = 429
+	a.hx.mu.Unlock()
+	w := alice.do("POST", "/api/chats", nil, nil)
+	requireLimit(t, w, false)
+	body := decodeBody[map[string]map[string]any](t, w)
+	if hint, exists := body["error"]["retryAfterSeconds"]; !exists || hint != nil || len(body["error"]) != 4 {
+		t.Fatalf("upstream limit envelope differs: %s", w.Body.String())
 	}
 }

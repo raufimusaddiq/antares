@@ -313,9 +313,11 @@ func TestStartRefusesWhenTooManyFlowsInProgress(t *testing.T) {
 	for i := 0; i < maxFlows; i++ {
 		h.a.flows.put(randomToken(), flow{expires: h.clk.Now().Add(time.Hour)}, h.clk.Now())
 	}
-	if w := h.browser().get("/api/auth/google/start"); w.Code != http.StatusServiceUnavailable {
+	w := h.browser().get("/api/auth/google/start")
+	if w.Code != http.StatusTooManyRequests {
 		t.Fatalf("got %d", w.Code)
 	}
+	assertLimited(t, w, false)
 }
 
 func TestNewRequiresEveryInput(t *testing.T) {

@@ -24,21 +24,29 @@ boundary counters reset; a burst on each side of a boundary is possible. SSE slo
 window resets and release on every handler return, including disconnect, cancellation and failed open.
 The existing four-active-runs-per-account and one-run-per-chat rules still apply.
 
-Over quota returns HTTP `429`, `Cache-Control: no-store`, an integer `Retry-After` header in seconds,
-and this JSON envelope (the request ID varies):
+Every `RATE_LIMITED` response uses HTTP `429`, `Cache-Control: no-store`, and this JSON envelope
+(the message and request ID vary). A known wait includes an integer `Retry-After` header in seconds:
 
 ```json
 {"error":{"code":"RATE_LIMITED","message":"Account request limit reached; retry later","requestId":"req_example","retryAfterSeconds":60}}
 ```
 
-For rate windows the retry hint rounds up to the remaining seconds. For SSE concurrency it is one
-second: the next attempt succeeds only after a slot is free. The existing active-run cap returns
-`RATE_LIMITED` with `Retry-After: 1`; a run must finish before capacity is available.
+For rate windows the retry hint rounds up to the remaining seconds. For SSE concurrency and the
+active-run cap, the wait depends on a connection closing or a run finishing: `retryAfterSeconds` is
+`null` and `Retry-After` is absent. Upstream throttling and sign-in flow capacity use the same
+unknown-wait envelope; Antares does not invent an upstream deadline.
+
+`EventSource` cannot expose a JSON `429` body to the browser. When a stream is refused or repeated
+reconnects fail, the UI checks `GET /api/runs/{runId}` before reporting its state. A `RUNNING` or
+`PENDING` run shows that live updates disconnected and the run remains active, with Cancel and
+Reconnect available. Only a confirmed terminal status is presented as a completed, failed or
+cancelled run; a failed status check leaves the run's outcome unknown.
 
 Counters live only in this single process and reset on restart. A mutex serializes admission and
 release. A request-driven sweep runs at most once a minute and removes expired accounts without
 open streams. The map holds at most 10,000 accounts; new accounts at capacity receive the same
-`429` with a 60-second hint until cleanup frees a slot. Existing accounts keep their budgets.
+`429` with an unknown wait (`retryAfterSeconds: null`, no `Retry-After`) until cleanup frees a slot.
+Existing accounts keep their budgets.
 Multiple replicas would require shared enforcement; this implementation is for the single-container
 deployment in the PRD.
 

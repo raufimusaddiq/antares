@@ -5,10 +5,11 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"github.com/raufimusaddiq/antares/internal/auth"
 	"log/slog"
 	"strings"
 	"testing"
+
+	"github.com/raufimusaddiq/antares/internal/auth"
 )
 
 var goodKey = base64.StdEncoding.EncodeToString([]byte(strings.Repeat("k", 32)))

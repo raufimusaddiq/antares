@@ -710,6 +710,14 @@ func TestConcurrentRunCap(t *testing.T) {
 	if w.Code != 429 || errCode(t, w) != "RATE_LIMITED" {
 		t.Errorf("over the concurrency cap: %d %s", w.Code, w.Body.String())
 	}
+	var limitBody map[string]map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &limitBody); err != nil {
+		t.Fatal(err)
+	}
+	retry, exists := limitBody["error"]["retryAfterSeconds"]
+	if !exists || retry != nil || w.Header().Get("Retry-After") != "" {
+		t.Fatalf("unknown run wait must be null with no Retry-After: %v %s", w.Header(), w.Body.String())
+	}
 	// One chat, one run at a time.
 	w = u.do("POST", "/api/chats/"+chats[0]+"/messages", map[string]string{"Idempotency-Key": nextIdem()}, map[string]string{"input": "x"})
 	if w.Code != 409 || errCode(t, w) != "RUN_CONFLICT" {
