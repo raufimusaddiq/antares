@@ -132,7 +132,11 @@ describe("the push handlers cannot cache or intercept anything private", () => {
     await w.push({ v: 1, kind: "completed", chatId: ID });
     await w.click(ID);
     expect(w.calls).toEqual([]);
-    const pushPart = swSource().split("// ---- Web Push")[1];
+    const [pushPart, rotationPart] = swSource().split("// ---- Web Push")[1].split("// ---- Subscription rotation");
     expect(pushPart).not.toMatch(/\bcaches\b|\bfetch\(|importScripts|localStorage|addEventListener\(\s*["']fetch["']/);
+    // The one deliberate exception (#69): the pushsubscriptionchange handler calls fetch to re-register.
+    // It is its own section and still may not touch the cache, storage or the fetch event.
+    expect(rotationPart).toBeDefined();
+    expect(rotationPart).not.toMatch(/\bcaches\b|importScripts|localStorage|addEventListener\(\s*["']fetch["']/);
   });
 });
