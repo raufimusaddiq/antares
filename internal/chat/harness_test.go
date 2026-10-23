@@ -66,13 +66,15 @@ type fakeHermes struct {
 	// It is a model of the property under test, not Hermes itself (docs/runbooks/memory-scoping.md).
 	mem map[string]string
 
+	canned map[string]string // GET path -> JSON body, for the discovery routes
+
 	failNext map[string]int // "METHOD suffix" -> status to return once (sticky when negative)
 	hang     map[string]bool
 }
 
 func newFakeHermes(t testing.TB) *fakeHermes {
 	f := &fakeHermes{t: t, keys: map[string]string{}, runs: map[string]*fakeRun{}, msgs: map[string][]map[string]any{}, mem: map[string]string{},
-		failNext: map[string]int{}, hang: map[string]bool{}}
+		failNext: map[string]int{}, hang: map[string]bool{}, canned: map[string]string{}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
 	return f
@@ -273,9 +275,17 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 		default:
 			http.NotFound(w, r)
 		}
+	case r.Method == "GET" && f.cannedBody(path) != "":
+		io.WriteString(w, f.cannedBody(path))
 	default:
 		http.NotFound(w, r)
 	}
+}
+
+func (f *fakeHermes) cannedBody(path string) string {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.canned[path]
 }
 
 // ---- the app ------------------------------------------------------------------------

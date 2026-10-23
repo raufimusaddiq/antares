@@ -1,0 +1,9 @@
+{
+  "providers": [
+    {"slug": "example-ai", "name": "Example AI", "authenticated": true, "is_current": true, "total_models": 2, "models": ["example-large", "example-small"]},
+    {"slug": "unconfigured-ai", "name": "Unconfigured AI", "authenticated": false, "total_models": 1, "models": ["never-offered"]},
+    {"slug": "no-flag-ai", "name": "No Flag AI", "models": ["also-never-offered"]}
+  ],
+  "model": "example-large",
+  "provider": "example-ai"
+}

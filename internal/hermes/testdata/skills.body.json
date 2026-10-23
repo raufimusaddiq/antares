@@ -1,0 +1,7 @@
+{
+  "object": "list",
+  "data": [
+    {"name": "example-skill", "description": "fabricated description", "category": "example"},
+    {"name": "another-skill", "description": "fabricated description", "category": ""}
+  ]
+}
