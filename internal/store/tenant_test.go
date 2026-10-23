@@ -511,15 +511,84 @@ func TestListAdminUsersFiltersAndPages(t *testing.T) {
 		id := mkUser(t, db, "u"+string(rune('a'+i)), "USER", ap, "UNPROVISIONED")
 		db.Exec(`UPDATE users SET created_at = ? WHERE id = ?`, ts(t0.Add(time.Duration(i)*time.Minute)), id)
 	}
-	pend, err := ListAdminUsers(ctx, db, "PENDING", 50, 0)
+	pend, err := ListAdminUsers(ctx, db, "PENDING", "", 50, 0)
 	if err != nil || len(pend) != 2 || pend[0].ID != "ua" || pend[1].ID != "uc" {
 		t.Fatalf("pending = %+v %v", pend, err)
 	}
-	all, _ := ListAdminUsers(ctx, db, "", 2, 1)
+	all, _ := ListAdminUsers(ctx, db, "", "", 2, 1)
 	if len(all) != 2 || all[0].ID != "ub" {
 		t.Fatalf("page = %+v", all)
 	}
 	if _, err := GetAdminUser(ctx, db, "nope"); !errors.Is(err, ErrNotFound) {
 		t.Fatal(err)
+	}
+}
+
+func TestListAdminUsersSearchMatchesIdentityOnlyAndEscapesWildcards(t *testing.T) {
+	ctx := context.Background()
+	db, _ := migrated(t)
+	a := mkUser(t, db, "ua", "USER", "PENDING", "UNPROVISIONED")
+	b := mkUser(t, db, "ub", "USER", "APPROVED", "UNPROVISIONED")
+	db.Exec(`UPDATE users SET email = 'Sari.Wulan@example.test', display_name = 'Sari' WHERE id = ?`, a)
+	db.Exec(`UPDATE users SET email = 'budi_100%@example.test', display_name = '' WHERE id = ?`, b)
+	got := func(approval, q string) []string {
+		us, err := ListAdminUsers(ctx, db, approval, q, 50, 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var ids []string
+		for _, u := range us {
+			ids = append(ids, u.ID)
+		}
+		return ids
+	}
+	if g := got("", "SARI"); !reflect.DeepEqual(g, []string{"ua"}) {
+		t.Fatalf("case-insensitive name/email match = %v", g)
+	}
+	if g := got("", "_100%"); !reflect.DeepEqual(g, []string{"ub"}) {
+		t.Fatalf("wildcards must be literal, got %v", g)
+	}
+	if g := got("", "_"); !reflect.DeepEqual(g, []string{"ub"}) {
+		t.Fatalf("a lone _ is a literal underscore, got %v", g)
+	}
+	if g := got("PENDING", "budi"); len(g) != 0 {
+		t.Fatalf("search must combine with the approval filter, got %v", g)
+	}
+}
+
+// The feed is written to while an admin reads it. Offset paging over a
+// newest-first list repeats and skips rows when that happens; keyset paging
+// must not.
+func TestListAuditKeysetPagingSurvivesNewRows(t *testing.T) {
+	ctx := context.Background()
+	db, _ := migrated(t)
+	put := func(id string, at time.Time) {
+		if _, err := db.Exec(`INSERT INTO audit_log (id, action, target_kind, target_id, outcome, created_at) VALUES (?, 'admin.approve', 'user', 'x', 'ok', ?)`, id, ts(at)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// Five rows, two sharing a timestamp: the id breaks the tie.
+	put("e1", t0)
+	put("e2", t0.Add(time.Minute))
+	put("e3", t0.Add(2*time.Minute))
+	put("e4", t0.Add(2*time.Minute))
+	put("e5", t0.Add(3*time.Minute))
+
+	p1, more, err := ListAudit(ctx, db, 2, "", "")
+	if err != nil || !more || len(p1) != 2 || p1[0].ID != "e5" || p1[1].ID != "e4" {
+		t.Fatalf("page 1 = %+v more=%v %v", p1, more, err)
+	}
+	// A new entry lands after page 1 was read.
+	put("e6", t0.Add(4*time.Minute))
+	p2, more, err := ListAudit(ctx, db, 2, p1[1].CreatedAt, p1[1].ID)
+	if err != nil || !more || len(p2) != 2 || p2[0].ID != "e3" || p2[1].ID != "e2" {
+		t.Fatalf("page 2 = %+v more=%v %v (an offset would have repeated e4)", p2, more, err)
+	}
+	p3, more, err := ListAudit(ctx, db, 2, p2[1].CreatedAt, p2[1].ID)
+	if err != nil || more || len(p3) != 1 || p3[0].ID != "e1" {
+		t.Fatalf("page 3 = %+v more=%v %v", p3, more, err)
+	}
+	if fresh, _, _ := ListAudit(ctx, db, 2, "", ""); fresh[0].ID != "e6" {
+		t.Fatalf("a fresh first page must show the new entry, got %+v", fresh)
 	}
 }

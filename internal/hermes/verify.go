@@ -16,13 +16,22 @@ import (
 
 // Check names. They are the vocabulary admins see (PRD §5.3 step 5).
 const (
-	CheckEndpoint    = "endpoint"
-	CheckIdentity    = "profile_identity"
-	CheckIsolation   = "credential_isolation"
-	CheckSessions    = "session_ownership"
-	CheckToolsets    = "toolset_policy"
-	CheckMemory      = "memory_boundary"
-	probeTimeout     = 15 * time.Second
+	CheckEndpoint  = "endpoint"
+	CheckIdentity  = "profile_identity"
+	CheckIsolation = "credential_isolation"
+	CheckSessions  = "session_ownership"
+	CheckToolsets  = "toolset_policy"
+	CheckMemory    = "memory_boundary"
+	// ProbeTimeout and MaxVerifyProbes (and HelperTimeout in helper.go) are
+	// exported only so internal/tenant can assert its lease and run-budget
+	// arithmetic against them; nothing in production reads MaxVerifyProbes.
+	// ProbeTimeout bounds one verification request. The longest Verify path with
+	// maxSiblingProbes siblings makes 14 requests (1+1 endpoint, 2 identity, 2+3
+	// isolation, 1+3 sessions, 1 toolsets). MaxVerifyProbes is 15: one probe of
+	// deliberate slack, so adding a single probe does not instantly break the
+	// lease arithmetic. TestVerifyProbeCount pins 14 <= measured <= 15.
+	ProbeTimeout     = 15 * time.Second
+	MaxVerifyProbes  = 15
 	absentSlug       = "u_zzzzzzzzzzzz" // never provisioned: a probe target that must not answer
 	maxSiblingProbes = 3
 )
@@ -39,19 +48,44 @@ var DeniedToolsets = []string{
 	"browser",        // cookies and logged-in sessions
 }
 
+// KnownToolsets is every toolset the deployed Hermes (v0.22.2) reports from
+// /v1/toolsets. ValidateAllowedToolsets rejects names outside it, so Antares
+// and the provisioner (which mirrors this list, pinned by
+// TestProvisionerToolsetListsMatchAntares) agree on what a valid name is: a
+// typo in ANTARES_TENANT_ALLOWED_TOOLSETS stops Antares at startup instead of
+// crashlooping the helper.
+var KnownToolsets = []string{
+	"web", "browser", "terminal", "file", "code_execution", "vision", "video",
+	"image_gen", "video_gen", "x_search", "tts", "stt", "skills", "todo",
+	"kanban", "memory", "context_engine", "session_search", "connections",
+	"clarify", "delegation", "cronjob", "discord", "discord_admin", "yuanbao",
+	"computer_use", "a2a",
+}
+
 // DefaultAllowedToolsets is the documented default tenant set. It is data, not
 // policy: the admin owns it (docs/runbooks/tenant-toolsets.md).
 var DefaultAllowedToolsets = []string{"web", "vision", "image_gen", "skills", "memory", "todo", "clarify"}
 
 // ValidateAllowedToolsets refuses a configured allow-list that includes a
-// floor toolset. It is checked at startup, not at verification time, so a bad
-// policy never starts.
+// floor toolset or a name Hermes does not report. It is checked at startup,
+// not at verification time, so a bad policy never starts. It is the same rule
+// the provisioner applies to PROVISIONER_ALLOWED_TOOLSETS.
 func ValidateAllowedToolsets(names []string) error {
+	if len(names) == 0 {
+		return errors.New("allowed toolsets must not be empty")
+	}
 	for _, n := range names {
 		for _, d := range DeniedToolsets {
 			if n == d {
-				return errors.New("toolset " + n + " crosses the profile boundary and cannot be allowed for tenants")
+				return errors.New("toolset " + safeName(n) + " crosses the profile boundary and cannot be allowed for tenants")
 			}
+		}
+		known := false
+		for _, k := range KnownToolsets {
+			known = known || n == k
+		}
+		if !known {
+			return errors.New("toolset " + safeName(n) + " is not a known toolset")
 		}
 	}
 	return nil
@@ -120,7 +154,7 @@ func NewVerifier(baseURL string, allowed []string, client *http.Client) (*Verifi
 		return nil, err
 	}
 	if client == nil {
-		client = &http.Client{Timeout: probeTimeout}
+		client = &http.Client{Timeout: ProbeTimeout}
 	}
 	c := *client
 	c.CheckRedirect = noRedirect
@@ -139,7 +173,7 @@ type resp struct {
 // get performs one GET. key == "" sends no Authorization header. A transport
 // failure is returned as an error with no text from the cause.
 func (v *Verifier) get(ctx context.Context, path, key string) (resp, error) {
-	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	ctx, cancel := context.WithTimeout(ctx, ProbeTimeout)
 	defer cancel()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, v.base.String()+path, nil)
 	if err != nil {
@@ -173,16 +207,28 @@ func refused(status int) bool {
 // refusal, otherwise a fixed-vocabulary reason that tells an unreachable
 // endpoint ("did not answer") from a wrong status (the status is named).
 func (v *Verifier) expectRefusal(ctx context.Context, path, key, what string) string {
+	return v.expectRefusalOr(ctx, path, key, what, false)
+}
+
+// expectRefusalOr is expectRefusal; with notFoundOK a 404 also counts. That is
+// only right for a route that was never provisioned: the deployed Hermes answers
+// 404 for it, which proves the tenant key opens nothing there. For the default
+// profile and for sibling routes a 404 would mean a misrouted endpoint.
+func (v *Verifier) expectRefusalOr(ctx context.Context, path, key, what string, notFoundOK bool) string {
 	r, err := v.get(ctx, path, key)
 	switch {
 	case err != nil:
 		return what + " did not answer"
-	case refused(r.status):
+	case refused(r.status), notFoundOK && r.status == http.StatusNotFound:
 		return ""
 	case r.status == http.StatusOK:
 		return what + " accepted the request (status 200)"
 	default:
-		return what + " answered status " + strconv.Itoa(r.status) + ", expected 401 or 403"
+		want := "401 or 403"
+		if notFoundOK {
+			want = "401, 403 or 404"
+		}
+		return what + " answered status " + strconv.Itoa(r.status) + ", expected " + want
 	}
 }
 
@@ -260,7 +306,7 @@ func (v *Verifier) identity(ctx context.Context, t Target) Result {
 	if why := v.expectRefusal(ctx, "/v1/models", t.Key, "the default profile route (tenant key)"); why != "" {
 		return Result{CheckIdentity, false, why}
 	}
-	if why := v.expectRefusal(ctx, route(absentSlug)+"/v1/models", t.Key, "an unprovisioned profile route (tenant key)"); why != "" {
+	if why := v.expectRefusalOr(ctx, route(absentSlug)+"/v1/models", t.Key, "an unprovisioned profile route (tenant key)", true); why != "" {
 		return Result{CheckIdentity, false, why}
 	}
 	return Result{CheckIdentity, true, ""}
@@ -286,9 +332,12 @@ func (v *Verifier) isolation(ctx context.Context, t Target, siblings []string) R
 }
 
 // sessions: the profile lists its own sessions, no other tenant's route lists
-// them for this key, and a new profile owns none. The sessions list shape is
-// documented but UNVERIFIED on the deployed build (docs/hermes/PHASE0-FINDINGS.md);
-// anything this does not recognise fails closed.
+// them for this key, and a new profile owns none. The list envelope is the one
+// the deployed build (Hermes v0.22.2) returned for a fresh profile, as
+// reproduced in issue #41 and committed as fixtures/sessions-empty.body.json
+// (an empty list; the shape of a session item is still unverified). It is
+// pinned by TestSessionCountDeployedEnvelope; anything this does not
+// recognise fails closed.
 func (v *Verifier) sessions(ctx context.Context, t Target, siblings []string) Result {
 	r, err := v.get(ctx, route(t.Profile)+"/api/sessions?limit=1&offset=0", t.Key)
 	if err != nil || r.status != http.StatusOK {
@@ -311,9 +360,19 @@ func (v *Verifier) sessions(ctx context.Context, t Target, siblings []string) Re
 	return Result{CheckSessions, true, ""}
 }
 
-// sessionCount accepts a bare array or an object whose "sessions" member is an
-// array. Anything else is unrecognised.
+// sessionCount accepts the deployed envelope
+// {"object":"list","data":[...],"limit":N,"offset":N,"has_more":bool}, a bare
+// array, or an object whose "sessions" member is an array. Anything else is
+// unrecognised, including {"data":[]} without "object":"list" (the shape a
+// naive client sends).
 func sessionCount(b []byte) (int, bool) {
+	var env struct {
+		Object string            `json:"object"`
+		Data   []json.RawMessage `json:"data"`
+	}
+	if json.Unmarshal(b, &env) == nil && env.Object == "list" && env.Data != nil {
+		return len(env.Data), true
+	}
 	var arr []json.RawMessage
 	if json.Unmarshal(b, &arr) == nil && arr != nil {
 		return len(arr), true

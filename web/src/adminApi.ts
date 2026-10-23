@@ -89,7 +89,16 @@ export function parseAuditEntry(v: unknown): AuditEntry | null {
   return { id: str(o.id), actor: str(o.actor), action: str(o.action), targetId: str(o.targetId), outcome: str(o.outcome), requestId: str(o.requestId), createdAt: str(o.createdAt) };
 }
 
-export const parseAudit = parseList("entries", parseAuditEntry);
+export interface AuditPage {
+  entries: AuditEntry[];
+  /** Cursor for the next (older) page; empty when this is the last one. The server owns its shape. */
+  next: string;
+}
+
+export function parseAudit(v: unknown): AuditPage | null {
+  const entries = parseList("entries", parseAuditEntry)(v);
+  return entries ? { entries, next: str(obj(v)?.next) } : null;
+}
 
 async function call<T>(method: "GET" | "POST", path: string, parse: (b: unknown) => T | null, body?: unknown, signal?: AbortSignal): Promise<AdminResult<T>> {
   let res: Response;
@@ -118,9 +127,20 @@ async function call<T>(method: "GET" | "POST", path: string, parse: (b: unknown)
   return value === null ? { ok: false, code: "INTERNAL", status: res.status } : { ok: true, value };
 }
 
-export const listUsers = (offset: number, signal?: AbortSignal) => call("GET", `/api/admin/users?limit=${USERS_PAGE}&offset=${offset}`, parseUsers, undefined, signal);
+/** `status` is an approval status the server filters on (SQL); `q` is a substring of name or email. Both optional. */
+export function listUsers(offset: number, status: string, q: string, signal?: AbortSignal) {
+  const p = new URLSearchParams({ limit: String(USERS_PAGE), offset: String(offset) });
+  if (status) p.set("status", status);
+  if (q) p.set("q", q);
+  return call("GET", `/api/admin/users?${p}`, parseUsers, undefined, signal);
+}
 export const getUser = (id: string, signal?: AbortSignal) => call("GET", `/api/admin/users/${id}`, parseAdminUser, undefined, signal);
-export const listAudit = (offset: number, signal?: AbortSignal) => call("GET", `/api/admin/audit?limit=${AUDIT_PAGE}&offset=${offset}`, parseAudit, undefined, signal);
+/** Keyset paging: `before` is the previous page's `next`, or empty for the newest entries. */
+export function listAudit(before: string, signal?: AbortSignal) {
+  const p = new URLSearchParams({ limit: String(AUDIT_PAGE) });
+  if (before) p.set("before", before);
+  return call("GET", `/api/admin/audit?${p}`, parseAudit, undefined, signal);
+}
 export const decide = (id: string, action: Decision, reason: string) => call("POST", `/api/admin/users/${id}/${action}`, parseAdminUser, reason ? { reason } : {});
 export const requeue = (id: string, mode: Requeue) => call("POST", `/api/admin/users/${id}/${mode}`, parseAdminUser, {});
 

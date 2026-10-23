@@ -41,8 +41,8 @@ const profilesDir = "/opt/data/profiles"
 // the HTTP WriteTimeout must exceed opBudget.
 const (
 	callTimeout = 60 * time.Second
-	maxCalls    = 4
-	opBudget    = 270 * time.Second
+	maxCalls    = 5
+	opBudget    = 330 * time.Second
 	writeSlack  = 30 * time.Second
 )
 
@@ -106,6 +106,16 @@ func (h hermes) create(ctx context.Context, slug string) error {
 	_, stderr, err := h.r.Run(ctx, "", "hermes", "profile", "create", slug, "--no-alias")
 	if err != nil {
 		return fmt.Errorf("%w: profile create: %s", errUpstream, brief(stderr))
+	}
+	return nil
+}
+
+// disableToolsets persists the tenant toolset policy in the profile's own
+// config.yaml (never default's): hermes -p <slug> config set.
+func (h hermes) disableToolsets(ctx context.Context, slug string, disabled []string) error {
+	_, stderr, err := h.r.Run(ctx, "", "hermes", "-p", slug, "config", "set", toolsetsConfigKey, toolsetsValue(disabled))
+	if err != nil {
+		return fmt.Errorf("%w: disabling toolsets: %s", errUpstream, brief(stderr))
 	}
 	return nil
 }

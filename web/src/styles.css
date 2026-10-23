@@ -161,7 +161,6 @@ body {
   isolation: isolate;
 }
 body.chat { height: 100vh; overflow: hidden; }
-body.admin { display: block; }
 
 /* Ambient layer: fixed, inert, static. Fields differ in hue so the blur behind each pane
    picks up a different tint; the rings give the glass an edge to bend around. */
@@ -243,7 +242,7 @@ a.btn { --fill: var(--primary); --edge: transparent; --spec: rgba(255, 255, 255,
 a.btn:hover { --fill: var(--primary); filter: brightness(0.94); }
 
 /* ---- status screens: the heading sits on the ambient layer, not in a card ------- */
-body:not(.chat) { display: grid; align-items: center; }
+body:not(.chat):not(.admin) { display: grid; align-items: center; }
 .screen {
   width: min(34rem, 100% - 2rem);
   margin: 2rem 1rem 2rem clamp(1rem, 9vw, 8rem);
@@ -373,6 +372,8 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .admin-nav a.navlink { padding: 0.3rem 0.8rem; border: 1px solid transparent; border-radius: var(--r-pill); color: var(--text-2); text-decoration: none; }
 .admin-nav a.navlink:hover { color: var(--text); }
 .admin-nav a.navlink.current { color: var(--text); font-weight: 600; border-color: var(--raised-edge); background: var(--raised-fill); }
+.search { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0 0 0.75rem; }
+.search input { flex: 1 1 14rem; max-width: 24rem; min-height: 2.5rem; box-sizing: border-box; padding: 0.4rem 1rem; font: inherit; color: var(--text); background: var(--bg-base); border: 1px solid var(--solid-border); border-radius: var(--r-pill); }
 .filters { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.75rem; }
 button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 600; }
 .table-wrap { overflow-x: auto; max-width: 100%; margin: 0.5rem 0 1rem; border: 1px solid var(--solid-border); border-radius: var(--r-lg); background: var(--solid); }

@@ -10,6 +10,7 @@ Host-side helper that creates and removes per-user Hermes profiles for Antares (
 export PROVISIONER_TOKEN=...      # required, >= 32 chars, no default; the service refuses to start without it
 export PROVISIONER_ADDR=127.0.0.1:8750   # optional (default shown)
 export HERMES_CONTAINER=hermes           # optional (default shown)
+export PROVISIONER_ALLOWED_TOOLSETS=...  # optional; toolsets a tenant keeps (default web,vision,image_gen,skills,memory,todo,clarify)
 go build -o hermes-provisioner . && ./hermes-provisioner
 ```
 
@@ -32,11 +33,17 @@ All endpoints except `/health` need `Authorization: Bearer $PROVISIONER_TOKEN`.
   gets its own `400` and can never be provisioned, rotated or deprovisioned. Unknown JSON fields
   (`profile`, `key`, ...) are rejected.
 - Fail closed: if `profile create` fails nothing is written.
+- Tenant toolset policy (issue #41): before any key is issued, `/provision` runs
+  `hermes -p <slug> config set agent.disabled_toolsets '[...]'` for the profile, disabling every toolset Hermes
+  reports that is not in `PROVISIONER_ALLOWED_TOOLSETS` (`toolsets.go`; floor toolsets and unknown names refuse to start). Set
+  the same value as `ANTARES_TENANT_ALLOWED_TOOLSETS`. `/rotate` reapplies it, so an edit to a profile's
+  `agent.disabled_toolsets` is overwritten by the next provision or rotate. Hermes applies that list last,
+  over every platform list. If it fails, no key is written (`502`).
 - Keys travel to the container on stdin (not argv), are never logged, and never appear in errors.
 
 ## Timeouts and cancellation
 
-Each `docker exec` is bounded at 60s and a whole request at 270s (`opBudget`), detached from the
+Each `docker exec` is bounded at 60s and a whole request at 330s (`opBudget`), detached from the
 client connection; the write deadline is set once the request holds the mutation lock. The server
 therefore never abandons a request after the key is written, even if the caller disconnects.
 

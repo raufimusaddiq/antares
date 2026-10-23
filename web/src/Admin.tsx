@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useState, type FormEvent, type MouseEvent, type ReactNode } from "react";
 import {
-  AUDIT_PAGE,
   USERS_PAGE,
   decide,
   describeAdminCode,
@@ -145,27 +144,65 @@ const FILTERS: { id: Filter; label: string }[] = [
   { id: "all", label: "All" },
   { id: "pending", label: "Pending" },
   { id: "approved", label: "Approved" },
-  { id: "failed", label: "Failed" },
+  { id: "failed", label: "Failed workspace" },
 ];
 
-export const matches = (u: AdminUser, f: Filter): boolean =>
-  f === "all" || (f === "pending" && u.approvalStatus === "PENDING") || (f === "approved" && u.approvalStatus === "APPROVED") || (f === "failed" && u.tenantStatus === "FAILED");
+/** The approval status the server filters on. "failed" is a tenant state, which the API cannot filter, so it asks for everyone. */
+export const serverStatus = (f: Filter): string => (f === "pending" ? "PENDING" : f === "approved" ? "APPROVED" : "");
 
-export function UserList({ users, filter, onFilter, onOpen, hasMore, loadingMore, onMore }: { users: AdminUser[]; filter: Filter; onFilter: (f: Filter) => void; onOpen: (path: string) => void; hasMore: boolean; loadingMore: boolean; onMore: () => void }) {
-  const shown = users.filter((u) => matches(u, filter));
+/** What the server does not narrow for this filter, applied to the rows it returned. */
+export const matches = (u: AdminUser, f: Filter): boolean => f !== "failed" || u.tenantStatus === "FAILED";
+
+export function UserControls({ filter, onFilter, search, onSearch }: { filter: Filter; onFilter: (f: Filter) => void; search: string; onSearch: (q: string) => void }) {
+  const [text, setText] = useState(search);
   return (
-    <section aria-labelledby="users-h">
-      <h1 id="users-h">Users</h1>
+    <>
+      <form
+        className="search"
+        role="search"
+        onSubmit={(e) => {
+          e.preventDefault();
+          onSearch(text.trim());
+        }}
+      >
+        <label htmlFor="user-search" className="sr">
+          Search by name or email
+        </label>
+        <input id="user-search" type="search" value={text} maxLength={100} placeholder="Search name or email" onChange={(e) => setText(e.target.value)} />
+        <button type="submit" className="quiet">
+          Search
+        </button>
+        {search && (
+          <button
+            type="button"
+            className="quiet"
+            onClick={() => {
+              setText("");
+              onSearch("");
+            }}
+          >
+            Clear
+          </button>
+        )}
+      </form>
       <div className="filters" role="group" aria-label="Filter users">
         {FILTERS.map((f) => (
           <button key={f.id} type="button" className={filter === f.id ? "quiet on" : "quiet"} aria-pressed={filter === f.id} onClick={() => onFilter(f.id)}>
-            {f.label} ({users.filter((u) => matches(u, f.id)).length})
+            {f.label}
           </button>
         ))}
       </div>
-      {hasMore && <p className="label">Counts and filters cover the {users.length} accounts loaded so far.</p>}
-      {users.length === 0 && <p className="label">No accounts yet.</p>}
-      {users.length > 0 && shown.length === 0 && <p className="label">No accounts match this filter.</p>}
+      {filter === "failed" && <p className="label">Failed workspace is a tenant state the server cannot filter on, so it is applied to the accounts loaded so far. Load more to look further.</p>}
+    </>
+  );
+}
+
+export function UserList({ users, filter, search, onOpen, hasMore, loadingMore, onMore }: { users: AdminUser[]; filter: Filter; search: string; onOpen: (path: string) => void; hasMore: boolean; loadingMore: boolean; onMore: () => void }) {
+  const shown = users.filter((u) => matches(u, filter));
+  return (
+    <>
+      {users.length === 0 && <p className="label">{search || filter !== "all" ? "No accounts match." : "No accounts yet."}</p>}
+      {users.length > 0 && shown.length === 0 && <p className="label">None of the {users.length} accounts loaded so far match this filter.</p>}
       {shown.length > 0 && (
         <div className="table-wrap">
           <table className="admin-table">
@@ -201,21 +238,22 @@ export function UserList({ users, filter, onFilter, onOpen, hasMore, loadingMore
           </table>
         </div>
       )}
+      {users.length > 0 && <p className="label">{hasMore ? `${users.length} accounts loaded; more exist.` : `${users.length} account${users.length === 1 ? "" : "s"}.`}</p>}
       {hasMore && (
         <button type="button" className="quiet" disabled={loadingMore} onClick={onMore}>
           {loadingMore ? "Loading…" : "Load more accounts"}
         </button>
       )}
-    </section>
+    </>
   );
 }
 
-export function UsersScreen({ onOpen }: { onOpen: (path: string) => void }) {
-  const [state, reload] = useLoad((s) => listUsers(0, s), "users");
+/** One result set for one (status, search) pair. It is keyed by that pair, so a new query starts from scratch. */
+function UsersResults({ filter, search, onOpen }: { filter: Filter; search: string; onOpen: (path: string) => void }) {
+  const status = serverStatus(filter);
+  const [state, reload] = useLoad((s) => listUsers(0, status, search, s), "first");
   const [more, setMore] = useState<AdminUser[]>([]);
   const [moreState, setMoreState] = useState<"idle" | "loading" | "error" | "done">("idle");
-  const [filter, setFilter] = useState<Filter>("all");
-
   if (state.kind === "loading") return <Loading what="users" />;
   if (state.kind === "forbidden") return <Forbidden />;
   if (state.kind === "error") return <Problem message={state.message} onRetry={reload} />;
@@ -223,7 +261,7 @@ export function UsersScreen({ onOpen }: { onOpen: (path: string) => void }) {
   const hasMore = moreState !== "done" && users.length > 0 && users.length % USERS_PAGE === 0;
   const loadMore = () => {
     setMoreState("loading");
-    void listUsers(users.length).then((r) => {
+    void listUsers(users.length, status, search).then((r) => {
       if (!r.ok) return setMoreState("error");
       setMore((m) => [...m, ...r.value]);
       setMoreState(r.value.length < USERS_PAGE ? "done" : "idle");
@@ -231,9 +269,21 @@ export function UsersScreen({ onOpen }: { onOpen: (path: string) => void }) {
   };
   return (
     <>
-      <UserList users={users} filter={filter} onFilter={setFilter} onOpen={onOpen} hasMore={hasMore} loadingMore={moreState === "loading"} onMore={loadMore} />
+      <UserList users={users} filter={filter} search={search} onOpen={onOpen} hasMore={hasMore} loadingMore={moreState === "loading"} onMore={loadMore} />
       {moreState === "error" && <Problem message="Could not load more accounts." onRetry={loadMore} />}
     </>
+  );
+}
+
+export function UsersScreen({ onOpen }: { onOpen: (path: string) => void }) {
+  const [filter, setFilter] = useState<Filter>("all");
+  const [search, setSearch] = useState("");
+  return (
+    <section aria-labelledby="users-h">
+      <h1 id="users-h">Users</h1>
+      <UserControls filter={filter} onFilter={setFilter} search={search} onSearch={setSearch} />
+      <UsersResults key={`${serverStatus(filter)}|${search}`} filter={filter} search={search} onOpen={onOpen} />
+    </section>
   );
 }
 
@@ -399,8 +449,8 @@ export function UserDetail({ user, onDecide, onRequeue }: { user: AdminUser; onD
 
 export function UserScreen({ id }: { id: string }) {
   const [state, reload] = useLoad((s) => getUser(id, s), `user-${id}`);
+  // AdminScreens keys this component by id, so state never outlives the account it was loaded for.
   const [override, setOverride] = useState<AdminUser | null>(null);
-  useEffect(() => setOverride(null), [id]);
   if (state.kind === "loading") return <Loading what="account" />;
   if (state.kind === "forbidden") return <Forbidden />;
   if (state.kind === "error") return <Problem message={state.message} onRetry={reload} />;
@@ -417,12 +467,14 @@ export function UserScreen({ id }: { id: string }) {
 
 // ---- audit log ------------------------------------------------------------------
 
-export function AuditTable({ entries, offset, onPage }: { entries: AuditEntry[]; offset: number; onPage: (offset: number) => void }) {
+export function AuditTable({ entries, hasOlder, hasNewer, onOlder, onNewer }: { entries: AuditEntry[]; hasOlder: boolean; hasNewer: boolean; onOlder: () => void; onNewer: () => void }) {
+  const newest = entries[0]?.createdAt;
+  const oldest = entries[entries.length - 1]?.createdAt;
   return (
     <section aria-labelledby="audit-h">
       <h1 id="audit-h">Audit log</h1>
       <p className="label">Who did what to which account, and when. Metadata only: no conversation content is ever recorded here.</p>
-      {entries.length === 0 && <p className="label">{offset === 0 ? "Nothing has been recorded yet." : "No more entries."}</p>}
+      {entries.length === 0 && <p className="label">{hasNewer ? "No more entries." : "Nothing has been recorded yet."}</p>}
       {entries.length > 0 && (
         <div className="table-wrap">
           <table className="admin-table">
@@ -452,13 +504,11 @@ export function AuditTable({ entries, offset, onPage }: { entries: AuditEntry[];
         </div>
       )}
       <nav className="pager" aria-label="Audit pages">
-        <button type="button" className="quiet" disabled={offset === 0} onClick={() => onPage(Math.max(0, offset - AUDIT_PAGE))}>
+        <button type="button" className="quiet" disabled={!hasNewer} onClick={onNewer}>
           Newer
         </button>
-        <span className="label">
-          {entries.length > 0 ? `Entries ${offset + 1}–${offset + entries.length}` : "Empty page"}
-        </span>
-        <button type="button" className="quiet" disabled={entries.length < AUDIT_PAGE} onClick={() => onPage(offset + AUDIT_PAGE)}>
+        <span className="label">{entries.length > 0 ? `${entries.length} entr${entries.length === 1 ? "y" : "ies"}, ${when(newest)} back to ${when(oldest)}` : "Empty page"}</span>
+        <button type="button" className="quiet" disabled={!hasOlder} onClick={onOlder}>
           Older
         </button>
       </nav>
@@ -467,12 +517,16 @@ export function AuditTable({ entries, offset, onPage }: { entries: AuditEntry[];
 }
 
 export function AuditScreen() {
-  const [offset, setOffset] = useState(0);
-  const [state, reload] = useLoad((s) => listAudit(offset, s), `audit-${offset}`);
+  // The cursors of the pages already visited, newest page first. "Newer" pops one, so it re-reads
+  // from the same position instead of guessing a backwards offset in a feed that keeps growing.
+  const [trail, setTrail] = useState<string[]>([""]);
+  const before = trail[trail.length - 1];
+  const [state, reload] = useLoad((s) => listAudit(before, s), `audit-${trail.join(">")}`);
   if (state.kind === "loading") return <Loading what="the audit log" />;
   if (state.kind === "forbidden") return <Forbidden />;
   if (state.kind === "error") return <Problem message={state.message} onRetry={reload} />;
-  return <AuditTable entries={state.value} offset={offset} onPage={setOffset} />;
+  const { entries, next } = state.value;
+  return <AuditTable entries={entries} hasOlder={next !== ""} hasNewer={trail.length > 1} onOlder={() => setTrail((t) => [...t, next])} onNewer={() => setTrail((t) => t.slice(0, -1))} />;
 }
 
 // ---- router ---------------------------------------------------------------------
@@ -491,7 +545,7 @@ export function AdminScreens({ route, onNavigate }: { route: AdminRoute; onNavig
     case "users":
       return <UsersScreen onOpen={onNavigate} />;
     case "user":
-      return <UserScreen id={route.id} />;
+      return <UserScreen key={route.id} id={route.id} />;
     case "audit":
       return <AuditScreen />;
     case "unknown":

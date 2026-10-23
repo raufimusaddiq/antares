@@ -235,6 +235,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
   const lastInput = useRef("");
   const turnsRef = useRef<Turn[]>([]);
   const cursorRef = useRef("");
+  const blankChat = useRef(""); // id of the chat New chat created and nothing has been sent into yet
+  const creating = useRef(false); // a New chat request is in flight: a second click must not create a second chat
+  const nav = useRef(0); // bumped whenever the reader picks a chat, so a slow create cannot override that choice
   const olderInflight = useRef(""); // "chat|cursor" of the older-page request in flight: one at a time, never twice
   currentRef.current = current;
   turnsRef.current = turns;
@@ -312,6 +315,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
       const finish = (ev: RunEvent) => {
         source.close();
         if (es.current === source) es.current = null;
+        setChats((l) => l.map((c) => (c.id === chatId && c.activeRunId === runId ? { ...c, activeRunId: "" } : c)));
         if (ev.type === "run.completed") {
           // The stored transcript is canonical; the streamed text stays on
           // screen if it cannot be fetched.
@@ -366,6 +370,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
 
   const open = useCallback(
     (c: ChatSummary) => {
+      nav.current++;
       detach();
       attempts.current = 0;
       setCurrent(c.id);
@@ -428,6 +433,43 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
     return r.value;
   }, []);
 
+  // New chat creates the conversation now, so it is listed, selected and real. A second
+  // press on a chat that is still blank only returns to its composer: nothing was
+  // sent, so a second empty chat would add nothing. A run in the chat being left keeps
+  // running on the server; the list remembers it, so opening that chat re-attaches.
+  const startChat = useCallback(async () => {
+    const focusComposer = () => document.getElementById("composer-input")?.focus();
+    if (creating.current) return;
+    if (blankChat.current !== "" && blankChat.current === currentRef.current) {
+      setBanner("");
+      focusComposer();
+      return;
+    }
+    creating.current = true;
+    const at = ++nav.current;
+    setBanner("");
+    try {
+      const c = await newChat();
+      if (!c || nav.current !== at) return; // failed (the banner says why), or the reader chose another chat meanwhile
+      blankChat.current = c.id;
+      detach();
+      attempts.current = 0;
+      setCurrent(c.id);
+      currentRef.current = c.id;
+      setTurns([]);
+      setCursor("");
+      setLoadingOlder(false);
+      setOlderError("");
+      olderInflight.current = "";
+      setTurnsError("");
+      setPending(null);
+      dispatch({ k: "clear" });
+      focusComposer();
+    } finally {
+      creating.current = false;
+    }
+  }, [detach, newChat]);
+
   const submit = useCallback(
     async (input: string, key: string) => {
       setBanner("");
@@ -435,6 +477,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
       if (!chat) {
         const c = await newChat();
         if (!c) return;
+        nav.current++;
         detach();
         setCurrent(c.id);
         currentRef.current = c.id;
@@ -442,6 +485,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
         setCursor("");
         chat = c.id;
       }
+      blankChat.current = "";
       lastInput.current = input;
       dispatch({ k: "clear" });
       setPending({ input, key, failure: "" });
@@ -453,6 +497,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
         return;
       }
       setPending(null);
+      setChats((l) => l.map((x) => (x.id === chat ? { ...x, activeRunId: r.value.runId } : x)));
       setTurns((t) => [...t, { seq: t.length > 0 ? t[t.length - 1].seq + 1 : 0, role: "user", text: input }]);
       attach(r.value.runId, chat);
     },
@@ -502,19 +547,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
         </button>
       </header>
       <nav className="side" aria-label="Conversations">
-        <button
-          type="button"
-          onClick={() => {
-            detach();
-            setCurrent(null);
-            currentRef.current = null;
-            setTurns([]);
-            setCursor("");
-            olderInflight.current = "";
-            setPending(null);
-            dispatch({ k: "clear" });
-          }}
-        >
+        <button type="button" onClick={() => void startChat()}>
           New chat
         </button>
         {listState === "loading" && <p className="label">Loading…</p>}
@@ -545,7 +578,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin }: { email: s
             History unavailable: {turnsError}
           </p>
         )}
-        {current === null && turns.length === 0 && !pending && !run && <p className="label">Start a conversation below.</p>}
+        {turns.length === 0 && !pending && !run && !turnsError && (current === null || current === blankChat.current) && (
+          <p className="label">{current === null ? "Start a conversation below." : "New conversation. Write a message below."}</p>
+        )}
         <Transcript
           key={current ?? "new"}
           turns={turns}

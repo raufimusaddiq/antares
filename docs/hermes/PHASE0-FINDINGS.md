@@ -46,12 +46,15 @@ unreachable; or a toolset's `enabled` flag in `/v1/toolsets` differs (the failur
 
 **What it does not guard — read this before relying on it.** `/v1/toolsets` is read for the profile
 served at the URL called, which is the **default** profile. The `enabled` check therefore guards the
-default profile's flags only. It does **not** observe any tenant profile's `disabled_toolsets`, and
-none can be captured today (`/p/<profile>/…` returns 404 until the profile is registered in
-`gateway.profile_routes`). So the isolation argument in section 6, which rests on per-profile
-`disabled_toolsets`, has **no automated check behind it**. A toolset becoming enabled in a tenant
-profile would go unnoticed by this guard. Closing that gap needs a `/p/<profile>/v1/toolsets` case
-with its own fixture, once a profile is routable (open item 1).
+default profile's flags only. It does **not** observe any tenant profile's `disabled_toolsets`:
+`CASES` has no `/p/<profile>/…` entry. A toolset becoming enabled in a tenant profile would go
+unnoticed by *this* guard. (Originally the route could not be reached at all, so no such case could be
+captured; tenant profiles are routable now, and a `/p/<profile>/v1/toolsets` read was captured once, by
+hand, in issue #41, see the update at the end of this file.) The tenant-side check that exists is
+Antares' own `toolset_policy` verification (`internal/hermes/verify.go`), run against each tenant
+profile before it is `READY`; it is not part of this script.
+Closing the remaining gap here needs a `/p/<profile>/v1/toolsets` case with its own fixture (open
+item 1).
 
 Verification: `scripts/test_hermes_contract.py` is an offline self-test (no network) run by the CI
 `security` job. Against the round-1 guard (which compared only the first list element),
@@ -81,6 +84,7 @@ The script aborts if any response contains the key.
 | auth matrix on `/v1/capabilities`: no key / wrong key → 401, owner key → 200 | **verified on the wire** |
 | `GET /p/<profile>/…` for an unregistered profile → 404 | **verified on the wire, once, prose only** — deliberately **not** a fixture or a guard case: it is expected to change when profile routes are registered, and the guard must not fail on that. |
 | `/v1/chat/completions`, `/v1/responses`, `/v1/runs*` (status, events SSE, approval, steer, stop) | **UNVERIFIED** — listed by `/v1/capabilities` and the route table only; not called |
+| `GET /api/sessions?limit=1&offset=0` on a fresh tenant profile | **verified on the wire for the empty list envelope only** (issue #41): `{"object":"list","data":[],"limit":1,"offset":0,"has_more":false}`, fixture `sessions-empty`. A non-empty list carries real session data, so the item shape is still **UNVERIFIED**. |
 | `/api/sessions` CRUD, `/messages`, `/fork`, `/chat`, `/chat/stream`, `/model` | **UNVERIFIED** — route table only; responses carry the owner's real data, so no fixture. Do not code against a guessed shape. |
 | `GET /v1/skills`, `/api/model/options`, `/api/jobs*`, artifacts, browser-control | **UNVERIFIED** — route table only |
 
@@ -202,6 +206,16 @@ small tombstone files in a hidden `.deleted` directory under the profiles direct
 Per-profile routing is **not delivered**. With a second profile present the gateway's `api_server`
 adapter did not start, so `/p/<profile>/v1/...` was unreachable (see
 [issue #13 comment 6333799116](https://github.com/raufimusaddiq/antares/issues/13#issuecomment-6333799116)).
-The `disabled_toolsets` gap above therefore **remains open**: no automated check exists. A tenant
-toolset policy is proposed in `docs/runbooks/tenant-toolsets.md`, **unverified**. The Phase 0 FAIL
-verdict and the isolation finding in section 6 stand unchanged.
+The `disabled_toolsets` gap above was open at that point: no automated check existed.
+
+### Update — issue #41 (2026-10-23)
+
+Routing now works for a provisioned profile, and the toolset policy is no longer only proposed:
+`tools/hermes-provisioner` writes `agent.disabled_toolsets` on `/provision` and `/rotate`, Antares'
+`toolset_policy` check fails closed on any enabled toolset outside the allow-list, and a throwaway profile
+read back through `GET /p/<profile>/v1/toolsets` with its own key showed every denied toolset
+`enabled: false` (`docs/runbooks/tenant-toolsets.md`). What is **still unexercised**: the provisioner's
+own HTTP path on the live host (the `config set` was run by hand), the two escalation questions in that
+runbook (`web_extract`, `skill_manage`), and the A-vs-B cross-tenant negative tests. The Phase 0 FAIL
+verdict and the isolation finding in section 6 stand unchanged: this policy limits which tools exist, it
+does not make profiles sandboxes.

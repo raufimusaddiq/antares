@@ -49,7 +49,7 @@ Helper failures are classified. *Transient* (unreachable, 5xx, unreadable respon
 failures retry with backoff 15 s, 30 s, 1 m, … capped at 10 m, for 5 attempts, then stay `FAILED` with
 the reason. *Permanent* (the helper refuses our token, rejects the request, answers for another
 profile) stop at once. An admin `tenant-binding` resets the budget. A run interrupted by a restart is
-resumed when its 6-minute lease expires. If the helper's response was lost (it has a key we never
+resumed when its 12-minute lease expires. If the helper's response was lost (it has a key we never
 stored), `/provision` returns `409` and the pipeline recovers with `/rotate`, as the helper README says.
 
 ## What `READY` requires (`internal/hermes/verify.go`)
@@ -60,10 +60,10 @@ check does not recognise, is a failure.
 | Check | Passes when |
 |---|---|
 | `endpoint` | `/v1/capabilities` (object `hermes.api_server.capabilities`) and `/v1/models` (`object: list`) answer 200 |
-| `profile_identity` | the **default** profile's route and a never-provisioned route answer the tenant key with **401 or 403**, and nothing else (a 404, a redirect or a 5xx proves a broken or misrouted endpoint, not a refusal). Hermes' verified API has no profile-name field, so identity is shown by what refuses the key |
+| `profile_identity` | the **default** profile's route and a never-provisioned route answer the tenant key with a refusal: **401 or 403** for the default route, **401, 403 or 404** for the never-provisioned route (the deployed Hermes answers 404 for a route that does not exist). Any other status, and a 404 on the default route, is a broken or misrouted endpoint. Hermes' verified API has no profile-name field, so identity is shown by what refuses the key |
 | `credential_isolation` | no key, a wrong key and every other tenant's route (up to 3) get exactly 401/403 |
 | `session_ownership` | `/api/sessions` answers 200 for the profile, is empty on first verification, and other tenants' session routes refuse the key |
-| `toolset_policy` | no toolset in `hermes.DeniedToolsets` is enabled, nothing outside the allow-list is enabled, and every denied toolset is reported |
+| `toolset_policy` | enforced at provision time (the provisioner writes `agent.disabled_toolsets` on `/provision` and `/rotate`) and checked here: no toolset in `hermes.DeniedToolsets` is enabled, nothing outside the allow-list is enabled, and every denied toolset is reported |
 | `memory_boundary` | capabilities report `memory_write_api: false`, `admin_config_rw: false`, `auth.required: true` |
 
 `ANTARES_TENANT_ALLOWED_TOOLSETS` may narrow the allow-list. It cannot include
@@ -76,27 +76,41 @@ refuses to start.
   on what the API offers, not proof of filesystem isolation, and nothing here makes Antares safe for
   mutually untrusted users. One trusted user remains the supported use until Phase 0 passes.
 - Per-profile routing was **not reachable** on the deployed container in Phase 0 (`/p/<profile>/…` →
-  404), and `disabled_toolsets` is not applied by the helper. On that deployment every verification
+  404), and the helper did not apply `disabled_toolsets` (it now does, issue #41). On that deployment every verification
   fails at `endpoint` (and then `toolset_policy`): users end `FAILED`, never `READY`. That is the
   intended fail-closed result, not a bug to work around. It also means the admin surface cannot open,
   because the bootstrap admin's own tenant cannot verify.
-- Every refusal probe requires **401 or 403 exactly**. Phase 0 saw an unregistered profile prefix answer
-  `404 Unknown or unconfigured profile`; if the gateway still does that for the never-provisioned
-  probe route, `profile_identity` fails with `…answered status 404, expected 401 or 403` even on a
-  correct deployment. That is deliberate (the check was not loosened to fit); it needs an owner decision
-  on a different probe, not an allow-list entry. A failed reason says "did not answer" when nothing
-  answered and names the status when something did.
-- The `/api/sessions` response shape is documented but **unverified** on the deployed build
-  (`PHASE0-FINDINGS.md` §2). The check accepts a bare array or `{"sessions": [...]}` and fails on
-  anything else. Capture a sanitized fixture once a profile is routable and replace the guess.
-- The checks have been exercised only against a fake Hermes in tests, not against a live tenant.
+- Refusal probes require **401 or 403**, except the never-provisioned route, which also accepts the
+  **404** the deployed Hermes returns for it (issue #41). A 404 on the default route or a sibling route
+  still fails: that would mean a misrouted endpoint. Reasons name the statuses accepted.
+- `/api/sessions` returned `{"object":"list","data":[],"limit":1,"offset":0,"has_more":false}` for a
+  fresh profile on the deployed build (issue #41; fixture `sessions-empty`). Only the empty list
+  envelope is evidenced: the shape of a session item is still unverified. The check accepts the
+  envelope (and, defensively, a bare array or `{"sessions": [...]}`) and fails on anything else.
+- What has and has not been exercised live (Hermes v0.22.2, 2026-10-23, throwaway profiles, since
+  deleted): the 404 on a never-provisioned route, the `/api/sessions` empty-list envelope, and the
+  tenant toolset policy (`config set agent.disabled_toolsets`, then `GET /p/<profile>/v1/toolsets` with
+  the profile's key: every denied toolset `enabled: false`) were each observed on the wire; the
+  `config set` was run by hand with the provisioner's command, not through a running provisioner. Not
+  exercised live: a complete provision-and-verify of a real tenant to `READY` through Antares and the
+  running provisioner, the non-empty sessions item shape, and the cross-tenant checks against a second
+  routable tenant. Those run only against a fake Hermes in tests.
 
 ## Operator actions
 
 - `FAILED` with `provisioning helper …`: check the helper (`GET /health`), its token and its network
   path from the Antares container, then `tenant-binding`.
-- `FAILED` with `verification failed: toolset_policy …`: apply the tenant policy in the profile's own
-  `config.yaml` (`docs/runbooks/tenant-toolsets.md`), then `tenant-verify`.
+- `FAILED` with `verification failed: toolset_policy …`: do not edit the profile's `config.yaml`; the
+  provisioner overwrites it on the next `/provision` or `/rotate`. Make `PROVISIONER_ALLOWED_TOOLSETS`
+  (provisioner) equal `ANTARES_TENANT_ALLOWED_TOOLSETS` (Antares), restart the provisioner, rotate the
+  profile so the policy is reapplied, then `tenant-verify` (`docs/runbooks/tenant-toolsets.md`).
+- `FAILED` with `verification failed: toolset_policy … toolset X is enabled but not allowed` for every
+  tenant right after a **Hermes upgrade**: the new build probably added a toolset that is on by
+  default. The provisioner only disables the toolsets it knows (`knownToolsets` in
+  `tools/hermes-provisioner/toolsets.go`, mirrored by `hermes.KnownToolsets`), so the new one stays on.
+  Add its name to both lists (the contract test against `docs/hermes/fixtures/toolsets.body.json`
+  fails until the fixture is re-captured and both lists agree), redeploy both programs, then rotate
+  each profile so the policy is reapplied. Until then no tenant verifies; that is fail-closed.
 - `FAILED` with `verification failed: endpoint …`: the profile route is not served (see Phase 0 and
   `docs/hermes/MULTIPLEX-LISTENER-DIAGNOSIS.md`).
 - `stored credential cannot be opened`: `ANTARES_SECRET_KEY` changed. Restore the previous key; do not

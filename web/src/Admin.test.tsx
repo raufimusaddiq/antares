@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ActionPanel, AdminScreens, AuditTable, DECISIONS, Forbidden, REQUEUES, UserDetail, UserList, matches, when } from "./Admin";
-import { AUDIT_PAGE, decide, describeAdminCode, getUser, isForbidden, listAudit, listUsers, parseAdminUser, parseUsers, requeue, type AdminUser } from "./adminApi";
+import { ActionPanel, AdminScreens, AuditTable, DECISIONS, Forbidden, REQUEUES, UserControls, UserDetail, UserList, matches, serverStatus, when } from "./Admin";
+import { decide, describeAdminCode, getUser, isForbidden, listAudit, listUsers, parseAdminUser, parseAudit, parseUsers, requeue, type AdminUser } from "./adminApi";
 import { isAdminPath, parseAdminPath } from "./route";
 import { parseAccount } from "./api";
 
@@ -43,6 +43,14 @@ describe("role: who sees the admin area", () => {
     }
     expect(renderToStaticMarkup(<AdminScreens route={{ kind: "unknown" }} onNavigate={noop} />)).toContain("No such admin page");
   });
+
+  it("an account screen never outlives its id: it is remounted per account, so no stale user renders under a new URL", () => {
+    const a = AdminScreens({ route: { kind: "user", id: ID }, onNavigate: noop });
+    const b = AdminScreens({ route: { kind: "user", id: "f".repeat(32) }, onNavigate: noop });
+    expect(a.key).toBe(ID);
+    expect(b.key).toBe("f".repeat(32));
+    expect(a.key).not.toBe(b.key);
+  });
 });
 
 describe("routes", () => {
@@ -65,16 +73,34 @@ describe("user list", () => {
     user({ id: "b".repeat(32), email: "b@example.test", displayName: "", approvalStatus: "APPROVED", tenantStatus: "FAILED", tenantAttempts: 3, tenantCheckedAt: "2026-02-03T04:05:06Z" }),
     user({ id: "c".repeat(32), email: "c@example.test", approvalStatus: "APPROVED", tenantStatus: "READY", role: "ADMIN" }),
   ];
-  const list = (filter: "all" | "pending" | "approved" | "failed", us = users, hasMore = false) =>
-    renderToStaticMarkup(<UserList users={us} filter={filter} onFilter={noop} onOpen={noop} hasMore={hasMore} loadingMore={false} onMore={noop} />);
+  const list = (filter: "all" | "pending" | "approved" | "failed", us = users, hasMore = false, search = "") =>
+    renderToStaticMarkup(<UserList users={us} filter={filter} search={search} onOpen={noop} hasMore={hasMore} loadingMore={false} onMore={noop} />);
 
-  it("filters pending, approved and failed", () => {
-    expect(users.filter((u) => matches(u, "pending")).length).toBe(1);
-    expect(users.filter((u) => matches(u, "approved")).length).toBe(2);
+  it("approval filters go to the server; only the tenant-state filter runs on loaded rows", () => {
+    expect(serverStatus("all")).toBe("");
+    expect(serverStatus("pending")).toBe("PENDING");
+    expect(serverStatus("approved")).toBe("APPROVED");
+    expect(serverStatus("failed")).toBe("");
+    expect(users.filter((u) => matches(u, "approved")).length).toBe(3); // the server already narrowed these
     expect(users.filter((u) => matches(u, "failed")).map((u) => u.email)).toEqual(["b@example.test"]);
     const html = list("failed");
     expect(html).toContain("b@example.test");
     expect(html).not.toContain("c@example.test");
+  });
+
+  it("names the limitation of the failed filter beside it, and shows no per-filter counts that could mislead", () => {
+    const controls = (f: "all" | "failed") => renderToStaticMarkup(<UserControls filter={f} onFilter={noop} search="" onSearch={noop} />);
+    expect(controls("failed")).toContain("cannot filter on");
+    expect(controls("all")).not.toContain("cannot filter on");
+    expect(controls("all")).not.toMatch(/\(\d+\)/);
+  });
+
+  it("has a search box with a label, and offers Clear only while a search is active", () => {
+    const html = renderToStaticMarkup(<UserControls filter="all" onFilter={noop} search="" onSearch={noop} />);
+    expect(html).toContain('role="search"');
+    expect(html).toContain('for="user-search"');
+    expect(html).not.toContain("Clear");
+    expect(renderToStaticMarkup(<UserControls filter="all" onFilter={noop} search="sari" onSearch={noop} />)).toContain("Clear");
   });
 
   it("shows role, approval, tenant status and last attempt, and links to the detail", () => {
@@ -83,10 +109,11 @@ describe("user list", () => {
     expect(html).toContain(`href="/admin/users/${"b".repeat(32)}"`);
   });
 
-  it("says so when empty, when a filter matches nothing, and when more pages exist", () => {
+  it("says so when empty, when nothing matches, and when more pages exist", () => {
     expect(list("all", [])).toContain("No accounts yet.");
-    expect(list("failed", [users[0]])).toContain("No accounts match this filter.");
-    expect(list("all", users, true)).toContain("loaded so far");
+    expect(list("all", [], false, "zzz")).toContain("No accounts match.");
+    expect(list("failed", [users[0]])).toContain("None of the 1 accounts loaded so far");
+    expect(list("all", users, true)).toContain("more exist");
     expect(list("all", users, true)).toContain("Load more accounts");
   });
 
@@ -154,18 +181,23 @@ describe("user detail", () => {
 });
 
 describe("audit log", () => {
-  const entry = (n: number) => ({ id: `e${n}`, actor: "adm", action: "admin.approve", targetId: ID, outcome: "ok", requestId: `r${n}`, createdAt: "2026-03-04T05:06:07Z" });
-  it("renders metadata columns only and paginates", () => {
-    const html = renderToStaticMarkup(<AuditTable entries={Array.from({ length: AUDIT_PAGE }, (_, i) => entry(i))} offset={50} onPage={noop} />);
-    for (const t of ["When", "Actor", "Action", "Target", "Outcome", "Request", "Entries 51–100", "2026-03-04 05:06 UTC"]) expect(html).toContain(t);
-    expect(html).toMatch(/Newer<\/button>/);
-    expect(html).not.toMatch(/disabled="">Older/);
+  const entry = (n: number, at = "2026-03-04T05:06:07Z") => ({ id: `e${n}`, actor: "adm", action: "admin.approve", targetId: ID, outcome: "ok", requestId: `r${n}`, createdAt: at });
+  const table = (entries: ReturnType<typeof entry>[], hasOlder: boolean, hasNewer: boolean) =>
+    renderToStaticMarkup(<AuditTable entries={entries} hasOlder={hasOlder} hasNewer={hasNewer} onOlder={noop} onNewer={noop} />);
+
+  it("renders metadata columns and describes the rows actually shown, not an offset range", () => {
+    const html = table([entry(1, "2026-03-05T00:00:00Z"), entry(2, "2026-03-04T05:06:07Z")], true, true);
+    for (const t of ["When", "Actor", "Action", "Target", "Outcome", "Request", "2 entries, 2026-03-05 00:00 UTC back to 2026-03-04 05:06 UTC"]) expect(html).toContain(t);
+    expect(html).not.toMatch(/Entries \d+–\d+/);
+    expect(html).not.toMatch(/disabled="">(Older|Newer)/);
   });
-  it("first page cannot go newer; a short page cannot go older; empty says so", () => {
-    const short = renderToStaticMarkup(<AuditTable entries={[entry(1)]} offset={0} onPage={noop} />);
-    expect(short).toMatch(/disabled="">Newer/);
-    expect(short).toMatch(/disabled="">Older/);
-    expect(renderToStaticMarkup(<AuditTable entries={[]} offset={0} onPage={noop} />)).toContain("Nothing has been recorded yet.");
+
+  it("the newest page cannot go newer; the last page cannot go older; empty says so", () => {
+    const only = table([entry(1)], false, false);
+    expect(only).toMatch(/disabled="">Newer/);
+    expect(only).toMatch(/disabled="">Older/);
+    expect(table([], false, false)).toContain("Nothing has been recorded yet.");
+    expect(table([], false, true)).toContain("No more entries.");
   });
 });
 
@@ -188,22 +220,30 @@ describe("api calls send the server nothing it must choose", () => {
   it("reads carry no body and use bounded paging parameters", async () => {
     const f = vi.fn(async (u: string) => new Response(JSON.stringify(u.includes("audit") ? { entries: [] } : u.endsWith(ID) ? serverUser : { users: [] }), { status: 200 }));
     vi.stubGlobal("fetch", f);
-    await listUsers(200);
-    await listAudit(50);
+    await listUsers(200, "", "");
+    await listUsers(0, "APPROVED", "sari & co");
+    await listAudit("");
+    await listAudit("2026-03-04T05:06:07Z|e4");
     await getUser(ID);
     const urls = (f.mock.calls as unknown as [string, RequestInit][]).map(([u]) => u);
-    expect(urls).toEqual(["/api/admin/users?limit=200&offset=200", "/api/admin/audit?limit=50&offset=50", `/api/admin/users/${ID}`]);
+    expect(urls).toEqual([
+      "/api/admin/users?limit=200&offset=200",
+      "/api/admin/users?limit=200&offset=0&status=APPROVED&q=sari+%26+co",
+      "/api/admin/audit?limit=50",
+      "/api/admin/audit?limit=50&before=2026-03-04T05%3A06%3A07Z%7Ce4",
+      `/api/admin/users/${ID}`,
+    ]);
   });
 
   it("surfaces 403 and server codes, and treats an unreadable success as a failure", async () => {
     vi.stubGlobal("fetch", reply(403, { error: { code: "FORBIDDEN", message: "Administrator access required" } }));
-    const r = await listUsers(0);
+    const r = await listUsers(0, "", "");
     expect(r).toEqual({ ok: false, code: "FORBIDDEN", status: 403 });
     vi.stubGlobal("fetch", reply(409, { error: { code: "STATE_CONFLICT" } }));
     const c = await decide(ID, "approve", "");
     expect(!c.ok && describeAdminCode(c.code, c.status)).toContain("state changed");
     vi.stubGlobal("fetch", reply(200, { users: [{ nope: true }] }));
-    expect((await listUsers(0)).ok).toBe(false);
+    expect((await listUsers(0, "", "")).ok).toBe(false);
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("down"))));
     expect(await getUser(ID)).toEqual({ ok: false, code: "NETWORK", status: 0 });
   });
@@ -211,6 +251,11 @@ describe("api calls send the server nothing it must choose", () => {
   it("the server's own message text is never shown", () => {
     expect(describeAdminCode("INTERNAL", 500)).not.toContain("Administrator access required");
     expect(describeAdminCode("anything", 500)).toContain("Something went wrong");
+  });
+
+  it("an audit page carries its own cursor, and an unreadable row makes the page unreadable", () => {
+    expect(parseAudit({ entries: [], next: "x|y" })).toEqual({ entries: [], next: "x|y" });
+    expect(parseAudit({ entries: [{ nope: 1 }] })).toBeNull();
   });
 
   it("parsing takes only the closed set of fields", () => {
