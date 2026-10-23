@@ -1,4 +1,4 @@
-const CACHE = "antares-public-93f4614ffdc1aa847dfad9cf396dd1f8bfa9dd3e3ff4cf4dfa9e413bf8177ec8";
+const CACHE = "antares-public-9333cdcbcb4767f964dc0e0b0a679b5399a37402c756d4b2375b7211ec539b19";
 const PUBLIC = ["/offline.html","/assets/Block-DmJqjmIP.js","/assets/ci-info-Bauk7qhZ.js","/assets/index-C9GmHLWz.css","/assets/index-DO92LpS-.js","/assets/offline-52783b55d1fef27e.css","/assets/rolldown-runtime-BWaJ3C7D.js"];
 const allowed = new Set(PUBLIC.map(path => new URL(path, self.location.origin).href));
 

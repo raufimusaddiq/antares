@@ -87,10 +87,10 @@ const server = http.createServer((req, res) => {
   const url = new URL(req.url, "http://x");
   if (url.pathname.startsWith("/api/")) return api(req, res, url);
   state.log.push(`GET ${url.pathname}`);
-  let file = path.join(dist, url.pathname.startsWith("/assets/") ? url.pathname : "index.html");
+  let file = path.join(dist, url.pathname === "/" ? "index.html" : url.pathname);
   if (!file.startsWith(dist) || !fs.existsSync(file)) file = path.join(dist, "index.html");
   const ext = path.extname(file);
-  const type = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html" }[ext] || "application/octet-stream";
+  const type = { ".js": "text/javascript", ".css": "text/css", ".html": "text/html", ".webmanifest": "application/manifest+json", ".woff2": "font/woff2", ".svg": "image/svg+xml", ".png": "image/png" }[ext] || "application/octet-stream";
   const headers = { "content-type": type, "x-content-type-options": "nosniff" };
   if (file.endsWith("index.html")) headers["content-security-policy"] = CSP;
   res.writeHead(200, headers);
@@ -332,7 +332,7 @@ async function drafts(browser) {
 }
 
 async function mobile(browser) {
-  const { ctx, page, consoleErrors } = await openPage(browser, { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
+  const { ctx, page, consoleErrors } = await openPage(browser, { viewport: { width: Number(process.env.MOBILE_WIDTH || 390), height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
   await page.goto(base + "/");
   await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
   await page.waitForTimeout(200);

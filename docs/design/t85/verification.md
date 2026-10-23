@@ -16,8 +16,9 @@ description is on the composer, which is also reachable through ordinary Tab ord
 
 The phone header wraps its existing controls instead of overflowing. The composer
 does not shrink, long message words wrap, the transcript can shrink, and the shell
-uses dynamic viewport height plus safe-area insets. The viewport requests browser
-content resizing for the on-screen keyboard where supported.
+uses dynamic viewport height plus CSS `env(safe-area-inset-*)` padding. The viewport
+tag retains the exact Phase 1 shell contract; it does not request `viewport-fit`
+or `interactive-widget` behavior. Keyboard viewport resizing remains browser-dependent.
 
 ## Regression evidence
 
@@ -86,3 +87,43 @@ Not built: a drawer redesign, sidebar resizing, shortcut settings, smooth scroll
 or additional hotkeys; none is needed for this ticket's behavior-only deliverable.
 No deployment or live Hermes checks. Physical phone keyboards, Safari and Firefox
 were not tested; browser support for keyboard viewport resizing varies.
+
+## PR #94 fix round 1
+
+Restored exactly `<meta name="viewport" content="width=device-width,initial-scale=1" />`
+and rebuilt the embedded bundle with `cd web && npm ci && npm run build` (exit 0).
+`TestPhase1Gate/5` failed before this change and passes afterwards; the gate test
+is unchanged. CSS, including `100dvh`, `min-height: 0`, control wrapping and
+`env(safe-area-inset-*)` padding, is unchanged. No JavaScript keyboard-viewport
+workaround was added; physical keyboard/browser behavior remains unverified.
+
+Round results:
+
+- `go test ./internal/chat -run TestPhase1Gate -v`: PASS, all six subtests.
+- `cd web && npm test`: PASS, 225 tests / 27 files.
+- `go test -race -count=1 ./...`: FAIL in the existing
+  `TestMeasureOpenAndPageBack500TurnChat` timing guard: open p50 339ms and page-back
+  p50 449ms exceed 200ms. Every other package passed. No Go source or timing
+  threshold was changed.
+- The ticket's `verify.mjs`, copied to `/tmp/t85-fix-layout/` to keep the committed
+  screenshots intact, passes scroll/follow/jump, shortcut/typing/Tab and layout
+  assertions, including 320px, 390px and 1440px. Fresh phone/desktop captures were
+  opened and inspected. Chromium 148.0.7778.96.
+- `PLAYWRIGHT_CORE=/tmp/t85-fix-browser.cjs ONLY=mobile MOBILE_WIDTH=320 node
+  scripts/browser-check.mjs --out /tmp/t85-fix320-final`: 4/5 pass; zero overflow,
+  16px composer text, 44px Send target, 550px transcript, no console/CSP errors;
+  maximum frame gap 367ms exceeds 250ms.
+- The same command with `MOBILE_WIDTH=390` and output `/tmp/t85-fix390-final`:
+  4/5 pass; the same layout assertions pass, maximum frame gap 333ms.
+- `PLAYWRIGHT_CORE=/tmp/t85-fix-browser.cjs ONLY=desktop node
+  scripts/browser-check.mjs --out /tmp/t85-fix-desktop-final`: 5/9 pass. Timing,
+  traversal sampling and lazy-chunk assertions fail (the latter sees service-worker
+  precaching). No console/CSP/off-origin errors. The local module wrapper selects
+  the installed Chromium 148 executable; it does not change checks.
+- `git diff --check`: PASS.
+
+The existing browser fixture now serves public files with their actual MIME types:
+previously `/sw.js` returned the HTML shell and caused an unsupported-MIME console
+error. `MOBILE_WIDTH` selects the requested phone test width. Browser assertions
+and timing limits are unchanged. These broader local checks are not claimed green;
+their failures remain visible for review.
