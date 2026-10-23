@@ -55,7 +55,7 @@ function transcript(rich) {
 const DATA = { [PLAIN]: transcript(false), [RICH]: transcript(true) };
 const b64 = (s) => Buffer.from(s).toString("base64url");
 
-const state = { log: [], holdOlder: null, delayMs: 15 };
+const state = { log: [], holdOlder: null, delayMs: 15, email: "reader@example.test" };
 
 function api(req, res, url) {
   const send = (status, body) => {
@@ -63,7 +63,7 @@ function api(req, res, url) {
     res.end(JSON.stringify(body));
   };
   state.log.push(`${req.method} ${url.pathname}${url.search}`);
-  if (url.pathname === "/api/me") return send(200, { email: "reader@example.test", displayName: "Reader", requestedAt: "", state: "ACTIVE" });
+  if (url.pathname === "/api/me") return send(200, { email: state.email, displayName: "Reader", requestedAt: "", state: "ACTIVE" });
   if (url.pathname === "/api/chats") {
     const c = (id, title) => ({ id, title, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", activeRunId: "" });
     return send(200, { chats: [c(PLAIN, "Plain conversation"), c(RICH, "Rich conversation")], nextCursor: "" });
@@ -291,6 +291,46 @@ async function rich(browser) {
   await ctx.close();
 }
 
+async function drafts(browser) {
+  const { ctx, page } = await openPage(browser, { viewport: { width: 1280, height: 800 } });
+  const open = async (title) => {
+    await page.click(`.side button.item >> text=${title}`);
+    await page.waitForSelector(".vitem");
+  };
+  const box = () => page.inputValue("#composer-input");
+  state.email = "reader@example.test";
+  await page.goto(base + "/");
+  await page.waitForSelector(".side button.item");
+  await open("Plain conversation");
+  await page.fill("#composer-input", "draft for plain");
+  await open("Rich conversation");
+  const richEmpty = (await box()) === "";
+  await page.fill("#composer-input", "draft for rich");
+  await open("Plain conversation");
+  check("a draft stays with its chat and does not appear in another", richEmpty && (await box()) === "draft for plain", "chat 1 text absent in chat 2; back in chat 1 it is restored");
+  await page.reload();
+  await page.waitForSelector(".side button.item");
+  await open("Rich conversation");
+  const rich = await box();
+  await open("Plain conversation");
+  check("drafts survive a reload of the built bundle", rich === "draft for rich" && (await box()) === "draft for plain", `rich: ${JSON.stringify(rich)}`);
+  await page.fill("#composer-input", "/sum");
+  const menu = await page.locator(".templates button").allInnerTexts();
+  await page.keyboard.press("Enter");
+  const inserted = await box();
+  check("a leading slash lists templates and Enter inserts instead of sending", menu.join() === "/summarize" && inserted.startsWith("Summarize") && !state.log.some((l) => l.startsWith("POST /api/chats/")), `${JSON.stringify(menu)} -> ${JSON.stringify(inserted.slice(0, 20))}`);
+  // A different account in the same browser profile reads none of it.
+  state.email = "other@example.test";
+  await page.reload();
+  await page.waitForSelector(".side button.item");
+  await open("Plain conversation");
+  const other = await box();
+  await open("Rich conversation");
+  check("another account in the same browser sees no draft", other === "" && (await box()) === "", `plain ${JSON.stringify(other)}`);
+  state.email = "reader@example.test";
+  await ctx.close();
+}
+
 async function mobile(browser) {
   const { ctx, page, consoleErrors } = await openPage(browser, { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
   await page.goto(base + "/");
@@ -343,6 +383,7 @@ try {
   if (!only || only === "desktop") await desktop(browser);
   if (!only || only === "prepend") await prepend(browser);
   if (!only || only === "rich") await rich(browser);
+  if (!only || only === "drafts") await drafts(browser);
   if (!only || only === "mobile") await mobile(browser);
 } finally {
   await browser.close();
