@@ -65,6 +65,31 @@ jobs:
         working-directory: tools/hermes-provisioner
         run: go test -race -count=1 ./...
 
+  # PRD §14.2 light-load RAM benchmark (#86), short profile. Fails if the Antares process RSS P95
+  # exceeds 256 MiB or any run fails. The JSON result is printed in the log and kept as an artifact.
+  # A GitHub-hosted runner is a different machine from the one in docs/runbooks/capacity.md.
+  bench:
+    name: bench (light-load RSS)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Light-load benchmark (short profile)
+        run: |
+          set -o pipefail
+          IDLE_SECS=60 LOAD_SECS=300 scripts/capacity/bench.sh | tee bench-result.txt
+          echo "### Light-load RSS (CI runner, short profile)" >> "$GITHUB_STEP_SUMMARY"
+          tail -n 40 bench-result.txt | sed -n '/^{/,$p' | { echo '```json'; cat; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: bench-result
+          path: bench-result.txt
+
   web:
     name: web
     runs-on: ubuntu-latest

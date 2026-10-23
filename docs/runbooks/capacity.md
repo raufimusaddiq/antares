@@ -201,6 +201,56 @@ that; it is the number to compare when deciding where a disk alarm belongs. Not 
 push rows, and user-specific text lengths. The database never shrinks on its own; retention is a product decision
 this runbook does not make.
 
+## 6. Light-load benchmark against the 256 MiB target (PRD §14.2, `PERF-006`, #86)
+
+One command, one JSON result, exit code 1 if the target is missed:
+
+```sh
+IDLE_SECS=10 LOAD_SECS=30 SETTLE_SECS=5 scripts/capacity/bench.sh    # smoke profile, ~1.5 min: what is tabled below
+scripts/capacity/bench.sh                                            # the §14.2 profile: 10 min idle + 30 min load, ~42 min
+IDLE_SECS=60 LOAD_SECS=300 scripts/capacity/bench.sh                 # the CI profile (job `bench` in .github/workflows/ci.yml)
+```
+
+It builds the harness, starts the fake upstream and the scratch Antares (same wiring and limits as above), signs in
+and provisions **3 accounts**, then runs **2 workers**, each holding exactly one run in flight (= 2 simultaneous
+SSE streams, the §14.2 light-load shape), 3 s hold, 2,000-byte reply, and samples the Antares process RSS at 1 Hz.
+
+**Measured on this host** (2 vCPU AMD EPYC 9754 guest, 7.6 GiB, Linux 6.8.0-101-generic, go1.27.3, commit `3ebf0a8`,
+2026-10-23; shared with the live Hermes container, as in the Machine table). **Smoke profile only: 30 s of load, not 30 minutes.**
+
+| Metric | Target (§14.2) | Run 1 | Run 2 | Met? |
+|---|---|---|---|---|
+| Light-load RSS P95 | ≤ 256 MiB | **23.8 MiB** | **24.1 MiB** | yes, ~10x headroom |
+| Light-load RSS peak | reported | **23.8 MiB** | **24.1 MiB** | n/a |
+| Idle RSS (10 s window) | recorded | 21.2 MiB | 21.6 MiB | n/a |
+| Runs completed / failed | no errors | 20 / 0 | 20 / 0 | yes |
+| Run latency P50 / P95 | responsive | 3.02 s / 3.02 s | 3.04 s / 3.07 s | yes |
+| CPU (% of one core) | recorded | 0.36 | 0.43 | n/a |
+
+**Reproducibility tolerance: ±1 MiB on RSS** (RSS is page-granular and the five-read medians elsewhere in this
+runbook move by about ±1 MiB). Two runs of the same command differed by 0.36 MiB at P95 and by 0.4 MiB idle. That is
+**n = 2**; it supports the stated tolerance, it does not prove it. Run latency reproduces to within 0.05 s.
+
+**Baseline and what moved the number.** The comparable earlier measurement is §2, N = 10: 26.6 MiB mean / 29.8 max
+over 60 s (commit `be9e8eb`), against 23.5 mean / 24.1 max here for N = 2. The difference is the load, not the code:
+5x fewer concurrent runs, and the retained-journal window (5 min, ~6.7 KB per finished run) has not filled in a 30 s
+window. Nothing in Antares changed between the two. No code optimisation was done for this target; the target was met
+with no work.
+
+**What this does NOT measure.**
+
+- **Not the §14.2 duration.** 30 s of load and 10 s of idle are not the required ≥ 30 min and ≥ 10 min. The retained-journal
+  growth (§2) needs about five minutes to plateau, so this row is a **floor**. The full-profile result has not been recorded;
+  a 40-minute run was started and stopped before it finished. The PRD gate ("recorded benchmark evidence") is therefore
+  **not yet satisfied** by this section.
+- **Not the container.** The target is container working set (`memory.current`); this is process RSS of the scratch binary,
+  not the release image in a cgroup, and not Hermes, the provisioner or Caddy.
+- **Not the intended edge host.** It is a shared 2 vCPU guest. The CI job runs on a GitHub-hosted runner, a different
+  machine; its numbers are not interchangeable with the table above and are reported only from the job's own log.
+- **Not real traffic.** Fabricated upstream, 2 KB replies, no tool-progress events, no OpenUI/media, no Web Push, no
+  browser, no reconnect/cancel cycles, no 1,000-turn history (the other §14.2 rows).
+- **Not OOM or leak detection** beyond what a 30 s window can show.
+
 ## What would change these numbers
 
 Larger or more frequent real Hermes frames, tool-progress events, OpenUI payloads, real transcripts longer than
