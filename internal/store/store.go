@@ -81,6 +81,20 @@ func Open(path string) (*sql.DB, error) {
 		return nil, fmt.Errorf("store: secure data dir: %w", err)
 	}
 	path = filepath.Join(realDir, filepath.Base(path))
+	// A shared flock on the data DIRECTORY, taken before the database file may be
+	// created and held until the *sql.DB is closed. Restore takes it exclusively,
+	// so it can prove nothing has the database open, and Open cannot create a new
+	// file under the live name while a restore has the old one moved aside.
+	lock, err := lockShared(realDir)
+	if err != nil {
+		return nil, err
+	}
+	attached := false
+	defer func() {
+		if !attached {
+			lock.Close()
+		}
+	}()
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
 	if err != nil {
 		return nil, fmt.Errorf("store: create database file: %w", err)
@@ -92,10 +106,16 @@ func Open(path string) (*sql.DB, error) {
 
 	dsn := fmt.Sprintf("file:%s?_txlock=immediate&_pragma=busy_timeout(%d)&_pragma=journal_mode(WAL)"+
 		"&_pragma=foreign_keys(1)&_pragma=synchronous(NORMAL)", path, busyTimeout.Milliseconds())
-	db, err := sql.Open("sqlite", dsn)
+	// The registered driver instance, not a fresh one: it carries the SQL
+	// functions this package registers (ulower).
+	reg, err := sql.Open("sqlite", dsn)
 	if err != nil {
 		return nil, err
 	}
+	drv := reg.Driver()
+	reg.Close()
+	db := sql.OpenDB(&lockedConnector{dsn: dsn, drv: drv, lock: lock})
+	attached = true // from here db.Close releases the lock
 	db.SetMaxOpenConns(maxConns)
 	db.SetMaxIdleConns(maxConns)
 	db.SetConnMaxLifetime(30 * time.Minute)
@@ -155,8 +175,19 @@ func requireDedicated(dir, base string) error {
 		return fmt.Errorf("store: read data dir: %w", err)
 	}
 	own := map[string]bool{"lost+found": true, base: true, base + "-wal": true, base + "-shm": true, base + "-journal": true}
+	// The exact staging names backup and restore use (with SQLite's sidecars): a
+	// crash can leave any of these, and refusing to start over them would turn a
+	// failed backup into an outage. Regular files only; a symlink or directory
+	// by these names is not ours.
+	regularOnly := map[string]bool{}
+	for _, suf := range []string{"", "-wal", "-shm", "-journal"} {
+		for _, stem := range []string{base + BackupTempSuffix, base + RestoreTempSuffix, base + RestoreTempSuffix + ".old"} {
+			regularOnly[stem+suf] = true
+		}
+	}
 	for _, e := range entries {
-		if !own[e.Name()] {
+		n := e.Name()
+		if !own[n] && !(regularOnly[n] && e.Type().IsRegular()) {
 			return errors.New("store: data directory is not dedicated to Antares (it holds other files); " +
 				"set ANTARES_DB_PATH inside a directory used only for this database")
 		}
