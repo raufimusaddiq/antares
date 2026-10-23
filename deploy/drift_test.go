@@ -110,6 +110,11 @@ func TestDeployDocsAndUnitDoNotDrift(t *testing.T) {
 		t.Errorf("README does not document PROVISIONER_HEALTH_URL")
 	}
 
+	// A plain checkout leaves untracked files, which make Go stamp modified=true.
+	if !strings.Contains(readme, "checkout --detach $ANTARES_TAG") || !strings.Contains(readme, "clean -fdx") {
+		t.Errorf("README must check out with --detach and git clean -fdx before building the helper")
+	}
+
 	// /health field name is shared by the helper, the verifier and the docs.
 	for _, f := range []string{`"revision"`, `"modified"`} {
 		if !strings.Contains(helper, f) {

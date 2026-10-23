@@ -83,7 +83,10 @@ policy did not exist and every tenant failed `toolset_policy` (#50). **Every dep
 reinstalls it, in this order** (the old process holds the inode, so stop before replacing):
 
 ```sh
-git -C <checkout> checkout $ANTARES_TAG                  # clean tree: a dirty build is rejected below
+# Go stamps vcs.modified=true on ANY untracked file; checkout alone leaves them, and the revision check
+# below would then reject a correct deploy after the binary is installed. Use a dedicated checkout:
+# clean -fdx deletes everything untracked or ignored in it.
+git -C <checkout> checkout --detach $ANTARES_TAG && git -C <checkout> clean -fdx
 cd <checkout>/tools/hermes-provisioner && go build -o /tmp/hermes-provisioner .
 sudo systemctl stop hermes-provisioner
 sudo install -m 0755 -o root -g root /tmp/hermes-provisioner /opt/antares/bin/hermes-provisioner

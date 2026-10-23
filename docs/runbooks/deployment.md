@@ -93,7 +93,7 @@ Per-user Hermes profiles are created by `tools/hermes-provisioner/`, a small Go 
 The helper is not in the container image; nothing rebuilds it but the operator. In this order, because
 the running process holds the old inode:
 
-1. `cd tools/hermes-provisioner && go build -o /tmp/hermes-provisioner .` (from a clean checkout of the deployed commit)
+1. `cd tools/hermes-provisioner && go build -o /tmp/hermes-provisioner .` (from a dedicated checkout, `git checkout --detach <sha> && git clean -fdx`: any untracked file makes Go stamp `modified=true` and the verify step fails)
 2. `systemctl stop hermes-provisioner`
 3. `install -m 0755 -o root -g root /tmp/hermes-provisioner /opt/antares/bin/hermes-provisioner`
 4. `systemctl start hermes-provisioner`

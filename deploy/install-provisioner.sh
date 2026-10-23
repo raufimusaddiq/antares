@@ -26,7 +26,9 @@ check_dirs() {
 	done
 	# $owner is root:root on a real host (README table); other values exist only for the test hook.
 	for f in "$opt/provisioner.env" "$opt/antares.env"; do
-		[ -e "$f" ] || { [ "$f" = "$opt/antares.env" ] && continue; echo "FAIL: $f missing" >&2; bad=1; continue; }
+		# antares.env is read by compose, not by this host helper, so it may be absent here.
+		[ "$f" = "$opt/antares.env" ] && [ ! -e "$f" ] && continue
+		[ -e "$f" ] || { echo "FAIL: $f missing" >&2; bad=1; continue; }
 		got=$(stat -c '%a %U:%G' "$f")
 		[ "$got" = "600 $owner" ] || { echo "FAIL: $f is '$got', want '600 $owner'" >&2; bad=1; }
 	done
