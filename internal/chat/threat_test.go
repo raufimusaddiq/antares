@@ -34,13 +34,14 @@ var builtProbes = []probe{
 	{"chat read", "GET /api/chats/{chatId}"},
 	{"history/messages read", "GET /api/chats/{chatId}/messages"},
 	{"send message (run admission)", "POST /api/chats/{chatId}/messages"},
+	{"search within a chat", "GET /api/chats/{chatId}/search"},
 	{"run status", "GET /api/runs/{runId}"},
 	{"run events (SSE recovery)", "GET /api/runs/{runId}/events"},
 	{"run cancel", "POST /api/runs/{runId}/cancel"},
 }
 
 // idFree are built routes with no id in the path: they must scope by the caller.
-var idFree = []string{"GET /api/chats", "POST /api/chats"}
+var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats"}
 
 // notBuilt are the §25 / Phase 3 surfaces with no route in this build. Each is
 // an honest gap, not an omission: the test below proves the gap is real (no
@@ -50,7 +51,6 @@ var notBuilt = []struct {
 	paths                []string // where it would live; must stay unrouted
 	stub                 bool     // a registered 501 placeholder rather than no route at all
 }{
-	{"search index", "UXP-ACC-004/005", "no search endpoint or index exists yet", []string{"/api/search", "/api/chats/%s/search"}, false},
 	{"saved drafts", "UXP-ACC-005/008", "no draft storage exists yet", []string{"/api/drafts", "/api/drafts/%s", "/api/chats/%s/draft"}, false},
 	{"templates", "UXP-ACC-005/009", "no template storage exists yet", []string{"/api/templates", "/api/templates/%s"}, false},
 	{"push subscriptions", "UXP-ACC-002/003", "no push subscription endpoint exists yet", []string{"/api/push/subscriptions", "/api/push/subscribe", "/api/push/subscriptions/%s"}, false},
@@ -104,6 +104,11 @@ func newVictim(t testing.TB) *victim {
 	<-s.done
 	v.markers = []string{v.chatID, v.runID, v.title, v.output, v.session, v.hermesRun, alice.profile, alice.key, alice.id,
 		"alice-private-question-2b8e", "alice-private-input-5d40", alice.cookie}
+	// Alice searches her own chats once, so her content is in the index (and her
+	// transcript has been read from Hermes) before anyone else probes.
+	if w := alice.get("/api/search/chats?q=alice-private"); w.Code != 200 {
+		t.Fatalf("alice's own search: %d %s", w.Code, w.Body.String())
+	}
 	v.snapshot()
 	return v
 }
@@ -156,6 +161,9 @@ func fill(key, chatID, runID string) (method, path string) {
 	method, path, _ = strings.Cut(key, " ")
 	path = strings.ReplaceAll(path, "{chatId}", chatID)
 	path = strings.ReplaceAll(path, "{runId}", runID)
+	if strings.HasSuffix(path, "/search") { // a search with nothing to search for is a 400, not a test
+		path += "?q=alice-private"
+	}
 	return
 }
 
@@ -227,6 +235,11 @@ func TestCrossUserThreatBuiltSurfaces(t *testing.T) {
 			if m := v.leaks(w); m != "" {
 				t.Errorf("SURFACE BROKEN [chat list]: %s's list leaks %q: %s", who, m, w.Body.String())
 			}
+			// Searching everything for A's words finds nothing of A's.
+			w = atk.get("/api/search/chats?q=alice-private")
+			if w.Code != 200 || v.leaks(w) != "" || strings.Contains(w.Body.String(), "alice-private") {
+				t.Errorf("SURFACE BROKEN [global search]: %s: %d %s", who, w.Code, w.Body.String())
+			}
 			// Creating a chat must not adopt a foreign id, title or session.
 			w = atk.do("POST", "/api/chats", nil, map[string]string{"title": "x"})
 			if w.Code != 201 || v.leaks(w) != "" {
@@ -237,6 +250,9 @@ func TestCrossUserThreatBuiltSurfaces(t *testing.T) {
 	})
 
 	t.Run("owner still reaches her own data", func(t *testing.T) { // the refusals above are not a broken route
+		if w := v.alice.get("/api/search/chats?q=alice-private"); w.Code != 200 || !strings.Contains(w.Body.String(), v.chatID) {
+			t.Errorf("owner's global search does not find her own chat: %d %s", w.Code, w.Body.String())
+		}
 		for _, p := range builtProbes {
 			if p.key == "GET /api/runs/{runId}/events" || strings.HasPrefix(p.key, "POST") {
 				continue
@@ -364,7 +380,14 @@ func TestCrossUserThreatNotYetBuilt(t *testing.T) {
 				if strings.Contains(pat, "%s") {
 					path = fmt.Sprintf(pat, v.chatID)
 				}
-				for who, p := range map[string]*person{"alice": v.alice, "bob": bob} {
+				for _, c := range []struct {
+					who string
+					p   *person
+				}{{"alice", v.alice}, {"bob", bob}} {
+					who, p := c.who, c.p
+					if who == "bob" {
+						v.snapshot() // an owner's own reads of her transcript are legitimate; only bob's probes must be silent
+					}
 					for _, m := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
 						w := p.do(m, path+"?q="+v.output, map[string]string{"Idempotency-Key": nextIdem()}, requestBody(m))
 						ok := w.Code == http.StatusNotFound || w.Code == http.StatusMethodNotAllowed

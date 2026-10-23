@@ -42,14 +42,12 @@ func aliceFingerprint(v *victim) string {
 }
 
 type ownFuzz struct {
-	v                  *victim
-	bob                *person
-	bobChat, bobRun    string
-	routes             []probe
-	baseline           map[string]string // route key -> bob's answer for an unknown id
-	fingerprint        string
-	aliceHxBefore      int
-	otherProfileBefore int
+	v               *victim
+	bob             *person
+	bobChat, bobRun string
+	routes          []probe
+	baseline        map[string]string // route key -> bob's answer for an unknown id
+	fingerprint     string
 }
 
 func newOwnFuzz(t testing.TB) *ownFuzz {
@@ -67,7 +65,7 @@ func newOwnFuzz(t testing.TB) *ownFuzz {
 // route has. Properties: a foreign or unknown id is the same 404 as a bare
 // unknown id, leaks nothing, and leaves alice's data and Hermes untouched; bob's
 // own id is the only thing that works, and then only under his own profile.
-func (o *ownFuzz) try(t testing.TB, ri uint8, id string, mutate bool) {
+func (o *ownFuzz) try(t testing.TB, ri uint8, id string) {
 	t.Helper()
 	v := o.v
 	p := o.routes[int(ri)%len(o.routes)]
@@ -121,7 +119,7 @@ func TestOwnershipOverHTTPProperty(t *testing.T) {
 	o := newOwnFuzz(t)
 	for _, id := range o.allIDs("zz") {
 		for ri := range o.routes {
-			o.try(t, uint8(ri), id, false)
+			o.try(t, uint8(ri), id)
 		}
 	}
 }
@@ -133,7 +131,7 @@ func FuzzOwnershipOverHTTP(f *testing.F) {
 	f.Add(uint8(5), uint8(24), "%2e%2e/%2e%2e")
 	f.Fuzz(func(t *testing.T, ri, sel uint8, raw string) {
 		ids := o.allIDs(raw)
-		o.try(t, ri, ids[int(sel)%len(ids)], true)
+		o.try(t, ri, ids[int(sel)%len(ids)])
 	})
 }
 
@@ -226,10 +224,10 @@ type sseRun struct {
 	hid     string
 	input   string
 	cl      *sseClient
-	pushed  []string // delta tokens in the order pushed
+	pushed  []string     // delta tokens in the order pushed
 	subs    atomic.Int64 // upstream subscriptions opened
 	ends    atomic.Int64 // upstream subscriptions that ended
-	cancel  bool // the client cancelled before any terminal frame
+	cancel  bool         // the client cancelled before any terminal frame
 	quit    chan struct{}
 	drained sync.WaitGroup
 }
