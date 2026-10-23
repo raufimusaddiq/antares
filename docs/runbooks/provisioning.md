@@ -7,7 +7,8 @@ before `READY`, and what an operator must do when it does not get there.
 
 ```text
 admin approve ─▶ APPROVED + UNPROVISIONED ─▶ (claim) CONFIGURING
-   helper POST /provision {slug}  ─▶ key returned once ─▶ sealed + stored (tenant_bindings, CONFIGURING)
+   no binding: POST /provision    ─▶ key returned once ─▶ sealed + stored (tenant_bindings, CONFIGURING)
+   binding: POST /rotate          ─▶ policy reapplied, new key sealed over the existing credential
    verify against Hermes          ─▶ all checks pass    ─▶ READY   (user reaches the app)
                                   ─▶ any check fails    ─▶ FAILED + reason (admin sees it)
 ```
@@ -18,6 +19,13 @@ admin approve ─▶ APPROVED + UNPROVISIONED ─▶ (claim) CONFIGURING
   into a `UNIQUE` fingerprint so one key cannot be bound to two users. Neither the key nor the profile
   name is in any response, log line, audit row or error string; admins see status and a fixed-vocabulary
   reason only.
+- Every setup run with a binding calls `/rotate` before verification: both requeue operations,
+  automatic retries, resumed leases and reactivation. The helper reapplies toolset policy and replaces
+  the profile key; Antares seals the new key with the current `ANTARES_SECRET_KEY` and stores it against
+  the same binding ID. The old profile key is invalidated. Every such run requires the helper.
+  If `/rotate` reports a missing host profile (404) or missing key (409), `/provision` recreates the
+  profile or issues its first key, then replaces the credential in the existing binding before full
+  verification. This does not restore any host data lost with a deleted profile.
 - Users who are approved but not `READY` see `SETTING_UP`; a tenant that ends `FAILED` shows the user
   the existing `ERROR` screen (slice 2) and the admin the reason. Every chat route stays closed
   (`TENANT_NOT_READY`) until `READY`.
@@ -34,9 +42,9 @@ admin approve ─▶ APPROVED + UNPROVISIONED ─▶ (claim) CONFIGURING
 | `POST …/approve` | `PENDING`/`REJECTED` → `APPROVED`, starts provisioning |
 | `POST …/reject` | `PENDING` → `REJECTED`; **reason required**; revokes the user's sessions |
 | `POST …/suspend` | `APPROVED` → `SUSPENDED`; **reason required**; revokes sessions, disables the binding |
-| `POST …/reactivate` | `SUSPENDED` → `APPROVED`; the stored binding is re-verified, not trusted |
-| `POST …/tenant-binding` | re-run provisioning for an approved account (e.g. after `FAILED`); takes no body |
-| `POST …/tenant-verify` | re-verify an existing binding; the user is not `READY` while it runs; takes no body |
+| `POST …/reactivate` | `SUSPENDED` → `APPROVED`; an existing binding is rotated, re-sealed and verified before access returns |
+| `POST …/tenant-binding` | provision without a binding, otherwise rotate, re-seal and verify; resets attempts; takes no body |
+| `POST …/tenant-verify` | rotate, re-seal and verify an existing binding; resets attempts; blocks access while running; takes no body |
 | `GET /api/admin/audit` | audit feed (actor, action, target, outcome, time; no reasons, no content) |
 
 Bodies accept only `{"reason": "..."}` (≤ 500 chars, no control characters). Any other field — a
@@ -45,12 +53,21 @@ cannot act on their own account. Two admins acting at once give one winner and a
 
 ## Retry policy
 
-Helper failures are classified. *Transient* (unreachable, 5xx, unreadable response) and verification
-failures retry with backoff 15 s, 30 s, 1 m, … capped at 10 m, for 5 attempts, then stay `FAILED` with
-the reason. *Permanent* (the helper refuses our token, rejects the request, answers for another
-profile) stop at once. An admin `tenant-binding` resets the budget. A run interrupted by a restart is
-resumed when its 12-minute lease expires. If the helper's response was lost (it has a key we never
-stored), `/provision` returns `409` and the pipeline recovers with `/rotate`, as the helper README says.
+Transient helper failures (unreachable, 5xx, unreadable response) and unavailable verification
+evidence retry with backoff 15 s, 30 s, 1 m, … capped at 10 m, for 5 attempts. An enabled forbidden
+toolset after policy application is a deterministic divergence: it stops after one failed run, as do
+permanent helper failures (token refused, request rejected, answer for another profile). Attempts
+count actual failed runs. If a report also contains transient verification failures, the admin detail
+names `toolset_policy` as the deterministic check and retains the other check results. Deterministic stops and exhausted retry budgets stay `FAILED` with a NULL
+next-attempt time, an explicit `operator attention required` detail distinguishing the two outcomes,
+and a `tenant.attention` audit event. Both admin requeue operations reset the budget.
+
+A run interrupted by a restart resumes when its 12-minute lease expires. If a provision response
+was lost before a binding was stored, `/provision` returns `409` and the pipeline recovers with
+`/rotate`. With a binding, every retry attempts rotation again, falling back to `/provision` only
+for a missing profile or key. A run makes at most two helper calls; a provision conflict during that
+fallback waits for the next retry rather than adding a third call. Token refusals and other helper
+failures do not trigger provisioning.
 
 ## What `READY` requires (`internal/hermes/verify.go`)
 
@@ -102,8 +119,8 @@ refuses to start.
   path from the Antares container, then `tenant-binding`.
 - `FAILED` with `verification failed: toolset_policy …`: do not edit the profile's `config.yaml`; the
   provisioner overwrites it on the next `/provision` or `/rotate`. Make `PROVISIONER_ALLOWED_TOOLSETS`
-  (provisioner) equal `ANTARES_TENANT_ALLOWED_TOOLSETS` (Antares), restart the provisioner, rotate the
-  profile so the policy is reapplied, then `tenant-verify` (`docs/runbooks/tenant-toolsets.md`).
+  (provisioner) equal `ANTARES_TENANT_ALLOWED_TOOLSETS` (Antares), restart the provisioner, then
+  use `tenant-verify` to rotate, store the new key and verify (`docs/runbooks/tenant-toolsets.md`).
 - `FAILED` with `verification failed: toolset_policy … toolset X is enabled but not allowed` for every
   tenant right after a **Hermes upgrade**: the new build probably added a toolset that is on by
   default. The provisioner only disables the toolsets it knows (`knownToolsets` in
@@ -113,8 +130,37 @@ refuses to start.
   each profile so the policy is reapplied. Until then no tenant verifies; that is fail-closed.
 - `FAILED` with `verification failed: endpoint …`: the profile route is not served (see Phase 0 and
   `docs/hermes/MULTIPLEX-LISTENER-DIAGNOSIS.md`).
-- `stored credential cannot be opened`: `ANTARES_SECRET_KEY` changed. Restore the previous key; do not
-  re-provision around it.
-- Rotating a key Hermes has stopped accepting has **no supported path yet**: the helper's `/rotate`
-  returns the new key only to its caller, and Antares has no admin route that asks for one and stores it
-  (open item). Do not paste a key into Antares by hand.
+- A changed `ANTARES_SECRET_KEY`: if the change was accidental, stop Antares before any setup run
+  rotates and overwrites credentials, and restore the previous secret through the operator's normal
+  recovery procedure. Once a run stores a replacement, restoring the previous secret alone cannot
+  decrypt that replacement or recover the invalidated profile key. Keep the intended current secret
+  and requeue affected approved accounts to obtain and seal fresh profile keys. The binding ID,
+  profile, memory scope and private data stay in place; the helper must be available.
+- A profile key Hermes no longer accepts: `tenant-verify` or `tenant-binding` is the supported
+  rotation-and-store path. It invalidates the old profile key, seals and stores the replacement, then
+  verifies with that replacement. Do not paste a key into Antares by hand. If the bootstrap admin
+  cannot access the admin API, due retries still run through the sweep; a stopped account requires
+  operator recovery of admin access before an admin can requeue it.
+
+## Named-profile key reload evidence
+
+The restart in `docs/hermes/MULTIPLEX-LISTENER-DIAGNOSIS.md:20-21` concerns starting the default
+listener with its missing key. Named tenant profiles take a different authentication path. In the
+pinned Hermes source (`d923a5eb487a17c0a68801bba9ef0f56c81040a8`):
+
+- [Profile middleware and scope](https://github.com/NousResearch/hermes-agent/blob/d923a5eb487a17c0a68801bba9ef0f56c81040a8/gateway/platforms/api_server.py#L1674-L1716)
+  enter a named profile's runtime scope for each request;
+  [that scope](https://github.com/NousResearch/hermes-agent/blob/d923a5eb487a17c0a68801bba9ef0f56c81040a8/gateway/run.py#L1772-L1818)
+  rebuilds the profile's secret mapping.
+- [Secret loading](https://github.com/NousResearch/hermes-agent/blob/d923a5eb487a17c0a68801bba9ef0f56c81040a8/agent/secret_scope.py#L350-L418)
+  reads the profile `.env`; its cache checks the opened file's stat identity. The helper writes a
+  temporary file and uses `os.replace` (`tools/hermes-provisioner/hermes.go`, `envScript`), so the
+  replacement invalidates that cache. External or managed secret sources must not override the
+  profile's `API_SERVER_KEY`.
+- [Named-profile authentication](https://github.com/NousResearch/hermes-agent/blob/d923a5eb487a17c0a68801bba9ef0f56c81040a8/gateway/platforms/api_server.py#L1536-L1552)
+  reads `API_SERVER_KEY` from the request's scope; the default profile instead uses the adapter key.
+
+This source path supports using the rotated named-profile key on the next request without a gateway
+reload, including when the tenant was previously `READY`. This is source evidence, not a live
+rotation test against the deployed gateway. Antares still requires full verification with the new
+key before returning to `READY`; a helper success alone cannot unlock access.

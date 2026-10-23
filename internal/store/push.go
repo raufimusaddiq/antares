@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// Push modes (the CHECK constraint in 0005_push.sql is the source of truth).
+// Push modes (the CHECK constraint in 0008_push.sql is the source of truth).
 const (
 	PushOff      = "off"
 	PushAll      = "all"

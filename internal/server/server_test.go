@@ -129,6 +129,10 @@ func TestRootServesTheBuiltBundle(t *testing.T) {
 		if rec.Header().Get("Cache-Control") != "no-store" {
 			t.Errorf("%s shell must not be cached", p)
 		}
+		wantCSP := "default-src 'none'; script-src 'self'; style-src 'self' " + openUIStyleHash + "; connect-src 'self'; img-src 'self'; font-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		if got := rec.Header().Get("Content-Security-Policy"); got != wantCSP {
+			t.Errorf("%s CSP = %q, want %q", p, got, wantCSP)
+		}
 	}
 	shell := get(h, "/").Body.String()
 	m := regexp.MustCompile(`src="(/assets/[^"]+\.js)"`).FindStringSubmatch(shell)
@@ -149,6 +153,35 @@ func TestMissingBundleIsNotFoundNotAFallback(t *testing.T) {
 				t.Errorf("%s %s = %d %q", name, p, rec.Code, rec.Body.String())
 			}
 		}
+	}
+}
+
+func TestPWAPublicAssets(t *testing.T) {
+	h := New(nil, "").WithAssets(webui.FS()).Routes()
+	for _, p := range []string{"/sw.js", "/manifest.webmanifest", "/offline.html", "/icon-192.png", "/icon-512.png"} {
+		rec := get(h, p)
+		if rec.Code != 200 {
+			t.Fatalf("%s: %d", p, rec.Code)
+		}
+		if p == "/sw.js" || p == "/manifest.webmanifest" {
+			if rec.Header().Get("Cache-Control") != "no-cache" {
+				t.Errorf("%s must revalidate", p)
+			}
+		}
+		if p == "/sw.js" && (strings.Contains(rec.Body.String(), "__VERSION__") || strings.Contains(rec.Body.String(), "__PRECACHE__")) {
+			t.Error("service worker was not versioned by the build")
+		}
+		if p == "/offline.html" {
+			if rec.Header().Get("Content-Security-Policy") != get(h, "/").Header().Get("Content-Security-Policy") {
+				t.Error("offline shell must have the same pinned CSP")
+			}
+			if !strings.Contains(rec.Body.String(), "You are offline") || !strings.Contains(rec.Body.String(), "role=\"status\"") {
+				t.Error("offline shell must announce its state")
+			}
+		}
+	}
+	if got := get(h, "/manifest.webmanifest").Header().Get("Content-Type"); got != "application/manifest+json" {
+		t.Errorf("manifest Content-Type = %q", got)
 	}
 }
 
@@ -186,7 +219,7 @@ func TestServiceWorkerIsServedFreshAndIsNotTheShell(t *testing.T) {
 	if !strings.Contains(body, "showNotification") || strings.Contains(body, "<div id=\"root\">") {
 		t.Errorf("sw.js is not the worker: %.80s", body)
 	}
-	if strings.Contains(body, "addEventListener(\"fetch\"") {
-		t.Error("the worker intercepts fetches")
+	if !strings.Contains(body, `addEventListener("push"`) || !strings.Contains(body, "notificationclick") {
+		t.Error("the worker does not handle push")
 	}
 }

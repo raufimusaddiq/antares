@@ -331,6 +331,11 @@ func (s *Service) finish(l *liveRun, to, code, output string) {
 	if s.notifier != nil && store.RunTerminal(run.Status) {
 		s.notifier.RunFinished(run.UserID, run.ID, run.ChatID, run.Status) // the stored status, so a cancel is never a completion
 	}
+	if store.RunTerminal(run.Status) { // the transcript gained turns: its search index is stale
+		if err := store.InvalidateChatIndex(ctx, s.db, run.UserID, run.ChatID, s.now()); err != nil {
+			log.Printf("chat: run %s: could not mark search index stale: %v", l.runID, err)
+		}
+	}
 	l.emit(terminalEvent(run.Status), terminalPayload(run, output), store.RunTerminal(run.Status))
 	if !store.RunTerminal(run.Status) { // read back a non-terminal state: leave it resumable
 		l.markDetached()

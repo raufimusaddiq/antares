@@ -46,6 +46,8 @@ describe("notification settings are read strictly", () => {
   });
 });
 
+const swSource = () => readFileSync(join(__dirname, "..", "public", "sw.js"), "utf8").replace("__VERSION__", "test").replace("__PRECACHE__", "[]");
+
 // Run the real worker file against a stub of the worker globals.
 function worker() {
   const handlers: Record<string, (e: unknown) => void> = {};
@@ -62,7 +64,10 @@ function worker() {
       openWindow: async (u: string) => void opened.push(u),
     },
   };
-  runInNewContext(readFileSync(join(__dirname, "..", "public", "sw.js"), "utf8"), { self, URL, Object });
+  const calls: string[] = [];
+  const caches = { open: async () => void calls.push("caches.open"), keys: async () => [] };
+  const fetch = async () => void calls.push("fetch");
+  runInNewContext(swSource(), { self, caches, fetch, URL, Object, Set });
   const push = async (payload: unknown, raw = false) => {
     let waited: Promise<unknown> = Promise.resolve();
     handlers.push({ data: { json: () => (raw ? JSON.parse(payload as string) : payload) }, waitUntil: (p: Promise<unknown>) => (waited = p) });
@@ -73,7 +78,7 @@ function worker() {
     handlers.notificationclick({ notification: { close() {}, data: { chatId } }, waitUntil: (p: Promise<unknown>) => (waited = p) });
     await waited;
   };
-  return { push, click, shown, opened, navigated, setWindow: (u: string | null) => (winUrl = u) };
+  return { calls, push, click, shown, opened, navigated, setWindow: (u: string | null) => (winUrl = u) };
 }
 
 describe("the service worker shows fixed text and nothing from the payload", () => {
@@ -110,10 +115,13 @@ describe("the service worker shows fixed text and nothing from the payload", () 
   });
 });
 
-describe("the worker cannot cache or intercept anything private", () => {
-  it("has no fetch handler and no cache use", () => {
-    const src = readFileSync(join(__dirname, "..", "public", "sw.js"), "utf8");
-    expect(src).not.toMatch(/addEventListener\(\s*["']fetch["']/);
-    expect(src).not.toMatch(/\bcaches\b|importScripts|localStorage/);
+describe("the push handlers cannot cache or intercept anything private", () => {
+  it("touch neither fetch nor the cache, and use no storage", async () => {
+    const w = worker();
+    await w.push({ v: 1, kind: "completed", chatId: ID });
+    await w.click(ID);
+    expect(w.calls).toEqual([]);
+    const pushPart = swSource().split("// ---- Web Push")[1];
+    expect(pushPart).not.toMatch(/\bcaches\b|\bfetch\(|importScripts|localStorage|addEventListener\(\s*["']fetch["']/);
   });
 });

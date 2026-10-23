@@ -140,7 +140,7 @@ export async function enable(): Promise<Result<true>> {
   if (typeof key.value.publicKey !== "string") return { ok: false, code: "ERROR" };
   let sub: PushSubscription;
   try {
-    const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/" });
+    const reg = await navigator.serviceWorker.register("/sw.js", { scope: "/", updateViaCache: "none" });
     await navigator.serviceWorker.ready;
     sub = (await reg.pushManager.getSubscription()) ?? (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64urlToBytes(key.value.publicKey) }));
   } catch {

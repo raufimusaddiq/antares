@@ -51,7 +51,7 @@ func TestBundleIsNotStale(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	files = append(files, "index.html", "package.json", "package-lock.json", "vite.config.ts", "tsconfig.json")
+	files = append(files, "index.html", "package.json", "package-lock.json", "vite.config.ts", "tsconfig.json", "scripts/stamp.mjs")
 	sort.Strings(files)
 	h := sha256.New()
 	for _, f := range files {
@@ -92,6 +92,8 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		// per-account mode. None of them returns or accepts conversation content.
 		"/api/push/public-key": true, "/api/push/subscriptions": true, "/api/push/subscriptions/": true,
 		"/api/me/notifications": true,
+		// #60 chat search: /api/search/chats; the per-chat form is /api/chats/{id}/search, covered above.
+		"/api/search/chats": true,
 	}
 	pathRe := regexp.MustCompile(`/api/[A-Za-z0-9_/.-]*`)
 	badRe := regexp.MustCompile(`(?i)ciphertext|fingerprint|tenant_binding|profile_name|profileSlug|memory_scope|client_secret|api_key|apikey|hermes|authorization`)
