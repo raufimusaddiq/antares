@@ -63,7 +63,7 @@ never `pass`. Every string in the output goes through a redactor (the supplied s
 6. `tenant.ready.a|b` — the tenant reaches `READY` with a `READY` binding. A tenant that stays `FAILED` fails the step
    with Antares' own `tenantDetail`, for example `verification failed: toolset_policy (boundary-crossing toolset
    terminal is enabled)`.
-7. `tenant.verify.a|b` — asks Antares to run its verification again now (`tenant-verify`). The account first goes back
+7. `tenant.verify.a|b` — asks Antares to rotate, store the new key and verify (`tenant-verify`). The account first goes back
    to `CONFIGURING` (the step fails if it does not, since a stale `READY` would prove nothing); `READY` afterwards means
    Antares re-ran its six checks with **the tenant's own credential** against the Hermes it is deployed with:
    `endpoint`, `profile_identity`, `credential_isolation`, `session_ownership`, `toolset_policy`, `memory_boundary`.
@@ -87,7 +87,7 @@ never `pass`. Every string in the output goes through a redactor (the supplied s
 |---|---|---|
 | Stale host helper: `agent.disabled_toolsets` never written, so boundary toolsets stay on | `tenant.ready.a` for a profile provisioned after the helper went stale; `tenant.verify.a` for an existing one (re-verification). If even the admin's workspace was provisioned stale: `admin.active` | `verification failed: toolset_policy (boundary-crossing toolset terminal is enabled)` |
 | `/opt/antares` `700`, service crash-looping `203/EXEC` | `reach.health` (nothing answers) | connection error or non-200; every later step `skip`, `blockedBy: reach.health` |
-| Tenant binding cannot recover, account `FAILED` with no path back | `tenant.ready.a|b`, or `admin.active` for the admin | `tenant A is FAILED after N attempt(s): <Antares' detail>` |
+| Tenant setup remains `FAILED`; retryable failures back off, while deterministic stops or exhausted budgets require admin requeue | `tenant.ready.a|b`, or `admin.active` for the admin | `tenant A is FAILED after N attempt(s): <Antares' detail>` |
 
 `internal/smoke/scenario_test.go` reproduces the first and third against a real in-process Antares (fake Hermes and
 provisioner behind real HTTP) and asserts the failing step and its text; the second is asserted by `cmd/antares-smoke/main_test.go`
