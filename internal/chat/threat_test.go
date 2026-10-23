@@ -46,10 +46,12 @@ var builtProbes = []probe{
 	{"regenerate", "POST /api/chats/{chatId}/regenerate"},
 	{"edit turn", "POST /api/chats/{chatId}/edit-turn"},
 	{"rewind", "POST /api/chats/{chatId}/rewind"},
+	{"staged audio read", "GET /api/assets/{assetId}"},
+	{"staged audio delete", "DELETE /api/assets/{assetId}"},
 }
 
 // idFree are built routes with no id in the path: they must scope by the caller.
-var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "GET /api/capabilities"}
+var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "GET /api/capabilities", "POST /api/assets"}
 
 // notBuilt are the §25 / Phase 3 surfaces with no route in this build. Each is
 // an honest gap, not an omission: the test below proves the gap is real (no
@@ -63,7 +65,7 @@ var notBuilt = []struct {
 	{"templates", "UXP-ACC-005/009", "no template storage exists yet", []string{"/api/templates", "/api/templates/%s"}, false},
 	{"push subscriptions", "UXP-ACC-002/003", "no push subscription endpoint exists yet", []string{"/api/push/subscriptions", "/api/push/subscribe", "/api/push/subscriptions/%s"}, false},
 	{"exports", "UXP-ACC-016", "no export endpoint exists yet", []string{"/api/chats/%s/export", "/api/exports", "/api/exports/%s"}, false},
-	{"voice uploads", "UXP-ACC-006", "no voice/transcription endpoint exists yet; POST /api/assets is a 501 stub", []string{"/api/voice", "/api/transcribe", "/api/voice/%s"}, false},
+	{"voice uploads", "UXP-ACC-006", "no transcription endpoint exists: Hermes has no speech-to-text route (BLOCKED_BY_UPSTREAM); /api/assets only stages audio, see assets_test.go", []string{"/api/voice", "/api/transcribe", "/api/voice/%s", "/api/assets/%s/transcribe"}, false},
 	{"preview sandbox", "UXP-ACC-015", "previews are served per chat turn (probed above); no free-standing preview/artifact id exists", []string{"/api/preview", "/api/preview/%s", "/api/artifacts/%s"}, false},
 	{"fork", "UXP-ACC-012", "POST /api/chats/{id}/fork is a 501 stub; Hermes forks only a whole session (docs/runbooks/turn-controls.md)", []string{"/api/chats/%s/fork"}, true},
 	{"delayed notifications", "UXP-ACC-002/019", "no notification outbox or endpoint exists yet", []string{"/api/notifications", "/api/notifications/%s"}, false},
@@ -81,7 +83,10 @@ type victim struct {
 	hermesRun, ref             string
 	markers                    []string // anything that must never appear in a refusal
 	runRows, chatRows, hxAlice int
+	assetID                    string
 }
+
+const aliceAudio = "\x1a\x45\xdf\xa3alice-voice-marker-8b2f"
 
 func newVictim(t testing.TB) *victim {
 	t.Helper()
@@ -111,7 +116,12 @@ func newVictim(t testing.TB) *victim {
 	a.hx.push(fr, "run.completed", fmt.Sprintf(`{"output":%q}`, v.output))
 	s.waitFor(t, "run.completed")
 	<-s.done
-	v.markers = []string{v.chatID, v.runID, v.title, v.output, "alice-artifact-secret-4e7a", v.session, v.hermesRun, alice.profile, alice.key, alice.id,
+	w = alice.do("POST", "/api/assets", map[string]string{"Content-Type": "audio/webm"}, aliceAudio)
+	if w.Code != 201 {
+		t.Fatalf("stage alice's audio: %d %s", w.Code, w.Body.String())
+	}
+	v.assetID = decodeBody[struct{ ID string }](t, w).ID
+	v.markers = []string{v.assetID, "alice-voice-marker-8b2f", v.chatID, v.runID, v.title, v.output, "alice-artifact-secret-4e7a", v.session, v.hermesRun, alice.profile, alice.key, alice.id,
 		"alice-private-question-2b8e", "alice-private-input-5d40", alice.cookie}
 	// Alice searches her own chats once, so her content is in the index (and her
 	// transcript has been read from Hermes) before anyone else probes.
@@ -177,6 +187,10 @@ func (v *victim) untouched(t testing.TB, what string) {
 	if runs != v.runRows || chats != v.chatRows {
 		t.Errorf("%s: alice's rows changed (runs %d->%d, chats %d->%d)", what, v.runRows, runs, v.chatRows, chats)
 	}
+	var assets int
+	if err := v.a.db.QueryRow(`SELECT COUNT(*) FROM assets WHERE user_id = ? AND id = ?`, v.alice.id, v.assetID).Scan(&assets); err != nil || assets != 1 {
+		t.Errorf("%s: alice's staged audio is gone or unreadable (rows %d, err %v)", what, assets, err)
+	}
 	if st := v.alice.runStatus(v.runID); st != store.RunCompleted {
 		t.Errorf("%s: alice's completed run is now %s", what, st)
 	}
@@ -189,6 +203,11 @@ func (v *victim) untouched(t testing.TB, what string) {
 // refusal is about the caller and not about a missing ref.
 func (v *victim) fill(key, chatID, runID string) (string, string) {
 	m, p := fill(key, chatID, runID)
+	asset := store.NewID() // the "absent" twin of a probe is called with other chat and run ids
+	if chatID == v.chatID {
+		asset = v.assetID
+	}
+	p = strings.ReplaceAll(p, "{assetId}", asset)
 	if strings.Contains(p, "/artifacts/") {
 		p += "?ref=" + v.ref
 	}
@@ -294,7 +313,7 @@ func TestCrossUserThreatBuiltSurfaces(t *testing.T) {
 			t.Errorf("owner's global search does not find her own chat: %d %s", w.Code, w.Body.String())
 		}
 		for _, p := range builtProbes {
-			if p.key == "GET /api/runs/{runId}/events" || strings.HasPrefix(p.key, "POST") {
+			if p.key == "GET /api/runs/{runId}/events" || strings.HasPrefix(p.key, "POST") || strings.HasPrefix(p.key, "DELETE") { // the owner's own delete is proven in assets_test.go
 				continue
 			}
 			mtd, path := v.fill(p.key, v.chatID, v.runID)

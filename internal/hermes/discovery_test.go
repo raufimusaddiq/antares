@@ -2,9 +2,11 @@ package hermes
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -37,6 +39,11 @@ func fakeDiscovery(t *testing.T, bodies map[string]string) (*Client, *[]string) 
 		b, ok := bodies[path]
 		if !ok {
 			http.NotFound(w, r)
+			return
+		}
+		if code, refused := strings.CutPrefix(b, "!"); refused { // "!401": answer with that status
+			n, _ := strconv.Atoi(code)
+			w.WriteHeader(n)
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
@@ -209,6 +216,47 @@ func TestDiscoverRefusedBindingIsAnErrorNotAnInventory(t *testing.T) {
 	for _, b := range []Binding{{Profile: testProfile, Key: "wrong-key"}, {}} {
 		if _, err := c.Discover(context.Background(), b); CodeOf(err) != CodeTenantNotReady {
 			t.Errorf("binding %v: err = %v, want TENANT_NOT_READY", b, err)
+		}
+	}
+}
+
+// Capabilities answered, then the binding is refused on a later read: no partial
+// inventory, whichever secondary route refuses and whether 401 or 403.
+func TestDiscoverSecondaryRefusalIsTenantNotReady(t *testing.T) {
+	for _, path := range []string{"/v1/toolsets", "/v1/skills", "/api/model/options"} {
+		for _, code := range []string{"!401", "!403"} {
+			m := realBodies(t)
+			m[path] = code
+			c, _ := fakeDiscovery(t, m)
+			inv, err := c.Discover(context.Background(), bind())
+			if CodeOf(err) != CodeTenantNotReady || len(inv.Capabilities) != 0 || len(inv.Toolsets)+len(inv.Providers)+len(inv.Skills) != 0 {
+				t.Errorf("%s %s: err=%v inv=%+v, want TENANT_NOT_READY and no inventory", path, code, err, inv)
+			}
+		}
+	}
+}
+
+// Empty or unreadable catalogs must marshal as [] and never null: the browser
+// treats null as an unreadable answer and would drop the whole inventory.
+func TestDiscoverListsAreNeverNull(t *testing.T) {
+	for name, mutate := range map[string]func(m map[string]string){
+		"empty catalog":      func(m map[string]string) { m["/api/model/options"] = `{"providers":[]}` },
+		"unreadable catalog": func(m map[string]string) { m["/api/model/options"] = `{` },
+		"missing catalog":    func(m map[string]string) { delete(m, "/api/model/options") },
+		"nothing readable":   func(m map[string]string) { delete(m, "/v1/capabilities") },
+	} {
+		m := realBodies(t)
+		mutate(m)
+		c, _ := fakeDiscovery(t, m)
+		inv, err := c.Discover(context.Background(), bind())
+		if err != nil {
+			t.Fatal(name, err)
+		}
+		raw, _ := json.Marshal(inv)
+		for _, k := range []string{"providers", "toolsets", "skills", "capabilities"} {
+			if strings.Contains(string(raw), `"`+k+`":null`) {
+				t.Errorf("%s: %s is null in %s", name, k, raw)
+			}
 		}
 	}
 }

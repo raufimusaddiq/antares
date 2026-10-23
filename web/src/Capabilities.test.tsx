@@ -62,3 +62,20 @@ describe("capability discovery on the client", () => {
     expect(renderToStaticMarkup(<AdminScreens route={{ kind: "capabilities" }} onNavigate={() => {}} />)).toContain("Loading");
   });
 });
+
+import golden from "./testdata/capabilities-empty.test.json";
+
+describe("server-to-client: empty catalogs", () => {
+  it("the exact answer for empty/unreadable catalogs (also asserted byte-for-byte by the Go test) parses and offers only what is available", () => {
+    const inv = parseInventory(golden);
+    expect(inv).not.toBeNull();
+    expect(inv!.providers).toEqual([]);
+    expect(offers(inv, "model_lock")).toBe(true);
+    expect(offers(inv, "models")).toBe(false);
+    expect(offers(inv, "skills")).toBe(false);
+  });
+
+  it("a null list is still an unreadable answer, so the server must never send one", () => {
+    expect(parseInventory({ ...golden, providers: null })).toBeNull();
+  });
+});

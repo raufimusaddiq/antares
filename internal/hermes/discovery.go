@@ -150,7 +150,11 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 	if capsOK && caps.flag("model_options") {
 		models.Reason = "Hermes does not advertise a model options route"
 		if p, ok := caps.route("model_options"); ok {
-			inv.Providers, models.Reason = c.modelOptions(ctx, b, p)
+			var err error
+			inv.Providers, models.Reason, err = c.modelOptions(ctx, b, p)
+			if err != nil {
+				return Inventory{}, err
+			}
 			if len(inv.Providers) > 0 {
 				models = available(CapModels, "Model choices")
 			}
@@ -180,7 +184,11 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 			} `json:"data"`
 		}
 		tools.Reason = "Hermes did not return a usable toolset list"
-		if ok, _ := c.getJSON(ctx, b, p, &d, maxAPIResponse); ok && d.Object == "list" {
+		ok, tenant := c.getJSON(ctx, b, p, &d, maxAPIResponse)
+		if tenant {
+			return Inventory{}, fail(CodeTenantNotReady)
+		}
+		if ok && d.Object == "list" {
 			tools.Reason = "No toolset is enabled and configured"
 			for _, t := range d.Data {
 				if len(inv.Toolsets) >= maxListed {
@@ -220,7 +228,11 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 				} `json:"data"`
 			}
 			skills.Reason = "Hermes did not return a usable skills list"
-			if ok, _ := c.getJSON(ctx, b, p, &d, maxAPIResponse); ok && d.Object == "list" {
+			ok, tenant := c.getJSON(ctx, b, p, &d, maxAPIResponse)
+			if tenant {
+				return Inventory{}, fail(CodeTenantNotReady)
+			}
+			if ok && d.Object == "list" {
 				skills.Reason = "Hermes reports no installed skills"
 				for _, s := range d.Data {
 					if len(inv.Skills) >= maxListed {
@@ -254,7 +266,7 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 // authenticated=true and that list at least one model are returned; a provider
 // without an explicit true is not offered. The second result is the reason when
 // nothing is returned.
-func (c *Client) modelOptions(ctx context.Context, b Binding, path string) ([]Provider, string) {
+func (c *Client) modelOptions(ctx context.Context, b Binding, path string) ([]Provider, string, error) {
 	var d struct {
 		Providers []struct {
 			Slug          string   `json:"slug"`
@@ -263,10 +275,15 @@ func (c *Client) modelOptions(ctx context.Context, b Binding, path string) ([]Pr
 			Authenticated *bool    `json:"authenticated"`
 		} `json:"providers"`
 	}
-	if ok, _ := c.getJSON(ctx, b, path+"?include_unconfigured=false", &d, maxModelOptions); !ok || d.Providers == nil {
-		return nil, "Hermes did not return a usable model list"
+	ok, tenant := c.getJSON(ctx, b, path+"?include_unconfigured=false", &d, maxModelOptions)
+	if tenant {
+		return nil, "", fail(CodeTenantNotReady)
 	}
-	var out []Provider
+	// Never nil: the browser's parser rejects "providers": null as an unreadable answer.
+	out := []Provider{}
+	if !ok || d.Providers == nil {
+		return out, "Hermes did not return a usable model list", nil
+	}
 	for _, p := range d.Providers {
 		if len(out) >= maxListed {
 			break
@@ -285,9 +302,9 @@ func (c *Client) modelOptions(ctx context.Context, b Binding, path string) ([]Pr
 		out = append(out, Provider{Slug: p.Slug, Name: name, Models: m, TotalModels: len(p.Models)})
 	}
 	if len(out) == 0 {
-		return nil, "Hermes lists no authenticated provider with models"
+		return out, "Hermes lists no authenticated provider with models", nil
 	}
-	return out, ""
+	return out, "", nil
 }
 
 // printable reports a short, plain upstream name safe to show.

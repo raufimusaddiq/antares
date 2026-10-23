@@ -3,6 +3,7 @@ package chat
 import (
 	"encoding/json"
 	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -123,5 +124,51 @@ func TestCapabilitiesDefaultDeny(t *testing.T) {
 	a.hx.mu.Unlock()
 	if w := alice.get("/api/capabilities"); w.Code != 409 || errCode(t, w) != "TENANT_NOT_READY" {
 		t.Errorf("refused binding: %d %s", w.Code, w.Body.String())
+	}
+}
+
+// The exact bytes a browser receives for an empty/unreadable catalog must be the
+// golden file the web tests parse (web/src/testdata/capabilities-empty.test.json):
+// one fixture crossing the server-to-client boundary from both sides.
+func TestCapabilitiesEmptyCatalogsMatchTheClientGolden(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	serveDiscovery(a, `{"object":"hermes.api_server.capabilities","features":{"model_options":true,"session_model_lock":true,"tool_progress_events":true,"run_events_sse":true,"skills_api":true},"endpoints":{"model_options":{"method":"GET","path":"/api/model/options"},"toolsets":{"method":"GET","path":"/v1/toolsets"},"skills":{"method":"GET","path":"/v1/skills"}}}`)
+	a.hx.mu.Lock()
+	a.hx.canned["/api/model/options"] = `{"providers":[]}`
+	a.hx.canned["/v1/toolsets"] = `{"object":"list","data":[]}`
+	a.hx.canned["/v1/skills"] = `{"object":"list","data":[]}`
+	a.hx.mu.Unlock()
+	w := alice.get("/api/capabilities")
+	if w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	var got, want any
+	if err := json.Unmarshal(w.Body.Bytes(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if err := json.Unmarshal([]byte(readFixture(t, "../../web/src/testdata/capabilities-empty.test.json")), &want); err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("server answer differs from the client golden:\n got  %s\n want %s", w.Body.String(), readFixture(t, "../../web/src/testdata/capabilities-empty.test.json"))
+	}
+}
+
+// A secondary read refused after capabilities succeeded yields no inventory.
+func TestCapabilitiesSecondaryRefusalIsTenantNotReady(t *testing.T) {
+	for _, path := range []string{"/v1/toolsets", "/v1/skills", "/api/model/options"} {
+		for _, st := range []int{401, 403} {
+			a := newApp(t)
+			alice := a.user("alice")
+			serveDiscovery(a, readFixture(t, "../../docs/hermes/fixtures/capabilities.body.json"))
+			a.hx.mu.Lock()
+			a.hx.failNext["GET "+path] = st // one-shot; each route is read once
+			a.hx.mu.Unlock()
+			w := alice.get("/api/capabilities")
+			if w.Code != 409 || errCode(t, w) != "TENANT_NOT_READY" || strings.Contains(w.Body.String(), `"capabilities"`) {
+				t.Errorf("%s %d: %d %s", path, st, w.Code, w.Body.String())
+			}
+		}
 	}
 }
