@@ -308,3 +308,39 @@ func ActiveRunCount(ctx context.Context, db *sql.DB, userID string) (int, error)
 	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM runs WHERE user_id = ? AND status IN `+nonTerminal, userID).Scan(&n)
 	return n, err
 }
+
+// ChatModel is a chat's saved model choice. The zero value is "the profile's default".
+type ChatModel struct {
+	Provider, Model, Reasoning, ServiceTier string
+}
+
+// GetChatModel returns the owner's saved choice, or ErrNoChat.
+func GetChatModel(ctx context.Context, db *sql.DB, userID, chatID string) (ChatModel, error) {
+	var m ChatModel
+	err := db.QueryRowContext(ctx, `SELECT COALESCE(model_provider,''), COALESCE(model_id,''), COALESCE(reasoning_effort,''), COALESCE(service_tier,'')
+		FROM chats WHERE id = ? AND user_id = ? AND status = 'ACTIVE'`, chatID, userID).
+		Scan(&m.Provider, &m.Model, &m.Reasoning, &m.ServiceTier)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ChatModel{}, ErrNoChat
+	}
+	return m, err
+}
+
+// SetChatModel saves the owner's choice; the zero ChatModel resets it to the default.
+func SetChatModel(ctx context.Context, db *sql.DB, userID, chatID string, m ChatModel) error {
+	nz := func(s string) any {
+		if s == "" {
+			return nil
+		}
+		return s
+	}
+	res, err := db.ExecContext(ctx, `UPDATE chats SET model_provider = ?, model_id = ?, reasoning_effort = ?, service_tier = ?
+		WHERE id = ? AND user_id = ? AND status = 'ACTIVE'`, nz(m.Provider), nz(m.Model), nz(m.Reasoning), nz(m.ServiceTier), chatID, userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNoChat
+	}
+	return nil
+}

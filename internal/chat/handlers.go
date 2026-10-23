@@ -41,6 +41,8 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview": http.HandlerFunc(s.previewArtifact),
 		"GET /api/chats/{chatId}/search":                               http.HandlerFunc(s.searchOne),
 		"GET /api/chats/{chatId}/usage":                                http.HandlerFunc(s.chatUsage),
+		"GET /api/models":                                              http.HandlerFunc(s.listModels),
+		"PUT /api/chats/{chatId}/model":                                http.HandlerFunc(s.putChatModel),
 		"GET /api/me/budget":                                           http.HandlerFunc(s.getBudget),
 		"PUT /api/me/budget":                                           http.HandlerFunc(s.putBudget),
 		"GET /api/search/chats":                                        http.HandlerFunc(s.searchAll),
@@ -113,11 +115,13 @@ func internalError(w http.ResponseWriter, what string, err error) {
 // ---- views ----------------------------------------------------------------------
 
 type chatView struct {
-	ID          string `json:"id"`
-	Title       string `json:"title"`
-	CreatedAt   string `json:"createdAt"`
-	UpdatedAt   string `json:"updatedAt"`
-	ActiveRunID string `json:"activeRunId,omitempty"`
+	// Model is the chat's saved choice; null means the profile's default.
+	Model       *modelChoiceView `json:"model"`
+	ID          string           `json:"id"`
+	Title       string           `json:"title"`
+	CreatedAt   string           `json:"createdAt"`
+	UpdatedAt   string           `json:"updatedAt"`
+	ActiveRunID string           `json:"activeRunId,omitempty"`
 }
 
 func viewChat(c store.Chat) chatView {
@@ -282,7 +286,14 @@ func (s *Service) getChat(w http.ResponseWriter, r *http.Request) {
 	case err != nil:
 		internalError(w, "get chat", err)
 	default:
-		writeJSON(w, http.StatusOK, viewChat(c))
+		v := viewChat(c)
+		m, err := store.GetChatModel(r.Context(), s.db, uid, id)
+		if err != nil {
+			internalError(w, "get chat model", err)
+			return
+		}
+		v.Model = choiceView(m)
+		writeJSON(w, http.StatusOK, v)
 	}
 }
 

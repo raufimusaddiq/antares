@@ -20,6 +20,7 @@ import {
   type SearchResult,
   type Turn,
 } from "./chatApi";
+import { ModelPicker } from "./ModelPicker";
 import { mergeNewest, prependOlder, reachOf } from "./history";
 import { SearchPanel } from "./Search";
 import { MessageBody } from "./MessageBody";
@@ -790,6 +791,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             />
           </details>
         )}
+        {current && <ModelPicker chatId={current} disabled={busy} />}
         <Recorder />
         <Composer value={draft} busy={busy} onChange={onDraft} onSubmit={onSubmit} />
       </main>

@@ -40,6 +40,7 @@ const CODES = [
   "HISTORY_CHANGED",
   "SEARCH_TIMEOUT",
   "BUDGET_REACHED",
+  "MODEL_UNAVAILABLE",
 ] as const;
 
 /** Words shown for a code. The server's own message is never displayed. */
@@ -72,6 +73,8 @@ export function describeCode(code: string): string {
       return "The search took too long. Try more specific words.";
     case "BUDGET_REACHED":
       return "This conversation has reached the token limit you set, so it takes no new messages. Raise or remove the limit under Usage to continue.";
+    case "MODEL_UNAVAILABLE":
+      return "That model or option is not available right now. Nothing was changed.";
     case "NETWORK":
       return "Could not reach Antares. Check your connection.";
     default:
@@ -394,4 +397,114 @@ export function parseLimitInput(text: string): number | null | undefined {
 /** One line per reply: its own tokens, or a dash when it reported none. */
 export function describeTurns(u: ChatUsage): string[] {
   return u.turns.map((t, i) => `Reply ${i + 1}: ${t.tokens ? `${fmt(t.tokens.total)} tokens (${fmt(t.tokens.input)} in, ${fmt(t.tokens.output)} out)` : "— (no usage reported)"}`);
+}
+
+// ---- model picker and provider quotas (LLM-*, CTX-004) -------------------------------
+
+export interface ModelChoice {
+  provider: string;
+  model: string;
+  reasoningEffort: string;
+  serviceTier: string;
+}
+
+export interface ModelEntry {
+  id: string;
+  available: boolean;
+  /** null = the assistant did not say. Never read as false. */
+  reasoning: boolean | null;
+  priority: boolean | null;
+  price: { input: string; output: string; cache: string; free: boolean } | null;
+}
+
+export interface QuotaWindow {
+  label: string;
+  usedPercent: number;
+  resetsAt: string;
+  scope: string;
+}
+
+export interface ProviderEntry {
+  slug: string;
+  name: string;
+  available: boolean;
+  reason: string;
+  models: ModelEntry[];
+  /** null windows = PROVIDER_USAGE_UNAVAILABLE: shown as unavailable, not as 0%. */
+  quota: QuotaWindow[] | null;
+}
+
+export interface ModelCatalog {
+  fetchedAt: string;
+  default: { provider: string; model: string } | null;
+  providers: ProviderEntry[];
+  reasoningEfforts: string[];
+}
+
+const bool = (v: unknown): boolean | null => (typeof v === "boolean" ? v : null);
+const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+
+export function parseModels(v: unknown): ModelCatalog | null {
+  const o = obj(v);
+  if (!o || !Array.isArray(o.providers)) return null;
+  const d = obj(o.default);
+  return {
+    fetchedAt: str(o.fetchedAt),
+    default: d && str(d.model) ? { provider: str(d.provider), model: str(d.model) } : null,
+    reasoningEfforts: arr(o.reasoningEfforts).filter((x): x is string => typeof x === "string"),
+    providers: arr(o.providers).flatMap((p) => {
+      const po = obj(p);
+      if (!po || !str(po.slug)) return [];
+      const q = obj(po.quota);
+      const windows = q && q.state === "AVAILABLE" ? arr(q.windows).flatMap((w) => {
+        const wo = obj(w);
+        return wo && typeof wo.usedPercent === "number" ? [{ label: str(wo.label), usedPercent: wo.usedPercent, resetsAt: str(wo.resetsAt), scope: str(wo.scope) }] : [];
+      }) : [];
+      return [{
+        slug: str(po.slug),
+        name: str(po.name) || str(po.slug),
+        available: po.available === true,
+        reason: str(po.reason),
+        quota: windows.length > 0 ? windows : null,
+        models: arr(po.models).flatMap((m) => {
+          const mo = obj(m);
+          if (!mo || !str(mo.id)) return [];
+          const pr = obj(mo.price);
+          return [{
+            id: str(mo.id),
+            available: po.available === true && mo.available === true,
+            reasoning: bool(mo.reasoning),
+            priority: bool(mo.serviceTier),
+            price: pr ? { input: str(pr.input), output: str(pr.output), cache: str(pr.cache), free: pr.free === true } : null,
+          }];
+        }),
+      }];
+    }),
+  };
+}
+
+export const getModels = (refresh = false) => call("GET", refresh ? "/api/models?refresh=1" : "/api/models", parseModels);
+
+export function parseModelChoice(v: unknown): ModelChoice | null {
+  const o = obj(v);
+  return o && str(o.model) ? { provider: str(o.provider), model: str(o.model), reasoningEffort: str(o.reasoningEffort), serviceTier: str(o.serviceTier) } : null;
+}
+
+/** The chat's saved choice, or null for the profile default. A failed read is an error, not "default". */
+export const getChatModel = (chatId: string) =>
+  call("GET", `/api/chats/${encodeURIComponent(chatId)}`, (b): { choice: ModelChoice | null } | null => {
+    const o = obj(b);
+    return o ? { choice: parseModelChoice(o.model) } : null;
+  });
+
+export const putChatModel = (chatId: string, body: { reset: true } | { provider: string; model: string; reasoningEffort?: string; serviceTier?: string }) =>
+  call("PUT", `/api/chats/${encodeURIComponent(chatId)}/model`, (b): { choice: ModelChoice | null } | null => {
+    const o = obj(b);
+    return o ? { choice: parseModelChoice(o.model) } : null;
+  }, body);
+
+/** Words for a provider's quota windows; absence is stated, never shown as 0%. */
+export function describeQuota(p: ProviderEntry): string[] {
+  if (!p.quota) return ["Provider usage: unavailable (the assistant reported none)"];
+  return p.quota.map((w) => `${w.label || "Window"}${w.scope ? ` (${w.scope})` : ""}: ${Math.round(w.usedPercent * 10) / 10}% used${w.resetsAt ? `, resets ${w.resetsAt}` : ""}`);
 }
