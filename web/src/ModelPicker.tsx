@@ -22,23 +22,32 @@ export function ModelPicker({ chatId, disabled }: { chatId: string; disabled: bo
   // The choice the next change builds on. It moves when a change is requested (not when its response
   // arrives), so two quick changes compose instead of the second overwriting the first from stale state.
   const want = useRef<ModelChoice | null | undefined>(undefined);
-  // Saves for one chat go out one at a time, in the order they were made, so the server's last write is the user's last.
-  const tail = useRef<Promise<unknown>>(Promise.resolve());
+  // Writes for a chat go out one at a time, in the order made, through a queue that belongs to the CHAT
+  // and outlives chat switches (A -> B -> A reuses A's queue), so a write still queued for A can never be
+  // overtaken by a later write for A. Each write carries the whole choice, so a write that a newer one for
+  // the same chat has superseded before it was dispatched is skipped: the newest write is what the server keeps.
+  const queues = useRef(new Map<string, Promise<unknown>>());
+  const newest = useRef(new Map<string, number>());
+  const counter = useRef(0);
+  const enqueue = (forChat: string, job: () => Promise<void>) => {
+    queues.current.set(forChat, (queues.current.get(forChat) ?? Promise.resolve()).then(job));
+  };
 
   useEffect(() => {
     gen.current += 1;
     const mine = gen.current;
     want.current = undefined;
-    tail.current = Promise.resolve();
     setChoice(undefined);
     setMsg("");
-    void getChatModel(chatId).then((r) => {
+    // The read waits behind this chat's own pending writes, so it reports the choice they leave.
+    enqueue(chatId, async () => {
+      const r = await getChatModel(chatId);
       if (gen.current !== mine || chat.current !== chatId) return;
       want.current = r.ok ? r.value.choice : undefined;
       setChoice(want.current);
     });
     return () => {
-      gen.current += 1; // anything still in flight for the old chat is now stale
+      gen.current += 1; // a read still in flight for the old chat is now stale
     };
   }, [chatId]);
 
@@ -53,13 +62,16 @@ export function ModelPicker({ chatId, disabled }: { chatId: string; disabled: bo
     const forChat = chatId;
     want.current = next;
     gen.current += 1;
-    const mine = gen.current;
+    const seq = ++counter.current;
+    newest.current.set(forChat, seq);
     const body = next
       ? { provider: next.provider, model: next.model, reasoningEffort: next.reasoningEffort || undefined, serviceTier: next.serviceTier || undefined }
       : { reset: true as const };
-    tail.current = tail.current.then(async () => {
+    const current = () => newest.current.get(forChat) === seq && chat.current === forChat;
+    enqueue(forChat, async () => {
+      if (newest.current.get(forChat) !== seq) return; // superseded before it was sent
       const r = await putChatModel(forChat, body);
-      if (gen.current !== mine || chat.current !== forChat) return; // stale: another save, a read or a chat switch came after
+      if (!current()) return; // a newer write for this chat exists, or the chat is not on screen
       if (r.ok) {
         want.current = r.value.choice;
         setChoice(r.value.choice);
@@ -67,7 +79,7 @@ export function ModelPicker({ chatId, disabled }: { chatId: string; disabled: bo
       } else {
         setMsg(describeCode(r.code));
         const back = await getChatModel(forChat); // the failed change is not the saved one: show what the server holds
-        if (gen.current === mine && chat.current === forChat && back.ok) {
+        if (current() && back.ok) {
           want.current = back.value.choice;
           setChoice(back.value.choice);
         }
