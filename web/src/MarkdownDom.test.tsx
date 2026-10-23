@@ -46,4 +46,13 @@ describe("Markdown in a real DOM", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy());
     expect(writeText).toHaveBeenCalledWith("print('<b>')");
   });
+
+  it("resets Copied when the block text changes while streaming", async () => {
+    Object.defineProperty(navigator, "clipboard", { value: { writeText: vi.fn().mockResolvedValue(undefined) }, configurable: true });
+    const { rerender } = render(<Markdown text={"```py\nprint(1)"} />);
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy());
+    rerender(<Markdown text={"```py\nprint(1)\nprint(2)"} />);
+    expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
+  });
 });

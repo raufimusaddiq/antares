@@ -17,8 +17,11 @@ export function inFence(value: string, pos: number): boolean {
   return (value.slice(0, pos).match(/^```/gm) ?? []).length % 2 === 1;
 }
 
-/** Tab inside a fenced code block indents by two spaces; elsewhere Tab keeps its normal focus job. */
+/**
+ * Tab inside a fenced code block indents by two spaces; elsewhere Tab keeps its normal focus job.
+ * With a selection it does nothing: replacing the range would delete the selected text.
+ */
 export function indentInFence(value: string, start: number, end: number): Edit | null {
-  if (!inFence(value, start)) return null;
-  return { value: value.slice(0, start) + "  " + value.slice(end), start: start + 2, end: start + 2 };
+  if (start !== end || !inFence(value, start)) return null;
+  return { value: value.slice(0, start) + "  " + value.slice(start), start: start + 2, end: start + 2 };
 }

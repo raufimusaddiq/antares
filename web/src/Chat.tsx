@@ -184,6 +184,9 @@ export function Transcript(props: TranscriptProps) {
   );
 }
 
+// On macOS Ctrl+B/E are caret movement in a text field, so the shortcuts there are Cmd only.
+const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
+
 export function Composer(props: { value: string; busy: boolean; onChange: (v: string) => void; onSubmit: () => void }) {
   const empty = props.value.trim() === "";
   const matches = matchTemplates(props.value);
@@ -205,7 +208,7 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
   };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const t = e.currentTarget;
-    if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if ((IS_MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey && !e.shiftKey && !e.nativeEvent.isComposing) {
       apply(e, wrapSelection(t.value, t.selectionStart, t.selectionEnd, e.key));
     } else if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.nativeEvent.isComposing) {
       apply(e, indentInFence(t.value, t.selectionStart, t.selectionEnd));

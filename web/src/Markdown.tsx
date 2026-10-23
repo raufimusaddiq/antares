@@ -130,6 +130,12 @@ function lines(text: string, key: string): ReactNode[] {
 
 function CodeBlock({ text, lang }: { text: string; lang: string }) {
   const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  const [seen, setSeen] = useState(text);
+  if (seen !== text) {
+    // The block grew while streaming: a "Copied" label would describe text that is gone.
+    setSeen(text);
+    setState("idle");
+  }
   const copy = () => {
     navigator.clipboard.writeText(text).then(
       () => setState("copied"),
@@ -153,66 +159,81 @@ function CodeBlock({ text, lang }: { text: string; lang: string }) {
   );
 }
 
-const same = (a: Block, b: Block) => JSON.stringify(a) === JSON.stringify(b);
+const sameList = (a: string[], b: string[]) => a.length === b.length && a.every((x, i) => x === b[i]);
+
+function same(a: Block, b: Block): boolean {
+  switch (a.t) {
+    case "code":
+      return b.t === "code" && a.text === b.text && a.lang === b.lang;
+    case "table":
+      return b.t === "table" && sameList(a.head, b.head) && a.rows.length === b.rows.length && a.rows.every((r, i) => sameList(r, b.rows[i]));
+    case "ul":
+    case "ol":
+      return b.t === a.t && sameList(a.items, b.items);
+    case "h":
+      return b.t === "h" && a.level === b.level && a.text === b.text;
+    default:
+      return b.t === a.t && a.text === (b as typeof a).text;
+  }
+}
 
 // While a reply streams, only the last block changes. Each block is memoised on its parsed
-// content, so finished blocks are not re-rendered per token. (The line scan itself is linear
-// and cheap; React reconciliation was the cost.)
-const BlockView = memo(function BlockView({ b, k }: { b: Block; k: string }) {
-  return <>{renderBlock(b, k)}</>;
-}, (p, n) => p.k === n.k && same(p.b, n.b));
+// content, so finished blocks are not re-rendered per token. Comparison walks the block's
+// strings directly; it allocates nothing. (The line scan itself is linear and cheap;
+// React reconciliation was the cost.)
+const BlockView = memo(function BlockView({ b, id }: { b: Block; id: string }) {
+  return renderBlock(b, id);
+}, (p, n) => p.id === n.id && same(p.b, n.b));
 
 function render(blocks: Block[]): ReactNode[] {
-  return blocks.map((b, i) => <BlockView key={`b${i}`} b={b} k={`b${i}`} />);
+  return blocks.map((b, i) => <BlockView key={`b${i}`} b={b} id={`b${i}`} />);
 }
 
 function renderBlock(b: Block, k: string): ReactNode {
-  {
-    switch (b.t) {
-      case "p":
-        return <p key={k}>{lines(b.text, k)}</p>;
-      case "h": {
-        const Tag = `h${Math.min(6, Math.max(3, b.level + 2))}` as "h3" | "h4" | "h5" | "h6";
-        return <Tag key={k}>{inline(b.text, k)}</Tag>;
-      }
-      case "code":
-        return <CodeBlock key={k} text={b.text} lang={b.lang} />;
-      case "table":
-        return (
-          <div key={k} className="tablewrap">
-            <table>
-              <thead>
-                <tr>
-                  {b.head.map((c, j) => (
-                    <th key={j}>{inline(c, `${k}-h${j}`)}</th>
+  switch (b.t) {
+    case "p":
+      return <p>{lines(b.text, k)}</p>;
+    case "h": {
+      const Tag = `h${Math.min(6, Math.max(3, b.level + 2))}` as "h3" | "h4" | "h5" | "h6";
+      return <Tag>{inline(b.text, k)}</Tag>;
+    }
+    case "code":
+      return <CodeBlock text={b.text} lang={b.lang} />;
+    case "table":
+      return (
+        <div className="tablewrap">
+          <table>
+            <thead>
+              <tr>
+                {b.head.map((c, j) => (
+                  <th key={j}>{inline(c, `${k}-h${j}`)}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {b.rows.map((r, j) => (
+                <tr key={j}>
+                  {r.map((c, m) => (
+                    <td key={m}>{inline(c, `${k}-${j}-${m}`)}</td>
                   ))}
                 </tr>
-              </thead>
-              <tbody>
-                {b.rows.map((r, j) => (
-                  <tr key={j}>
-                    {r.map((c, m) => (
-                      <td key={m}>{inline(c, `${k}-${j}-${m}`)}</td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        );
-      case "quote":
-        return <blockquote key={k}>{lines(b.text, k)}</blockquote>;
-      case "ul":
-      case "ol": {
-        const Tag = b.t;
-        return (
-          <Tag key={k}>
-            {b.items.map((it, j) => (
-              <li key={j}>{inline(it, `${k}-${j}`)}</li>
-            ))}
-          </Tag>
-        );
-      }
+              ))}
+            </tbody>
+          </table>
+        </div>
+      );
+    case "quote":
+      return <blockquote>{lines(b.text, k)}</blockquote>;
+    case "ul":
+    case "ol": {
+      const Tag = b.t;
+      return (
+        <Tag>
+          {b.items.map((it, j) => (
+            <li key={j}>{inline(it, `${k}-${j}`)}</li>
+          ))}
+        </Tag>
+      );
     }
   }
 }

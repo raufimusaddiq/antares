@@ -73,6 +73,12 @@ describe("composer shortcuts", () => {
     expect(wrapSelection("x", 0, 1, "z")).toBeNull();
     expect(indentInFence("```\nab", 6, 6)?.value).toBe("```\nab  ");
     expect(indentInFence("plain", 2, 2)).toBeNull();
+    // A non-empty selection inside a fence must never lose its text.
+    const sel = "```\nlet x = 1;\n";
+    const text = sel + "```";
+    expect(indentInFence(text, 4, 14)).toBeNull();
+    const after = indentInFence("```\nabcd", 5, 7);
+    expect(after === null || after.value.includes("bc")).toBe(true);
     expect(indentInFence("```\nx\n```\nafter", 15, 15)).toBeNull();
   });
 });
