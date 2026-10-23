@@ -1,0 +1,72 @@
+[
+ {
+  "name": "ascii",
+  "text": "```html\n<p>A</p>\n```\n```svg\n<svg>B</svg>\n```",
+  "want": [
+   "html",
+   "svg"
+  ]
+ },
+ {
+  "name": "nbsp after opening fence: that line is not a fence",
+  "text": "```html\u00a0\n<p>A</p>\n```\n```svg\n<svg>B</svg>\n```\n```html\n<p>C</p>\n```",
+  "want": [
+   "html"
+  ]
+ },
+ {
+  "name": "em space after opening fence",
+  "text": "```html\u2003\n<p>A</p>\n```\n```html\n<p>C</p>\n```",
+  "want": []
+ },
+ {
+  "name": "nbsp before info string",
+  "text": "```\u00a0html\n<p>A</p>\n```\n```svg\n<svg/>\n```",
+  "want": []
+ },
+ {
+  "name": "nbsp indent",
+  "text": "\u00a0```html\n<p>A</p>\n```\n```svg\n<svg/>\n```",
+  "want": []
+ },
+ {
+  "name": "nbsp after closing fence keeps the block open",
+  "text": "```html\n<p>A</p>\n```\u00a0\n```svg\n<svg/>\n```\n```html\n<p>C</p>\n```",
+  "want": [
+   "html",
+   "html"
+  ]
+ },
+ {
+  "name": "vertical tab after closing fence",
+  "text": "```html\n<p>A</p>\n```\u000b\n```svg\n<svg/>\n```",
+  "want": [
+   "html"
+  ]
+ },
+ {
+  "name": "form feed after opening fence",
+  "text": "```html\f\n<p>A</p>\n```\n```svg\n<svg/>\n```",
+  "want": []
+ },
+ {
+  "name": "tabs and spaces are whitespace",
+  "text": "  ```html \t\n<p>A</p>\n \t```\t\n",
+  "want": [
+   "html"
+  ]
+ },
+ {
+  "name": "four-space indent is not a fence",
+  "text": "    ```html\n<p>A</p>\n```\n",
+  "want": []
+ },
+ {
+  "name": "crlf and cr",
+  "text": "```html\r\n<p>A</p>\r\n```\r```svg\r<svg/>\r```",
+  "want": [
+   "html",
+   "svg"
+  ]
+ }
+]

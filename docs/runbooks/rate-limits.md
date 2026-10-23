@@ -10,6 +10,7 @@ budget. Other accounts have independent budgets.
 | `ANTARES_RUNS_PER_MINUTE` | 30 | Run creation attempts at `POST /api/chats/{chatId}/messages` |
 | `ANTARES_MESSAGES_PER_MINUTE` | 60 | Sends at the same endpoint |
 | `ANTARES_UPLOADS_PER_MINUTE` | 10 | Upload attempts at `POST /api/assets` |
+| `ANTARES_ARTIFACTS_PER_MINUTE` | 60 | Artifact previews and downloads (each reads a whole transcript) |
 | `ANTARES_SSE_CONNECTIONS` | 4 | Concurrent `GET /api/runs/{runId}/events` requests |
 
 All overrides must be positive integers; invalid values refuse startup. Restart Antares to apply

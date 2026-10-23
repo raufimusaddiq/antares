@@ -1,4 +1,6 @@
 // @vitest-environment jsdom
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { Artifacts } from "./Artifacts";
@@ -7,7 +9,13 @@ import { fileName, toMarkdown } from "./exportChat";
 
 const TEXT = "Look:\n```html\n<script>top.location='https://evil.example'</script>\n```\n```py\nx=1\n```\n```svg\n<svg onload='alert(1)'/>\n```\n```html\nstill streaming";
 
+// The same table internal/chat/artifacts_test.go runs against the Go parser.
+const shared = JSON.parse(readFileSync(join(__dirname, "../../internal/chat/testdata/artifact_cases.json"), "utf8")) as { name: string; text: string; want: string[] }[];
+
 describe("artifact discovery matches the server", () => {
+  it.each(shared.map((c) => [c.name, c] as const))("shared table: %s", (_n, c) => {
+    expect(findArtifacts(c.text).map((a) => a.kind)).toEqual(c.want);
+  });
   it("counts only closed html/svg fences, in order", () => {
     expect(findArtifacts(TEXT)).toEqual([
       { kind: "html", index: 0 },

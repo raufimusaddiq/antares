@@ -1,6 +1,9 @@
 package chat
 
 import (
+	"encoding/json"
+	"os"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -29,6 +32,33 @@ func turnRef(t *testing.T, p *person, chatID string, seq int) string {
 	}
 	t.Fatalf("no turn %d", seq)
 	return ""
+}
+
+// The same table is run by web/src/Artifacts.test.tsx: the two parsers must name the same
+// artifacts for every input, Unicode whitespace included.
+func TestFindArtifactsSharedTable(t *testing.T) {
+	raw, err := os.ReadFile("testdata/artifact_cases.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var cases []struct {
+		Name, Text string
+		Want       []string
+	}
+	if err := json.Unmarshal(raw, &cases); err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range cases {
+		t.Run(c.Name, func(t *testing.T) {
+			got := []string{}
+			for _, a := range findArtifacts(c.Text) {
+				got = append(got, a.kind)
+			}
+			if !reflect.DeepEqual(got, append([]string{}, c.Want...)) {
+				t.Fatalf("got %v want %v", got, c.Want)
+			}
+		})
+	}
 }
 
 func TestFindArtifactsOnlyClosedHTMLAndSVGFences(t *testing.T) {

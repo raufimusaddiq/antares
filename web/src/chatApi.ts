@@ -148,7 +148,10 @@ export interface ChatList {
   nextCursor: string;
 }
 
-const q = (cursor?: string) => (cursor ? `?cursor=${encodeURIComponent(cursor)}` : "");
+const q = (cursor?: string, limit?: number) => {
+  const p = [cursor ? `cursor=${encodeURIComponent(cursor)}` : "", limit ? `limit=${limit}` : ""].filter(Boolean);
+  return p.length ? `?${p.join("&")}` : "";
+};
 
 export const listChats = (cursor?: string) =>
   call("GET", `/api/chats${q(cursor)}`, (b): ChatList | null => {
@@ -162,7 +165,8 @@ export const getChat = (chatId: string) => call("GET", `/api/chats/${encodeURICo
 export const createChat = () => call("POST", "/api/chats", parseChat, {});
 
 /** The newest page, or the page before `cursor`. The page size is the server's. */
-export const getMessages = (chatId: string, cursor?: string) => call("GET", `/api/chats/${encodeURIComponent(chatId)}/messages${q(cursor)}`, parseHistory);
+export const getMessages = (chatId: string, cursor?: string, limit?: number) =>
+  call("GET", `/api/chats/${encodeURIComponent(chatId)}/messages${q(cursor, limit)}`, parseHistory);
 
 export interface RunRef {
   runId: string;

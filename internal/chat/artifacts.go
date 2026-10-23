@@ -28,7 +28,10 @@ const (
 	maxArtifacts     = 32
 )
 
-var artifactOpen = regexp.MustCompile("^\\s{0,3}(`{3,})\\s*([A-Za-z0-9_-]*)\\s*$")
+// Whitespace is spelled out as space and tab: Go's \s and JavaScript's \s disagree on
+// NBSP, em space, \v and \f, and the two parsers must agree on every input
+// (internal/chat/testdata/artifact_cases.json is run by both suites).
+var artifactOpen = regexp.MustCompile("^[ \\t]{0,3}(`{3,})[ \\t]*([A-Za-z0-9_-]*)[ \\t]*$")
 
 type artifact struct{ kind, body string }
 
@@ -41,7 +44,7 @@ func findArtifacts(text string) []artifact {
 			i++
 			continue
 		}
-		closeRE := regexp.MustCompile("^\\s{0,3}`{" + strconv.Itoa(len(m[1])) + ",}\\s*$")
+		closeRE := regexp.MustCompile("^[ \\t]{0,3}`{" + strconv.Itoa(len(m[1])) + ",}[ \\t]*$")
 		j := i + 1
 		for j < len(lines) && !closeRE.MatchString(lines[j]) {
 			j++

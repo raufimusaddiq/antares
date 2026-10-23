@@ -16,8 +16,8 @@ func DefaultLimits() Limits { return quota.DefaultLimits() }
 const maxLimitAccounts = 10000
 
 type accountLimit struct {
-	start                            time.Time
-	runs, messages, uploads, streams int
+	start                                       time.Time
+	runs, messages, uploads, artifacts, streams int
 }
 
 // shortcut: counters reset on restart; use shared state before adding replicas.
@@ -32,9 +32,14 @@ func newRequestLimits(c Limits) *requestLimits {
 	return &requestLimits{config: c, accounts: make(map[string]*accountLimit)}
 }
 
+const (
+	artifactDownload = "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}"
+	artifactPreview  = "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview"
+)
+
 func (a *Auth) limit(route string, next http.Handler) http.Handler {
 	switch route {
-	case "POST /api/chats/{chatId}/messages", "POST /api/assets", "GET /api/runs/{runId}/events":
+	case "POST /api/chats/{chatId}/messages", "POST /api/assets", "GET /api/runs/{runId}/events", artifactDownload, artifactPreview:
 	default:
 		return next
 	}
@@ -72,7 +77,7 @@ func (l *requestLimits) acquire(id, route string, now time.Time) (int, func()) {
 		l.accounts[id] = b
 	}
 	if !now.Before(b.start.Add(time.Minute)) {
-		b.start, b.runs, b.messages, b.uploads = now, 0, 0, 0
+		b.start, b.runs, b.messages, b.uploads, b.artifacts = now, 0, 0, 0, 0
 	}
 	retry := int((b.start.Add(time.Minute).Sub(now) + time.Second - 1) / time.Second)
 	switch route {
@@ -88,6 +93,12 @@ func (l *requestLimits) acquire(id, route string, now time.Time) (int, func()) {
 			return retry, nil
 		}
 		b.uploads++
+	case artifactDownload, artifactPreview:
+		// Each one reads a whole transcript through a two-slot semaphore.
+		if b.artifacts >= l.config.ArtifactsPerMinute {
+			return retry, nil
+		}
+		b.artifacts++
 	case "GET /api/runs/{runId}/events":
 		if b.streams >= l.config.SSEConnections {
 			return -1, nil // A live connection has no known release time.

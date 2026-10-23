@@ -8,7 +8,9 @@ export interface ArtifactRef {
   index: number;
 }
 
-const OPEN = /^\s{0,3}(`{3,})\s*([A-Za-z0-9_-]*)\s*$/;
+// Space and tab only, never \s: it must agree with the Go parser on NBSP, em space, \v, \f
+// (internal/chat/testdata/artifact_cases.json is run by both suites).
+const OPEN = /^[ \t]{0,3}(`{3,})[ \t]*([A-Za-z0-9_-]*)[ \t]*$/;
 const MAX_BYTES = 512 << 10;
 const MAX_ARTIFACTS = 32;
 
@@ -22,7 +24,7 @@ export function findArtifacts(text: string): ArtifactRef[] {
       i++;
       continue;
     }
-    const close = new RegExp("^\\s{0,3}`{" + m[1].length + ",}\\s*$");
+    const close = new RegExp("^[ \\t]{0,3}`{" + m[1].length + ",}[ \\t]*$");
     let j = i + 1;
     while (j < lines.length && !close.test(lines[j])) j++;
     if (j >= lines.length) break; // still streaming
