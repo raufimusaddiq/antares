@@ -294,6 +294,11 @@ func Restore(ctx context.Context, src, livePath string, set Set, opt RestoreOpti
 	if !filepath.IsAbs(livePath) {
 		return errors.New("restore: database path must be absolute")
 	}
+	// Restoring the live file onto itself would stage a plain copy without its
+	// WAL, then move the WAL aside: committed, uncheckpointed rows would vanish.
+	if same, err := sameFile(src, livePath); err != nil || same {
+		return errors.New("restore: source and destination are the same file")
+	}
 	if err := VerifyBackup(ctx, src, set); err != nil {
 		return fmt.Errorf("restore: refusing %s: %w", src, err)
 	}
@@ -354,7 +359,8 @@ func Restore(ctx context.Context, src, livePath string, set Set, opt RestoreOpti
 		return fmt.Errorf("restore: %w (live database left as it was)", err)
 	}
 	if err := syncDir(dir); err != nil {
-		return fmt.Errorf("restore: sync directory: %w", err)
+		return fmt.Errorf("restore: the database HAS been replaced, but syncing the directory failed (%w); "+
+			"it may not survive a crash: run the restore again, or start antares and verify", err)
 	}
 	for _, suf := range moved {
 		os.Remove(aside + suf)
@@ -363,6 +369,26 @@ func Restore(ctx context.Context, src, livePath string, set Set, opt RestoreOpti
 }
 
 var dbSuffixes = []string{"", "-wal", "-shm", "-journal"}
+
+// sameFile reports whether a and b name the same file: equal cleaned paths, or
+// the same inode through a symlink or hard link. A stat error other than "does
+// not exist" is returned so the caller refuses rather than guesses.
+func sameFile(a, b string) (bool, error) {
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true, nil
+	}
+	fa, err := os.Stat(a)
+	if err != nil {
+		return false, nil // a missing source is reported by VerifyBackup
+	}
+	fb, err := os.Stat(b)
+	if errors.Is(err, os.ErrNotExist) {
+		return false, nil
+	} else if err != nil {
+		return false, err
+	}
+	return os.SameFile(fa, fb), nil
+}
 
 // requireIdle refuses unless it can prove nobody holds the live database's
 // write lock: only a transaction that begins and rolls back proves it. A file

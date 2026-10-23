@@ -160,7 +160,9 @@ func requireDedicated(dir, base string) error {
 		// that a crash left behind are ours too: refusing to start over them would
 		// turn a failed backup into an outage.
 		n := e.Name()
-		if !own[n] && !strings.HasPrefix(n, base+BackupTempSuffix) && !strings.HasPrefix(n, base+RestoreTempSuffix) {
+		// Only regular files: a directory with such a name is not our residue.
+		residue := !e.IsDir() && (strings.HasPrefix(n, base+BackupTempSuffix) || strings.HasPrefix(n, base+RestoreTempSuffix))
+		if !own[n] && !residue {
 			return errors.New("store: data directory is not dedicated to Antares (it holds other files); " +
 				"set ANTARES_DB_PATH inside a directory used only for this database")
 		}

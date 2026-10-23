@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
+	"time"
 )
 
 func countRows(t *testing.T, db *sql.DB, q string) int {
@@ -143,7 +144,14 @@ func TestBackupDuringActiveWriter(t *testing.T) {
 			written.Store(int64(i))
 		}
 	}()
+	deadline := time.Now().Add(10 * time.Second)
 	for written.Load() < 50 {
+		if time.Now().After(deadline) {
+			close(stop)
+			wg.Wait()
+			t.Fatal("writer made no progress")
+		}
+		time.Sleep(time.Millisecond)
 	}
 	floor := written.Load() // committed before the backup starts
 	bak := filepath.Join(t.TempDir(), "live.bak")
@@ -240,6 +248,14 @@ func TestRestoreRefusesBadBackupsAndLeavesLiveUntouched(t *testing.T) {
 		"foreign":   foreign,
 		"future":    future,
 		"missing":   filepath.Join(dir, "nope.db"),
+		"same file": live,
+		"same via symlink": func() string {
+			l := filepath.Join(dir, "link.db")
+			if err := os.Symlink(live, l); err != nil {
+				t.Fatal(err)
+			}
+			return l
+		}(),
 	}
 	before := snapshotFiles(t, live)
 	for name, src := range cases {
@@ -373,6 +389,17 @@ func TestOpenToleratesCrashResidue(t *testing.T) {
 		t.Fatalf("Open refused crash residue: %v", err)
 	}
 	re.Close()
+	// A directory wearing a residue name is not residue.
+	dirName := p + RestoreTempSuffix + ".old"
+	os.Remove(dirName)
+	if err := os.Mkdir(dirName, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if re, err := Open(p); err == nil {
+		re.Close()
+		t.Fatal("Open accepted a directory named like residue")
+	}
+	os.Remove(dirName)
 	// A stranger is still refused.
 	os.WriteFile(filepath.Join(filepath.Dir(p), "other.txt"), nil, 0o600)
 	if re, err := Open(p); err == nil {

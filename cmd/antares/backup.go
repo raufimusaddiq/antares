@@ -82,7 +82,9 @@ func runAdminCmd(ctx context.Context, args []string, getenv func(string) string,
 		return nil
 
 	default: // check
-		fs.Usage = func() { fmt.Fprintln(stderr, "usage: antares check [file]   (default: ANTARES_DB_PATH)") }
+		fs.Usage = func() {
+			fmt.Fprintln(stderr, "usage: antares check [file]   (default: ANTARES_DB_PATH; stop antares first when checking the live database, the read-only open needs a writable -shm)")
+		}
 		if err := fs.Parse(args[2:]); err != nil {
 			return err
 		}
