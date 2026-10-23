@@ -109,7 +109,7 @@ func newVictim(t testing.TB) *victim {
 	if w := alice.get("/api/search/chats?q=alice-private"); w.Code != 200 {
 		t.Fatalf("alice's own search: %d %s", w.Code, w.Body.String())
 	}
-	v.snapshot()
+	v.snapshot(t)
 	return v
 }
 
@@ -134,18 +134,29 @@ func (v *victim) aliceHermesReqs() int {
 	return n
 }
 
-func (v *victim) snapshot() {
+func (v *victim) snapshot(t testing.TB) {
+	t.Helper()
 	v.hxAlice = v.aliceHermesReqs()
-	v.a.db.QueryRow(`SELECT COUNT(*) FROM runs WHERE user_id = ?`, v.alice.id).Scan(&v.runRows)
-	v.a.db.QueryRow(`SELECT COUNT(*) FROM chats WHERE user_id = ?`, v.alice.id).Scan(&v.chatRows)
+	v.runRows, v.chatRows = v.aliceRowCounts(t)
+}
+
+// aliceRowCounts fails the test when the count cannot be read, so a broken
+// query can never read as "no rows changed".
+func (v *victim) aliceRowCounts(t testing.TB) (runs, chats int) {
+	t.Helper()
+	if err := v.a.db.QueryRow(`SELECT COUNT(*) FROM runs WHERE user_id = ?`, v.alice.id).Scan(&runs); err != nil {
+		t.Fatalf("count alice's runs: %v", err)
+	}
+	if err := v.a.db.QueryRow(`SELECT COUNT(*) FROM chats WHERE user_id = ?`, v.alice.id).Scan(&chats); err != nil {
+		t.Fatalf("count alice's chats: %v", err)
+	}
+	return runs, chats
 }
 
 // untouched fails when an attacker's probes changed A's data or reached Hermes.
 func (v *victim) untouched(t testing.TB, what string) {
 	t.Helper()
-	var runs, chats int
-	v.a.db.QueryRow(`SELECT COUNT(*) FROM runs WHERE user_id = ?`, v.alice.id).Scan(&runs)
-	v.a.db.QueryRow(`SELECT COUNT(*) FROM chats WHERE user_id = ?`, v.alice.id).Scan(&chats)
+	runs, chats := v.aliceRowCounts(t)
 	if runs != v.runRows || chats != v.chatRows {
 		t.Errorf("%s: alice's rows changed (runs %d->%d, chats %d->%d)", what, v.runRows, runs, v.chatRows, chats)
 	}
@@ -357,7 +368,7 @@ func TestEveryChatRouteIsClassified(t *testing.T) {
 		path := strings.NewReplacer("{chatId}", store.NewID(), "{runId}", store.NewID(), "{assetId}", store.NewID(), "{jobId}", store.NewID()).Replace(rt.Path)
 		for who, p := range map[string]*person{"alice": alice, "bob": bob} {
 			w := p.do(rt.Method, path, map[string]string{"Idempotency-Key": nextIdem()}, map[string]string{"x": "y"})
-			if w.Code != http.StatusNotImplemented && w.Code != http.StatusBadRequest {
+			if w.Code != http.StatusNotImplemented {
 				t.Errorf("NOT-YET-BUILT route %s answered %d for %s: it is now live and needs a cross-user test (builtProbes) — %s", key, w.Code, who, w.Body.String())
 			}
 		}
@@ -386,7 +397,7 @@ func TestCrossUserThreatNotYetBuilt(t *testing.T) {
 				}{{"alice", v.alice}, {"bob", bob}} {
 					who, p := c.who, c.p
 					if who == "bob" {
-						v.snapshot() // an owner's own reads of her transcript are legitimate; only bob's probes must be silent
+						v.snapshot(t) // an owner's own reads of her transcript are legitimate; only bob's probes must be silent
 					}
 					for _, m := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
 						w := p.do(m, path+"?q="+v.output, map[string]string{"Idempotency-Key": nextIdem()}, requestBody(m))
