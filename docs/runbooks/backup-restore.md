@@ -33,6 +33,27 @@ restore again) before starting Antares, which would otherwise create an empty da
 symlink into it (all resolved before the check). Antares refuses to start over a data directory that holds
 other entries, so restore rejects such a path up front, before staging or locking, and changes nothing.
 
+## Sessions are dropped on restore (decision, #78)
+
+A backup holds `app_sessions` as they were when it was taken. Carried forward, a restore would re-admit
+every session that was valid then, **including ones an admin revoked afterwards**: a revocation is just
+`revoked_at` on a row, and the backup predates it. Reproduced on `main` before the fix: a session revoked
+after the backup authenticated again on the restored database (`SessionUser` returned the user).
+
+Decision: **restore deletes every `app_sessions` row** from the verified staged copy, before it is swapped
+in, so nothing is ever live with the old sessions. Every user, including the admin, signs in again with
+Google. Accounts, approvals, bindings, chats and runs are untouched. The live database is not modified if
+this step fails. Backup files themselves still contain session hashes (never raw tokens); treat them as
+sensitive.
+
+Operator obligations after a restore:
+
+1. Expect everyone to be signed out; tell users. This is not a fault.
+2. Restore also loses anything written after the backup, **including account changes**: an account
+   suspended or revoked after the backup is `ACTIVE` again in the restored database. Before users
+   return, check the account list and re-apply any suspension or revocation made since the backup.
+3. Restore from a backup taken from another environment or an untrusted source only with the same care.
+
 ## "Stopped" is enforced, within limits
 
 `store.Open` holds a shared `flock` on the data **directory** for as long as the handle is open (taken
@@ -79,8 +100,9 @@ subcommands themselves were run against a scratch database, as below.
      -e ANTARES_DB_PATH=/data/antares.sqlite --user 65532:65532 \
      ghcr.io/raufimusaddiq/antares:<tag> restore -keep-old /old /b/<file>
    ```
-4. Start Antares: `docker compose up -d antares`; wait for `/readyz` 200 (it applies any newer
-   migrations first). Confirm a known account and a chat are present.
+4. Restore signs every user out (it clears `app_sessions`). Start Antares: `docker compose up -d antares`; wait for `/readyz` 200 (it applies any newer
+   migrations first). Confirm a known account and a chat are present, and re-apply any suspension or revocation made since
+   the backup (see "Sessions are dropped on restore").
 
 Restoring loses everything written after the backup was taken. Hermes holds the transcripts; Antares'
 rows reference Hermes sessions, which a restore does not touch.
@@ -289,9 +311,8 @@ Exit 0, not 2: all four sessions were supplied and no step was skipped.
 
 - Not exercised: the Docker/volume procedure, `antares serve` on a restored volume, and a real Hermes or
   Google. A repeat on the live host (by the owner) is still owed before calling the procedure proven there.
-- Sessions in `app_sessions` survive a restore (4 rows came back). A restored database therefore re-admits
-  any session that was valid when the backup was taken, including ones an admin revoked *after* it.
-  Not tested beyond the row count; worth a decision on whether restore should clear `app_sessions`.
+- Sessions in `app_sessions` survived a restore (4 rows came back), re-admitting sessions revoked after the
+  backup. Resolved in #78: restore now clears `app_sessions` (see "Sessions are dropped on restore").
 - `check`/`restore` print the error twice-framed: a bare `integrity check failed; see …` line follows the
   findings (cosmetic), and `restore`'s refusal does not state that the live files were left untouched.
 - Repeating it: the harness is not in the repository. To repeat without it, use steps 2–4 on any scratch

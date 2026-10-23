@@ -387,7 +387,9 @@ type RestoreOptions struct {
 // service must be stopped. Order matters, and nothing live is touched until
 // every check has passed:
 //  1. src is verified (VerifyBackup);
-//  2. src is copied beside the live file and the copy is verified again;
+//  2. src is copied beside the live file, every app_sessions row is deleted from
+//     the copy (a backup would otherwise re-admit sessions revoked after it was
+//     taken; accounts must sign in again) and the copy is verified again;
 //  3. an active writer on the live file aborts the restore;
 //  4. the live files are copied to KeepOldDir, if set;
 //  5. the live -wal/-shm/-journal are removed (a stale WAL replayed onto the
@@ -429,6 +431,9 @@ func Restore(ctx context.Context, src, livePath string, set Set, opt RestoreOpti
 	defer os.Remove(staged)
 	if err := copyFile(src, staged, 0o600); err != nil {
 		return fmt.Errorf("restore: stage copy: %w", err)
+	}
+	if err := dropSessions(ctx, staged); err != nil {
+		return fmt.Errorf("restore: clear sessions in the staged copy: %w", err)
 	}
 	if err := VerifyBackup(ctx, staged, set); err != nil {
 		return fmt.Errorf("restore: staged copy failed verification: %w", err)
@@ -505,6 +510,39 @@ func Restore(ctx context.Context, src, livePath string, set Set, opt RestoreOpti
 		return fmt.Errorf("restore: the database HAS been replaced; the old files could not be removed and are safe to delete once antares is verified: %s", strings.Join(leftovers, ", "))
 	}
 	return nil
+}
+
+// dropSessions deletes every app_sessions row from the staged copy, which is
+// not live yet, and leaves a single self-contained file (no -wal/-journal).
+func dropSessions(ctx context.Context, path string) error {
+	if err := dsnPath(path); err != nil {
+		return err
+	}
+	db, err := sql.Open("sqlite", "file:"+path+"?_pragma=busy_timeout(5000)")
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+	db.SetMaxOpenConns(1)
+	if err := provesPath(ctx, db, path); err != nil {
+		return err
+	}
+	if _, err := db.ExecContext(ctx, `DELETE FROM app_sessions`); err != nil {
+		return err
+	}
+	var mode string
+	if err := db.QueryRowContext(ctx, `PRAGMA journal_mode`).Scan(&mode); err != nil {
+		return err
+	}
+	if strings.EqualFold(mode, "wal") {
+		if _, err := db.ExecContext(ctx, `PRAGMA wal_checkpoint(TRUNCATE)`); err != nil {
+			return err
+		}
+	}
+	if err := db.Close(); err != nil {
+		return err
+	}
+	return syncFile(path)
 }
 
 var dbSuffixes = []string{"", "-wal", "-shm", "-journal"}
