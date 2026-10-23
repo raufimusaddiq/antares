@@ -114,6 +114,31 @@ func TestAPIMixedCaseIDsReachTheMux(t *testing.T) {
 
 // The shell comes from the built bundle. These fail when the bundle is missing
 // instead of falling back to some other page.
+// The recorder previews a take through <audio src="blob:...">. Media falls back to default-src
+// ('none') unless media-src allows it, so the header the shell really ships must name blob: and
+// nothing broader, with every other restriction intact.
+func TestShellCSPAllowsBlobAudioPlaybackOnly(t *testing.T) {
+	h := New(nil, "").WithAssets(webui.FS()).Routes()
+	for _, p := range []string{"/", "/login"} {
+		dirs := map[string][]string{}
+		for _, d := range strings.Split(get(h, p).Header().Get("Content-Security-Policy"), ";") {
+			f := strings.Fields(d)
+			if len(f) > 0 {
+				dirs[f[0]] = f[1:]
+			}
+		}
+		if got := dirs["media-src"]; len(got) != 1 || got[0] != "blob:" {
+			t.Errorf("%s media-src = %v, want exactly [blob:]", p, got)
+		}
+		if got := dirs["default-src"]; len(got) != 1 || got[0] != "'none'" {
+			t.Errorf("%s default-src = %v, must stay 'none'", p, got)
+		}
+		if _, ok := dirs["object-src"]; ok || strings.Contains(strings.Join(dirs["script-src"], " "), "blob:") || strings.Contains(strings.Join(dirs["connect-src"], " "), "blob:") {
+			t.Errorf("%s blob: must not leak beyond media-src: %v", p, dirs)
+		}
+	}
+}
+
 func TestRootServesTheBuiltBundle(t *testing.T) {
 	h := New(nil, "").WithAssets(webui.FS()).Routes()
 	for _, p := range []string{"/", "/pending", "/error", "/login"} {
@@ -129,7 +154,7 @@ func TestRootServesTheBuiltBundle(t *testing.T) {
 		if rec.Header().Get("Cache-Control") != "no-store" {
 			t.Errorf("%s shell must not be cached", p)
 		}
-		wantCSP := "default-src 'none'; script-src 'self'; style-src 'self' " + openUIStyleHash + "; connect-src 'self'; img-src 'self'; font-src 'self'; frame-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		wantCSP := "default-src 'none'; script-src 'self'; style-src 'self' " + openUIStyleHash + "; connect-src 'self'; img-src 'self'; media-src blob:; font-src 'self'; frame-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 		if got := rec.Header().Get("Content-Security-Policy"); got != wantCSP {
 			t.Errorf("%s CSP = %q, want %q", p, got, wantCSP)
 		}
