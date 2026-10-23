@@ -267,7 +267,7 @@ export function searchChats(text: string, o: SearchOptions = {}) {
   return call("GET", `${path}?${p.toString()}`, parseSearch);
 }
 
-/** Per-chat usage as Hermes reported it. null means Hermes reported nothing, which is not zero. */
+/** Per-chat usage as the assistant backend reported it. null means it reported nothing, which is not zero. */
 export interface ChatUsage {
   tokens: { input: number; output: number; cacheRead: number; total: number } | null;
   finishedRuns: number;
@@ -314,9 +314,9 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 /** The words shown for a chat's usage. Unknown is "—", cost is always labelled an estimate, the budget behaviour is stated. */
 export function describeUsage(u: ChatUsage): string[] {
   const lines: string[] = [];
-  lines.push(u.tokens ? `Tokens: ${fmt(u.tokens.total)} (${fmt(u.tokens.input)} in, ${fmt(u.tokens.output)} out)` : "Tokens: — (Hermes reported none)");
+  lines.push(u.tokens ? `Tokens: ${fmt(u.tokens.total)} (${fmt(u.tokens.input)} in, ${fmt(u.tokens.output)} out)` : "Tokens: — (none reported)");
   lines.push(u.costIDR !== null ? `Estimated cost: about Rp ${fmt(Math.round(u.costIDR))}, from the provider price list of ${u.priceListDate}; not a bill` : "Estimated cost: — (no price for the model)");
-  lines.push(`Context in use: — (Hermes does not report it)${u.windowTokens !== null ? `; model window ${fmt(u.windowTokens)} tokens` : ""}`);
+  lines.push(`Context in use: — (not reported)${u.windowTokens !== null ? `; model window ${fmt(u.windowTokens)} tokens` : ""}`);
   if (u.finishedRuns > u.reportedRuns) lines.push(`${u.finishedRuns - u.reportedRuns} finished ${u.finishedRuns - u.reportedRuns === 1 ? "reply" : "replies"} reported no usage and ${u.finishedRuns - u.reportedRuns === 1 ? "is" : "are"} not counted`);
   lines.push(
     u.budget.reached
