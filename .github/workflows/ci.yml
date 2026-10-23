@@ -39,6 +39,12 @@ jobs:
       - name: Test
         if: steps.detect.outputs.present == 'true'
         run: go test -race -count=1 ./...
+      # Bounded fuzz of the ownership and SSE-recovery properties (#63). The fixed
+      # corpora already ran in Test above; this explores around them for a short, fixed time.
+      - name: Fuzz (bounded)
+        if: steps.detect.outputs.present == 'true'
+        timeout-minutes: 15
+        run: make fuzz FUZZTIME=20s
       # tools/hermes-provisioner is a separate module: ./... from the root does not reach it (#50).
       - name: Build (provisioner module)
         if: steps.detect.outputs.present == 'true'
