@@ -17,6 +17,8 @@ import {
 import { mergeNewest, prependOlder, reachOf } from "./history";
 import { SearchPanel } from "./Search";
 import { MessageBody } from "./MessageBody";
+import { Artifacts } from "./Artifacts";
+import { ExportChat } from "./ExportChat";
 import { indentInFence, wrapSelection, type Edit } from "./composerEdit";
 import { Notifications } from "./Notifications";
 import { VirtualList } from "./VirtualList";
@@ -111,6 +113,8 @@ export interface TranscriptProps {
   /** The turn a search result opened at: scrolled to and marked. */
   focusSeq?: number | null;
   focusNonce?: number;
+  /** The chat these turns belong to; without it nothing is offered for download. */
+  chatId?: string;
   onCancel: () => void;
   onRetry: () => void;
   onReconnect: () => void;
@@ -120,15 +124,16 @@ export interface TranscriptProps {
 const never = () => {};
 
 export function Transcript(props: TranscriptProps) {
-  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0 } = props;
+  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0, chatId } = props;
   const renderTurn = useCallback(
     (t: Turn) => (
       <article className={`turn ${t.role}`} data-found={t.seq === focusSeq ? "true" : undefined} aria-current={t.seq === focusSeq ? "location" : undefined}>
         <h2 className="who">{t.role === "user" ? "You" : "Assistant"}</h2>
         {t.role === "user" ? <p className="plain">{t.text}</p> : <MessageBody text={t.text} streaming={false} />}
+        {t.role === "assistant" && chatId && t.ref && <Artifacts chatId={chatId} seq={t.seq} turnRef={t.ref} text={t.text} />}
       </article>
     ),
-    [focusSeq],
+    [focusSeq, chatId],
   );
   const note = loadingMore ? (
     "Loading older messages…"
@@ -670,6 +675,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         </strong>
         <span className="who-am-i">{email}</span>
         <Notifications />
+        {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? ""} />}
         {canAdmin && onAdmin && (
           <button type="button" className="quiet" onClick={onAdmin}>
             Admin
@@ -717,6 +723,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         )}
         <Transcript
           key={current ?? "new"}
+          chatId={current ?? undefined}
           turns={turns}
           pending={pending}
           run={run}

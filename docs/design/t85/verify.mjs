@@ -44,8 +44,12 @@ const delta = async text => {
   await page.evaluate(text => window.testStream.dispatchEvent(new MessageEvent('assistant.delta', { data: JSON.stringify({ text }) })), text);
   await page.waitForTimeout(150);
 };
-for (const [name, width, height] of [['phone', 390, 844], ['desktop', 1440, 1000]]) {
+for (const [name, width, height] of [['phone-320', 320, 844], ['phone', 390, 844], ['desktop', 1440, 1000]]) {
   await page.setViewportSize({ width, height });
+  await page.reload();
+  await page.getByRole('feed').waitFor();
+  await page.getByText('Working…', { exact: true }).waitFor();
+  await page.evaluate(() => document.fonts.ready);
   await page.waitForTimeout(200);
   const feed = page.getByRole('feed');
   await feed.evaluate(el => { el.scrollTop = el.scrollHeight; });
@@ -86,6 +90,10 @@ for (const [name, width, height] of [['phone', 390, 844], ['desktop', 1440, 1000
   g = await geometry();
   assert(g.overflow <= width, `${name}: no horizontal overflow`);
   assert(g.composer.x >= 0 && g.composer.right <= width && g.composer.bottom <= height, `${name}: composer fits`);
+  for (const action of ['Export Markdown', 'Export PDF']) {
+    const bounds = await page.getByRole('button', { name: action, exact: true }).boundingBox();
+    assert(bounds && bounds.x >= 0 && bounds.x + bounds.width <= width, `${name}: ${action} fits`);
+  }
   await feed.evaluate(el => { el.scrollTop = 300; });
   await page.getByRole('button', { name: 'Jump to latest' }).waitFor();
   await page.waitForTimeout(100);

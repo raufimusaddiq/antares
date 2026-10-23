@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/raufimusaddiq/antares/internal/auth"
+	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -34,6 +35,8 @@ var builtProbes = []probe{
 	{"chat read", "GET /api/chats/{chatId}"},
 	{"history/messages read", "GET /api/chats/{chatId}/messages"},
 	{"send message (run admission)", "POST /api/chats/{chatId}/messages"},
+	{"artifact download", "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}"},
+	{"artifact preview", "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview"},
 	{"search within a chat", "GET /api/chats/{chatId}/search"},
 	{"run status", "GET /api/runs/{runId}"},
 	{"run events (SSE recovery)", "GET /api/runs/{runId}/events"},
@@ -60,19 +63,21 @@ var notBuilt = []struct {
 	{"push subscriptions", "UXP-ACC-002/003", "no push subscription endpoint exists yet", []string{"/api/push/subscriptions", "/api/push/subscribe", "/api/push/subscriptions/%s"}, false},
 	{"exports", "UXP-ACC-016", "no export endpoint exists yet", []string{"/api/chats/%s/export", "/api/exports", "/api/exports/%s"}, false},
 	{"voice uploads", "UXP-ACC-006", "no voice/transcription endpoint exists yet; POST /api/assets is a 501 stub", []string{"/api/voice", "/api/transcribe", "/api/voice/%s"}, false},
-	{"preview sandbox", "UXP-ACC-015", "no preview endpoint exists yet", []string{"/api/preview", "/api/preview/%s", "/api/artifacts/%s"}, false},
+	{"preview sandbox", "UXP-ACC-015", "previews are served per chat turn (probed above); no free-standing preview/artifact id exists", []string{"/api/preview", "/api/preview/%s", "/api/artifacts/%s"}, false},
 	{"fork", "UXP-ACC-012", "POST /api/chats/{id}/fork is a 501 stub; Hermes forks only a whole session (docs/runbooks/turn-controls.md)", []string{"/api/chats/%s/fork"}, true},
 	{"delayed notifications", "UXP-ACC-002/019", "no notification outbox or endpoint exists yet", []string{"/api/notifications", "/api/notifications/%s"}, false},
 }
 
 // ---- the fixture ----------------------------------------------------------------------
 
+type hermesMsg = hermes.Message
+
 type victim struct {
 	a                          *app
 	alice                      *person
 	chatID, runID              string
 	title, output, session     string
-	hermesRun                  string
+	hermesRun, ref             string
 	markers                    []string // anything that must never appear in a refusal
 	runRows, chatRows, hxAlice int
 }
@@ -94,7 +99,7 @@ func newVictim(t testing.TB) *victim {
 	v.session = c.HermesSessionID
 	// Seed the transcript Hermes would return, then run one turn to completion.
 	a.hx.mu.Lock()
-	a.hx.msgs[v.session] = []map[string]any{{"role": "user", "content": "alice-private-question-2b8e"}, {"role": "assistant", "content": v.output}}
+	a.hx.msgs[v.session] = []map[string]any{{"role": "user", "content": "alice-private-question-2b8e"}, {"role": "assistant", "content": v.output + "\n```html\n<p>alice-artifact-secret-4e7a</p>\n```\n"}}
 	a.hx.mu.Unlock()
 	input := "alice-private-input-5d40"
 	v.runID = alice.send(v.chatID, input)
@@ -105,12 +110,20 @@ func newVictim(t testing.TB) *victim {
 	a.hx.push(fr, "run.completed", fmt.Sprintf(`{"output":%q}`, v.output))
 	s.waitFor(t, "run.completed")
 	<-s.done
-	v.markers = []string{v.chatID, v.runID, v.title, v.output, v.session, v.hermesRun, alice.profile, alice.key, alice.id,
+	v.markers = []string{v.chatID, v.runID, v.title, v.output, "alice-artifact-secret-4e7a", v.session, v.hermesRun, alice.profile, alice.key, alice.id,
 		"alice-private-question-2b8e", "alice-private-input-5d40", alice.cookie}
 	// Alice searches her own chats once, so her content is in the index (and her
 	// transcript has been read from Hermes) before anyone else probes.
 	if w := alice.get("/api/search/chats?q=alice-private"); w.Code != 200 {
 		t.Fatalf("alice's own search: %d %s", w.Code, w.Body.String())
+	}
+	for _, m := range decodeBody[struct{ Messages []hermesMsg }](t, alice.get("/api/chats/"+v.chatID+"/messages")).Messages {
+		if m.Seq == 1 {
+			v.ref = m.Ref
+		}
+	}
+	if v.ref == "" {
+		t.Fatal("history stamped no ref on alice's assistant turn")
 	}
 	v.snapshot(t)
 	return v
@@ -171,10 +184,22 @@ func (v *victim) untouched(t testing.TB, what string) {
 	}
 }
 
+// fill is the path for a probe, including alice's real turn ref on artifact routes, so a
+// refusal is about the caller and not about a missing ref.
+func (v *victim) fill(key, chatID, runID string) (string, string) {
+	m, p := fill(key, chatID, runID)
+	if strings.Contains(p, "/artifacts/") {
+		p += "?ref=" + v.ref
+	}
+	return m, p
+}
+
 func fill(key, chatID, runID string) (method, path string) {
 	method, path, _ = strings.Cut(key, " ")
 	path = strings.ReplaceAll(path, "{chatId}", chatID)
 	path = strings.ReplaceAll(path, "{runId}", runID)
+	path = strings.ReplaceAll(path, "{seq}", "1") // alice's seeded assistant turn
+	path = strings.ReplaceAll(path, "{n}", "0")
 	if strings.HasSuffix(path, "/search") { // a search with nothing to search for is a 400, not a test
 		path += "?q=alice-private"
 	}
@@ -217,10 +242,10 @@ func TestCrossUserThreatBuiltSurfaces(t *testing.T) {
 		for _, p := range builtProbes {
 			t.Run(who+"/"+p.surface, func(t *testing.T) {
 				before := len(a.hx.requests())
-				mtd, path := fill(p.key, v.chatID, v.runID)
+				mtd, path := v.fill(p.key, v.chatID, v.runID)
 				hdr := map[string]string{"Idempotency-Key": nextIdem()}
 				got := atk.do(mtd, path, hdr, requestBody(mtd))
-				_, absent := fill(p.key, store.NewID(), store.NewID())
+				_, absent := v.fill(p.key, store.NewID(), store.NewID())
 				want := atk.do(mtd, absent, map[string]string{"Idempotency-Key": nextIdem()}, requestBody(mtd))
 				if got.Code != http.StatusNotFound && got.Code != http.StatusForbidden {
 					t.Fatalf("SURFACE BROKEN [%s]: foreign caller got %d, want 404/403: %s", p.surface, got.Code, got.Body.String())
@@ -271,7 +296,7 @@ func TestCrossUserThreatBuiltSurfaces(t *testing.T) {
 			if p.key == "GET /api/runs/{runId}/events" || strings.HasPrefix(p.key, "POST") {
 				continue
 			}
-			mtd, path := fill(p.key, v.chatID, v.runID)
+			mtd, path := v.fill(p.key, v.chatID, v.runID)
 			if w := v.alice.do(mtd, path, nil, nil); w.Code != 200 {
 				t.Errorf("owner %s %s = %d %s", mtd, path, w.Code, w.Body.String())
 			}
@@ -293,7 +318,7 @@ func TestCrossUserThreatInactiveAndAnonymous(t *testing.T) {
 	for who, atk := range cases {
 		for _, p := range builtProbes {
 			t.Run(who+"/"+p.surface, func(t *testing.T) {
-				mtd, path := fill(p.key, v.chatID, v.runID)
+				mtd, path := v.fill(p.key, v.chatID, v.runID)
 				w := atk.do(mtd, path, map[string]string{"Idempotency-Key": nextIdem()}, requestBody(mtd))
 				if w.Code < 400 || w.Code >= 500 {
 					t.Fatalf("SURFACE BROKEN [%s]: %s got %d: %s", p.surface, who, w.Code, w.Body.String())
@@ -307,7 +332,7 @@ func TestCrossUserThreatInactiveAndAnonymous(t *testing.T) {
 	}
 	t.Run("anonymous", func(t *testing.T) {
 		for _, p := range builtProbes {
-			mtd, path := fill(p.key, v.chatID, v.runID)
+			mtd, path := v.fill(p.key, v.chatID, v.runID)
 			r := httptest.NewRequest(mtd, testOrigin+path, nil)
 			if mtd != "GET" {
 				r.Header.Set("Origin", testOrigin)

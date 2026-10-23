@@ -168,3 +168,22 @@ Commands and results:
 
 Not checked: physical phones, actual macOS keyboards, Safari, Firefox and physical
 keyboard viewport behavior. No custom safe-area support is claimed.
+
+## Merge of origin/main at 3be5a810
+
+Retained artifact downloads, sandboxed previews, Markdown/PDF exports and print
+styles alongside scroll anchoring, physical-key shortcuts and phone layout.
+Generated asset conflicts are resolved by rebuilding the combined source.
+Export buttons now wrap within their group: the combined header previously
+overflowed a fixed 320px viewport. Viewport cases load independently and check
+both export controls, in addition to the existing scroll/keyboard/layout checks.
+
+`npm ci`, typecheck, build and all 257 web tests pass. `go build ./...` and
+`go test ./internal/chat ./internal/webui` pass (chat 52.607s, webui 2.719s).
+The sandbox probe passes with Chromium's headless-shell binary. An isolated
+browser fixture passes at 320/390/1440px for control/composer bounds, follow/hold/
+jump, shortcuts and a real fixture Markdown download. Fresh captures inspected.
+The broad `scripts/browser-check.mjs` was also run at those widths: phone layout
+and console/CSP checks pass, while its existing frame-timing check fails; desktop
+timing, history traversal and service-worker/lazy-chunk assertions remain failing.
+No assertion or threshold was relaxed.

@@ -191,7 +191,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, name string) 
 	h.Set("X-Content-Type-Options", "nosniff")
 	if name == "index.html" || name == "offline.html" {
 		// Both shells allow only our own bundle and refuse framing.
-		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' "+openUIStyleHash+"; connect-src 'self'; img-src 'self'; font-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' "+openUIStyleHash+"; connect-src 'self'; img-src 'self'; font-src 'self'; frame-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 		h.Set("Referrer-Policy", "no-referrer")
 		if name == "index.html" {
 			h.Set("Cache-Control", "no-store")
