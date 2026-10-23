@@ -373,3 +373,4 @@ Open-to-first-item: 620 ms (100 messages) and 833 ms (500 messages), page load i
 Larger or more frequent real Hermes frames, tool-progress events, OpenUI payloads, real transcripts longer than
 2 KB, Web Push delivery, and browsers that reconnect. Re-run the commands above with `reply_bytes` and `hold_ms`
 set to the real figures, and put the new table beside this one with its own date.
+
