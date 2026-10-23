@@ -19,7 +19,7 @@ const walk = (dir) => {
 };
 walk(join(web, "src"));
 walk(join(web, "public")); // fonts, icons and the OG card ship in the bundle too
-files.push("index.html", "package.json", "package-lock.json", "vite.config.ts", "tsconfig.json");
+files.push("index.html", "package.json", "package-lock.json", "vite.config.ts", "tsconfig.json", "scripts/stamp.mjs");
 files.sort();
 
 const h = createHash("sha256");
@@ -29,4 +29,13 @@ for (const f of files) {
   h.update(readFileSync(join(web, f)));
   h.update("\0");
 }
-writeFileSync(out, h.digest("hex") + "\n");
+const version = h.digest("hex");
+const dist = join(out, "..");
+const css = readFileSync(join(dist, "offline.css"));
+const cssPath = `/assets/offline-${createHash("sha256").update(css).digest("hex").slice(0, 16)}.css`;
+writeFileSync(join(dist, cssPath), css);
+writeFileSync(join(dist, "offline.html"), readFileSync(join(dist, "offline.html"), "utf8").replace("/offline.css", cssPath));
+const precache = ["/offline.html", ...readdirSync(join(dist, "assets")).filter(name => /-[\w-]+\.(js|css)$/.test(name)).sort().map(name => `/assets/${name}`)];
+writeFileSync(join(dist, "sw.js"), readFileSync(join(web, "public", "sw.js"), "utf8")
+  .replace("__VERSION__", version).replace("__PRECACHE__", JSON.stringify(precache)));
+writeFileSync(out, version + "\n");
