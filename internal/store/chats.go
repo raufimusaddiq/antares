@@ -89,9 +89,20 @@ func scanChat(row interface{ Scan(...any) error }) (Chat, error) {
 func CreateChat(ctx context.Context, db *sql.DB, userID, bindingID, hermesSessionID, title string, now time.Time) (Chat, error) {
 	id := NewID()
 	t := ts(now)
-	_, err := db.ExecContext(ctx, `INSERT INTO chats (id, user_id, hermes_binding_id, hermes_session_id, title, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`, id, userID, bindingID, hermesSessionID, nullIfEmpty(title), t, t)
+	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
+		return Chat{}, err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `INSERT INTO chats (id, user_id, hermes_binding_id, hermes_session_id, title, status, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`, id, userID, bindingID, hermesSessionID, nullIfEmpty(title), t, t); err != nil {
+		return Chat{}, err
+	}
+	// The title is searchable from the moment the chat exists (UXP-003).
+	if err := setTitleDoc(ctx, tx, userID, id, title); err != nil {
+		return Chat{}, err
+	}
+	if err := tx.Commit(); err != nil {
 		return Chat{}, err
 	}
 	return Chat{ID: id, UserID: userID, BindingID: bindingID, HermesSessionID: hermesSessionID, Title: title, Status: "ACTIVE", CreatedAt: t, UpdatedAt: t}, nil

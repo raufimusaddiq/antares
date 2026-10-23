@@ -319,6 +319,11 @@ func (s *Service) finish(l *liveRun, to, code, output string) {
 		l.emit("run.failed", map[string]string{"runId": l.runID, "status": store.RunFailed, "code": hermes.CodeHermesUnavailable}, true)
 		return
 	}
+	if store.RunTerminal(run.Status) { // the transcript gained turns: its search index is stale
+		if err := store.InvalidateChatIndex(ctx, s.db, run.UserID, run.ChatID, s.now()); err != nil {
+			log.Printf("chat: run %s: could not mark search index stale: %v", l.runID, err)
+		}
+	}
 	l.emit(terminalEvent(run.Status), terminalPayload(run, output), store.RunTerminal(run.Status))
 	if !store.RunTerminal(run.Status) { // read back a non-terminal state: leave it resumable
 		l.markDetached()
