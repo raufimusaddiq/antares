@@ -264,8 +264,113 @@ listened.
   browser, no reconnect/cancel cycles, no 1,000-turn history (the other §14.2 rows).
 - **Not OOM or leak detection** beyond what a 30 s window can show.
 
+## 7. Profiles, PWA cache privacy and long-chat scrolling (#87)
+
+Date 2026-10-24. **Machine for every number below:** the same 2 vCPU (AMD EPYC 9754 guest), 7.6 GiB host as above,
+go1.27.3, commit `1d73b9e`; Chromium 148.0.7778.96 (headless, software rendering, no GPU) driven by playwright-core;
+the fake Hermes/IdP, the scratch Antares and the browser shared those 2 vCPUs. **Nothing here was measured on
+production.** Production figures are external (cgroup / host RSS) and are not in this section.
+
+### Go CPU and allocation profiles (scratch binary, `go tool pprof`)
+
+There is no pprof HTTP endpoint (owner decision). The build-tagged scratch server (`scripts/capacity`, not the
+release binary) writes profiles on a clean stop when `CAPACITY_CPUPROFILE` / `CAPACITY_MEMPROFILE` are set:
+
+```sh
+CAPACITY_CPUPROFILE=cpu.pprof CAPACITY_MEMPROFILE=allocs.pprof IDLE_SECS=60 LOAD_SECS=300 scripts/capacity/bench.sh
+go tool pprof -top capacity cpu.pprof      # `capacity` = go build -tags capacity -o capacity ./scripts/capacity
+go tool pprof -sample_index=alloc_space -top capacity allocs.pprof
+```
+
+The profile covers the whole process life (413 s: setup of 3 accounts, 60 s idle, 300 s load with 2 runs in flight,
+200 runs, 0 failed). The benchmark itself: idle RSS 22.6 MiB, load RSS mean 27.5 / P95 29.6 / max 30.0 MiB,
+0.41 % of one core, 25 FDs max (`/proc` sampling, 1 Hz): pass against 256 MiB.
+
+| CPU (413 s wall, 1.25 s sampled = 0.3 %) | cum |
+|---|---|
+| `database/sql` → modernc SQLite query path | 0.64 s (51 %) |
+| of which the per-request session check (`auth.signedIn` → `reserve`) | 0.57 s (46 %) |
+| of which `chat.runNew` (`start`) | 0.43 s (34 %) |
+| flat top: `Syscall6` 0.24 s (19 %), `futex` 3 %, SQLite parser/planner under 10 % each | |
+
+| Allocations (`alloc_space`, 31.9 MB over the process life; pprof default sampling of 512 KiB) | flat / cum |
+|---|---|
+| `bufio.NewReaderSize` (one per upstream/SSE connection) | 5.7 MB flat (18 %) |
+| `chat.(*Service).runNew` → `follow` → `hermes.Client.StreamEvents` | 17.6 MB cum (54 %) / 10.4 MB |
+| `server.reserve` / `auth.signedIn` per-request path | 9.2 MB cum (28 %) |
+| `chat.reconcile` → `hermes.GetRun` | 4.1 MB cum (13 %) |
+| `chat.(*liveRun).emit` + `writeEvent` (journal and SSE frames) | 3.0 MB / 2.5 MB cum |
+| `inuse_space` at exit, after a forced GC | 2.2 MB, of which 1.2 MB is the profiler itself |
+
+**Conclusion.** Under this load Antares is idle: 0.3 % CPU and ~32 MB allocated in ~7 minutes. The cost that exists is
+SQLite work on the request path (session check on every request) and per-connection buffers for the upstream
+stream; nothing is retained (2.2 MB in use after GC) and nothing is a candidate for optimisation. The load is
+small (2 runs in flight, 2,000-byte fake replies); with 512 KiB sampling, items under a few hundred KB are noise.
+This does not replace the larger envelope in sections 2 and 4. No production profile was taken.
+
+### Service worker: what it does, what it caches, who can reach it
+
+Measured with `web/scripts/browser-measure.mjs` against a scratch Antares on `127.0.0.1:18080` (two approved
+accounts A and B, real session cookies, the shipped `sw.js` from the embedded bundle):
+
+```sh
+CHROME=~/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome PLAYWRIGHT_CORE=<path>/playwright-core \
+  node web/scripts/browser-measure.mjs <state.json> 50,250
+```
+
+- **Cache Storage after install, signed in as A, and after A used the app** (chat page, `/api/me`, `/api/chats`,
+  `/api/chats/{id}/messages`): one cache `antares-public-<build hash>` holding exactly 7 entries, all `GET`,
+  keyed by URL path only: `/offline.html`, five `/assets/*` files and the offline stylesheet. No `Set-Cookie`, no
+  account email, no message text in any body; the cache snapshot was byte-identical before and after
+  signed-in use. API requests never reach the worker (`sw.js` returns before `respondWith` for `/api`), and a
+  navigation is network-first with only `/offline.html` as fallback.
+- **Background:** the worker has no visibility or lifecycle handler. After `Page.setWebLifecycleState`
+  frozen → active the cache was unchanged. Push handlers show fixed text by `kind` and touch neither cache nor `fetch`.
+- **Second account on the same browser profile** (A's cookie replaced by B's with no sign-out, the worst case): B
+  sees the same cache (identical entries and hashes), which holds only public build assets, so there is nothing of
+  A's to reach. `cache.match` for `/api/me`, `/api/chats`, A's messages URL and A's chat page: all miss. A's chat
+  over the wire as B: 404. Browser HTTP cache: `fetch('/api/me', {cache:'only-if-cached'})` fails (not stored);
+  `Cache-Control: no-store` on `/api/*` and on `/`.
+- **Answer: the service-worker cache cannot leak one user's data to another**; it never holds user data.
+- **One residual that is not the service worker:** composer drafts live in same-origin `localStorage`, keyed by
+  the account's email (`antares:draft:v1:<email>:chat:<id>`), unencrypted. In the test A's draft was still readable by
+  B's page script after the cookie swap (the app itself would not show it to B). `purgeDrafts()` runs on sign-out,
+  401 and suspension while the app is open; a session that simply expires with the tab closed leaves the draft until
+  the next sign-in is rejected or the user signs out. Same-origin script is the only reader, so this is a
+  shared-device hygiene note, not a cross-account path through the app. Not changed here.
+- **Not measured:** the offline fallback in a real browser. Playwright's `setOffline` did not reach the worker's own
+  `fetch` (the page was served from the network), so that run was discarded; the fallback logic is covered only by
+  `web/src/sw.test.ts`. Installed-PWA (standalone) background behaviour on a phone was not measured either.
+
+### Long thread: windowing and scroll smoothness
+
+Method: seed a chat through the real API (each message is a completed run against the fake Hermes), open
+`/chat/<id>` in headless Chromium at 1280×800, then flick upward at 4,000 px/s, time-based, in a
+`requestAnimationFrame` loop until all messages were loaded and the top reached; frame time is the rAF delta.
+Control: the same flick over a plain non-virtual page of 600 fixed `<p>` rows.
+
+| Thread | Mounted items at open / max during scroll | DOM nodes at open / end | Frame p50 / p95 / max | Frames > 50 ms | Long tasks (>50 ms) | JS heap |
+|---|---|---|---|---|---|---|
+| 100 messages | 50 / 100 | 381 / 608 | 66.7 / 116.7 / 183.2 ms | 43 of 52 | 0 | 5.2 MB |
+| 500 messages | 50 / 100 | 433 / 264 (at top) | 66.7 / 116.7 / 216.7 ms | 215 of 280 | 1 (68 ms) | 5.9 MB |
+| control, 600 plain rows | n/a | 605 | 16.7 / 16.8 / 33.4 ms | 0 of 1,174 | n/a | n/a |
+
+Open-to-first-item: 620 ms (100 messages) and 833 ms (500 messages), page load included.
+
+- **Windowing works:** no more than 100 items are mounted whatever the thread length, and DOM size and heap do not
+  grow with it (5.2 → 5.9 MB for 5× the messages). Open cost is the first page of 50, so it does not scale with the thread either.
+- **Scroll is not smooth under a fast flick on this host:** 15 fps median (66.7 ms) against 60 fps for the control.
+  The figure is identical at 100 and 500 messages, so the cost is mounting and measuring new items per frame
+  (Markdown render plus the layout-effect remeasure), not thread length. It is a stress flick (4,000 px/s) in
+  software-rendered headless Chromium on a 2 vCPU host shared with the server; a GPU-composited phone or desktop
+  will differ and this is not a field number. No fix is made here; if the jank matters, profile the mount path in
+  DevTools on a target device first.
+- **Not measured:** 1,000+ messages (seeding at the default 30 runs/min limit takes ~17 min per 500 messages), real
+  devices, touch scrolling, streaming-reply cost while scrolled up.
+
 ## What would change these numbers
 
 Larger or more frequent real Hermes frames, tool-progress events, OpenUI payloads, real transcripts longer than
 2 KB, Web Push delivery, and browsers that reconnect. Re-run the commands above with `reply_bytes` and `hold_ms`
 set to the real figures, and put the new table beside this one with its own date.
+
