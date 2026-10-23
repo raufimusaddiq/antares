@@ -43,6 +43,11 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"GET /api/runs/{runId}":             http.HandlerFunc(s.getRun),
 		"GET /api/runs/{runId}/events":      http.HandlerFunc(s.runEvents),
 		"POST /api/runs/{runId}/cancel":     http.HandlerFunc(s.cancelRun),
+		"POST /api/runs/{runId}/steer":      http.HandlerFunc(s.steerRun),
+
+		"POST /api/chats/{chatId}/regenerate": http.HandlerFunc(s.noTurnMutation("regenerate")),
+		"POST /api/chats/{chatId}/edit-turn":  http.HandlerFunc(s.noTurnMutation("edit-turn")),
+		"POST /api/chats/{chatId}/rewind":     http.HandlerFunc(s.noTurnMutation("rewind")),
 	}
 }
 
@@ -81,6 +86,8 @@ func upstreamError(w http.ResponseWriter, err error) {
 		apiError(w, http.StatusTooManyRequests, code, "The assistant is busy; try again shortly")
 	case hermes.CodeRunConflict:
 		apiError(w, http.StatusConflict, code, "This chat already has a run in progress")
+	case hermes.CodeSteerRefused:
+		apiError(w, http.StatusConflict, code, "The run is not accepting guidance (it may have just finished)")
 	case hermes.CodeCapabilityNA:
 		apiError(w, http.StatusNotImplemented, code, "This is not available on the assistant")
 	default:
@@ -377,6 +384,67 @@ func (s *Service) cancelRun(w http.ResponseWriter, r *http.Request) {
 			UpstreamStopped bool `json:"upstreamStopped"`
 		}{viewRun(run), stopped}
 		writeJSON(w, http.StatusOK, v)
+	}
+}
+
+type steerBody struct {
+	Input string `json:"input"`
+}
+
+// steerRun sends guidance into the caller's own running run (PRD §21.5; Hermes
+// POST /v1/runs/{id}/steer). 404 for a run that is not the caller's, 409 when it
+// is over or Hermes declines. A user-supplied profile, key or session never
+// reaches this far: decode rejects unknown fields.
+func (s *Service) steerRun(w http.ResponseWriter, r *http.Request) {
+	uid, _ := user(r)
+	id, ok := pathID(r, "runId")
+	if !ok {
+		notFound(w)
+		return
+	}
+	var body steerBody
+	if !decode(w, r, &body) {
+		return
+	}
+	if strings.TrimSpace(body.Input) == "" || len(body.Input) > maxInput || !utf8.ValidString(body.Input) {
+		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "The guidance is empty, too long or not valid text")
+		return
+	}
+	err := s.Steer(r.Context(), uid, id, body.Input)
+	switch {
+	case errors.Is(err, store.ErrNoChat):
+		notFound(w)
+	case errors.Is(err, ErrNotSteerable):
+		apiError(w, http.StatusConflict, hermes.CodeSteerRefused, "The run is not accepting guidance (it may have just finished)")
+	case err != nil:
+		s.gateError(w, err)
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{"runId": id, "accepted": true})
+	}
+}
+
+// noTurnMutation answers regenerate, edit-turn and rewind. The deployed Hermes has
+// no route that retries, edits or truncates a turn (its fork copies the whole
+// session, docs/runbooks/turn-controls.md), and Antares will not emulate one by
+// writing rows or touching Hermes' store. Ownership is still checked first, so a
+// foreign chat is indistinguishable from a missing one; an owned chat gets an
+// honest 501. Nothing is sent to Hermes and no run, stream or row is touched.
+func (s *Service) noTurnMutation(op string) func(http.ResponseWriter, *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		uid, _ := user(r)
+		id, ok := pathID(r, "chatId")
+		if !ok {
+			notFound(w)
+			return
+		}
+		if _, err := store.GetChat(r.Context(), s.db, uid, id); errors.Is(err, store.ErrNoChat) {
+			notFound(w)
+			return
+		} else if err != nil {
+			internalError(w, "get chat", err)
+			return
+		}
+		apiError(w, http.StatusNotImplemented, hermes.CodeCapabilityNA, "Hermes has no way to "+op+" a turn; start a new chat instead")
 	}
 }
 
