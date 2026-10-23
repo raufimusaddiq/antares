@@ -51,7 +51,7 @@ type fakeRun struct {
 }
 
 type fakeHermes struct {
-	t    *testing.T
+	t    testing.TB
 	srv  *httptest.Server
 	mu   sync.Mutex
 	keys map[string]string // profile -> key
@@ -68,7 +68,7 @@ type fakeHermes struct {
 	hang     map[string]bool
 }
 
-func newFakeHermes(t *testing.T) *fakeHermes {
+func newFakeHermes(t testing.TB) *fakeHermes {
 	f := &fakeHermes{t: t, keys: map[string]string{}, runs: map[string]*fakeRun{}, msgs: map[string][]map[string]any{}, mem: map[string]string{},
 		failNext: map[string]int{}, hang: map[string]bool{}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
@@ -89,7 +89,7 @@ func (f *fakeHermes) run(id string) *fakeRun {
 }
 
 // runWithInput waits for a run with this input to exist (the worker is async).
-func (f *fakeHermes) runWithInput(t *testing.T, input string) (string, *fakeRun) {
+func (f *fakeHermes) runWithInput(t testing.TB, input string) (string, *fakeRun) {
 	t.Helper()
 	var id string
 	var fr *fakeRun
@@ -130,7 +130,7 @@ func (f *fakeHermes) setStatus(r *fakeRun, status, output string) {
 	f.mu.Unlock()
 }
 
-func recv(t *testing.T, ch chan struct{}, what string) {
+func recv(t testing.TB, ch chan struct{}, what string) {
 	t.Helper()
 	select {
 	case <-ch:
@@ -264,7 +264,7 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 // ---- the app ------------------------------------------------------------------------
 
 type app struct {
-	t      *testing.T
+	t      testing.TB
 	db     *sql.DB
 	box    *secrets.Box
 	svc    *Service
@@ -307,7 +307,7 @@ type appOpts struct {
 	heartbeat time.Duration
 }
 
-func newApp(t *testing.T, o ...appOpts) *app {
+func newApp(t testing.TB, o ...appOpts) *app {
 	t.Helper()
 	var opt appOpts
 	if len(o) > 0 {
@@ -345,7 +345,7 @@ func newApp(t *testing.T, o ...appOpts) *app {
 
 // rebuild mounts svc behind a fresh auth layer on the app's database, as a
 // restarted process would.
-func rebuild(t *testing.T, a *app, svc *Service) http.Handler {
+func rebuild(t testing.TB, a *app, svc *Service) http.Handler {
 	t.Helper()
 	au, err := auth.New(auth.Options{DB: a.db, ClientID: "c", ClientSecret: "s", PublicOrigin: testOrigin,
 		Endpoints: auth.Endpoints{Issuer: "i", Auth: "https://a", Token: "https://t", JWKS: "https://j", Issued: []string{"i"}}, Chat: svc, Limits: a.limits})
@@ -450,7 +450,7 @@ func (a *app) account(sub, role, approval, tenant string) *person {
 
 func (p *person) get(path string) *httptest.ResponseRecorder { return p.do("GET", path, nil, nil) }
 
-func decodeBody[T any](t *testing.T, w *httptest.ResponseRecorder) T {
+func decodeBody[T any](t testing.TB, w *httptest.ResponseRecorder) T {
 	t.Helper()
 	var v T
 	if err := json.Unmarshal(w.Body.Bytes(), &v); err != nil {
@@ -459,7 +459,7 @@ func decodeBody[T any](t *testing.T, w *httptest.ResponseRecorder) T {
 	return v
 }
 
-func errCode(t *testing.T, w *httptest.ResponseRecorder) string {
+func errCode(t testing.TB, w *httptest.ResponseRecorder) string {
 	t.Helper()
 	e := decodeBody[struct{ Error struct{ Code string } }](t, w)
 	return e.Error.Code
@@ -598,14 +598,14 @@ func (p *person) open(runID, lastID string) *stream {
 	return s
 }
 
-func (s *stream) waitFor(t *testing.T, name string) {
+func (s *stream) waitFor(t testing.TB, name string) {
 	t.Helper()
 	eventually(t, func() bool { return s.has(name) }, "event "+name)
 }
 
 func (s *stream) close() { s.cancel(); <-s.done }
 
-func eventually(t *testing.T, cond func() bool, what string) {
+func eventually(t testing.TB, cond func() bool, what string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
