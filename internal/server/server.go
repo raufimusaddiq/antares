@@ -189,11 +189,20 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, name string) 
 	}
 	h := w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
-	if name == "index.html" {
-		// The shell is the one document: no scripts but our own bundle, no framing.
-		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' "+openUIStyleHash+"; connect-src 'self'; img-src 'self'; font-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+	if name == "index.html" || name == "offline.html" {
+		// Both shells allow only our own bundle and refuse framing.
+		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' "+openUIStyleHash+"; connect-src 'self'; img-src 'self'; font-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 		h.Set("Referrer-Policy", "no-referrer")
-		h.Set("Cache-Control", "no-store")
+		if name == "index.html" {
+			h.Set("Cache-Control", "no-store")
+		} else {
+			h.Set("Cache-Control", "public, max-age=0, must-revalidate")
+		}
+	} else if name == "sw.js" || name == "manifest.webmanifest" {
+		h.Set("Cache-Control", "no-cache")
+		if name == "manifest.webmanifest" {
+			h.Set("Content-Type", "application/manifest+json")
+		}
 	} else if strings.HasPrefix(name, "assets/") { // content-hashed by the build
 		h.Set("Cache-Control", "public, max-age=31536000, immutable")
 	}

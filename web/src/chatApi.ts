@@ -2,6 +2,8 @@
 // text only: never a profile, key, route prefix or session id (the server picks
 // those). Every failure comes back as a code from the fixed API vocabulary.
 
+import { purgeUserState } from "./pwa";
+
 export interface ChatSummary {
   id: string;
   title: string;
@@ -89,6 +91,7 @@ async function call<T>(method: string, path: string, parse: (b: unknown) => T | 
   }
   if (!res.ok) {
     const code = codeOf(json);
+    if (code === "ACCOUNT_SUSPENDED" || res.status === 401) purgeUserState();
     return { ok: false, code: code ?? "HERMES_UNAVAILABLE", status: res.status };
   }
   const value = parse(json);
