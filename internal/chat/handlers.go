@@ -37,6 +37,8 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"POST /api/chats":                   http.HandlerFunc(s.createChat),
 		"GET /api/chats/{chatId}":           http.HandlerFunc(s.getChat),
 		"GET /api/chats/{chatId}/messages":  http.HandlerFunc(s.getMessages),
+		"GET /api/chats/{chatId}/search":    http.HandlerFunc(s.searchOne),
+		"GET /api/search/chats":             http.HandlerFunc(s.searchAll),
 		"POST /api/chats/{chatId}/messages": http.HandlerFunc(s.postMessage),
 		"GET /api/runs/{runId}":             http.HandlerFunc(s.getRun),
 		"GET /api/runs/{runId}/events":      http.HandlerFunc(s.runEvents),

@@ -26,3 +26,14 @@ export function mergeNewest(held: readonly Turn[], page: readonly Turn[]): { tur
   if (!touches) return { turns: [...page], reset: true };
   return { turns: [...older, ...page], reset: false };
 }
+
+/**
+ * Whether the held turns reach back to `seq`, still need an older page, or can
+ * never contain it (the start of the conversation is loaded and the turn is not
+ * there: compaction or rewind removed it since it was indexed).
+ */
+export function reachOf(held: readonly Turn[], cursor: string, seq: number): "held" | "older" | "gone" | "wait" {
+  if (held.length === 0) return "wait";
+  if (held[0].seq <= seq) return held.some((t) => t.seq === seq) ? "held" : "gone";
+  return cursor !== "" ? "older" : "gone";
+}
