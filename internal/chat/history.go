@@ -146,10 +146,15 @@ func (s *Service) getMessages(w http.ResponseWriter, r *http.Request) {
 		s.gateError(w, err)
 		return
 	}
+	read := s.now()
 	all, err := s.hx.Transcript(r.Context(), b, c.HermesSessionID)
 	if err != nil {
 		upstreamError(w, err)
 		return
+	}
+	// The transcript is in hand: bring a stale search index of this chat up to date from it.
+	if stale, err := store.StaleChats(r.Context(), s.db, uid, c.ID, 1); err == nil && len(stale) == 1 {
+		s.indexTranscript(r.Context(), uid, c, all, read)
 	}
 	page, next, err := pageHistory(c.ID, all, before, limit, hash)
 	if err != nil {
