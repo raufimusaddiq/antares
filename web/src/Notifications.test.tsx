@@ -6,7 +6,7 @@ import type { Notifications as State } from "./push";
 const push = vi.hoisted(() => ({
   unsupportedReason: vi.fn(),
   loadNotifications: vi.fn(),
-  thisDevice: vi.fn(),
+  deviceStatus: vi.fn(),
   enable: vi.fn(),
   disable: vi.fn(),
   setMode: vi.fn(),
@@ -16,6 +16,8 @@ vi.mock("./push", async (orig) => ({ ...(await orig<typeof import("./push")>()),
 import { Notifications } from "./Notifications";
 
 const DEVICE = { id: "d1", endpointHash: "h" };
+const HAS = { device: DEVICE, missing: null };
+const NONE = { device: null, missing: "none" };
 const state = (over: Partial<State> = {}): State => ({ configured: true, mode: "all", devices: [], ...over });
 const ok = <T,>(value: T) => ({ ok: true as const, value });
 
@@ -27,7 +29,7 @@ const openPanel = async () => {
 beforeEach(() => {
   push.unsupportedReason.mockReturnValue(null);
   push.loadNotifications.mockResolvedValue(ok(state()));
-  push.thisDevice.mockResolvedValue(null);
+  push.deviceStatus.mockResolvedValue(NONE);
   push.enable.mockResolvedValue(ok(true));
   push.disable.mockResolvedValue(ok(true));
   push.setMode.mockResolvedValue(ok(state()));
@@ -66,7 +68,7 @@ describe("the notification opt-in", () => {
   });
 
   it("turns on for this device only on the button press, then shows the device controls", async () => {
-    push.thisDevice.mockResolvedValueOnce(null).mockResolvedValue(DEVICE);
+    push.deviceStatus.mockResolvedValueOnce(NONE).mockResolvedValue(HAS);
     push.loadNotifications.mockResolvedValueOnce(ok(state())).mockResolvedValue(ok(state({ devices: [DEVICE] })));
     await openPanel();
     const on = await screen.findByRole("button", { name: "Turn on for this device" });
@@ -92,7 +94,7 @@ describe("the notification opt-in", () => {
   });
 
   it("changes the mode and revokes the device", async () => {
-    push.thisDevice.mockResolvedValue(DEVICE);
+    push.deviceStatus.mockResolvedValue(HAS);
     push.loadNotifications.mockResolvedValue(ok(state({ devices: [DEVICE] })));
     await openPanel();
     fireEvent.change(await screen.findByRole("combobox"), { target: { value: "failures" } });
@@ -102,7 +104,7 @@ describe("the notification opt-in", () => {
   });
 
   it("tells a muted reader that a device being on does not resume alerts", async () => {
-    push.thisDevice.mockResolvedValue(DEVICE);
+    push.deviceStatus.mockResolvedValue(HAS);
     push.loadNotifications.mockResolvedValue(ok(state({ mode: "off", devices: [DEVICE] })));
     await openPanel();
     await screen.findByText(/muted for your account, on every device/);
@@ -110,7 +112,7 @@ describe("the notification opt-in", () => {
   });
 
   it("says that turning off removes one device while the choice covers all of them", async () => {
-    push.thisDevice.mockResolvedValue(DEVICE);
+    push.deviceStatus.mockResolvedValue(HAS);
     push.loadNotifications.mockResolvedValue(ok(state({ devices: [DEVICE] })));
     await openPanel();
     await screen.findByText(/removes only this device/);
@@ -118,10 +120,37 @@ describe("the notification opt-in", () => {
   });
 
   it("does not show the muted line when alerts are on", async () => {
-    push.thisDevice.mockResolvedValue(DEVICE);
+    push.deviceStatus.mockResolvedValue(HAS);
     push.loadNotifications.mockResolvedValue(ok(state({ devices: [DEVICE] })));
     await openPanel();
     await screen.findByRole("combobox");
     expect(screen.queryByText(/muted for your account/)).toBeNull();
+  });
+
+  it("says this browser has no device when there is no subscription, and offers to turn on", async () => {
+    await openPanel();
+    await screen.findByText(/no notification device registered/);
+    expect(screen.getByRole("button", { name: "Turn on for this device" })).toBeTruthy();
+  });
+
+  it("says so when a subscription exists but the device list does not include it", async () => {
+    push.deviceStatus.mockResolvedValue({ device: null, missing: "unlisted" });
+    await openPanel();
+    await screen.findByText(/does not have on your account/);
+    expect(screen.getByRole("button", { name: "Turn on for this device" })).toBeTruthy();
+  });
+
+  it("says so when permission is blocked", async () => {
+    push.deviceStatus.mockResolvedValue({ device: null, missing: "denied" });
+    await openPanel();
+    await screen.findByText(/blocked notifications for this site/);
+  });
+
+  it("shows no missing-device warning when this browser is registered", async () => {
+    push.deviceStatus.mockResolvedValue(HAS);
+    push.loadNotifications.mockResolvedValue(ok(state({ devices: [DEVICE] })));
+    await openPanel();
+    await screen.findByRole("combobox");
+    expect(screen.queryByText(/not reaching it/)).toBeNull();
   });
 });
