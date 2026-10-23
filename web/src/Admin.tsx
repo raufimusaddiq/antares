@@ -14,6 +14,7 @@ import {
   type Decision,
   type Requeue,
 } from "./adminApi";
+import { getCapabilities, type Inventory } from "./chatApi";
 import { userPath, type AdminRoute } from "./route";
 import { AntaresMark } from "./brand/AntaresMark";
 
@@ -117,6 +118,7 @@ export function AdminShell({ email, route, onNavigate, onSignOut, children }: { 
         </strong>
         <nav className="admin-nav" aria-label="Admin">
           {link("/admin/users", "Users", route.kind === "users" || route.kind === "user")}
+          {link("/admin/capabilities", "Capabilities", route.kind === "capabilities")}
           {link("/admin/audit", "Audit log", route.kind === "audit")}
           {link("/", "Back to chat", false)}
         </nav>
@@ -533,6 +535,79 @@ export function AuditScreen() {
   return <AuditTable entries={entries} hasOlder={next !== ""} hasNewer={trail.length > 1} onOlder={() => setTrail((t) => [...t, next])} onNewer={() => setTrail((t) => t.slice(0, -1))} />;
 }
 
+export function CapabilitiesTable({ inv }: { inv: Inventory }) {
+  return (
+    <section aria-labelledby="caps-h">
+      <h1 id="caps-h">Assistant capabilities</h1>
+      <p className="label">Read live from the assistant backend. A capability it does not confirm is unsupported, and users are not offered it.</p>
+      <div className="table-wrap">
+        <table className="admin-table">
+          <thead>
+            <tr>
+              <th scope="col">Capability</th>
+              <th scope="col">Status</th>
+              <th scope="col">Detail</th>
+            </tr>
+          </thead>
+          <tbody>
+            {inv.capabilities.map((c) => (
+              <tr key={c.id}>
+                <th scope="row">{c.label}</th>
+                <td>
+                  <span className={c.available ? "badge" : "badge bad"}>{c.available ? "Available" : "Unsupported"}</span>
+                </td>
+                <td>{c.available ? detailOf(c.id, inv) : c.reason}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <h2>Toolsets</h2>
+      {inv.toolsets.length === 0 ? (
+        <p className="label">The backend reported no toolsets.</p>
+      ) : (
+        <div className="table-wrap">
+          <table className="admin-table">
+            <thead>
+              <tr>
+                <th scope="col">Toolset</th>
+                <th scope="col">Status</th>
+                <th scope="col">Detail</th>
+              </tr>
+            </thead>
+            <tbody>
+              {inv.toolsets.map((t) => (
+                <tr key={t.name}>
+                  <th scope="row">{t.name}</th>
+                  <td>
+                    <span className={t.available ? "badge" : "badge bad"}>{t.available ? "Available" : "Unsupported"}</span>
+                  </td>
+                  <td>{t.available ? `${t.tools.length} tools` : t.reason}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function detailOf(id: string, inv: Inventory): string {
+  if (id === "models") return `${inv.providers.length} provider(s), ${inv.providers.reduce((n, p) => n + p.totalModels, 0)} model(s)`;
+  if (id === "skills") return `${inv.skills.length} skill(s)`;
+  if (id === "toolsets") return `${inv.toolsets.filter((t) => t.available).length} of ${inv.toolsets.length} available`;
+  return "";
+}
+
+export function CapabilitiesScreen() {
+  const [state, reload] = useLoad((s) => getCapabilities(s), "capabilities");
+  if (state.kind === "loading") return <Loading what="Assistant capabilities" />;
+  if (state.kind === "forbidden") return <Forbidden />;
+  if (state.kind === "error") return <Problem message={state.message} onRetry={reload} />;
+  return <CapabilitiesTable inv={state.value} />;
+}
+
 // ---- router ---------------------------------------------------------------------
 
 export function NotFound() {
@@ -552,6 +627,8 @@ export function AdminScreens({ route, onNavigate }: { route: AdminRoute; onNavig
       return <UserScreen key={route.id} id={route.id} />;
     case "audit":
       return <AuditScreen />;
+    case "capabilities":
+      return <CapabilitiesScreen />;
     case "unknown":
       return <NotFound />;
   }
