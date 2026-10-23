@@ -147,3 +147,153 @@ Backup never creates the database: a wrong `ANTARES_DB_PATH` fails instead of wr
 CI proves the loop without the host: `go test ./internal/store -run 'Backup|Restore|Check'` and
 `go test ./cmd/antares -run AdminCmds` (data → backup → destroy → restore, chat and messages back;
 backup beside an active writer; bad files refused with the live files byte-identical).
+
+## Walkthrough: backup → restore → smoke (2026-10-23, issue #75)
+
+Backup, restore and the smoke gate had never been run together end to end; this is that run. Everything
+was on a scratch data directory on a build host, not the live deployment. `$T` stands for the scratch root;
+all output is verbatim except that `$T` replaces the path and timestamps on `log` lines are dropped.
+
+**What was real and what was not.** `antares` (`backup`, `check`, `restore`) and `antares-smoke` are the
+binaries built from this commit (`go build ./cmd/antares ./cmd/antares-smoke`). The *server* in between was
+not the `antares serve` binary: it needs Google as the identity provider (fixed in `internal/auth`) and a
+live Hermes, and no Google sessions or Hermes exist on this host. So a throwaway Go test harness (not
+committed) started the real Antares packages — store, auth, tenant pipeline, chat, HTTP server — on a
+file-backed SQLite database over a real socket, with the fake OIDC provider, fake Hermes and fake provisioner
+from `internal/smoke/stack_test.go`. The database and its schema are real; the Hermes replies and the
+Google sign-in are fabricated. This proves the data survives backup/restore and that the restored database
+serves a complete smoke run. It does **not** prove the Docker procedure above, a restore against a real
+Hermes, or `antares serve` itself starting on a restored volume.
+
+### 1. Create state worth losing
+
+The harness ran the smoke library once against an instance on `$T/live/antares.sqlite` (verdict PASS). That
+signs in four accounts, approves two, provisions their tenants, sends a chat in each and revokes/reactivates
+one. Antares was then stopped (database closed) and rows were counted:
+
+```
+admin_bootstrap          1
+app_sessions             4
+approvals                4
+audit_log                29
+chats                    2
+messages                 0
+push_delivery_events     0
+push_subscriptions       0
+runs                     2
+schema_migrations        8
+search_docs              6
+search_state             2
+tenant_bindings          3
+user_preferences         0
+users                    4
+```
+
+(`messages` is 0 by design: transcripts live in Hermes; Antares keeps chat and run rows.)
+
+### 2. Back up
+
+```
+$ ANTARES_DB_PATH=$T/live/antares.sqlite antares backup $T/backups/antares-backup.sqlite
+backup written and verified: $T/backups/antares-backup.sqlite
+[exit 0]
+$ antares check $T/backups/antares-backup.sqlite
+ok $T/backups/antares-backup.sqlite
+[exit 0]
+```
+
+### 3. Corrupt backups are refused (copies of the backup above)
+
+`truncated` = first 3000 bytes; `bitflip` = 4096 bytes in the middle inverted; `garbage` = a 29-byte text file.
+Each was run through `check` and through `restore -discard-old` into an **empty** data directory, which
+still held 0 entries afterwards in all three cases.
+
+```
+$ antares check $T/backups/truncated.sqlite
+CORRUPT $T/backups/truncated.sqlite
+  database disk image is malformed (11)
+integrity check failed; see docs/runbooks/backup-restore.md
+[exit 1]
+$ ANTARES_DB_PATH=$T/restored/antares.sqlite antares restore -discard-old $T/backups/truncated.sqlite
+restore: refusing $T/backups/truncated.sqlite: integrity_check failed: database disk image is malformed (11)
+[exit 1]
+
+$ antares check $T/backups/bitflip.sqlite
+CORRUPT $T/backups/bitflip.sqlite
+  database disk image is malformed (11)
+integrity check failed; see docs/runbooks/backup-restore.md
+[exit 1]
+$ ANTARES_DB_PATH=$T/restored/antares.sqlite antares restore -discard-old $T/backups/bitflip.sqlite
+restore: refusing $T/backups/bitflip.sqlite: integrity_check failed: database disk image is malformed (11)
+[exit 1]
+
+$ antares check $T/backups/garbage.sqlite
+CORRUPT $T/backups/garbage.sqlite
+  file is not a database (26)
+integrity check failed; see docs/runbooks/backup-restore.md
+[exit 1]
+$ ANTARES_DB_PATH=$T/restored/antares.sqlite antares restore -discard-old $T/backups/garbage.sqlite
+restore: refusing $T/backups/garbage.sqlite: integrity_check failed: file is not a database (26)
+[exit 1]
+```
+
+Nothing was accepted silently. (The restore message names the file and SQLite's reason; it does not say
+"nothing was changed", but the empty directory shows that.)
+
+### 4. Restore the good backup into the empty directory
+
+```
+$ ANTARES_DB_PATH=$T/restored/antares.sqlite antares restore -discard-old $T/backups/antares-backup.sqlite
+restored $T/restored/antares.sqlite from $T/backups/antares-backup.sqlite; start antares and check /readyz
+[exit 0]
+$ ANTARES_DB_PATH=$T/restored/antares.sqlite antares check
+ok $T/restored/antares.sqlite
+[exit 0]
+```
+
+Antares was started on `$T/restored` and the same count query returned **identical numbers for every
+table** listed in step 1 (4 users, 2 chats, 2 runs, 3 tenant bindings, 29 audit rows, 8 migrations).
+
+### 5. Smoke against the restored instance
+
+Four fresh sessions were minted by signing the same four accounts in again (the accounts, approvals and
+tenants came from the restored database), then the real binary ran:
+
+```
+$ antares-smoke --url http://127.0.0.1:18475 --origin https://antares.smoke.test --json smoke.json
+antares smoke test  target=http://127.0.0.1:18475  run=cb1254c0  sessions supplied=4/4
+[ PASS ] reach.health                   2ms  /healthz ok, /readyz ready (process answers; this proves nothing about chat, the steps below do)
+[ PASS ] login.admin                    3ms  signed in; account state ACTIVE
+[ PASS ] login.a                        1ms  signed in; account state ACTIVE
+[ PASS ] login.b                             signed in; account state ACTIVE
+[ PASS ] login.pending                  3ms  signed in; account state PENDING
+[ PASS ] admin.active                   8ms  admin API reachable
+[ PASS ] negative.unapproved           15ms  pending account refused (403 ACCOUNT_PENDING) on chat list, create, send and admin
+[ PASS ] account.approve                2ms  A already approved, B already approved
+[ PASS ] tenant.ready.a                 3ms  tenant READY with a READY binding after 3ms
+[ PASS ] tenant.verify.a             1.006s  READY only after Antares' six checks (endpoint, profile_identity, credential_isolation, session_ownership, toolset_policy, memory_boundary) passed again, in 1.004s
+[ PASS ] chat.a.reply                  11ms  run COMPLETED in 8ms, assistant replied (41 chars); events run.started×1 assistant.delta×1 run.completed×1
+[ PASS ] tenant.ready.b                      tenant READY with a READY binding after 1ms
+[ PASS ] tenant.verify.b             1.006s  READY only after Antares' six checks (endpoint, profile_identity, credential_isolation, session_ownership, toolset_policy, memory_boundary) passed again, in 1.005s
+[ PASS ] chat.b.reply                  11ms  run COMPLETED in 5ms, assistant replied (41 chars); events run.started×1 assistant.delta×1 run.completed×1
+[ PASS ] negative.cross_user           15ms  14 cross-user probes in both directions all refused (404 NOT_FOUND); each owner could read their own chat
+[ PASS ] negative.revoked               9ms  B refused (401/403) on 6 routes within 6ms of the suspension, no waiting; A unaffected. B's session is now revoked: sign B in again before the next run
+[ PASS ] cleanup.restore             1.005s  B reactivated and READY again
+RESULT: PASS (17 passed, 0 failed, 0 skipped)
+[exit 0]
+```
+
+Exit 0, not 2: all four sessions were supplied and no step was skipped.
+
+### Known gaps found by the walkthrough
+
+- Not exercised: the Docker/volume procedure, `antares serve` on a restored volume, and a real Hermes or
+  Google. A repeat on the live host (by the owner) is still owed before calling the procedure proven there.
+- Sessions in `app_sessions` survive a restore (4 rows came back). A restored database therefore re-admits
+  any session that was valid when the backup was taken, including ones an admin revoked *after* it.
+  Not tested beyond the row count; worth a decision on whether restore should clear `app_sessions`.
+- `check`/`restore` print the error twice-framed: a bare `integrity check failed; see …` line follows the
+  findings (cosmetic), and `restore`'s refusal does not state that the live files were left untouched.
+- Repeating it: the harness is not in the repository. To repeat without it, use steps 2–4 on any scratch
+  database and run `antares-smoke` as in `docs/runbooks/smoke-test.md` against an instance started on
+  the restored directory.
