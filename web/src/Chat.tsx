@@ -9,6 +9,7 @@ import {
   getChat,
   getMessages,
   getRun,
+  getCapabilities,
   getUsage,
   putBudget,
   listChats,
@@ -17,6 +18,8 @@ import {
   sendMessage,
   type ChatSummary,
   type ChatUsage,
+  type Inventory,
+  offers,
   type SearchResult,
   type Turn,
 } from "./chatApi";
@@ -663,6 +666,15 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     };
   }, [current, busy]);
 
+  // The model picker is offered only when discovery confirms models (capability "models"); a failed
+  // or unreadable discovery offers nothing.
+  const [inventory, setInventory] = useState<Inventory | null>(null);
+  useEffect(() => {
+    const ctl = new AbortController();
+    void getCapabilities(ctl.signal).then((r) => !ctl.signal.aborted && setInventory(r.ok ? r.value : null));
+    return () => ctl.abort();
+  }, []);
+
   const onSubmit = () => {
     const input = draft.trim();
     setDraft("");
@@ -791,7 +803,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             />
           </details>
         )}
-        {current && <ModelPicker chatId={current} disabled={busy} />}
+        {current && offers(inventory, "models") && <ModelPicker chatId={current} disabled={busy} />}
         <Recorder />
         <Composer value={draft} busy={busy} onChange={onDraft} onSubmit={onSubmit} />
       </main>

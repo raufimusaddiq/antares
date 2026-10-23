@@ -69,7 +69,7 @@ type windowView struct {
 	Scope       string  `json:"scope,omitempty"`
 }
 
-func buildModels(inv hermes.Inventory, now time.Time) modelsView {
+func buildModels(inv hermes.ModelCatalog, now time.Time) modelsView {
 	v := modelsView{Source: "GET /api/model/options", FetchedAt: now.UTC().Format(time.RFC3339),
 		Providers: []providerView{}, ReasoningEfforts: hermes.ReasoningEfforts, ContextWindow: "unavailable"}
 	if inv.Model != "" {
@@ -113,10 +113,10 @@ func (s *Service) listModels(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, buildModels(inv, s.now()))
 }
 
-func (s *Service) inventory(r *http.Request, uid string, refresh bool) (hermes.Inventory, error) {
+func (s *Service) inventory(r *http.Request, uid string, refresh bool) (hermes.ModelCatalog, error) {
 	b, _, err := s.gate(r.Context(), uid)
 	if err != nil {
-		return hermes.Inventory{}, err
+		return hermes.ModelCatalog{}, err
 	}
 	return s.hx.ModelOptions(r.Context(), b, refresh)
 }
@@ -195,11 +195,11 @@ func (s *Service) putChatModel(w http.ResponseWriter, r *http.Request) {
 
 // validateChoice returns "" if Hermes lists the provider as available, the model under
 // it, and (when set) the option as supported for that model; otherwise why not.
-func validateChoice(inv hermes.Inventory, b modelChoiceBody) string {
+func validateChoice(inv hermes.ModelCatalog, b modelChoiceBody) string {
 	if b.Provider == "" || b.Model == "" {
 		return "Choose a provider and a model"
 	}
-	i := slices.IndexFunc(inv.Providers, func(p hermes.InventoryProvider) bool { return p.Slug == b.Provider })
+	i := slices.IndexFunc(inv.Providers, func(p hermes.CatalogProvider) bool { return p.Slug == b.Provider })
 	if i < 0 {
 		return "That provider is not offered to your workspace"
 	}

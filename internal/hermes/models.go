@@ -5,16 +5,17 @@ import (
 	"net/http"
 )
 
-// Inventory is the model picker catalog Hermes serves for ONE profile
-// (GET /api/model/options, docs/runbooks/models.md). Only fields Hermes sent are set;
+// ModelCatalog is the model picker catalog Hermes serves for ONE profile
+// (GET /api/model/options, docs/runbooks/models.md). Discovery (discovery.go) reads the
+// same route to decide whether models are offered at all; this is the picker's richer view. Only fields Hermes sent are set;
 // a field it left out stays nil/empty, which the API reports as unavailable, not
 // as a default.
-type Inventory struct {
+type ModelCatalog struct {
 	Provider, Model string // the profile's current default
-	Providers       []InventoryProvider
+	Providers       []CatalogProvider
 }
 
-type InventoryProvider struct {
+type CatalogProvider struct {
 	Slug, Name    string
 	Current       bool
 	Authenticated bool // Hermes' own verdict; a row it did not mark is a configured one
@@ -51,16 +52,26 @@ type QuotaWindow struct {
 }
 
 // ModelOptions reads the picker inventory for the binding's profile.
-func (c *Client) ModelOptions(ctx context.Context, b Binding, refresh bool) (Inventory, error) {
+func (c *Client) ModelOptions(ctx context.Context, b Binding, refresh bool) (ModelCatalog, error) {
+	// The route is the one capability discovery uses: advertised by /v1/capabilities, behind the
+	// model_options flag. Not advertised or not enabled is "not available", never a guessed path.
+	caps, capsOK, tenant := c.discoveryDoc(ctx, b)
+	if tenant {
+		return ModelCatalog{}, fail(CodeTenantNotReady)
+	}
+	route, ok := caps.route("model_options")
+	if !capsOK || !caps.flag("model_options") || !ok {
+		return ModelCatalog{}, fail(CodeCapabilityNA)
+	}
 	ctx, cancel := c.withTimeout(ctx)
 	defer cancel()
-	path := "/api/model/options?include_unconfigured=true"
+	path := route + "?include_unconfigured=true"
 	if refresh {
 		path += "&refresh=true"
 	}
 	resp, err := c.do(ctx, b, http.MethodGet, path, nil, nil)
 	if err != nil {
-		return Inventory{}, err
+		return ModelCatalog{}, err
 	}
 	var d struct {
 		Model     string `json:"model"`
@@ -89,11 +100,11 @@ func (c *Client) ModelOptions(ctx context.Context, b Binding, refresh bool) (Inv
 		} `json:"providers"`
 	}
 	if err := readJSON(resp, &d, 4<<20); err != nil {
-		return Inventory{}, err
+		return ModelCatalog{}, err
 	}
-	inv := Inventory{Provider: d.Provider, Model: d.Model}
+	inv := ModelCatalog{Provider: d.Provider, Model: d.Model}
 	for _, p := range d.Providers {
-		ip := InventoryProvider{Slug: p.Slug, Name: p.Name, Current: p.IsCurrent, Authenticated: p.Authenticated == nil || *p.Authenticated,
+		ip := CatalogProvider{Slug: p.Slug, Name: p.Name, Current: p.IsCurrent, Authenticated: p.Authenticated == nil || *p.Authenticated,
 			Warning: p.Warning, Caps: p.Capabilities}
 		for _, m := range p.Models {
 			if s, ok := m.(string); ok && s != "" {

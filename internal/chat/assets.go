@@ -3,6 +3,10 @@ package chat
 import (
 	"bytes"
 	"errors"
+	"image"
+	_ "image/gif"
+	_ "image/jpeg"
+	_ "image/png"
 	"io"
 	"mime"
 	"net/http"
@@ -17,8 +21,21 @@ import (
 // Hermes. These routes only keep an owner's own recording, and only when the user asks.
 const (
 	maxAudioBytes     = 10 << 20 // one recording
-	maxUserAudioBytes = 50 << 20 // everything one account has staged
+	maxUserAudioBytes = 50 << 20 // everything one account has staged (all asset kinds)
+	maxImageBytes     = 8 << 20  // one image (MEDIA-EXT-001)
+	maxImagePixels    = 25_000_000
 )
+
+// imageOK reports whether b really is the image format mt names and is within the pixel
+// budget. Only the header is decoded, so a decompression bomb costs nothing here. WebP is
+// not accepted: its dimensions cannot be read without a new dependency.
+func imageOK(mt string, b []byte) (bool, bool) {
+	cfg, format, err := image.DecodeConfig(bytes.NewReader(b))
+	if err != nil || "image/"+format != mt {
+		return false, false
+	}
+	return true, cfg.Width > 0 && cfg.Height > 0 && int64(cfg.Width)*int64(cfg.Height) <= maxImagePixels
+}
 
 // audioMagic reports whether b starts like the container its declared type names. A body
 // that does not is rejected, so a mislabelled file never becomes a served "audio" asset.
@@ -41,18 +58,23 @@ func audioMagic(mt string, b []byte) bool {
 func (s *Service) uploadAsset(w http.ResponseWriter, r *http.Request) {
 	uid, _ := user(r)
 	mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
-	if err != nil || !knownAudio(mt) {
-		apiError(w, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE", "Only audio/webm, audio/ogg, audio/mp4, audio/mpeg and audio/wav recordings can be uploaded")
+	img := mt == "image/png" || mt == "image/jpeg" || mt == "image/gif"
+	if err != nil || (!knownAudio(mt) && !img) {
+		apiError(w, http.StatusUnsupportedMediaType, "UNSUPPORTED_MEDIA_TYPE", "Only audio/webm, audio/ogg, audio/mp4, audio/mpeg, audio/wav recordings and image/png, image/jpeg, image/gif images can be uploaded")
 		return
 	}
-	tooBig := func() {
-		apiError(w, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "The recording is larger than the "+strconv.Itoa(maxAudioBytes>>20)+" MiB limit")
+	limit := int64(maxAudioBytes)
+	if img {
+		limit = maxImageBytes
 	}
-	if r.ContentLength > maxAudioBytes {
+	tooBig := func() {
+		apiError(w, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "The file is larger than the "+strconv.FormatInt(limit>>20, 10)+" MiB limit")
+	}
+	if r.ContentLength > limit {
 		tooBig()
 		return
 	}
-	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxAudioBytes))
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, limit))
 	var mbe *http.MaxBytesError
 	switch {
 	case errors.As(err, &mbe):
@@ -62,11 +84,22 @@ func (s *Service) uploadAsset(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "The upload was interrupted; nothing was saved")
 		return
 	case len(body) == 0:
-		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "The recording is empty")
+		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "The file is empty")
 		return
-	case !audioMagic(mt, body):
+	case !img && !audioMagic(mt, body):
 		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "The file is not a valid "+mt+" recording")
 		return
+	}
+	if img {
+		real, inBudget := imageOK(mt, body)
+		if !real {
+			apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "The file is not a valid "+mt+" image")
+			return
+		}
+		if !inBudget {
+			apiError(w, http.StatusRequestEntityTooLarge, "PAYLOAD_TOO_LARGE", "The image is larger than "+strconv.Itoa(maxImagePixels/1_000_000)+" megapixels")
+			return
+		}
 	}
 	a, err := store.CreateAsset(r.Context(), s.db, uid, mt, body, maxUserAudioBytes)
 	switch {

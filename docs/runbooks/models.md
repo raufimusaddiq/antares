@@ -36,12 +36,14 @@ and locks nothing.
 | `LLM-008` OpenUI toggle | **Not in this slice** | separate ticket (`docs/runbooks/openui.md`). |
 | `GET /api/capabilities` | **Not built** | nothing in this slice reads it; stays the 501 placeholder. |
 
-## Relation to #117 (capability discovery, `sprint/t99`)
-#117 also reads `GET /api/model/options`, but with `include_unconfigured=false`, only to decide whether
-`models` is available (`slug`, `name`, `models`, `authenticated`). This slice needs the picker projection
-(`capabilities`, `pricing`, `usage.windows`, unconfigured rows to show them unavailable), so it parses its
-own view in `internal/hermes/models.go`. Both read the same source lines (`inventory.py:227-256`); neither
-re-derives the other's result. Whichever merges second should reuse the first's route constant and fixture
-rather than add another, and #118 should gate on #117's `offers(inv, "models")` once both are on `main`.
+## Relation to capability discovery (#117, merged)
+Both read `GET /api/model/options`; they share one resolution. `Client.discoveryDoc` reads
+`/v1/capabilities` once per call and `caps.route("model_options")` yields the advertised path, behind
+the `model_options` flag (`internal/hermes/discovery.go`). Discovery asks for `include_unconfigured=false`
+to decide whether models are offered at all; the picker (`internal/hermes/models.go`, `ModelCatalog`)
+asks for `include_unconfigured=true` and keeps `capabilities`, `pricing` and `usage.windows`, which
+discovery drops. A Hermes that does not enable or advertise the route gets no request to a guessed
+path (501 `CAPABILITY_UNAVAILABLE`). The UI renders the picker only if `offers(inventory, "models")`
+(`GET /api/capabilities`) is true. Tests reuse the captured `docs/hermes/fixtures/capabilities.body.json`.
 The deployed container was re-checked on 2026-10-24 (same image digest, started 2026-10-23): the cited
 lines are unchanged. No API call was made: that needs a tenant key, which AGENTS.md reserves.

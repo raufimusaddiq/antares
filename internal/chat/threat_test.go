@@ -52,7 +52,7 @@ var builtProbes = []probe{
 }
 
 // idFree are built routes with no id in the path: they must scope by the caller.
-var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "POST /api/assets", "GET /api/models"}
+var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "GET /api/capabilities", "POST /api/assets", "GET /api/models"}
 
 // notBuilt are the §25 / Phase 3 surfaces with no route in this build. Each is
 // an honest gap, not an omission: the test below proves the gap is real (no

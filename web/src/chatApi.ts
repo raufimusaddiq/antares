@@ -82,7 +82,7 @@ export function describeCode(code: string): string {
   }
 }
 
-async function call<T>(method: string, path: string, parse: (b: unknown) => T | null, body?: unknown, headers?: Record<string, string>): Promise<ApiResult<T>> {
+async function call<T>(method: string, path: string, parse: (b: unknown) => T | null, body?: unknown, headers?: Record<string, string>, signal?: AbortSignal): Promise<ApiResult<T>> {
   let res: Response;
   try {
     res = await fetch(path, {
@@ -90,6 +90,7 @@ async function call<T>(method: string, path: string, parse: (b: unknown) => T | 
       credentials: "same-origin",
       headers: { Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }), ...headers },
       body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
     });
   } catch {
     return { ok: false, code: "NETWORK", status: 0 };
@@ -508,3 +509,58 @@ export function describeQuota(p: ProviderEntry): string[] {
   if (!p.quota) return ["Provider usage: unavailable (the assistant reported none)"];
   return p.quota.map((w) => `${w.label || "Window"}${w.scope ? ` (${w.scope})` : ""}: ${Math.round(w.usedPercent * 10) / 10}% used${w.resetsAt ? `, resets ${w.resetsAt}` : ""}`);
 }
+
+// ---- capability discovery -------------------------------------------------------
+// GET /api/capabilities is read live from the assistant backend. Only the exact word
+// "available" ever means available: any other value, a missing field or a row we cannot
+// read is shown as unsupported, so nothing the server did not confirm is offered.
+
+export interface CapabilityRow {
+  id: string;
+  label: string;
+  available: boolean;
+  reason: string;
+}
+
+export interface ToolsetRow {
+  name: string;
+  available: boolean;
+  reason: string;
+  tools: string[];
+}
+
+export interface Inventory {
+  capabilities: CapabilityRow[];
+  toolsets: ToolsetRow[];
+  providers: { slug: string; name: string; models: string[]; totalModels: number }[];
+  skills: { name: string; description: string; category: string }[];
+}
+
+function rows<T>(v: unknown, one: (o: Record<string, unknown>) => T | null): T[] | null {
+  if (!Array.isArray(v)) return null;
+  const out: T[] = [];
+  for (const item of v) {
+    const o = obj(item);
+    const r = o && one(o);
+    if (!r) return null; // an unreadable row makes the answer unreadable, never a shorter list
+    out.push(r);
+  }
+  return out;
+}
+
+const strings = (v: unknown): string[] => (Array.isArray(v) ? v.filter((x): x is string => typeof x === "string") : []);
+
+export function parseInventory(v: unknown): Inventory | null {
+  const o = obj(v);
+  if (!o) return null;
+  const capabilities = rows(o.capabilities, (r) => (str(r.id) ? { id: str(r.id), label: str(r.label) || str(r.id), available: r.status === "available", reason: str(r.reason) } : null));
+  const toolsets = rows(o.toolsets, (r) => (str(r.name) ? { name: str(r.name), available: r.status === "available", reason: str(r.reason), tools: strings(r.tools) } : null));
+  const providers = rows(o.providers, (r) => (str(r.slug) ? { slug: str(r.slug), name: str(r.name) || str(r.slug), models: strings(r.models), totalModels: typeof r.totalModels === "number" ? r.totalModels : 0 } : null));
+  const skills = rows(o.skills, (r) => (str(r.name) ? { name: str(r.name), description: str(r.description), category: str(r.category) } : null));
+  return capabilities && toolsets && providers && skills ? { capabilities, toolsets, providers, skills } : null;
+}
+
+export const getCapabilities = (signal?: AbortSignal) => call("GET", "/api/capabilities", parseInventory, undefined, undefined, signal);
+
+/** True only when the server reported this capability as available. Unknown ids are not offered. */
+export const offers = (inv: Inventory | null, id: string): boolean => inv?.capabilities.find((c) => c.id === id)?.available === true;

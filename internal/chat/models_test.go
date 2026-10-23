@@ -6,6 +6,16 @@ import (
 	"testing"
 )
 
+// newModelsApp is an app whose fake Hermes advertises model_options the way the deployed one does:
+// the real captured /v1/capabilities (docs/hermes/fixtures, shared with capability discovery).
+func newModelsApp(t *testing.T) *app {
+	a := newApp(t)
+	a.hx.mu.Lock()
+	a.hx.canned["/v1/capabilities"] = readFixtureNoT("../../docs/hermes/fixtures/capabilities.body.json")
+	a.hx.mu.Unlock()
+	return a
+}
+
 type modelsBody struct {
 	Source, ContextWindow string
 	Default               *struct{ Provider, Model string }
@@ -46,7 +56,7 @@ func (p *person) chatModel(chatID string) *struct{ Provider, Model, ReasoningEff
 
 // LLM-001/006/007, CTX-004: the picker is Hermes' inventory, with unreported values null.
 func TestModelsAreTheHermesInventory(t *testing.T) {
-	a := newApp(t)
+	a := newModelsApp(t)
 	u := a.user("a")
 	w := u.get("/api/models")
 	if w.Code != 200 {
@@ -79,7 +89,7 @@ func TestModelsAreTheHermesInventory(t *testing.T) {
 
 // LLM-002/003/004, LLM-ACC-002: the choice is saved per chat, validated, and sent on the run.
 func TestModelChoiceIsPerChatValidatedAndSent(t *testing.T) {
-	a := newApp(t)
+	a := newModelsApp(t)
 	u := a.user("a")
 	c1, c2 := u.newChat(), u.newChat()
 	if u.chatModel(c1) != nil {
@@ -117,7 +127,7 @@ func TestModelChoiceIsPerChatValidatedAndSent(t *testing.T) {
 
 // LLM-001, LLM-003/004: nothing Hermes does not list as available can be selected.
 func TestUnavailableChoicesAreRefused(t *testing.T) {
-	a := newApp(t)
+	a := newModelsApp(t)
 	u := a.user("a")
 	c := u.newChat()
 	for name, body := range map[string]map[string]any{
@@ -144,7 +154,7 @@ func TestUnavailableChoicesAreRefused(t *testing.T) {
 
 // LLM-ACC-001: models come from each caller's own profile; B cannot touch A's chat.
 func TestModelsAreScopedToTheCaller(t *testing.T) {
-	a := newApp(t)
+	a := newModelsApp(t)
 	ua, ub := a.user("a"), a.user("b")
 	a.hx.mu.Lock()
 	a.hx.options = map[string]string{ub.profile: `{"model":"b-only","provider":"gamma","providers":[{"slug":"gamma","name":"Gamma","models":["b-only"],"capabilities":{"b-only":{"fast":false,"reasoning":false}}}]}`}
@@ -169,7 +179,7 @@ func TestModelsAreScopedToTheCaller(t *testing.T) {
 
 // Default deny: an account without a healthy binding makes no Hermes request.
 func TestModelsNeedAHealthyTenant(t *testing.T) {
-	a := newApp(t)
+	a := newModelsApp(t)
 	p := a.account("pending", "USER", "PENDING", "UNPROVISIONED")
 	before := len(a.hx.requests())
 	if w := p.get("/api/models"); w.Code == 200 {
@@ -182,7 +192,7 @@ func TestModelsNeedAHealthyTenant(t *testing.T) {
 
 // An upstream without the route answers CAPABILITY_UNAVAILABLE, not an invented list.
 func TestModelsUpstreamWithoutRoute(t *testing.T) {
-	a := newApp(t)
+	a := newModelsApp(t)
 	u := a.user("a")
 	a.hx.mu.Lock()
 	a.hx.failNext = map[string]int{"GET /api/model/options": 404}
@@ -190,5 +200,32 @@ func TestModelsUpstreamWithoutRoute(t *testing.T) {
 	w := u.get("/api/models")
 	if w.Code != 501 || errCode(t, w) != "CAPABILITY_UNAVAILABLE" {
 		t.Fatalf("got %d %s", w.Code, w.Body.String())
+	}
+}
+
+// The picker follows capability discovery: the route comes from /v1/capabilities and a Hermes that
+// does not enable or advertise model_options gets no request to a guessed path.
+func TestModelsNeedTheAdvertisedRoute(t *testing.T) {
+	for name, caps := range map[string]string{
+		"flag off":       `{"object":"hermes.api_server.capabilities","features":{"model_options":false},"endpoints":{"model_options":{"method":"GET","path":"/api/model/options"}}}`,
+		"not advertised": `{"object":"hermes.api_server.capabilities","features":{"model_options":true},"endpoints":{}}`,
+		"no document":    `{"nope":1}`,
+	} {
+		a := newApp(t)
+		u := a.user("a")
+		a.hx.mu.Lock()
+		a.hx.canned["/v1/capabilities"] = caps
+		a.hx.mu.Unlock()
+		if w := u.get("/api/models"); w.Code != 501 || errCode(t, w) != "CAPABILITY_UNAVAILABLE" {
+			t.Errorf("%s: %d %s", name, w.Code, w.Body.String())
+		}
+		for _, r := range a.hx.requests() {
+			if strings.Contains(r.Path, "/api/model/options") {
+				t.Errorf("%s: a request reached %s", name, r.Path)
+			}
+		}
+		if code, _ := u.putModel(u.newChat(), map[string]any{"provider": "alpha", "model": "m-reason"}); code != 501 {
+			t.Errorf("%s: choosing a model must be refused, got %d", name, code)
+		}
 	}
 }

@@ -98,6 +98,8 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		"/api/me/budget": true,
 		// #100 model picker inventory; the per-chat choice is /api/chats/{id}/model, covered above.
 		"/api/models": true,
+		// Phase 2b slice 1: live capability discovery (account-scoped, no conversation content).
+		"/api/capabilities": true,
 	}
 	pathRe := regexp.MustCompile(`/api/[A-Za-z0-9_/.-]*`)
 	badRe := regexp.MustCompile(`(?i)ciphertext|fingerprint|tenant_binding|profile_name|profileSlug|memory_scope|client_secret|api_key|apikey|hermes|authorization`)
