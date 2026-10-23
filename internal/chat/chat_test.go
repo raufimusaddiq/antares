@@ -695,7 +695,7 @@ func TestSendValidationAndLimits(t *testing.T) {
 	}
 }
 
-func TestRateLimitAndConcurrentRunCap(t *testing.T) {
+func TestConcurrentRunCap(t *testing.T) {
 	a := newApp(t)
 	u := a.user("alice")
 	// Fill the concurrency cap with runs that never finish.
@@ -716,21 +716,6 @@ func TestRateLimitAndConcurrentRunCap(t *testing.T) {
 		t.Errorf("second run on a busy chat: %d %s", w.Code, w.Body.String())
 	}
 
-	b := newApp(t)
-	v := b.user("bobby")
-	chat := v.newChat()
-	for i := 0; i < runsPerMinute; i++ {
-		if !b.svc.allow(v.id) {
-			t.Fatalf("limited early at %d", i)
-		}
-	}
-	if b.svc.allow(v.id) {
-		t.Error("rate limit not enforced")
-	}
-	w = v.do("POST", "/api/chats/"+chat+"/messages", map[string]string{"Idempotency-Key": nextIdem()}, map[string]string{"input": "x"})
-	if w.Code != 429 || errCode(t, w) != "RATE_LIMITED" {
-		t.Errorf("rate limited send: %d %s", w.Code, w.Body.String())
-	}
 }
 
 // Default deny: when the database says no, no Hermes request is made — not a

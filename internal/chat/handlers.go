@@ -301,10 +301,6 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 		s.gateError(w, err)
 		return
 	}
-	if !s.allow(uid) {
-		apiError(w, http.StatusTooManyRequests, hermes.CodeRateLimited, "Too many messages; slow down")
-		return
-	}
 	// A busy chat answers RUN_CONFLICT (or the replay of its own run) from AdmitRun;
 	// the per-user cap only decides about a chat that is free.
 	if chat.ActiveRunID == "" {
@@ -312,7 +308,8 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 			internalError(w, "count runs", err)
 			return
 		} else if n >= maxActiveRunsPerUser {
-			apiError(w, http.StatusTooManyRequests, hermes.CodeRateLimited, "Too many runs in progress")
+			w.Header().Set("Retry-After", "1")
+			apiError(w, http.StatusTooManyRequests, hermes.CodeRateLimited, "Too many runs in progress; retry after a run finishes")
 			return
 		}
 	}

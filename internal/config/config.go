@@ -9,8 +9,10 @@ import (
 	"log/slog"
 	"net/url"
 	"path/filepath"
+	"strconv"
 	"strings"
 
+	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/hermes"
 )
 
@@ -32,6 +34,7 @@ func (Secret) LogValue() slog.Value         { return slog.StringValue(redacted) 
 
 // Config is the validated configuration.
 type Config struct {
+	Limits    auth.Limits
 	Addr      string
 	DBPath    string
 	StaticDir string // development override; empty serves the embedded bundle
@@ -73,6 +76,25 @@ func Load(getenv func(string) string) (Config, error) {
 		GoogleClientID: getenv("ANTARES_GOOGLE_CLIENT_ID"),
 	}
 	var problems []string
+	c.Limits = auth.DefaultLimits()
+	for _, limit := range []struct {
+		name string
+		dst  *int
+	}{
+		{"ANTARES_RUNS_PER_MINUTE", &c.Limits.RunsPerMinute},
+		{"ANTARES_MESSAGES_PER_MINUTE", &c.Limits.MessagesPerMinute},
+		{"ANTARES_UPLOADS_PER_MINUTE", &c.Limits.UploadsPerMinute},
+		{"ANTARES_SSE_CONNECTIONS", &c.Limits.SSEConnections},
+	} {
+		if raw := getenv(limit.name); raw != "" {
+			n, err := strconv.Atoi(raw)
+			if err != nil || n < 1 {
+				problems = append(problems, limit.name+" must be a positive integer")
+			} else {
+				*limit.dst = n
+			}
+		}
+	}
 	switch {
 	case c.DBPath == "":
 		problems = append(problems, "ANTARES_DB_PATH is required")

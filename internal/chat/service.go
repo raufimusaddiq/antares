@@ -19,7 +19,6 @@ import (
 
 const (
 	maxActiveRunsPerUser = 4
-	runsPerMinute        = 30
 	reattachTries        = 3
 	reconcileTimeout     = 20 * time.Second
 )
@@ -48,17 +47,11 @@ type Service struct {
 	backoff   func(int) time.Duration
 	heartbeat time.Duration
 
-	base   context.Context
-	stop   context.CancelFunc
-	wg     sync.WaitGroup
-	mu     sync.Mutex
-	live   map[string]*liveRun
-	window map[string]*bucket
-}
-
-type bucket struct {
-	start time.Time
-	n     int
+	base context.Context
+	stop context.CancelFunc
+	wg   sync.WaitGroup
+	mu   sync.Mutex
+	live map[string]*liveRun
 }
 
 func New(o Options) (*Service, error) {
@@ -76,7 +69,7 @@ func New(o Options) (*Service, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat,
-		base: ctx, stop: cancel, live: map[string]*liveRun{}, window: map[string]*bucket{}}, nil
+		base: ctx, stop: cancel, live: map[string]*liveRun{}}, nil
 }
 
 // Close stops every worker and waits for them. Runs left in flight are
@@ -104,27 +97,6 @@ func (s *Service) gate(ctx context.Context, userID string) (hermes.Binding, stri
 		return hermes.Binding{}, "", &hermes.Error{Code: hermes.CodeTenantNotReady}
 	}
 	return hermes.Binding{Profile: cred.Profile, Key: key}, cred.BindingID, nil
-}
-
-// allow is the per-user rate limit on admitting runs.
-func (s *Service) allow(userID string) bool {
-	now := s.now()
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	b := s.window[userID]
-	if b == nil || now.Sub(b.start) >= time.Minute {
-		if len(s.window) > 10000 {
-			for k, v := range s.window {
-				if now.Sub(v.start) >= time.Minute {
-					delete(s.window, k)
-				}
-			}
-		}
-		b = &bucket{start: now}
-		s.window[userID] = b
-	}
-	b.n++
-	return b.n <= runsPerMinute
 }
 
 func (s *Service) liveFor(runID string) *liveRun {

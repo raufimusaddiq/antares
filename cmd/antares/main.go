@@ -134,6 +134,7 @@ func run() error {
 		PublicOrigin: cfg.PublicOrigin,
 		Tenants:      tenants,
 		Chat:         chats,
+		Limits:       &cfg.Limits,
 	})
 	if err != nil {
 		return err

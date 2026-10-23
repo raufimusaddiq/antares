@@ -46,7 +46,8 @@ type Options struct {
 	Tenants Tenants
 	// Chat supplies the handlers for the chat routes. Routes it does not supply
 	// stay behind the guard with the "not available" placeholder.
-	Chat ChatHandlers
+	Chat   ChatHandlers
+	Limits *Limits // nil uses DefaultLimits
 }
 
 // ChatHandlers is what the chat package gives the identity layer to mount:
@@ -70,6 +71,7 @@ type Auth struct {
 	flows    *flowStore
 	tenants  Tenants
 	chat     ChatHandlers
+	limits   *requestLimits
 }
 
 func New(o Options) (*Auth, error) {
@@ -83,7 +85,14 @@ func New(o Options) (*Auth, error) {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	a := &Auth{db: o.DB, ep: o.Endpoints, clientID: o.ClientID, secret: o.ClientSecret,
+	limits := DefaultLimits()
+	if o.Limits != nil {
+		limits = *o.Limits
+	}
+	if err := limits.validate(); err != nil {
+		return nil, err
+	}
+	a := &Auth{limits: newRequestLimits(limits), db: o.DB, ep: o.Endpoints, clientID: o.ClientID, secret: o.ClientSecret,
 		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat}
 	a.ver = &verifier{ep: o.Endpoints, clientID: o.ClientID, client: o.HTTPClient, now: o.Now}
 	return a, nil
