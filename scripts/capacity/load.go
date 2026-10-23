@@ -218,7 +218,10 @@ func (e *env) me(ctx context.Context, s *smoke.Session) (me, error) {
 func parallel(n, width int, f func(i int) error) error {
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, width)
-	var first atomic.Value
+	var (
+		once     sync.Once
+		firstErr error
+	)
 	for i := 0; i < n; i++ {
 		wg.Add(1)
 		sem <- struct{}{}
@@ -226,15 +229,13 @@ func parallel(n, width int, f func(i int) error) error {
 			defer wg.Done()
 			defer func() { <-sem }()
 			if err := f(i); err != nil {
-				first.CompareAndSwap(nil, err)
+				// not an atomic.Value: it panics when two errors have different dynamic types
+				once.Do(func() { firstErr = err })
 			}
 		}(i)
 	}
 	wg.Wait()
-	if v := first.Load(); v != nil {
-		return v.(error)
-	}
-	return nil
+	return firstErr
 }
 
 func (e *env) setup(ctx context.Context, n int) error {
@@ -474,6 +475,14 @@ func (e *env) loadOrFill(ctx context.Context, phase string, n, secs, chats, msgs
 	return err
 }
 
+// wantOpen fails the phase unless exactly want client streams are still open.
+func wantOpen(open *atomic.Int64, want int) error {
+	if got := open.Load(); got != int64(want) {
+		return fmt.Errorf("streams: %d open, want %d: a stream was refused (per-account SSE cap?) or ended early; the RSS reading would be wrong", got, want)
+	}
+	return nil
+}
+
 // streams holds runs open (the fake Hermes is told to hold them long) and reads the
 // server's RSS before any run, with one client stream per run, with the extra
 // streams, and after everything is closed.
@@ -523,6 +532,10 @@ func (e *env) streams(ctx context.Context, n, rpu, extra int) error {
 		openStream(t)
 	}
 	time.Sleep(3 * time.Second)
+	// A refused stream (4 per account) ends at once, so it would otherwise be recorded as a stream's worth of RSS.
+	if err := wantOpen(&open, len(ts)); err != nil {
+		return err
+	}
 	one := settledRSS(e.pid)
 	s1, _ := readProc(e.pid)
 	var more float64
@@ -534,6 +547,9 @@ func (e *env) streams(ctx context.Context, n, rpu, extra int) error {
 			}
 		}
 		time.Sleep(3 * time.Second)
+		if err := wantOpen(&open, len(ts)*(1+extra)); err != nil {
+			return err
+		}
 		more = settledRSS(e.pid)
 		s2, _ = readProc(e.pid)
 	}

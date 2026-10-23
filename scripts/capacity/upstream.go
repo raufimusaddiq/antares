@@ -21,7 +21,6 @@ import (
 	"log"
 	"math/big"
 	"net/http"
-	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -272,11 +271,4 @@ func (u *up) record(ru *run, reply string) {
 	}
 	ru.recorded = true
 	u.msgs[ru.session] = append(u.msgs[ru.session], map[string]any{"role": "user", "content": ru.input}, map[string]any{"role": "assistant", "content": reply})
-}
-
-func envOr(k, d string) string {
-	if v := os.Getenv(k); v != "" {
-		return v
-	}
-	return d
 }

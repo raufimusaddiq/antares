@@ -29,6 +29,11 @@ was run against the live deployment.
 
 ## How it was measured
 
+> **Warning: this harness copies the wiring of `cmd/antares/main.go`; nothing links the two.** `scripts/capacity/server.go`
+> is a re-implementation, so a change to production wiring (a new store, a new goroutine, new middleware, a
+> different `http.Server` setting) silently invalidates every number below until the harness is updated and the
+> envelope re-measured. When `cmd/antares/main.go` changes in a way that affects memory, CPU or the schema, re-run.
+
 Three processes, all on loopback with non-default ports (18080 Antares, 18081 fake IdP + Hermes, 18082 fake
 provisioner), each with a throwaway data directory:
 
@@ -43,12 +48,13 @@ Sampling: `/proc/<pid>/status` (`VmRSS`, `Threads`), `/proc/<pid>/stat` (`utime+
 (200 % is both cores). Database sizes are `stat` of the file after a **clean shutdown** (WAL checkpointed), so
 they are the on-disk size, not the size plus pending WAL.
 
-Reproduce (commands, run from the repo root; the key is generated, the rest is fabricated):
+Reproduce (run from the repo root; the key is generated, the rest is fabricated). The block is self-contained and
+was executed as written (#90); it takes about 25 minutes and removes everything it started:
 
 ```sh
+T=$(mktemp -d); mkdir "$T/data"
 go build -tags capacity -o "$T/capacity" ./scripts/capacity
-"$T/capacity" upstream 127.0.0.1:18081 http://127.0.0.1:18081/idp &       # also listens on :18082
-curl "localhost:18081/_ctl?hold_ms=3000&reply_bytes=2000"                  # run duration and reply size
+"$T/capacity" upstream 127.0.0.1:18081 http://127.0.0.1:18081/idp & UP=$!   # also listens on :18082
 export ANTARES_ADDR=127.0.0.1:18080 ANTARES_DB_PATH=$T/data/antares.db \
   ANTARES_SECRET_KEY=$(head -c32 /dev/urandom | base64) ANTARES_GOOGLE_CLIENT_ID=scratch-client-id \
   ANTARES_GOOGLE_CLIENT_SECRET=fabricated-client-secret-0123456789 ANTARES_PUBLIC_ORIGIN=https://antares.scratch.test \
@@ -56,15 +62,25 @@ export ANTARES_ADDR=127.0.0.1:18080 ANTARES_DB_PATH=$T/data/antares.db \
   ANTARES_PROVISIONER_TOKEN=fabricated-provisioner-token-0123456789abcdef \
   ANTARES_ADMIN_GOOGLE_ISSUER=http://127.0.0.1:18081/idp ANTARES_ADMIN_GOOGLE_SUB=sub-admin \
   ANTARES_ADMIN_EMAIL=sub-admin@scratch.invalid
-"$T/capacity" server http://127.0.0.1:18081/idp &                          # then:
-"$T/capacity" load -n 100 setup                                            # sign in + approve + provision 100 accounts
-"$T/capacity" load -pid $PID -secs 120 idle
-"$T/capacity" load -pid $PID -n 50 -secs 420 load
-"$T/capacity" load -pid $PID -n 100 -chats 10 -msgs 10 fill
-"$T/capacity" load -pid $PID -n 100 search                                 # run until a pass finds nothing stale
-"$T/capacity" load -pid $PID -n 100 -rpu 1 -extra 3 streams                # after _ctl hold_ms=240000
-"$T/capacity" load -db "$ANTARES_DB_PATH" db
+"$T/capacity" server http://127.0.0.1:18081/idp & PID=$!
+sleep 3
+curl -s "localhost:18081/_ctl?hold_ms=3000&reply_bytes=2000"               # run duration and reply size
+"$T/capacity" load -state "$T/state.json" -n 100 setup                                            # sign in + approve + provision 100 accounts
+"$T/capacity" load -state "$T/state.json" -pid $PID -secs 120 idle
+"$T/capacity" load -state "$T/state.json" -pid $PID -n 50 -secs 420 load
+curl -s "localhost:18081/_ctl?hold_ms=2500&reply_bytes=2000"
+"$T/capacity" load -state "$T/state.json" -pid $PID -n 100 -chats 10 -msgs 10 fill
+"$T/capacity" load -state "$T/state.json" -pid $PID -n 100 search                                 # repeat until a pass finds nothing stale
+curl -s "localhost:18081/_ctl?hold_ms=240000&reply_bytes=2000"             # held runs for the streams phase
+"$T/capacity" load -state "$T/state.json" -pid $PID -n 100 -rpu 1 -extra 3 streams
+kill $PID; wait $PID; "$T/capacity" load -state "$T/state.json" -db "$ANTARES_DB_PATH" db          # clean stop: WAL checkpointed
+kill $UP; rm -f "$T"/data/antares.db* "$T/capacity" "$T/state.json"; rmdir "$T/data" "$T"
 ```
+
+The block runs every phase in one server process, which proves the commands and the shape of the results. The
+tables below restarted the server (and waited 30 s) before each window, because Go keeps freed pages: RSS read
+late in a long single process includes the high-water mark of earlier phases. To compare with them, restart
+`server` between phases. The `search` line indexes at most 3 chats per user per call; repeat it to index all 10.
 
 `GODEBUG=gctrace=1` on the server (no code change) gave the live-heap figures below.
 
