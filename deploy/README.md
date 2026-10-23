@@ -138,7 +138,20 @@ sudo docker compose ps                 # antares: healthy
 curl -fsS http://127.0.0.1:8080/readyz     # {"status":"ready"}
 ```
 
-Then verify with one real authenticated request (sign in as the bootstrap admin), not just "up".
+`ready` and `healthy` only say the process and its database are up. They are not the check. Run the gate next.
+
+## 4a. The deploy gate (smoke test)
+
+From any machine that reaches the deployment over HTTPS (not the host, no secrets from the host):
+
+```sh
+export ANTARES_SMOKE_COOKIE_ADMIN=… ANTARES_SMOKE_COOKIE_A=… ANTARES_SMOKE_COOKIE_B=… ANTARES_SMOKE_COOKIE_PENDING=…
+go run ./cmd/antares-smoke --url https://<ANTARES_PUBLIC_ORIGIN host> --json smoke-result.json
+```
+
+Exit `0` is the only result that means deployed. `1` (a step failed; the output names it) and `2` (a step did not
+run) mean it is not: roll back or fix, then run again. Where the four sessions come from, every step, and what it does
+not cover: `docs/runbooks/smoke-test.md`.
 
 ## 5. Caddy (documented, not applied)
 

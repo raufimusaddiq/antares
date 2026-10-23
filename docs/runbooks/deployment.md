@@ -46,9 +46,16 @@ see `deploy/README.md`.
 
 ## Health and rollback
 
-The service exposes a health endpoint that reports readiness — including whether it can reach
-Hermes — without leaking configuration. A deploy is verified by that endpoint plus one real
-authenticated request, not by the container being "up".
+`/healthz` says the process is up. `/readyz` says the SQLite database answers and is at the current schema; it does not
+look at Hermes, the provisioner or any tenant. Neither says anything about whether a user can chat, and a deploy is not
+verified by them, by the container being "up", by `systemctl is-active`, by a green release workflow or by `READY` rows.
+
+**The gate is the smoke test (`docs/runbooks/smoke-test.md`): `antares-smoke --url <origin>` exiting `0`.** It signs in
+with real sessions, makes a tenant prove its own credential and toolset policy, sends a chat and requires a non-empty
+assistant reply, and checks that an unapproved account cannot chat, a revoked one loses access immediately and two
+users cannot read each other's chats. A deploy is reported as done only with that exit code and its JSON result. Any
+other result (`1` failed, `2` incomplete) means "not deployed": do not announce it, and roll back unless the failing
+step is understood and the owner accepts it.
 
 The provisioning helper is deployed separately from the image (see below). Its `/health` reports the
 `vcs.revision` it was built from, and a deploy is **failed** unless `deploy/verify-helper-revision.sh <deployed sha>`
