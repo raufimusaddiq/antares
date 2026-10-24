@@ -1,7 +1,8 @@
 import { MAX_REPLY } from "./reply";
 
 // The single choke point for everything a model-generated component can do
-// (PRD §7.4). No import of the OpenUI runtime, so it is in the main bundle.
+// (PRD §7.4). It imports nothing from the OpenUI runtime, but only library.tsx and Block.tsx import it,
+// so it ships in the on-demand Block-*.js chunk, not the main bundle.
 //
 // An action is a name plus a payload. Both come from a block that the model
 // wrote, so neither is trusted: the name must be an own key of ACTIONS (a
@@ -18,7 +19,7 @@ export type Sinks = { reply?: ((text: string) => void) | null };
 
 // C0/C1 controls except tab and newline, and the bidi override/isolate characters.
 // eslint-disable-next-line no-control-regex
-const UNSAFE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F‪-‮⁦-⁩]/g;
+const UNSAFE = /[\u0000-\u0008\u000B-\u001F\u007F-\u009F\u202A-\u202E\u2066-\u2069]/g;
 
 // Sanitisation point for model-supplied action text: the only function that turns
 // an untrusted payload into the string a handler receives.

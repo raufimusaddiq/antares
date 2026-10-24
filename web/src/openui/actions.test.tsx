@@ -87,4 +87,10 @@ describe("model-supplied action payload and DOM sinks", () => {
     const sink = /dangerouslySetInnerHTML|\.innerHTML|\.outerHTML|insertAdjacentHTML|document\.write|\beval\s*\(|new Function|createContextualFragment|srcDoc|\bfetch\s*\(|\bXMLHttpRequest\b|\bsendBeacon\b|window\.open|location\.(href|assign|replace)|\bimport\s*\(\s*[^"'\s]/;
     for (const f of files) expect(readFileSync(f, "utf8").replace(/\/\/.*$/gm, ""), f).not.toMatch(sink);
   });
+
+  it("the composer path in Chat.tsx (addToDraft) has no DOM sink or dynamic code either", () => {
+    // Chat.tsx legitimately calls the API, so only DOM sinks and code execution are scanned here.
+    const domSink = /dangerouslySetInnerHTML|\.innerHTML|\.outerHTML|insertAdjacentHTML|document\.write|\beval\s*\(|new Function|createContextualFragment|srcDoc|window\.open/;
+    expect(readFileSync(join(__dirname, "..", "Chat.tsx"), "utf8").replace(/\/\/.*$/gm, "")).not.toMatch(domSink);
+  });
 });

@@ -17,7 +17,7 @@ Code: `web/src/openui/*`, `web/src/MessageBody.tsx`. Package: `@openuidev/react-
   of the chat on screen through `ReplyContext`, provided by `Chat.tsx`. They never send; the reader reviews and presses
   Send, so the follow-up is an ordinary authenticated message in the current chat (PRD §7.4). Without a provider the
   buttons are disabled. No Go route is involved, so there is no new server surface to authorize.
-- **Action choke point** (`actions.ts`, main bundle): everything a block can do goes through `runAction(name, payload, sinks)`.
+- **Action choke point** (`actions.ts`, shipped in the on-demand `Block-*` chunk because only `library.tsx` and `Block.tsx` import it): everything a block can do goes through `runAction(name, payload, sinks)`.
   The name must be an own key of the action table (so `constructor`/`__proto__` are refused); the only action is `reply`.
   The payload is rebuilt by `cleanReply` (string only, control and bidi-override characters removed, trimmed, 1-500
   characters) before a handler sees it; that function is the sanitisation point. `Block.tsx` routes the renderer's
