@@ -1,4 +1,41 @@
-# Runbook — model picker, context and quota (issue #100, PRD §27.1 `LLM-*`, §27.2 `CTX-*`)
+# Runbook — model picker, context and quota (issues #100, #115, PRD §27.1 `LLM-*`, §27.2 `CTX-*`)
+
+## Source of truth (#115, supersedes the Hermes-inventory wording below)
+
+Per the owner (#115 comment, 2026-10-25): the catalogue and model metadata come from **Kenari**
+(`internal/kenari`, the provider Hermes runs on), not from Hermes' inventory. Hermes is only the transport.
+
+| Question | Answer from | Where |
+|---|---|---|
+| Which models exist, modalities, context window, price, reasoning levels, sunset | Kenari `GET /v1/models` (public) | `kenari.Catalogue.List/Get`, `buildModels` |
+| Which provider slug a run names | Hermes `provider` of the caller's own profile, usable only if `authenticated` | `transport` in `internal/chat/models.go` |
+| What the run receives | `POST /v1/runs` body `provider`, `model`, `model_options.reasoning.effort` | `runBody`, `TestModelChoiceIsPerChatValidatedAndSent` asserts it on the wire |
+| Quota | Hermes `usage.windows` of that provider, when sent | unchanged |
+
+A model Hermes' inventory does not list is **not** treated as a model Kenari lacks, and the reverse holds. The
+picker never falls back to Hermes' list: a catalogue that cannot be read is `503 CATALOGUE_UNAVAILABLE`.
+
+Endpoints: `GET/PUT /api/chats/{id}/settings` (`PUT …/model` is the same handler), `GET/PUT /api/me/model-visibility`
+(replace the caller's hidden set; `[]` reveals everything), `GET/PUT /api/admin/model-policy` (global block list, audited).
+Selection rules: the model must be a Kenari `chat` endpoint model, not past `sunset_at`, not on the block list; the
+Hermes provider must be usable (`422 MODEL_TRANSPORT_UNAVAILABLE` otherwise); a client-supplied `provider` other than the
+resolved one is refused; `reasoningEffort` must be a level Kenari publishes for the model **and** Hermes accepts
+(`_REASONING_EFFORTS`, `api_server.py:291`), else `422 OPTION_UNSUPPORTED`; `serviceTier` is always refused. A chat whose
+saved model is later blocked or delisted answers `422 MODEL_UNAVAILABLE` on send (nothing is sent, nothing is substituted);
+`GET …/settings` reports `state` `AVAILABLE|BLOCKED|NOT_LISTED|UNKNOWN`. Hiding is a per-account view preference only: no Hermes call.
+
+### UPSTREAM_BLOCKED (#115)
+| Item | Status | Evidence |
+|---|---|---|
+| Service tier (`priority`) | **UPSTREAM_BLOCKED (Kenari)** | No Kenari catalogue field names a tier (`internal/kenari/testdata/models.json` carries none). Hermes' per-model `fast` flag describes Hermes' own providers, so it is not evidence for a Kenari model. Hermes does accept `model_options.service_tier` (`api_server.py:1940-1960`); the value is refused until Kenari publishes one. |
+| Reasoning level `none` | **UPSTREAM_BLOCKED (Hermes ladder)** | Kenari lists `none` for some models; Hermes' effort ladder has no `none`. Dropped, not mapped. Hermes also has `reasoning.enabled`; no Kenari field says it is honoured, so Antares does not send `enabled:false`. |
+| Effort levels for models Kenari marks `reasoning` without `supported_reasoning_levels` (e.g. `gemma-4-31b-it`) | **Unknown** | No levels are offered; the UI says they are not published. |
+| Whether Kenari honours `provider`/`model`/effort sent by Hermes end to end | **Not probed** | A credentialed run is the owner's (AGENTS.md); the contract is read from Hermes source and asserted on the wire at the Antares→Hermes boundary only. |
+| Admin UI for the block list | Not built | API only (`/api/admin/model-policy`). |
+| Prices | Kenari's currency/unit, unconverted | `micro_idr_per_1m_tokens`; shown "Price (Kenari)". Not a bill. |
+
+---
+
 
 Read from the deployed Hermes container's source (`nousresearch/hermes-agent:latest`, read-only
 `grep`/`sed`, 2026-10-24). Paths are under `/opt/hermes`. Not called on the wire: a model call or a
@@ -32,7 +69,7 @@ and locks nothing.
 | `CTX-003` reasoning tokens, cost | **Blocked** | `_USAGE_FIELDS` (`api_server_runs.py:88-92`) has input/output/total/cache read/cache write only. Estimated cost stays #81's. |
 | `CTX-004` quota | **Built, partial** | Shown from `usage.windows`/`limit` when Hermes sends them; otherwise `PROVIDER_USAGE_UNAVAILABLE`. Multi-credential pools report `usage.accounts` (`inventory.py:356`), which is *not* shown: one account's quota is not the user's. |
 | `CTX-005` budget vs hard limit | Already built in #93 | unchanged |
-| `LLM-005` hide/show, admin allow/deny policy | **Not built here** | Antares-side storage/admin work, not a Hermes limit; follow-up. |
+| `LLM-005` hide/show, admin allow/deny policy | **Built in #115** | `model_hidden`, `model_blocked` (migration 0016); see above. |
 | `LLM-008` OpenUI toggle | **Not in this slice** | separate ticket (`docs/runbooks/openui.md`). |
 | `GET /api/capabilities` | **Not built** | nothing in this slice reads it; stays the 501 placeholder. |
 

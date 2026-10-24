@@ -106,3 +106,51 @@ func TestNeverFollowsRedirects(t *testing.T) {
 		t.Fatalf("err = %v", err)
 	}
 }
+
+// The picker's metadata is read from the same real answer; what Kenari does not publish stays nil.
+func TestListRealPickerMetadata(t *testing.T) {
+	var hits atomic.Int32
+	var fail atomic.Bool
+	c := fixtureServer(t, &hits, &fail)
+	ctx := context.Background()
+	ds, found, err := c.Get(ctx, "deepseek-v4-1-flash")
+	if err != nil || !found || !ds.Chat() || ds.ContextLength == nil || *ds.ContextLength != 1000000 || ds.Reasoning == nil || !*ds.Reasoning {
+		t.Fatalf("deepseek: %+v %v %v", ds, found, err)
+	}
+	if got := ds.ReasoningLevels; len(got) != 4 || got[0] != "none" || got[3] != "max" {
+		t.Fatalf("levels: %v", got)
+	}
+	if p := ds.Pricing; p == nil || p.Currency != "IDR" || p.Input == nil || *p.Input != 2750000000 || p.Free {
+		t.Fatalf("pricing: %+v", p)
+	}
+	beam, _, _ := c.Get(ctx, "beam-1-0:free")
+	if beam.Pricing == nil || !beam.Pricing.Free || beam.Pricing.Input != nil || beam.Reasoning != nil || beam.ReasoningLevels != nil {
+		t.Fatalf("an unpublished value must stay nil: %+v", beam)
+	}
+	if img, _, _ := c.Get(ctx, "agnes-image-2-0-flash:free"); img.Chat() {
+		t.Fatal("an images-endpoint model is not a chat model")
+	}
+	all, err := c.List(ctx)
+	if err != nil || len(all) != 19 || all[0].ID != "deepseek-v4-1-flash" {
+		t.Fatalf("list keeps Kenari's order: %d %v", len(all), err)
+	}
+	if _, found, err := c.Get(ctx, "nope"); found || err != nil {
+		t.Fatal("an unlisted id is not found, and that is not an outage")
+	}
+}
+
+// A row with no modalities is still listed, but Lookup keeps treating its modalities as unknown.
+func TestRowWithoutModalitiesIsListedButUnknown(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"data":[{"id":"bare","endpoints":["chat"],"context_length":8192.5,"sunset_at":"2030-01-01T00:00:00Z"}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := New(srv.URL, nil)
+	if _, found, err := c.Lookup(context.Background(), "bare"); found || err != nil {
+		t.Fatalf("modalities must stay unknown: %v %v", found, err)
+	}
+	m, found, _ := c.Get(context.Background(), "bare")
+	if !found || m.HasModalities || m.SunsetAt != "2030-01-01T00:00:00Z" || m.ContextLength == nil {
+		t.Fatalf("%+v", m)
+	}
+}

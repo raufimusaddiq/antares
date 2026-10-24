@@ -55,6 +55,10 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"GET /api/chats/{chatId}/usage":                                http.HandlerFunc(s.chatUsage),
 		"GET /api/models":                                              http.HandlerFunc(s.listModels),
 		"PUT /api/chats/{chatId}/model":                                http.HandlerFunc(s.putChatModel),
+		"GET /api/chats/{chatId}/settings":                             http.HandlerFunc(s.getChatSettings),
+		"PUT /api/chats/{chatId}/settings":                             http.HandlerFunc(s.putChatModel),
+		"GET /api/me/model-visibility":                                 http.HandlerFunc(s.getModelVisibility),
+		"PUT /api/me/model-visibility":                                 http.HandlerFunc(s.putModelVisibility),
 		"GET /api/me/budget":                                           http.HandlerFunc(s.getBudget),
 		"PUT /api/me/budget":                                           http.HandlerFunc(s.putBudget),
 		"GET /api/search/chats":                                        http.HandlerFunc(s.searchAll),
@@ -361,6 +365,9 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 	b, _, err := s.gate(r.Context(), uid) // no run is admitted for an account that could not start it
 	if err != nil {
 		s.gateError(w, err)
+		return
+	}
+	if s.refuseUnrunnableChoice(w, r, uid, chatID) {
 		return
 	}
 	imgs, ok := s.resolveImages(w, r, b, uid, chatID, body.ImageAssetIDs)
