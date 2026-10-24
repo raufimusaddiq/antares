@@ -37,6 +37,15 @@ func newProfileRunner(t *testing.T, endpoint string) *profileRunner {
 			t.Fatal(err)
 		}
 	}
+	agent := filepath.Join(root, "modules", "agent")
+	if err := os.MkdirAll(agent, 0700); err != nil {
+		t.Fatal(err)
+	}
+	for name, body := range map[string]string{"__init__.py": "", "secret_scope.py": "import shlex\nfrom pathlib import Path\ndef load_env_file(path):\n    result = {}\n    if not Path(path).exists(): return result\n    for line in Path(path).read_text().splitlines():\n        line = line.removeprefix('export ').strip()\n        if not line or line.startswith('#') or '=' not in line: continue\n        key, value = line.split('=', 1)\n        tokens = shlex.split(value, comments=True)\n        result[key.strip()] = tokens[0] if tokens else ''\n    return result\n"} {
+		if err := os.WriteFile(filepath.Join(agent, name), []byte(body), 0600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	return &profileRunner{root: root, endpoint: endpoint}
 }
 
@@ -447,5 +456,38 @@ func TestBootstrapRefusesSymlinkAndConflictingSeededCredential(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestBootstrapNativeDotenvRecoveryAndUnicodeEndpoint(t *testing.T) {
+	endpoint := "https://prøvider.example.invalid/v1"
+	t.Setenv("PROVISIONER_INFERENCE_API_KEY", fixtureInferenceKey)
+	t.Setenv("PROVISIONER_INFERENCE_BASE_URL", endpoint)
+	r := newProfileRunner(t, "${OPENAI_BASE_URL}")
+	disabled, _ := disabledFor(defaultAllowed)
+	s := newServerWithPolicy(r, testToken, disabled)
+	response := do(t, s, "/provision", "Bearer "+testToken, `{"slug":"u_nativeenv132"}`)
+	if response.Code != 200 {
+		t.Fatal("Unicode endpoint bootstrap failed")
+	}
+	env := readProfileEnv(t, r, "u_nativeenv132")
+	if env["OPENAI_BASE_URL"] != endpoint {
+		t.Fatal("endpoint was escaped instead of preserved for Hermes' dotenv parser")
+	}
+	raw := "OPENAI_API_KEY='existing-key' # preserve native dotenv quoting\nOPENAI_BASE_URL='" + endpoint + "' # matching endpoint\n"
+	path := filepath.Join(r.root, "u_nativeenv132", ".env")
+	if err := os.WriteFile(path, []byte(raw), 0600); err != nil {
+		t.Fatal(err)
+	}
+	response = do(t, s, "/provision", "Bearer "+testToken, `{"slug":"u_nativeenv132"}`)
+	if response.Code != 200 {
+		t.Fatal("keyless recovery rejected valid native dotenv quoting")
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(string(data), raw) {
+		t.Fatal("recovery changed existing provider credential/binding lines")
 	}
 }

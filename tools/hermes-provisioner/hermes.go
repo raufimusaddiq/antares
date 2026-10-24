@@ -51,6 +51,7 @@ const (
 const envScript = `
 import json, os, stat, sys, tempfile
 from pathlib import Path
+from agent.secret_scope import load_env_file
 mode, path = sys.argv[1], sys.argv[2]
 try:
     payload = json.load(sys.stdin)
@@ -59,7 +60,7 @@ try:
     if os.path.islink(parent) or (os.path.lexists(path) and not stat.S_ISREG(os.lstat(path).st_mode)):
         sys.exit(5)
     lines = open(path).read().splitlines() if os.path.exists(path) else []
-    entries = dict(line.split("=", 1) for line in lines if "=" in line and not line.lstrip().startswith("#"))
+    entries = load_env_file(Path(path))
     has = "API_SERVER_KEY" in entries
     if mode == "init" and has:
         sys.exit(3)
@@ -72,9 +73,9 @@ try:
         if not isinstance(model, dict):
             sys.exit(5)
         endpoint = str(model.get("base_url") or "").rstrip("/")
+        if endpoint in ("${OPENAI_BASE_URL}", "${env:OPENAI_BASE_URL}"):
+            endpoint = (bootstrap["base_url"] if bootstrap is not None else entries.get("OPENAI_BASE_URL", "")).rstrip("/")
         if bootstrap is not None:
-            if endpoint in ("${OPENAI_BASE_URL}", "${env:OPENAI_BASE_URL}"):
-                endpoint = bootstrap["base_url"].rstrip("/")
             if lines or not endpoint or endpoint != bootstrap["base_url"].rstrip("/"):
                 sys.exit(5)
             if model.get("provider") not in ("custom", "openai") or model.get("key_env") not in (None, "", "OPENAI_API_KEY"):
@@ -84,14 +85,11 @@ try:
                 sys.exit(5)
             if key == bootstrap["key"]:
                 sys.exit(5)
-            lines += ["OPENAI_API_KEY=" + json.dumps(bootstrap["key"]), "OPENAI_BASE_URL=" + json.dumps(bootstrap["base_url"])]
+            lines += ["OPENAI_API_KEY=" + json.dumps(bootstrap["key"]), "OPENAI_BASE_URL=" + json.dumps(bootstrap["base_url"], ensure_ascii=False)]
         else:
-            def value(name):
-                raw = entries.get(name, "").strip()
-                return json.loads(raw) if raw.startswith('"') else raw
-            if not value("OPENAI_API_KEY") or not endpoint or endpoint != value("OPENAI_BASE_URL").rstrip("/"):
+            if not entries.get("OPENAI_API_KEY") or not endpoint or endpoint != entries.get("OPENAI_BASE_URL", "").rstrip("/"):
                 sys.exit(5)
-    lines = [line for line in lines if not line.startswith("API_SERVER_KEY=")]
+    lines = [line for line in lines if line.removeprefix("export ").split("=", 1)[0].strip() != "API_SERVER_KEY"]
     lines.append("API_SERVER_KEY=" + key)
     fd, tmp = tempfile.mkstemp(prefix=".antares-env-", dir=parent)
     try:
