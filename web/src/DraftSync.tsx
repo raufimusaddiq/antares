@@ -24,6 +24,8 @@ interface Slot {
   busy: boolean;
   stale: string | null; // the previous chat's text still in the box until the composer resets; never ours
   box: string; // what the composer holds for this slot right now, tracked even while the slot is held
+  sentText: string | null; // the text a send in flight took out of the box
+  pendingClear: string | null; // admitted before the first read finished: delete this text from the server when it is read
   held: boolean; // a send is in flight: the server draft stays until the send is admitted
   shareText: string | null; // the OS share already added to the box: any conflict candidate built later must carry it too
   shared: boolean; // the OS share has been added to this slot's draft
@@ -124,6 +126,18 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       const local = s.latest;
       s.synced = r.body;
       const base = loadBaseRevision(email, s.chatId);
+      if (s.pendingClear !== null && local === "" && r.body === s.pendingClear) {
+        // The send was admitted before this read came back, and the server still holds exactly the text that was sent:
+        // finish the clear (flush deletes it at the revision just read). A different body is another device's newer
+        // text and is not touched: it falls through to the normal path below and is shown, not deleted.
+        s.pendingClear = null;
+        s.latest = "";
+        saveBaseRevision(email, s.chatId, r.revision);
+        s.loaded = true;
+        void flush(s);
+        return;
+      }
+      s.pendingClear = null;
       // Text here that the server has not seen, over a server copy this browser was already in step with.
       const ahead = base !== null && base === r.revision;
       if (local === "" && r.body !== "" && loadCleared(email, s.chatId)) {
@@ -156,7 +170,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
     // resets, and that text must never be read as this chat's.
     const first = slot.current === null; // nothing was on screen before: the box is this chat's own
     const own = first && draftRef.current !== "" ? draftRef.current : loadDraft(email, chatId);
-    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, box: own, held: false, shareText: null, shared: false };
+    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, box: own, sentText: null, pendingClear: null, held: false, shareText: null, shared: false };
     slot.current = s;
     setConflict(null);
     setOffline(false);
@@ -219,8 +233,11 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       const s = slot.current;
       if (!s) return () => {};
       s.held = true;
+      s.sentText = s.box; // hold() runs before the box is emptied
       return (admitted) => {
         s.held = false;
+        // Admitted before the first read finished: nothing can be deleted yet, so remember what was sent.
+        if (admitted && !s.loaded && s.sentText !== null && s.sentText !== "") s.pendingClear = s.sentText;
         // Admitted: the box's current text is what the server should hold (empty = delete). Not admitted: leave the
         // server copy alone while the box is still empty, but anything typed since is saved like any other edit.
         s.latest = admitted || s.box !== "" ? s.box : s.synced;

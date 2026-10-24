@@ -12,6 +12,7 @@ function fakeServer() {
   const log: string[] = [];
   let down = false;
   let failPut = false;
+  let gate: Promise<void> | null = null; // when set, GETs wait for it, then answer with the state at that moment
   let status = 0; // when set, every write answers with this status
   const f = vi.fn(async (path: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
@@ -19,7 +20,10 @@ function fakeServer() {
     if (down || (failPut && method !== "GET")) throw new TypeError("down");
     const cur = drafts.get(path) ?? { body: "", revision: 0 };
     const reply = (status: number, body?: unknown) => ({ status, ok: status < 400, json: async () => body ?? null }) as Response;
-    if (method === "GET") return reply(200, cur);
+    if (method === "GET") {
+      if (gate) await gate;
+      return reply(200, drafts.get(path) ?? { body: "", revision: 0 });
+    }
     const im = Number(new Headers(init?.headers).get("If-Match")?.replaceAll('"', ""));
     if (im !== cur.revision) return reply(409, { error: { code: "REVISION_CONFLICT" }, current: cur });
     if (method === "DELETE") {
@@ -33,7 +37,17 @@ function fakeServer() {
     drafts.set(path, next);
     return reply(200, next);
   });
-  return { f, drafts, log, setDown: (d: boolean) => (down = d), setFailPut: (d: boolean) => (failPut = d), setStatus: (n: number) => (status = n) };
+  return { f, drafts, log, setDown: (d: boolean) => (down = d), setFailPut: (d: boolean) => (failPut = d), setStatus: (n: number) => (status = n),
+    /** Hold every GET until the returned function is called. */
+    gateGets: () => {
+      let open!: () => void;
+      gate = new Promise<void>((r) => (open = r));
+      return () => {
+        gate = null;
+        open();
+      };
+    },
+  };
 }
 
 let srv: ReturnType<typeof fakeServer>;
@@ -468,6 +482,50 @@ describe("a refusal is not 'offline'", () => {
     await settle();
     expect(r.container.textContent).toContain("this browser only");
     expect(r.container.textContent).toContain("Retry");
+  });
+});
+
+describe("a send admitted before the first read finished", () => {
+  it("deletes the sent text once the read returns, instead of restoring it", async () => {
+    srv.drafts.set(P1, { body: "sent text", revision: 1 });
+    const open = srv.gateGets(); // the first GET is still in flight
+    await mount({ initial: "sent text" });
+    const end = api.sync.hold(); // Send
+    await act(async () => api.setDraft(""));
+    await act(async () => end(true)); // admitted while unloaded: flush has nothing to talk to yet
+    await act(async () => open());
+    await settle();
+    expect(api.text()).toBe(""); // not resurrected
+    expect(api.sync.conflict).toBeNull();
+    expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 }); // a tombstone
+  });
+
+  it("does not delete a newer edit from another device that the read returns", async () => {
+    srv.drafts.set(P1, { body: "sent text", revision: 1 });
+    const open = srv.gateGets();
+    await mount({ initial: "sent text" });
+    const end = api.sync.hold();
+    await act(async () => api.setDraft(""));
+    await act(async () => end(true));
+    srv.drafts.set(P1, { body: "newer text from the laptop", revision: 2 }); // written before the read is answered
+    await act(async () => open());
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "newer text from the laptop", revision: 2 }); // untouched
+    expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
+    expect(api.text()).toBe("newer text from the laptop"); // shown to the reader, not lost
+  });
+
+  it("a send refused before the read finished leaves the server draft alone", async () => {
+    srv.drafts.set(P1, { body: "kept", revision: 1 });
+    const open = srv.gateGets();
+    await mount({ initial: "kept" });
+    const end = api.sync.hold();
+    await act(async () => api.setDraft(""));
+    await act(async () => end(false));
+    await act(async () => open());
+    await settle();
+    expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
+    expect(srv.drafts.get(P1)).toEqual({ body: "kept", revision: 1 });
   });
 });
 
