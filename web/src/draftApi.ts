@@ -83,6 +83,14 @@ export async function addTemplate(name: string, body: string): Promise<{ ok: tru
   return { ok: false, reason: r.status === 409 ? "taken" : r.status === 422 ? "invalid" : "failed" };
 }
 
+/** Change a template in place. `gone` = it no longer exists (deleted on another device). */
+export async function saveTemplate(id: string, name: string, body: string): Promise<{ ok: true; value: OwnTemplate } | { ok: false; reason: "taken" | "invalid" | "gone" | "failed" }> {
+  const r = await send("PUT", `/api/me/templates/${encodeURIComponent(id)}`, undefined, { name, body });
+  const t = r.status === 200 ? parseTemplate(r.json) : null;
+  if (t) return { ok: true, value: t };
+  return { ok: false, reason: r.status === 409 ? "taken" : r.status === 422 ? "invalid" : r.status === 404 ? "gone" : "failed" };
+}
+
 export async function removeTemplate(id: string): Promise<boolean> {
   return (await send("DELETE", `/api/me/templates/${encodeURIComponent(id)}`)).status === 204;
 }

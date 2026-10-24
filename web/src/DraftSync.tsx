@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { loadBaseRevision, saveBaseRevision } from "./drafts";
 import { readDraft, removeDraft, sharedText, writeDraft } from "./draftApi";
 
 // Keeps the server copy of the draft on screen in step with the text box (PRD §21.6).
@@ -36,7 +37,7 @@ export interface DraftSyncView {
  * chatId null is the new-chat draft. `share` is text the OS handed to the app; it is appended
  * to the new-chat draft once that draft has loaded, and never sent.
  */
-export function useDraftSync(chatId: string | null, draft: string, setDraft: (v: string) => void, share: string | null, onShared: () => void): DraftSyncView {
+export function useDraftSync(email: string, chatId: string | null, draft: string, setDraft: (v: string) => void, share: string | null, onShared: () => void): DraftSyncView {
   const slot = useRef<Slot | null>(null);
   const draftRef = useRef(draft);
   draftRef.current = draft;
@@ -55,6 +56,7 @@ export function useDraftSync(chatId: string | null, draft: string, setDraft: (v:
     if (r.kind === "ok") {
       s.rev = r.revision;
       s.synced = text;
+      saveBaseRevision(email, s.chatId, s.rev);
       if (slot.current === s) setOffline(false);
     } else if (r.kind === "conflict") {
       s.rev = r.revision;
@@ -66,7 +68,7 @@ export function useDraftSync(chatId: string | null, draft: string, setDraft: (v:
       return;
     }
     if (s.latest !== s.synced) void flush(s); // typed while the write was in flight
-  }, []);
+  }, [email]);
 
   // Read the server copy and reconcile it with what is in the box. A failed read leaves the slot
   // unloaded (nothing is written) and is retried on reconnect, on the Retry button and on the
@@ -87,19 +89,23 @@ export function useDraftSync(chatId: string | null, draft: string, setDraft: (v:
       s.rev = r.revision;
       const local = s.latest;
       s.synced = r.body;
-      if (r.body === "" || local === "" || local === r.body) {
-        // No competing text on the server (empty, or a deleted draft's tombstone), or nothing here: no conflict.
+      const base = loadBaseRevision(email, s.chatId);
+      // Text here that the server has not seen, over a server copy this browser was already in step with.
+      const ahead = base !== null && base === r.revision;
+      if (local === "" || local === r.body || ahead || (r.body === "" && r.revision === 0)) {
         if (local === "" && r.body !== "") setDraftRef.current(r.body);
         s.latest = local === "" ? r.body : local;
+        saveBaseRevision(email, s.chatId, r.revision);
       } else {
-        // This browser holds text the server does not, and the server holds text this browser has not seen.
+        // Both sides hold something the other has not seen. A server body of "" with a revision is a draft
+        // that another device sent or deleted: this browser's older text must be chosen, not silently re-saved.
         s.paused = true;
         setConflict({ theirs: r.body });
       }
       s.loaded = true;
       void flush(s);
     },
-    [flush],
+    [flush, email],
   );
 
   // Switching chats loads that chat's draft; the chat being left is flushed first.
@@ -109,7 +115,7 @@ export function useDraftSync(chatId: string | null, draft: string, setDraft: (v:
     setConflict(null);
     setOffline(false);
     void load(s);
-    const onOnline = () => void load(s);
+    const onOnline = () => void (s.loaded ? flush(s) : load(s));
     window.addEventListener("online", onOnline);
     return () => {
       window.removeEventListener("online", onOnline);
@@ -150,7 +156,8 @@ export function useDraftSync(chatId: string | null, draft: string, setDraft: (v:
     conflict,
     offline,
     retry: () => {
-      if (slot.current) void load(slot.current);
+      const s = slot.current;
+      if (s) void (s.loaded ? flush(s) : load(s));
     },
     keepMine: () => {
       const s = slot.current;
@@ -164,6 +171,7 @@ export function useDraftSync(chatId: string | null, draft: string, setDraft: (v:
       if (!s || !conflict) return;
       s.latest = conflict.theirs; // s.synced stays the server's own text, so a share kept in `theirs` is written
       s.paused = false;
+      saveBaseRevision(email, s.chatId, s.rev); // now in step with the server revision that was just read
       setDraftRef.current(conflict.theirs);
       setConflict(null);
     },

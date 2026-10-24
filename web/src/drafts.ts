@@ -27,6 +27,29 @@ export function saveDraft(email: string, chatId: string | null, text: string): v
   }
 }
 
+// The server revision this browser's copy was last in step with. Without it a later reopen cannot tell
+// "my text is newer than the server's" from "another device sent or deleted the draft since"; with it,
+// a deleted draft's tombstone is a conflict to resolve and not an empty slate to overwrite.
+const baseKey = (email: string, chatId: string | null) => `${PREFIX}rev:${keyOf(email, chatId).slice(PREFIX.length)}`;
+
+/** The synced revision, or null if this browser never synced this draft. */
+export function loadBaseRevision(email: string, chatId: string | null): number | null {
+  try {
+    const v = localStorage.getItem(baseKey(email, chatId));
+    return v !== null && /^\d+$/.test(v) ? Number(v) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveBaseRevision(email: string, chatId: string | null, rev: number): void {
+  try {
+    localStorage.setItem(baseKey(email, chatId), String(rev));
+  } catch {
+    // Without a baseline the next reopen reconciles conservatively (it asks).
+  }
+}
+
 /** Sign-out, an expired session and suspension: the next person on this browser inherits nothing. */
 export function purgeDrafts(): void {
   try {

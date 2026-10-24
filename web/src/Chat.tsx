@@ -325,7 +325,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   useEffect(() => setDraft(loadDraft(email, current)), [email, current]);
   // Text the OS shared to the app: it waits in the new-chat draft, never in a chat and never sent.
   const [share, setShare] = useState<string | null>(takeSharedText);
-  const sync = useDraftSync(current, draft, onDraft, share, () => setShare(null));
+  const sync = useDraftSync(email, current, draft, onDraft, share, () => setShare(null));
   const [ownTemplates, setOwnTemplates] = useState<OwnTemplate[]>([]);
   useEffect(() => {
     void listOwnTemplates().then((l) => l && setOwnTemplates(l));

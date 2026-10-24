@@ -11,10 +11,11 @@ function fakeServer() {
   const drafts = new Map<string, { body: string; revision: number }>();
   const log: string[] = [];
   let down = false;
+  let failPut = false;
   const f = vi.fn(async (path: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
     log.push(`${method} ${path}`);
-    if (down) throw new TypeError("down");
+    if (down || (failPut && method === "PUT")) throw new TypeError("down");
     const cur = drafts.get(path) ?? { body: "", revision: 0 };
     const reply = (status: number, body?: unknown) => ({ status, ok: status < 400, json: async () => body ?? null }) as Response;
     if (method === "GET") return reply(200, cur);
@@ -29,11 +30,12 @@ function fakeServer() {
     drafts.set(path, next);
     return reply(200, next);
   });
-  return { f, drafts, log, setDown: (d: boolean) => (down = d) };
+  return { f, drafts, log, setDown: (d: boolean) => (down = d), setFailPut: (d: boolean) => (failPut = d) };
 }
 
 let srv: ReturnType<typeof fakeServer>;
 beforeEach(() => {
+  localStorage.clear();
   vi.useFakeTimers();
   srv = fakeServer();
   vi.stubGlobal("fetch", srv.f);
@@ -50,7 +52,7 @@ let api: { setDraft: (v: string) => void; setChat: (c: string | null) => void; t
 function Device({ chat = "c1", initial = "", share = null }: { chat?: string | null; initial?: string; share?: string | null }) {
   const [c, setC] = useState<string | null>(chat);
   const [d, setD] = useState(initial);
-  const sync = useDraftSync(c, d, setD, share, () => {});
+  const sync = useDraftSync("a@x.test", c, d, setD, share, () => {});
   api = { setDraft: setD, setChat: (n) => { setC(n); setD(""); },  text: () => d, sync };
   return <DraftNotice sync={sync} />;
 }
@@ -128,6 +130,77 @@ describe("server draft sync", () => {
     const r = await mount({ initial: "kept" });
     expect(r.container.textContent).toContain("saved in this browser only");
     expect(api.text()).toBe("kept");
+  });
+});
+
+describe("another device sent or deleted the draft", () => {
+  it("a stale reopen asks instead of resurrecting the sent text", async () => {
+    const a = await mount({ initial: "old text" }); // device A: synced at revision 1
+    await settle();
+    expect(srv.drafts.get(P1)?.revision).toBe(1);
+    a.unmount();
+    // Device B sends the message: the draft is deleted (tombstone, revision 2).
+    srv.drafts.set(P1, { body: "", revision: 2 });
+    await mount({ initial: "old text" }); // A reopens with its stale local copy
+    await settle();
+    expect(api.sync.conflict).toEqual({ theirs: "" });
+    expect(api.text()).toBe("old text"); // not discarded either
+    expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 }); // not re-saved
+    expect(srv.log.filter((l) => l.startsWith("PUT")).length).toBe(1); // only A's first save
+    await act(async () => api.sync.useTheirs());
+    await settle();
+    expect(api.text()).toBe("");
+    expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
+  });
+
+  it("Keep this text then writes over the tombstone's revision", async () => {
+    const a = await mount({ initial: "old text" });
+    await settle();
+    a.unmount();
+    srv.drafts.set(P1, { body: "", revision: 2 });
+    await mount({ initial: "old text" });
+    await settle();
+    await act(async () => api.sync.keepMine());
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "old text", revision: 3 });
+  });
+
+  it("this device's own send is not a conflict: a new draft after it saves normally", async () => {
+    await mount({ initial: "first" });
+    await settle();
+    await act(async () => api.setDraft("")); // send: deletes at revision 1 -> tombstone 2
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
+    cleanup();
+    await mount({ initial: "typed after the send, then reload" });
+    await settle();
+    expect(api.sync.conflict).toBeNull();
+    expect(srv.drafts.get(P1)).toEqual({ body: "typed after the send, then reload", revision: 3 });
+  });
+});
+
+describe("failed write", () => {
+  it("Retry saves the loaded dirty draft without another edit", async () => {
+    await mount();
+    srv.setFailPut(true);
+    await act(async () => api.setDraft("will fail first"));
+    await settle();
+    expect(srv.drafts.has(P1)).toBe(false);
+    srv.setFailPut(false);
+    await act(async () => api.sync.retry());
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "will fail first", revision: 1 });
+  });
+
+  it("coming back online saves it too", async () => {
+    await mount();
+    srv.setFailPut(true);
+    await act(async () => api.setDraft("offline write"));
+    await settle();
+    srv.setFailPut(false);
+    await act(async () => void window.dispatchEvent(new Event("online")));
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "offline write", revision: 1 });
   });
 });
 
