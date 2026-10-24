@@ -28,6 +28,7 @@ interface Slot {
   pendingClear: string | null; // admitted before the first read finished: delete this text from the server when it is read
   readWhileHeld: boolean; // the first read came back while a send was in flight; it was recorded, not applied
   heldAhead: boolean; // ...and the server was still at the revision this browser last synced
+  abandoned: boolean; // the chat scope changed away from this slot; it only finishes an admitted clear now
   held: boolean; // a send is in flight: the server draft stays until the send is admitted
   shareText: string | null; // the OS share already added to the box: any conflict candidate built later must carry it too
   shared: boolean; // the OS share has been added to this slot's draft
@@ -62,6 +63,9 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const timer = useRef<number | undefined>(undefined);
+  // Slots the composer has left whose admitted send still has a server draft to clear. They finish on their own:
+  // retried on reconnect, independent of whichever chat is on screen, and never touching its UI.
+  const orphans = useRef(new Set<Slot>());
   const [conflict, setConflict] = useState<{ theirs: string } | null>(null);
   const [offline, setOffline] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
@@ -118,12 +122,12 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       const r = await readDraft(s.chatId);
       s.loading = false;
       s.attempted = true;
-      if (slot.current !== s) return;
+      const visible = slot.current === s;
       if (r.kind !== "ok") {
-        setOffline(true);
+        if (visible) setOffline(true);
         return;
       }
-      setOffline(false);
+      if (visible) setOffline(false);
       s.rev = r.revision;
       const local = s.latest;
       s.synced = r.body;
@@ -145,7 +149,15 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
         s.latest = "";
         saveBaseRevision(email, s.chatId, r.revision);
         s.loaded = true;
+        orphans.current.delete(s);
         void flush(s);
+        return;
+      }
+      if (!visible) {
+        // The composer has moved to another chat. This slot's text is no longer on screen, so nothing is restored or
+        // offered from here; whatever it still owed the server was handled above or is kept by the durable marker.
+        s.pendingClear = null;
+        orphans.current.delete(s);
         return;
       }
       s.pendingClear = null;
@@ -181,17 +193,22 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
     // resets, and that text must never be read as this chat's.
     const first = slot.current === null; // nothing was on screen before: the box is this chat's own
     const own = first && draftRef.current !== "" ? draftRef.current : loadDraft(email, chatId);
-    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, box: own, sentText: null, pendingClear: null, readWhileHeld: false, heldAhead: false, held: false, shareText: null, shared: false };
+    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, box: own, sentText: null, pendingClear: null, readWhileHeld: false, heldAhead: false, abandoned: false, held: false, shareText: null, shared: false };
     slot.current = s;
     setConflict(null);
     setOffline(false);
     setRefusal(null);
     void load(s);
-    const onOnline = () => void (s.loaded ? flush(s) : load(s));
+    const onOnline = () => {
+      void (s.loaded ? flush(s) : load(s));
+      for (const o of orphans.current) void load(o);
+    };
     window.addEventListener("online", onOnline);
     return () => {
       window.removeEventListener("online", onOnline);
       window.clearTimeout(timer.current);
+      s.abandoned = true;
+      if (s.pendingClear !== null) orphans.current.add(s); // admitted already, read still owed
       void flush(s); // the text typed just before leaving this chat still goes to this chat's draft
     };
   }, [chatId, flush, load, email]);
@@ -256,6 +273,10 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
           // The first read has not come back: nothing can be deleted yet, so remember what was sent (load() finishes it).
           if (admitted && sent !== "") s.pendingClear = sent;
           s.latest = admitted || s.box !== "" ? s.box : s.synced;
+          if (admitted && s.pendingClear !== null && s.abandoned) {
+            orphans.current.add(s); // retried on reconnect until its read comes back
+            void load(s); // and tried again now if the earlier read had already failed
+          }
           void flush(s);
           return;
         }
