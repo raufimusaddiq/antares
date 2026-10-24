@@ -100,6 +100,9 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		"/api/models": true,
 		// Phase 2b slice 1: live capability discovery (account-scoped, no conversation content).
 		"/api/capabilities": true,
+		// #107 server drafts and personal templates: the new-chat draft, the template list/create and
+		// /api/me/templates/{id}; a chat's own draft is /api/chats/{id}/draft, covered above.
+		"/api/me/new-chat-draft": true, "/api/me/templates": true, "/api/me/templates/": true,
 	}
 	pathRe := regexp.MustCompile(`/api/[A-Za-z0-9_/.-]*`)
 	badRe := regexp.MustCompile(`(?i)ciphertext|fingerprint|tenant_binding|profile_name|profileSlug|memory_scope|client_secret|api_key|apikey|hermes|authorization`)
