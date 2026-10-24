@@ -808,3 +808,24 @@ describe("send admission and share plumbing", () => {
     expect(api.text()).toBe("shared words");
   });
 });
+
+describe("two holds on the same slot", () => {
+  it("one release does not unfreeze the other, and releasing twice does nothing", async () => {
+    await mount({ initial: "sent text" });
+    await settle();
+    const first = api.sync.hold();
+    await act(async () => api.setDraft(""));
+    const second = first.again(); // overlapping: the first was not released yet
+    await act(async () => second.release(false));
+    await settle();
+    expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
+    await act(async () => api.setDraft("typed while one hold remains"));
+    await settle();
+    expect(srv.drafts.get(P1)?.body).toBe("sent text"); // still frozen: the first hold is in flight
+    await act(async () => first.release(true));
+    await act(async () => first.release(false)); // a second release of the same hold is ignored
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "typed while one hold remains", revision: 2 });
+  });
+});
+

@@ -314,6 +314,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const [promptTick, setPromptTick] = useState(0);
   const [pending, setPending] = useState<Pending | null>(null);
   const [draft, setDraft] = useState("");
+  const draftNow = useRef(""); // what the box holds right now, for code that runs after an await
+  draftNow.current = draft;
   // Typing writes the draft of the chat on screen. Switching chats loads that chat's draft;
   // nothing else ever writes, so text typed in one chat cannot land in another's key.
   const onDraft = (v: string) => {
@@ -653,7 +655,15 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         let chat = current;
         if (!chat) {
           const c = await newChat();
-          if (!c) return; // nothing was sent
+          if (!c) {
+            // Nothing was sent and no retry entry exists, so the message goes back into the box (ahead of anything typed
+            // since) and into this browser's copy: it is the only place it still lives if autosave had not run yet.
+            if (currentRef.current === null && hold.text.trim() !== "") {
+              const typed = draftNow.current;
+              onDraft(typed.trim() === "" ? hold.text : `${hold.text.replace(/\s*$/, "")}\n\n${typed}`);
+            }
+            return;
+          }
           nav.current++;
           detach();
           setCurrent(c.id);
@@ -670,7 +680,14 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         // Every outcome ends the hold: admitted deletes the server draft (and the reader's other devices lose it);
         // refused keeps it and resumes syncing whatever is typed next.
         hold.release(r.ok);
-        if (currentRef.current !== chat) return;
+        if (currentRef.current !== chat) {
+          if (!r.ok && hold.text.trim() !== "" && loadDraft(email, chat) === "") {
+            // Refused while the reader was elsewhere: the pending entry is gone, so keep the message in that chat's own
+            // draft for when they come back. Never over a draft that has text.
+            saveDraft(email, chat, hold.text);
+          }
+          return;
+        }
         if (!r.ok) {
           // Kept with the same key: sending again repeats the request, it cannot double-send.
           setPending({ input, key, failure: describeCode(r.code), hold });
@@ -684,7 +701,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         hold.release(false); // a path that left without an answer (no-op if already released)
       }
     },
-    [attach, current, detach, newChat],
+    [attach, current, detach, newChat, email],
   );
 
   // A disconnected run still occupies the chat: reconnect or cancel it first.

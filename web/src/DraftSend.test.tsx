@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ChatSummary } from "./chatApi";
-import { saveDraft } from "./drafts";
+import { loadDraft, saveDraft } from "./drafts";
 
 const api = vi.hoisted(() => ({
   listChats: vi.fn(),
@@ -282,6 +282,90 @@ describe("overlapping sends in different chats", () => {
     api.sendMessage.mockResolvedValueOnce(admitted);
     fireEvent.click(screen.getByText("Send again"));
     await waitFor(() => expect(srv.docs.get("/api/me/new-chat-draft")).toEqual({ body: "", revision: 2 }), { timeout: 3000 });
+  });
+});
+
+// Input durability when a send fails BEFORE it is admitted and before any autosave has run.
+describe("a message is never lost to a failure before admission", () => {
+  const NEW = "/api/me/new-chat-draft";
+  const box = () => document.getElementById("composer-input") as HTMLTextAreaElement;
+  const refusedCreate = { ok: false, code: "UPSTREAM_UNAVAILABLE" };
+
+  it("submitting at once and failing to create the chat puts the whole text back", async () => {
+    const srv = draftServer();
+    vi.stubGlobal("fetch", srv.f);
+    api.createChat.mockResolvedValueOnce(refusedCreate);
+    await mount([]);
+    fireEvent.change(box(), { target: { value: "a long message typed in one go" } });
+    fireEvent.submit(document.querySelector("form.composer")!); // before the 800 ms autosave
+    await waitFor(() => expect(api.createChat).toHaveBeenCalled());
+    await waitFor(() => expect(box().value).toBe("a long message typed in one go"));
+    expect(loadDraft("a@example.test", null)).toBe("a long message typed in one go"); // this browser's copy too
+    await waitFor(() => expect(srv.docs.get(NEW)).toEqual({ body: "a long message typed in one go", revision: 1 }), { timeout: 3000 });
+    expect(srv.calls.some((c) => c.startsWith("DELETE"))).toBe(false);
+  });
+
+  it("an unsynced tail beyond an older server copy survives", async () => {
+    const srv = draftServer();
+    vi.stubGlobal("fetch", srv.f);
+    srv.docs.set(NEW, { body: "older", revision: 1 });
+    saveDraft("a@example.test", null, "older and then more that was never synced");
+    api.createChat.mockResolvedValueOnce(refusedCreate);
+    await mount([]);
+    await waitFor(() => expect(box().value).toBe("older and then more that was never synced"));
+    fireEvent.submit(document.querySelector("form.composer")!);
+    await waitFor(() => expect(api.createChat).toHaveBeenCalled());
+    await waitFor(() => expect(box().value).toBe("older and then more that was never synced"));
+    await waitFor(() => expect(srv.docs.get(NEW)?.body).toBe("older and then more that was never synced"), { timeout: 3000 });
+  });
+
+  it("text typed while the chat was being created is kept, and the captured message stays recoverable", async () => {
+    const srv = draftServer();
+    vi.stubGlobal("fetch", srv.f);
+    let fail!: (v: unknown) => void;
+    api.createChat.mockReturnValueOnce(new Promise((r) => (fail = r)));
+    await mount([]);
+    fireEvent.change(box(), { target: { value: "captured message" } });
+    fireEvent.submit(document.querySelector("form.composer")!);
+    await waitFor(() => expect(api.createChat).toHaveBeenCalled());
+    fireEvent.change(box(), { target: { value: "typed meanwhile" } });
+    await act(async () => fail(refusedCreate));
+    await waitFor(() => expect(box().value).toBe("captured message\n\ntyped meanwhile"));
+  });
+
+  it("a refused send whose chat the reader has left keeps the message in that chat's own draft", async () => {
+    const srv = draftServer();
+    vi.stubGlobal("fetch", srv.f);
+    saveDraft("a@example.test", "c1", "typed in one");
+    let answer!: (v: unknown) => void;
+    api.sendMessage.mockImplementationOnce(() => new Promise((r) => (answer = r)));
+    await mount([chat("c1"), chat("c2")]);
+    await waitFor(() => expect(box().value).toBe("typed in one"));
+    fireEvent.submit(document.querySelector("form.composer")!);
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+    fireEvent.click(document.querySelectorAll("nav.side li button")[1]); // away before the answer
+    await waitFor(() => expect(box().value).toBe(""));
+    await act(async () => answer(refusedCreate));
+    expect(loadDraft("a@example.test", "c1")).toBe("typed in one"); // not lost
+    fireEvent.click(document.querySelectorAll("nav.side li button")[0]);
+    await waitFor(() => expect(box().value).toBe("typed in one"));
+  });
+
+  it("does not overwrite a draft the other chat already has", async () => {
+    const srv = draftServer();
+    vi.stubGlobal("fetch", srv.f);
+    saveDraft("a@example.test", "c1", "typed in one");
+    let answer!: (v: unknown) => void;
+    api.sendMessage.mockImplementationOnce(() => new Promise((r) => (answer = r)));
+    await mount([chat("c1"), chat("c2")]);
+    await waitFor(() => expect(box().value).toBe("typed in one"));
+    fireEvent.submit(document.querySelector("form.composer")!);
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+    fireEvent.click(document.querySelectorAll("nav.side li button")[1]);
+    await waitFor(() => expect(box().value).toBe(""));
+    saveDraft("a@example.test", "c1", "something newer typed elsewhere");
+    await act(async () => answer(refusedCreate));
+    expect(loadDraft("a@example.test", "c1")).toBe("something newer typed elsewhere");
   });
 });
 

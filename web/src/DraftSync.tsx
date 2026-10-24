@@ -38,11 +38,13 @@ interface Slot {
 export interface SendHold {
   /** Ends this send's hold, once: true = admitted, false = refused or never started. Later calls do nothing. */
   release: (admitted: boolean) => void;
+  /** What the composer held when the send began (untrimmed), so a send that fails before it is admitted can put it back. */
+  text: string;
   /** A fresh hold on the same draft for a resend of the same text, taken after this one was released. */
   again: () => SendHold;
 }
 
-export const NO_HOLD: SendHold = { release: () => {}, again: () => NO_HOLD }; // nothing on screen to hold
+export const NO_HOLD: SendHold = { release: () => {}, text: "", again: () => NO_HOLD }; // nothing on screen to hold
 
 export interface DraftSyncView {
   /** The other device's text, while the two disagree. Syncing is paused until one is chosen. */
@@ -314,7 +316,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
         s.latest = s.synced;
         if (s.readWhileHeld && s.synced !== "" && s.synced !== sent && !s.heldAhead && here) setDraftRef.current(s.synced);
     };
-    return { release, again: () => holdSlot(s, sent) };
+    return { release, text: sent, again: () => holdSlot(s, sent) };
   };
 
   return {
