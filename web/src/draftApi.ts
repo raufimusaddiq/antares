@@ -1,7 +1,15 @@
 // Server drafts and templates (issue #107). The server owns the revision: a write names the
 // revision it last saw (If-Match) and a stale one is refused with the winning text.
 
-export type DraftWrite = { kind: "ok"; revision: number } | { kind: "conflict"; body: string; revision: number } | { kind: "error" };
+/** The server stores at most this many BYTES of draft (internal/store MaxDraftBytes); characters can be up to 4 bytes each. */
+export const MAX_DRAFT_BYTES = 32768;
+export const draftBytes = (text: string): number => new TextEncoder().encode(text).length;
+
+/**
+ * "error" = the server could not be reached or failed (worth retrying); "refused" = the server answered and said no,
+ * which retrying the same text will not change. `reason` is shown to the reader.
+ */
+export type DraftWrite = { kind: "ok"; revision: number } | { kind: "conflict"; body: string; revision: number } | { kind: "error" } | { kind: "refused"; reason: string };
 export type DraftRead = { kind: "ok"; body: string; revision: number } | { kind: "error" };
 
 const draftPath = (chatId: string | null) => (chatId === null ? "/api/me/new-chat-draft" : `/api/chats/${encodeURIComponent(chatId)}/draft`);
@@ -48,8 +56,17 @@ function written(r: { status: number; json: unknown }): DraftWrite {
     const cur = parseDraft(rec(r.json).current);
     return cur ? { kind: "conflict", ...cur } : { kind: "error" };
   }
-  const d = r.status === 200 ? parseDraft(r.json) : null;
+  if (r.status === 0 || r.status >= 500 || r.status === 429) return { kind: "error" };
+  if (r.status !== 200) return { kind: "refused", reason: refusalReason(r) };
+  const d = parseDraft(r.json);
   return d ? { kind: "ok", revision: d.revision } : { kind: "error" };
+}
+
+/** The server's own words for a draft refusal (DRAFT_TOO_LARGE, DRAFT_INVALID_TEXT); any other refusal gets a fixed sentence. */
+function refusalReason(r: { status: number; json: unknown }): string {
+  const e = rec(rec(r.json).error);
+  if (typeof e.code === "string" && e.code.startsWith("DRAFT_") && typeof e.message === "string") return e.message.slice(0, 200);
+  return `The server did not accept this draft (HTTP ${r.status}).`;
 }
 
 export const writeDraft = async (chatId: string | null, body: string, rev: number) => written(await send("PUT", draftPath(chatId), rev, { body }));

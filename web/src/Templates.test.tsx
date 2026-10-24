@@ -59,7 +59,7 @@ describe("editing own templates", () => {
     render(<Host initial={[one]} />);
     fireEvent.click(screen.getByRole("button", { name: "Edit template deploy" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
-    expect((await screen.findByRole("alert")).textContent).toContain("1-32 letters");
+    expect((await screen.findByRole("alert")).textContent).toContain("a letter or digit first");
     stub(500, null);
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Could not save"));

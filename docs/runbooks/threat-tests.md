@@ -29,13 +29,12 @@ handlers. Quota enforcement is covered separately by the limits tests; ownership
 ## Surfaces
 
 Built and probed with a foreign caller: chat read, history, send message, run status, run events, run
-cancel, search within a chat, chat list/create. Each must answer `404` with a body identical to the answer for an id that
+cancel, search within a chat, chat list/create, and (issue #107) a chat's draft read/write/delete. The new-chat draft and the template list/create are caller-scoped and the template update/delete are probed in `drafts_test.go` with a real template id; a guessed template or chat id answers like an unknown one, and writes need the draft's `If-Match` revision (stale writes are refused with `409`, never applied). Each must answer `404` with a body identical to the answer for an id that
 never existed, with no marker of A's data, no change to A's rows, and no Hermes call. Global search
 (`GET /api/search/chats`) has no id to refuse: B's search for A's words must return `200` with none of A's
 content, and A's own search must find it (so the empty answer is not a broken index).
 
-Not built (listed in `notBuilt` in `threat_test.go`, each with its reason): saved drafts,
-templates, push subscriptions, exports, voice uploads, preview sandbox, rewind/fork, steer, delayed
+Not built (listed in `notBuilt` in `threat_test.go`, each with its reason): push subscriptions, exports, voice uploads, preview sandbox, rewind/fork, steer, delayed
 notifications. The suite asserts they stay unrouted (or a `501` stub) and fails when one starts to
 answer, so building a surface forces writing its cross-user test.
 `TestEveryChatRouteIsClassified` does the same for any route added to the handler table.

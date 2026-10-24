@@ -6,7 +6,7 @@ import { addTemplate, removeTemplate, saveTemplate, type OwnTemplate } from "./d
 
 const WORDS = {
   taken: "You already have a template with that name.",
-  invalid: "A name is 1-32 letters, digits, - or _; the text is required.",
+  invalid: "A name is 1-32 characters: a letter or digit first, then letters, digits, - or _. The text is required.",
   gone: "That template no longer exists. It may have been deleted on another device.",
   failed: "Could not save the template.",
 } as const;

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { loadBaseRevision, loadCleared, saveBaseRevision, saveCleared } from "./drafts";
-import { readDraft, removeDraft, sharedText, writeDraft } from "./draftApi";
+import { loadBaseRevision, loadDraft, loadCleared, saveBaseRevision, saveCleared } from "./drafts";
+import { draftBytes, MAX_DRAFT_BYTES, readDraft, removeDraft, sharedText, writeDraft } from "./draftApi";
 
 // Keeps the server copy of the draft on screen in step with the text box (PRD §21.6).
 // The browser copy in drafts.ts stays the instant path; this adds the other devices.
@@ -19,6 +19,7 @@ interface Slot {
   attempted: boolean; // a read has finished, successfully or not
   paused: boolean;
   busy: boolean;
+  stale: string | null; // the previous chat's text still in the box until the composer resets; never ours
   shared: boolean; // the OS share has been added to this slot's draft
 }
 
@@ -27,6 +28,8 @@ export interface DraftSyncView {
   conflict: { theirs: string } | null;
   /** The server copy is unreachable: the draft survives in this browser only. */
   offline: boolean;
+  /** The server (or the size bound) refused this text. Retrying the same text cannot help; editing it can. */
+  refusal: string | null;
   /** Try the server again after a failed read. */
   retry: () => void;
   keepMine: () => void;
@@ -44,13 +47,21 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
   const timer = useRef<number | undefined>(undefined);
   const [conflict, setConflict] = useState<{ theirs: string } | null>(null);
   const [offline, setOffline] = useState(false);
+  const [refusal, setRefusal] = useState<string | null>(null);
   const setDraftRef = useRef(setDraft);
   setDraftRef.current = setDraft;
 
   const flush = useCallback(async (s: Slot): Promise<void> => {
     if (!s.loaded || s.paused || s.busy || s.latest === s.synced) return;
-    s.busy = true;
     const text = s.latest;
+    const bytes = draftBytes(text);
+    if (bytes > MAX_DRAFT_BYTES) {
+      // Refused here, before sending, with the real reason: the bound is bytes, and the composer counts characters.
+      if (slot.current === s) setRefusal(`This draft is ${bytes.toLocaleString("en-US")} bytes and the server keeps at most ${MAX_DRAFT_BYTES.toLocaleString("en-US")} bytes (about ${Math.floor(MAX_DRAFT_BYTES / 3).toLocaleString("en-US")} CJK characters). It stays in this browser only; shorten it to sync.`);
+      return;
+    }
+    if (slot.current === s) setRefusal(null);
+    s.busy = true;
     const r = text === "" ? (s.rev === 0 ? { kind: "ok", revision: 0 } as const : await removeDraft(s.chatId, s.rev)) : await writeDraft(s.chatId, text, s.rev);
     s.busy = false;
     if (r.kind === "ok") {
@@ -58,7 +69,13 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       s.synced = text;
       saveBaseRevision(email, s.chatId, s.rev);
       saveCleared(email, s.chatId, false);
-      if (slot.current === s) setOffline(false);
+      if (slot.current === s) {
+        setOffline(false);
+        setRefusal(null);
+      }
+    } else if (r.kind === "refused") {
+      if (slot.current === s) setRefusal(r.reason);
+      return;
     } else if (r.kind === "conflict") {
       s.rev = r.revision;
       s.synced = r.body; // what the server really holds now, so a later edit back to the old text is still a change
@@ -120,10 +137,15 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
 
   // Switching chats loads that chat's draft; the chat being left is flushed first.
   useEffect(() => {
-    const s: Slot = { chatId, rev: 0, synced: "", latest: draftRef.current, loaded: false, loading: false, attempted: false, paused: false, busy: false, shared: false };
+    // Seeded from this chat's own saved copy. The box still holds the previous chat's text until the composer
+    // resets, and that text must never be read as this chat's.
+    const first = slot.current === null; // nothing was on screen before: the box is this chat's own
+    const own = first && draftRef.current !== "" ? draftRef.current : loadDraft(email, chatId);
+    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, shared: false };
     slot.current = s;
     setConflict(null);
     setOffline(false);
+    setRefusal(null);
     void load(s);
     const onOnline = () => void (s.loaded ? flush(s) : load(s));
     window.addEventListener("online", onOnline);
@@ -132,12 +154,16 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       window.clearTimeout(timer.current);
       void flush(s); // the text typed just before leaving this chat still goes to this chat's draft
     };
-  }, [chatId, flush, load]);
+  }, [chatId, flush, load, email]);
 
   // Debounced write of whatever is in the box (or, if the first read failed, another try at the read).
   useEffect(() => {
     const s = slot.current;
     if (!s || s.chatId !== chatId) return;
+    if (s.stale !== null) {
+      if (draft === s.stale) return; // still the previous chat's text: not this chat's draft
+      s.stale = null;
+    }
     s.latest = draft;
     if (s.loaded && !s.paused && draft === "" && s.synced !== "") saveCleared(email, s.chatId, true); // a deliberate empty box the server has not been told about
     window.clearTimeout(timer.current);
@@ -166,6 +192,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
   return {
     conflict,
     offline,
+    refusal,
     retry: () => {
       const s = slot.current;
       if (s) void (s.loaded ? flush(s) : load(s));
@@ -201,6 +228,13 @@ export function DraftNotice({ sync }: { sync: DraftSyncView }) {
         <button type="button" className="quiet" onClick={sync.useTheirs}>
           Use the other device&rsquo;s text
         </button>
+      </p>
+    );
+  }
+  if (sync.refusal) {
+    return (
+      <p className="draft-note" role="status">
+        {sync.refusal}
       </p>
     );
   }

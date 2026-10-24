@@ -1,5 +1,5 @@
-const CACHE = "antares-public-c4319ec9a39f2a9b9bbdb28d57e6ed11744aa5f3573b4c71ea70a9bb99b42a77";
-const PUBLIC = ["/offline.html","/assets/Block-DsWu26B_.js","/assets/Chart-vJaF_72n.js","/assets/ci-info-Bauk7qhZ.js","/assets/index-CYKBS6QQ.css","/assets/index-Cs0PxBoS.js","/assets/offline-52783b55d1fef27e.css","/assets/rolldown-runtime-BWaJ3C7D.js"];
+const CACHE = "antares-public-00cb714f86164c17be78af99ebb52596664a723d1e8e562b3cc5807fc744e5db";
+const PUBLIC = ["/offline.html","/assets/Block-CJk3a82F.js","/assets/Chart-DaikqQPB.js","/assets/ci-info-Bauk7qhZ.js","/assets/index-BPZLMENO.js","/assets/index-CYKBS6QQ.css","/assets/offline-52783b55d1fef27e.css","/assets/rolldown-runtime-BWaJ3C7D.js"];
 const allowed = new Set(PUBLIC.map(path => new URL(path, self.location.origin).href));
 
 self.addEventListener("install", event => {

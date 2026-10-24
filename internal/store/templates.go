@@ -15,7 +15,7 @@ import (
 const (
 	MaxTemplates    = 100
 	MaxTemplateBody = 8 << 10
-	MaxTemplateName = 32
+	MaxTemplateName = 32 // characters, including the first (see chat.templateNameRE)
 	maxTemplateScan = MaxTemplates + 1
 )
 

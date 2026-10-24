@@ -2,6 +2,7 @@ package chat
 
 import (
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -15,7 +16,11 @@ import (
 // text the server stores and returns verbatim. Nothing here reaches Hermes, and a template
 // body is never interpreted: inserting one is a client text edit.
 
-var templateNameRE = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
+// A template name starts with a letter or digit, then letters, digits, - or _, at most MaxTemplateName
+// characters in all. Names are lower-cased before the check.
+var templateNameRE = regexp.MustCompile(fmt.Sprintf(`^[a-z0-9][a-z0-9_-]{0,%d}$`, store.MaxTemplateName-1))
+
+const templateNameRule = "A template name is 1-32 characters: a letter or digit first, then letters, digits, - or _"
 
 type draftBody struct {
 	Body string `json:"body"`
@@ -58,11 +63,16 @@ func draftConflict(w http.ResponseWriter, cur store.Draft) {
 }
 
 func validDraft(w http.ResponseWriter, b draftBody) bool {
-	if len(b.Body) > store.MaxDraftBytes || !utf8.ValidString(b.Body) || strings.ContainsRune(b.Body, 0) {
-		apiError(w, http.StatusUnprocessableEntity, "INVALID_REQUEST", "The draft is too long or not valid text")
-		return false
+	switch {
+	case len(b.Body) > store.MaxDraftBytes:
+		// The reason is part of the answer so a client can say it as it is: the bound is in bytes, not characters.
+		apiError(w, http.StatusUnprocessableEntity, "DRAFT_TOO_LARGE", fmt.Sprintf("The draft is %d bytes; the limit is %d bytes", len(b.Body), store.MaxDraftBytes))
+	case !utf8.ValidString(b.Body) || strings.ContainsRune(b.Body, 0):
+		apiError(w, http.StatusUnprocessableEntity, "DRAFT_INVALID_TEXT", "The draft is not valid text")
+	default:
+		return true
 	}
-	return true
+	return false
 }
 
 // draftAPI wires one scope (a chat's draft or the new-chat draft) to the three verbs.
@@ -209,7 +219,7 @@ func validTemplate(w http.ResponseWriter, b *templateBody) bool {
 	b.Name = strings.ToLower(strings.TrimSpace(b.Name))
 	switch {
 	case !templateNameRE.MatchString(b.Name):
-		apiError(w, http.StatusUnprocessableEntity, "INVALID_REQUEST", "A template name is 1-32 letters, digits, - or _")
+		apiError(w, http.StatusUnprocessableEntity, "INVALID_REQUEST", templateNameRule)
 	case b.Body == "" || len(b.Body) > store.MaxTemplateBody || !utf8.ValidString(b.Body) || strings.ContainsRune(b.Body, 0):
 		apiError(w, http.StatusUnprocessableEntity, "INVALID_REQUEST", "A template body is 1-8192 bytes of text")
 	default:

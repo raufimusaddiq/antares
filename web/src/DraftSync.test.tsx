@@ -1,10 +1,10 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { DraftNotice, useDraftSync } from "./DraftSync";
 import { sharedText } from "./draftApi";
-import { mergeTemplates, matchTemplates, TEMPLATES } from "./drafts";
+import { loadDraft, matchTemplates, mergeTemplates, saveBaseRevision, saveDraft, TEMPLATES } from "./drafts";
 
 // A fake server that enforces the same If-Match rule as the real one, per draft path.
 function fakeServer() {
@@ -12,6 +12,7 @@ function fakeServer() {
   const log: string[] = [];
   let down = false;
   let failPut = false;
+  let status = 0; // when set, every write answers with this status
   const f = vi.fn(async (path: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
     log.push(`${method} ${path}`);
@@ -26,11 +27,13 @@ function fakeServer() {
       drafts.set(path, tomb);
       return reply(200, tomb);
     }
+    if (status === 422) return reply(422, { error: { code: "DRAFT_INVALID_TEXT", message: "The draft is not valid text" } });
+    if (status === 500) return reply(500, null);
     const next = { body: JSON.parse(String(init?.body)).body as string, revision: cur.revision + 1 };
     drafts.set(path, next);
     return reply(200, next);
   });
-  return { f, drafts, log, setDown: (d: boolean) => (down = d), setFailPut: (d: boolean) => (failPut = d) };
+  return { f, drafts, log, setDown: (d: boolean) => (down = d), setFailPut: (d: boolean) => (failPut = d), setStatus: (n: number) => (status = n) };
 }
 
 let srv: ReturnType<typeof fakeServer>;
@@ -350,5 +353,96 @@ describe("template merge", () => {
     expect(all.filter((t) => t.name === "summarize")).toEqual([{ name: "summarize", body: "mine" }]);
     expect(all).toHaveLength(TEMPLATES.length + 1);
     expect(matchTemplates("/my-", all)).toEqual([{ name: "my-1_x", body: "/run rm -rf /" }]);
+  });
+});
+
+// A harness that behaves like Chat: switching chats does NOT clear the box in the same batch; an effect
+// resets it from the new chat's own saved copy a commit later.
+const EMAIL = "a@x.test";
+let api2: { type: (v: string) => void; open: (c: string) => void; text: () => string; sync: ReturnType<typeof useDraftSync> };
+function ChatLike() {
+  const [c, setC] = useState("c1");
+  const [d, setD] = useState("");
+  // The reset lands a little after the switch (a later commit), so the slot's own read can finish first.
+  useEffect(() => {
+    const t = setTimeout(() => setD(loadDraft(EMAIL, c)), 5);
+    return () => clearTimeout(t);
+  }, [c]);
+  const type = (v: string) => { // what Chat's onDraft does: the box and this browser's copy
+    setD(v);
+    saveDraft(EMAIL, c, v);
+  };
+  const sync = useDraftSync(EMAIL, c, d, type, null, () => {});
+  api2 = { type, open: setC, text: () => d, sync };
+  return <DraftNotice sync={sync} />;
+}
+
+describe("switching chats never carries text across", () => {
+  it("the previous chat's text is not written into a chat that has its own draft", async () => {
+    saveDraft(EMAIL, "c2", "two text"); // c2's own saved copy, in step with the server at revision 1
+    saveBaseRevision(EMAIL, "c2", 1);
+    srv.drafts.set("/api/chats/c2/draft", { body: "two text", revision: 1 });
+    render(<ChatLike />);
+    await settle();
+    await act(async () => api2.type("one text")); // typed in c1
+    await act(async () => api2.open("c2")); // switched before the debounce fired
+    await settle();
+    await settle();
+    expect(srv.drafts.get("/api/chats/c2/draft")).toEqual({ body: "two text", revision: 1 }); // untouched
+    expect(srv.log.filter((l) => l.startsWith("PUT /api/chats/c2")).length).toBe(0);
+    expect(srv.drafts.get(P1)).toEqual({ body: "one text", revision: 1 }); // c1 got its own text
+    expect(api2.text()).toBe("two text");
+    expect(api2.sync.conflict).toBeNull();
+  });
+
+  it("a chat with no saved copy shows the server's draft, not the previous chat's text", async () => {
+    srv.drafts.set("/api/chats/c2/draft", { body: "two server", revision: 4 });
+    render(<ChatLike />);
+    await settle();
+    await act(async () => api2.type("one text"));
+    await act(async () => api2.open("c2"));
+    await settle();
+    await settle();
+    expect(api2.text()).toBe("two server");
+    expect(srv.drafts.get("/api/chats/c2/draft")).toEqual({ body: "two server", revision: 4 });
+    expect(srv.drafts.get(P1)?.body).toBe("one text");
+  });
+});
+
+describe("a refusal is not 'offline'", () => {
+  it("a draft over the byte bound is refused before sending, with the real reason and no Retry", async () => {
+    const r = await mount();
+    const cjk = "漢".repeat(11000); // 11,000 characters (under the composer's 32,000), 33,000 bytes
+    await act(async () => api.setDraft(cjk));
+    await settle();
+    expect(srv.log.filter((l) => l.startsWith("PUT")).length).toBe(0);
+    expect(r.container.textContent).toContain("33,000 bytes");
+    expect(r.container.textContent).toContain("32,768 bytes");
+    expect(r.container.textContent).not.toContain("Retry");
+    expect(api.sync.offline).toBe(false);
+    await act(async () => api.setDraft("short again"));
+    await settle();
+    expect(r.container.textContent).toBe("");
+    expect(srv.drafts.get(P1)).toEqual({ body: "short again", revision: 1 });
+  });
+
+  it("a server 422 shows the server's reason, not 'saved in this browser only', and offers no Retry", async () => {
+    const r = await mount();
+    srv.setStatus(422);
+    await act(async () => api.setDraft("something"));
+    await settle();
+    expect(r.container.textContent).toContain("The draft is not valid text");
+    expect(r.container.textContent).not.toContain("this browser only");
+    expect(r.container.textContent).not.toContain("Retry");
+    expect(api.sync.offline).toBe(false);
+  });
+
+  it("a server failure (500) is still a retryable 'browser only' state", async () => {
+    const r = await mount();
+    srv.setStatus(500);
+    await act(async () => api.setDraft("something"));
+    await settle();
+    expect(r.container.textContent).toContain("this browser only");
+    expect(r.container.textContent).toContain("Retry");
   });
 });

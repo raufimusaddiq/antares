@@ -229,6 +229,16 @@ func TestDraftValidationAndAccountState(t *testing.T) {
 	if _, code, _ := u.putDraft(path, `"0"`, map[string]string{"body": strings.Repeat("x", store.MaxDraftBytes+1)}); code != 422 {
 		t.Fatalf("oversize draft = %d", code)
 	}
+	// The bound is in bytes: 11,000 CJK characters (33,000 bytes) fit the composer's 32,000-character limit and not the server's.
+	if d, code, _ := u.putDraft(path, `"0"`, map[string]string{"body": strings.Repeat("漢", 11000)}); code != 422 || d.Error.Code != "DRAFT_TOO_LARGE" {
+		t.Fatalf("multi-byte over the byte bound = %d %+v", code, d)
+	}
+	if w := u.do("PUT", path, map[string]string{"If-Match": `"0"`}, map[string]string{"body": strings.Repeat("漢", 11000)}); !strings.Contains(w.Body.String(), "33000 bytes; the limit is 32768") {
+		t.Fatalf("refusal does not say why: %s", w.Body.String())
+	}
+	if d, code, _ := u.putDraft(path, `"0"`, map[string]string{"body": "a\x00b"}); code != 422 || d.Error.Code != "DRAFT_INVALID_TEXT" {
+		t.Fatalf("NUL in a draft = %d %+v", code, d)
+	}
 	if _, code, _ := u.putDraft(path, `"0"`, map[string]string{"body": strings.Repeat("é", store.MaxDraftBytes/2)}); code != 200 {
 		t.Fatalf("draft at the limit = %d", code)
 	}
@@ -328,6 +338,8 @@ func TestTemplateValidationAndBounds(t *testing.T) {
 		"empty name":   {"name": "", "body": "x"},
 		"space inside": {"name": "a b", "body": "x"},
 		"slash":        {"name": "/run", "body": "x"},
+		"dash first":   {"name": "-abc", "body": "x"},
+		"underscore 1": {"name": "_abc", "body": "x"},
 		"too long":     {"name": strings.Repeat("a", 33), "body": "x"},
 		"empty body":   {"name": "ok", "body": ""},
 		"big body":     {"name": "ok", "body": strings.Repeat("x", store.MaxTemplateBody+1)},
@@ -337,10 +349,16 @@ func TestTemplateValidationAndBounds(t *testing.T) {
 			t.Errorf("%s accepted: %d", name, code)
 		}
 	}
+	if r, code := u.tpl("POST", "/api/me/templates", map[string]string{"name": strings.Repeat("a", store.MaxTemplateName), "body": "x"}); code != 201 {
+		t.Errorf("a name of exactly MaxTemplateName characters = %d %+v", code, r)
+	}
+	if _, code := u.tpl("POST", "/api/me/templates", map[string]string{"name": "a-_9", "body": "x"}); code != 201 {
+		t.Errorf("letters, digits, - and _ after the first character = %d", code)
+	}
 	if _, code := u.tpl("POST", "/api/me/templates", map[string]any{"name": "ok", "body": "x", "command": "run"}); code != 400 {
 		t.Errorf("unknown field accepted: %d", code)
 	}
-	for i := 0; i < store.MaxTemplates; i++ {
+	for i := 0; i < store.MaxTemplates-2; i++ { // two already created above
 		if _, code := u.tpl("POST", "/api/me/templates", map[string]string{"name": fmt.Sprintf("t%d", i), "body": "x"}); code != 201 {
 			t.Fatalf("template %d = %d", i, code)
 		}
