@@ -158,7 +158,7 @@ func (s *Service) getMessages(w http.ResponseWriter, r *http.Request) {
 		s.indexTranscript(r.Context(), uid, c, all, read)
 	}
 	if runs, err := store.ChatRunImages(r.Context(), s.db, uid, c.ID); err == nil && len(runs) > 0 {
-		linkRunImages(all, runs)
+		linkRunImages(all, uid, runs)
 	}
 	page, next, err := pageHistory(c.ID, all, before, limit, hash)
 	if err == nil {

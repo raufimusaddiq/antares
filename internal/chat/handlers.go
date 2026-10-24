@@ -405,7 +405,7 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 	}
 	if created {
 		if imgs != nil {
-			if err := store.AttachRunImages(r.Context(), s.db, uid, run.ID, imgs.assets()); err != nil {
+			if err := store.AttachRunImages(r.Context(), s.db, uid, run.ID, turnDigest(uid, run.ID, body.Input), imgs.assets()); err != nil {
 				log.Printf("chat: run %s: could not record its images: %v", run.ID, err)
 			}
 		}

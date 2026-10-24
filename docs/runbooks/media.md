@@ -69,8 +69,14 @@ Read from the deployed container's source, read-only (`docker exec -u hermes her
 canonical parts the agent pipeline understands: `{"type":"text"}` and `{"type":"image_url","image_url":{"url":"data:image/…;base64,…"}}`.
 `agent.run_conversation` accepts a list `user_message` (`agent/conversation_loop.py:167`). The whole request is capped at
 10,000,000 bytes (`MAX_REQUEST_BYTES`, `api_server.py:235`); base64 adds a third, so Antares allows 4 images and 6 MiB of
-image bytes per message. The history read (`inline_images=false`, `hermes_cli/web_routers/sessions.py:690`) renders each image
-as `[image]`, which Antares matches against its own `run_images` rows, newest first, only while the counts agree.
+image bytes per message. The history read (`inline_images=false`, `hermes_cli/web_routers/sessions.py:690`) renders each image as `[image]`. That marker is
+**not** used to find a turn. A thumbnail is linked only to a transcript turn that verifies: the run reached Hermes (has a Hermes
+run id; a run refused before admission is never a candidate), the turn sits at the same position among the chat's user turns as
+the run does among the chat's accepted runs, and the turn's text equals the run's own text (salted digest stored at send,
+`turn_digest`) followed by exactly as many `[image]` placeholders as images sent. Any miss (steered or compacted history, rewritten
+text, failed admission, literal `[image]` typed by the user) leaves the turn unlinked. "Try again" re-sends a turn's text and
+images together from that turn of the chat on screen; an unlinked or since-deleted image turn is not re-sent without its images,
+its text goes back into the box instead.
 
 **Not verified live**: that the selected model actually *receives and describes* the image through `/v1/runs`. That needs a
 credentialed run, which this development authorization excludes. See "Open" below.

@@ -2,6 +2,8 @@ package chat
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"strconv"
@@ -153,31 +155,57 @@ func (t *turnImages) assets() []store.Asset {
 	return out
 }
 
-// linkRunImages marks user turns of the transcript that carried images with the owner's assets
-// that went with them. Hermes renders an image part as "[image]" in the history read, so a turn's
-// image count is all that is known. Turns are matched newest-first against the chat's own
-// image runs and only while the counts agree: older history that was compacted or rewritten
-// is left unlinked (shown as an attachment placeholder), never guessed.
-func linkRunImages(all []hermes.Message, runs []store.RunImageSet) {
-	k := len(runs) - 1
-	for i := len(all) - 1; i >= 0 && k >= 0; i-- {
-		m := &all[i]
-		if m.Role != "user" {
+// turnDigest binds an image record to the exact text of the message it was sent with. It is
+// salted with the owner and run, so it identifies one turn of one account and nothing else.
+func turnDigest(userID, runID, text string) string {
+	h := sha256.New()
+	for _, p := range []string{"antares-turn", userID, runID, strings.TrimSpace(text)} {
+		h.Write([]byte(p))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+// stripImageMarkers removes exactly n trailing "[image]" placeholders (Hermes' history read renders
+// each image part as one). Anything else, a literal "[image]" typed by the user included, stays.
+func stripImageMarkers(text string, n int) (string, bool) {
+	for ; n > 0; n-- {
+		t := strings.TrimRight(text, " \t\r\n")
+		if !strings.HasSuffix(t, "[image]") {
+			return "", false
+		}
+		text = strings.TrimSuffix(t, "[image]")
+	}
+	return text, true
+}
+
+// linkRunImages attaches the owner's images to the transcript turns they were sent with, and only
+// to a turn that verifies. A run's turn is the user turn at the same position as the run among the
+// chat's Hermes-accepted runs, and it must also carry the run's own text (by digest) followed by
+// exactly as many image placeholders as images were sent. Runs that never reached Hermes are not
+// candidates; a turn that fails any check is left unlinked. Counting images or matching "[image]"
+// anywhere else never links anything.
+func linkRunImages(all []hermes.Message, userID string, runs []store.RunImageSet) {
+	var users []int
+	for i := range all {
+		if all[i].Role == "user" {
+			users = append(users, i)
+		}
+	}
+	for _, set := range runs {
+		if set.Ordinal < 0 || set.Ordinal >= len(users) {
 			continue
 		}
-		n := strings.Count(m.Text, "[image]")
-		if n == 0 {
+		m := &all[users[set.Ordinal]]
+		text, ok := stripImageMarkers(m.Text, len(set.Images))
+		if !ok || turnDigest(userID, set.RunID, text) != set.TurnDigest {
 			continue
 		}
-		set := runs[k]
-		if len(set.Images) != n {
-			return
-		}
-		m.Images = n
+		m.Images = len(set.Images)
+		m.Attachments = nil
 		for _, im := range set.Images {
 			m.Attachments = append(m.Attachments, hermes.Attachment{AssetID: im.AssetID, MediaType: im.MediaType, Available: im.Live})
 		}
-		k--
 	}
 }
 

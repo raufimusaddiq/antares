@@ -376,58 +376,156 @@ func TestAssetPreviewHeadersAndRange(t *testing.T) {
 	}
 }
 
-// History keeps the thumbnail of a sent image while the asset exists, then says it is gone.
-func TestHistoryLinksOwnImagesAndSurvivesDeletion(t *testing.T) {
+// finishAccepted waits for Hermes to accept the run, then drives it to completed.
+func finishAccepted(t *testing.T, a *app, p *person, runID string) {
+	t.Helper()
+	var hid string
+	eventually(t, func() bool {
+		_ = a.db.QueryRow(`SELECT COALESCE(hermes_run_id,'') FROM runs WHERE id = ? AND user_id = ?`, runID, p.id).Scan(&hid)
+		return hid != ""
+	}, "Hermes to accept the run")
+	fr := a.hx.run(hid)
+	s := p.open(runID, "")
+	recv(t, fr.opens, "stream")
+	a.hx.push(fr, "run.completed", `{}`)
+	s.waitFor(t, "run.completed")
+}
+
+func (p *person) sendOK(chat, text string, ids ...string) string {
+	p.a.t.Helper()
+	w := p.sendImages(chat, text, ids...)
+	if w.Code != 202 {
+		p.a.t.Fatalf("send %q: %d %s", text, w.Code, w.Body.String())
+	}
+	return decodeBody[struct{ RunID string }](p.a.t, w).RunID
+}
+
+func setTranscript(a *app, p *person, chat string, msgs ...map[string]any) {
+	var sid string
+	if err := a.db.QueryRow(`SELECT hermes_session_id FROM chats WHERE id = ? AND user_id = ?`, chat, p.id).Scan(&sid); err != nil {
+		a.t.Fatal(err)
+	}
+	a.hx.mu.Lock()
+	a.hx.msgs[sid] = msgs
+	a.hx.mu.Unlock()
+}
+
+func um(id, text string) map[string]any {
+	return map[string]any{"id": id, "role": "user", "content": text}
+}
+func am(id string) map[string]any {
+	return map[string]any{"id": id, "role": "assistant", "content": "ok"}
+}
+
+type histBody struct {
+	Messages []struct {
+		Role, Text  string
+		Images      int
+		Attachments []struct {
+			AssetID, MediaType string
+			Available          bool
+		}
+	}
+}
+
+func (p *person) history(chat string) histBody {
+	return decodeBody[histBody](p.a.t, p.get("/api/chats/"+chat+"/messages"))
+}
+
+// A thumbnail is attached only to a transcript turn that verifies: the run's position among the chat's
+// Hermes-accepted runs, its own text, and its image placeholders. Deletion is reported, not hidden.
+func TestHistoryLinksOnlyAVerifiedTurn(t *testing.T) {
 	a := mediaApp(t, visionModel)
 	alice, bob := a.user("alice"), a.user("bobby")
 	chat := alice.newChat()
 	id := alice.stagePNG(sceneFixture(t))
-	if w := alice.sendImages(chat, "what is this?", id); w.Code != 202 {
-		t.Fatalf("send: %d", w.Code)
-	}
-	sid := decodeSession(t, a, alice, chat)
-	a.hx.mu.Lock()
-	a.hx.msgs[sid] = []map[string]any{
-		{"id": "m1", "role": "user", "content": "earlier text"},
-		{"id": "m2", "role": "assistant", "content": "ok"},
-		{"id": "m3", "role": "user", "content": "what is this?\n[image]"},
-	}
-	a.hx.mu.Unlock()
+	finishAccepted(t, a, alice, alice.sendOK(chat, "what is this?", id))
+	setTranscript(a, alice, chat, um("m1", "what is this?\n[image]"), am("m2"))
 
-	type hist struct {
-		Messages []struct {
-			Role, Text  string
-			Images      int
-			Attachments []struct {
-				AssetID, MediaType string
-				Available          bool
-			}
-		}
+	h := alice.history(chat)
+	if at := h.Messages[0].Attachments; h.Messages[0].Images != 1 || len(at) != 1 || at[0].AssetID != id || !at[0].Available || at[0].MediaType != "image/png" {
+		t.Fatalf("history: %+v", h.Messages[0])
 	}
-	h := decodeBody[hist](t, alice.get("/api/chats/"+chat+"/messages"))
-	last := h.Messages[2]
-	if last.Images != 1 || len(last.Attachments) != 1 || last.Attachments[0].AssetID != id || !last.Attachments[0].Available || last.Attachments[0].MediaType != "image/png" {
-		t.Fatalf("history: %+v", last)
-	}
-	if len(h.Messages[0].Attachments) != 0 {
-		t.Error("an image-less turn got attachments")
+	if len(h.Messages[1].Attachments) != 0 {
+		t.Error("an assistant turn got attachments")
 	}
 	if alice.do("DELETE", "/api/assets/"+id, nil, nil).Code != 204 {
 		t.Fatal("delete")
 	}
-	h = decodeBody[hist](t, alice.get("/api/chats/"+chat+"/messages"))
-	if at := h.Messages[2].Attachments; len(at) != 1 || at[0].Available {
+	if at := alice.history(chat).Messages[0].Attachments; len(at) != 1 || at[0].Available {
 		t.Errorf("deleted asset still reported available: %+v", at)
 	}
-	// B has no view of A's chat, and a turn whose image count does not match stays unlinked.
 	if bob.get("/api/chats/"+chat+"/messages").Code != 404 {
 		t.Error("B read A's history")
 	}
+}
+
+// Regression (review round 1, BLOCKER): image B sent in a run that Hermes never accepted must not take
+// image A's turn, even though both carry one image.
+func TestFailedAdmissionDoesNotStealAnEarlierTurnsImages(t *testing.T) {
+	a := mediaApp(t, visionModel)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	idA, idB := alice.stagePNG(sceneFixture(t)), alice.stagePNG(sceneFixture(t))
+	finishAccepted(t, a, alice, alice.sendOK(chat, "first look", idA))
+
 	a.hx.mu.Lock()
-	a.hx.msgs[sid][2]["content"] = "what is this?\n[image]\n[image]"
+	a.hx.failNext["POST /v1/runs"] = 500 // Hermes refuses the second run: it fails before admission
 	a.hx.mu.Unlock()
-	h = decodeBody[hist](t, alice.get("/api/chats/"+chat+"/messages"))
-	if len(h.Messages[2].Attachments) != 0 {
-		t.Error("a mismatched turn was linked to an image anyway")
+	failed := alice.sendOK(chat, "second look", idB)
+	eventually(t, func() bool { return alice.runStatus(failed) == "FAILED" }, "the second run to fail")
+	if runImageRows(t, a) != 2 {
+		t.Fatalf("expected both sends recorded, got %d rows", runImageRows(t, a))
+	}
+	setTranscript(a, alice, chat, um("m1", "first look\n[image]"), am("m2"))
+
+	h := alice.history(chat)
+	if at := h.Messages[0].Attachments; len(at) != 1 || at[0].AssetID != idA {
+		t.Fatalf("turn 1 attachments = %+v, want only image A", at)
+	}
+}
+
+// Regression: literal "[image]" text, in a later plain message or in the run's own text, links nothing.
+func TestLiteralImageMarkersLinkNothing(t *testing.T) {
+	a := mediaApp(t, visionModel)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	id := alice.stagePNG(sceneFixture(t))
+	finishAccepted(t, a, alice, alice.sendOK(chat, "see [image] here", id))
+	finishAccepted(t, a, alice, alice.sendOK(chat, "I typed [image] myself"))
+	setTranscript(a, alice, chat,
+		um("m1", "see [image] here\n[image]"), am("m2"),
+		um("m3", "I typed [image] myself"), am("m4"))
+
+	h := alice.history(chat)
+	if len(h.Messages[0].Attachments) != 1 || h.Messages[0].Attachments[0].AssetID != id {
+		t.Fatalf("the image turn lost its thumbnail: %+v", h.Messages[0])
+	}
+	if len(h.Messages[2].Attachments) != 0 || h.Messages[2].Images != 0 {
+		t.Errorf("a literal [image] in plain text took an image set: %+v", h.Messages[2])
+	}
+}
+
+// A transcript that no longer lines up (rewritten text, an extra turn, wrong placeholder count) is left unlinked.
+func TestUncertainTurnsStayUnlinked(t *testing.T) {
+	for name, msgs := range map[string][]map[string]any{
+		"text rewritten":      {um("m1", "something else\n[image]"), am("m2")},
+		"extra turn before":   {um("m0", "steered"), am("m0a"), um("m1", "look\n[image]"), am("m2")},
+		"placeholder count":   {um("m1", "look\n[image]\n[image]"), am("m2")},
+		"no placeholder":      {um("m1", "look"), am("m2")},
+		"transcript is empty": {},
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := mediaApp(t, visionModel)
+			alice := a.user("alice")
+			chat := alice.newChat()
+			finishAccepted(t, a, alice, alice.sendOK(chat, "look", alice.stagePNG(sceneFixture(t))))
+			setTranscript(a, alice, chat, msgs...)
+			for i, m := range alice.history(chat).Messages {
+				if len(m.Attachments) != 0 {
+					t.Errorf("message %d was linked: %+v", i, m)
+				}
+			}
+		})
 	}
 }

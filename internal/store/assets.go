@@ -90,15 +90,15 @@ func ImageAssets(ctx context.Context, db *sql.DB, uid string, ids []string) ([]A
 
 // AttachRunImages records which of uid's assets were sent with the run. The insert is
 // restricted to assets uid owns, and the foreign key to a run uid owns.
-func AttachRunImages(ctx context.Context, db *sql.DB, uid, runID string, assets []Asset) error {
+func AttachRunImages(ctx context.Context, db *sql.DB, uid, runID, turnDigest string, assets []Asset) error {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer tx.Rollback()
 	for i, a := range assets {
-		res, err := tx.ExecContext(ctx, `INSERT INTO run_images (run_id, user_id, position, asset_id, media_type)
-			SELECT ?, ?, ?, id, media_type FROM assets WHERE id = ? AND user_id = ?`, runID, uid, i, a.ID, uid)
+		res, err := tx.ExecContext(ctx, `INSERT INTO run_images (run_id, user_id, position, asset_id, media_type, turn_digest)
+			SELECT ?, ?, ?, id, media_type, ? FROM assets WHERE id = ? AND user_id = ?`, runID, uid, i, turnDigest, a.ID, uid)
 		if err != nil {
 			return err
 		}
@@ -109,10 +109,13 @@ func AttachRunImages(ctx context.Context, db *sql.DB, uid, runID string, assets 
 	return tx.Commit()
 }
 
-// RunImageSet is the images sent with one run; Live is false for an asset since deleted.
+// RunImageSet is the images sent with one run that Hermes accepted. Ordinal is how many accepted
+// runs of the same chat precede it; TurnDigest is the digest stored when it was sent.
 type RunImageSet struct {
-	RunID  string
-	Images []RunImage
+	RunID      string
+	Ordinal    int
+	TurnDigest string
+	Images     []RunImage
 }
 
 type RunImage struct {
@@ -120,13 +123,17 @@ type RunImage struct {
 	Live               bool
 }
 
-// ChatRunImages lists, oldest first, the runs of uid's chat that carried images.
+// ChatRunImages lists, oldest first, the runs of uid's chat that carried images AND reached
+// Hermes (a run refused or failed before admission has no Hermes run id and no transcript turn,
+// so it is never offered for linking).
 func ChatRunImages(ctx context.Context, db *sql.DB, uid, chatID string) ([]RunImageSet, error) {
-	rows, err := db.QueryContext(ctx, `SELECT ri.run_id, ri.asset_id, ri.media_type, a.id IS NOT NULL
+	rows, err := db.QueryContext(ctx, `SELECT ri.run_id, ri.asset_id, ri.media_type, ri.turn_digest, a.id IS NOT NULL,
+		(SELECT COUNT(*) FROM runs p WHERE p.user_id = r.user_id AND p.chat_id = r.chat_id AND COALESCE(p.hermes_run_id,'') <> ''
+		   AND (p.created_at < r.created_at OR (p.created_at = r.created_at AND p.id < r.id)))
 		FROM run_images ri
 		JOIN runs r ON r.id = ri.run_id AND r.user_id = ri.user_id
 		LEFT JOIN assets a ON a.id = ri.asset_id AND a.user_id = ri.user_id
-		WHERE ri.user_id = ? AND r.chat_id = ?
+		WHERE ri.user_id = ? AND r.chat_id = ? AND COALESCE(r.hermes_run_id,'') <> ''
 		ORDER BY r.created_at, r.id, ri.position`, uid, chatID)
 	if err != nil {
 		return nil, err
@@ -134,13 +141,14 @@ func ChatRunImages(ctx context.Context, db *sql.DB, uid, chatID string) ([]RunIm
 	defer rows.Close()
 	var out []RunImageSet
 	for rows.Next() {
-		var runID string
+		var runID, digest string
+		var ord int
 		var im RunImage
-		if err := rows.Scan(&runID, &im.AssetID, &im.MediaType, &im.Live); err != nil {
+		if err := rows.Scan(&runID, &im.AssetID, &im.MediaType, &digest, &im.Live, &ord); err != nil {
 			return nil, err
 		}
 		if len(out) == 0 || out[len(out)-1].RunID != runID {
-			out = append(out, RunImageSet{RunID: runID})
+			out = append(out, RunImageSet{RunID: runID, Ordinal: ord, TurnDigest: digest})
 		}
 		out[len(out)-1].Images = append(out[len(out)-1].Images, im)
 	}

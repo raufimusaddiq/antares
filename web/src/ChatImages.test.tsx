@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ChatSummary } from "./chatApi";
 
 const api = vi.hoisted(() => ({ listChats: vi.fn(), createChat: vi.fn(), getMessages: vi.fn(), sendMessage: vi.fn(), getRun: vi.fn(), cancelRun: vi.fn() }));
@@ -11,6 +11,7 @@ vi.mock("./mediaApi", async (orig) => ({ ...(await orig<typeof import("./mediaAp
 
 import { Chat, Transcript } from "./Chat";
 import { parseHistory } from "./chatApi";
+import { planRetry } from "./retry";
 
 const ID = "ab".repeat(16);
 const chat = (id: string): ChatSummary => ({ id, title: "", createdAt: "", updatedAt: "", activeRunId: "" });
@@ -20,12 +21,18 @@ const png = () => new File([new Uint8Array(64)], "shot.png", { type: "image/png"
 const box = () => screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
 
 class FakeSource {
+  static all: FakeSource[] = [];
+  static CLOSED = 2;
   readyState = 1;
   onopen = null;
-  onerror = null;
-  constructor(public url: string) {}
+  onerror: (() => void) | null = null;
+  constructor(public url: string) {
+    FakeSource.all.push(this);
+  }
   addEventListener() {}
-  close() {}
+  close() {
+    this.readyState = 2;
+  }
 }
 
 async function mount() {
@@ -40,6 +47,7 @@ const paste = (files: File[], text = "") =>
   fireEvent.paste(box(), { clipboardData: { files, items: files.map((f) => ({ kind: "file", type: f.type, getAsFile: () => f })), getData: () => text } });
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal("EventSource", FakeSource);
   vi.stubGlobal("fetch", vi.fn(async () => ({ status: 404, ok: false, json: async () => null }) as Response));
   URL.createObjectURL = vi.fn(() => "blob:thumb");
@@ -50,6 +58,7 @@ beforeEach(() => {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  FakeSource.all = [];
   [...Object.values(api), ...Object.values(media)].forEach((m) => m.mockReset());
 });
 
@@ -211,5 +220,93 @@ describe("generated media paths (MEDIA-EXT-006)", () => {
     );
     expect(container.textContent).toContain("Generated media was produced but is not available here");
     expect(container.textContent).not.toMatch(/opt\/data|gen_1|profiles/);
+  });
+});
+
+const turn = (seq: number, text: string, attachments?: { assetId: string; mediaType: string; available: boolean }[]) => ({ seq, role: "user" as const, text, ...(attachments ? { attachments } : {}) });
+const att = (available = true) => [{ assetId: ID, mediaType: "image/png", available }];
+const fail = () => {
+  const src = FakeSource.all[FakeSource.all.length - 1];
+  src.readyState = FakeSource.CLOSED;
+  act(() => src.onerror?.());
+};
+
+// Review round 1, IMPORTANT: Try again must resolve text AND images from the same turn of the chat on
+// screen, not from state left by an earlier send.
+describe("retry after reload or navigation", () => {
+  async function mountWith(chats: ChatSummary[], history: Record<string, ReturnType<typeof turn>[]>, runs: Record<string, string>) {
+    api.listChats.mockResolvedValue(ok({ chats, nextCursor: "" }));
+    api.getMessages.mockImplementation(async (id: string) => ok({ turns: history[id] ?? [], nextCursor: "", total: (history[id] ?? []).length }));
+    api.getRun.mockImplementation(async (id: string) => ok({ runId: id, status: runs[id] ?? "FAILED" }));
+    media.getImageInput.mockResolvedValue(verdict(true));
+    render(<Chat email="a@example.test" onSignOut={() => {}} />);
+    await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
+  }
+
+  it("after a reload the failed image turn is re-sent with its images", async () => {
+    media.sendMessageWithImages.mockResolvedValue(ok({ runId: "r2" }));
+    await mountWith([{ ...chat("c1"), activeRunId: "r1" }], { c1: [turn(0, "look at this", att())] }, {});
+    await waitFor(() => expect(FakeSource.all).toHaveLength(1));
+    fail();
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(media.sendMessageWithImages).toHaveBeenCalledTimes(1));
+    expect(media.sendMessageWithImages.mock.calls[0]).toEqual(["c1", "look at this", expect.any(String), [ID]]);
+    expect(api.sendMessage).not.toHaveBeenCalled();
+  });
+
+  it("another chat's failed run is retried with that chat's own text and no images from the previous send", async () => {
+    media.uploadImage.mockResolvedValue(ok({ id: ID }));
+    media.sendMessageWithImages.mockResolvedValue(ok({ runId: "r5" }));
+    await mountWith([chat("c1"), { ...chat("c2"), title: "Second", activeRunId: "r2" }], { c1: [], c2: [turn(0, "beta")] }, { r5: "RUNNING" });
+    await waitFor(() => expect(screen.getByText("Attach image")).toBeTruthy());
+    paste([png()]);
+    await waitFor(() => expect(media.uploadImage).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 0));
+    fireEvent.change(box(), { target: { value: "alpha" } });
+    await waitFor(() => expect(screen.getByRole("button", { name: /Send/ }).hasAttribute("disabled")).toBe(false));
+    fireEvent.keyDown(box(), { key: "Enter" });
+    await waitFor(() => expect(media.sendMessageWithImages).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByText("Second"));
+    await waitFor(() => expect(FakeSource.all.some((s) => s.url.includes("r2"))).toBe(true));
+    const src = FakeSource.all.find((s) => s.url.includes("r2"))!;
+    src.readyState = FakeSource.CLOSED;
+    act(() => src.onerror?.());
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(1));
+    expect(api.sendMessage.mock.calls[0].slice(0, 2)).toEqual(["c2", "beta"]);
+    expect(media.sendMessageWithImages).toHaveBeenCalledTimes(1); // only the original alpha send
+  });
+
+  it("an image turn whose images cannot be proven is not re-sent without them", async () => {
+    await mountWith([{ ...chat("c1"), activeRunId: "r1" }], { c1: [turn(0, "what is this?\n[image]")] }, {});
+    await waitFor(() => expect(FakeSource.all).toHaveLength(1));
+    fail();
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    expect((await screen.findAllByText(/could not be matched/))[0]).toBeTruthy();
+    expect(box().value).toContain("what is this?");
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(media.sendMessageWithImages).not.toHaveBeenCalled();
+  });
+
+  it("a deleted image sends nothing and puts the text back", async () => {
+    await mountWith([{ ...chat("c1"), activeRunId: "r1" }], { c1: [turn(0, "look", att(false))] }, {});
+    await waitFor(() => expect(FakeSource.all).toHaveLength(1));
+    fail();
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    expect((await screen.findAllByText(/no longer available/))[0]).toBeTruthy();
+    expect(box().value).toBe("look");
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(media.sendMessageWithImages).not.toHaveBeenCalled();
+  });
+});
+
+describe("planRetry", () => {
+  const t = (text: string, attachments?: ReturnType<typeof att>) => ({ seq: 0, role: "user" as const, text, ...(attachments ? { attachments } : {}) });
+  it("plans from the last user turn only", () => {
+    expect(planRetry([t("a", att()), { seq: 1, role: "assistant", text: "x" }, t("b")])).toEqual({ kind: "send", text: "b", images: [] });
+    expect(planRetry([t("a", att())])).toEqual({ kind: "send", text: "a", images: att() });
+    expect(planRetry([])).toEqual({ kind: "none" });
+    expect(planRetry([{ seq: 0, role: "assistant", text: "x" }])).toEqual({ kind: "none" });
   });
 });

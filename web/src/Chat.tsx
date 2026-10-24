@@ -37,6 +37,7 @@ import { ImageStrip, useImageAttachments, type Attachment } from "./ImageAttachm
 import { SentImage } from "./MediaPreview";
 import { describeImageReason, describeImageSend, getImageInput, imageFilesFrom, sendMessageWithImages, IMAGE_TYPES, type ImageInput } from "./mediaApi";
 import { hideMediaPaths } from "./mediaTags";
+import { planRetry } from "./retry";
 import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 import { AntaresMark } from "./brand/AntaresMark";
@@ -495,8 +496,6 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const timer = useRef<number | undefined>(undefined);
   const attempts = useRef(0);
   const currentRef = useRef<string | null>(null);
-  const lastInput = useRef("");
-  const lastImages = useRef<AttachmentRef[]>([]);
   const att = useImageAttachments();
   const { discard: discardImages, release: releaseImages } = att;
   const turnsRef = useRef<Turn[]>([]);
@@ -826,8 +825,6 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           chat = c.id;
         }
         blankChat.current = "";
-        lastInput.current = input;
-        lastImages.current = images;
         dispatch({ k: "clear" });
         setPending({ input, key, failure: "", hold, images });
         const r = images.length > 0 ? await sendMessageWithImages(chat, input, key, images.map((i) => i.assetId)) : await sendMessage(chat, input, key);
@@ -991,9 +988,13 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           focusSeq={focus && focus.chat === current && reachOf(turns, cursor, focus.seq) === "held" ? focus.seq : null}
           onCancel={onCancel}
           onRetry={() => {
-            const last = [...turns].reverse().find((t) => t.role === "user");
-            const input = lastInput.current || last?.text || "";
-            if (input) void submit(input, newIdempotencyKey(), NO_HOLD, lastImages.current); // a re-ask of an earlier message, not the draft; its images go again
+            // Text and images come from the same turn of this chat (see retry.ts); never from state left by another send.
+            const plan = planRetry(turns);
+            if (plan.kind === "send") void submit(plan.text, newIdempotencyKey(), NO_HOLD, plan.images); // a re-ask of an earlier message, not the draft
+            else if (plan.kind === "redraft") {
+              onDraft(draft.trim() === "" ? plan.text : `${draft.replace(/\s*$/, "")}\n\n${plan.text}`);
+              setBanner(plan.why);
+            }
           }}
           onReconnect={() => {
             if (run && current) {
