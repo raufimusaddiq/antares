@@ -203,3 +203,33 @@ func TestAssetReadRateLimit(t *testing.T) {
 		t.Fatalf("A consumed B's read quota: %d", w.Code)
 	}
 }
+
+// Draft and template writes share one per-account bucket; reads are not limited and another account is unaffected.
+func TestDraftAndTemplateWritesAreRateLimited(t *testing.T) {
+	limits := auth.DefaultLimits()
+	limits.DraftWritesPerMinute = 3
+	a := newApp(t, appOpts{limits: &limits})
+	alice, bob := a.user("alice"), a.user("bobby")
+	path := "/api/chats/" + alice.newChat() + "/draft"
+	if _, code, _ := alice.putDraft(path, `"0"`, map[string]string{"body": "one"}); code != 200 {
+		t.Fatalf("first draft write = %d", code)
+	}
+	if _, code := alice.tpl("POST", "/api/me/templates", map[string]string{"name": "t1", "body": "x"}); code != 201 {
+		t.Fatalf("template write = %d", code)
+	}
+	if _, code, _ := alice.putDraft(path, `"1"`, map[string]string{"body": "two"}); code != 200 {
+		t.Fatalf("third write = %d", code)
+	}
+	requireLimit(t, alice.do("PUT", path, map[string]string{"If-Match": `"2"`}, map[string]string{"body": "three"}))
+	requireLimit(t, alice.do("DELETE", path, map[string]string{"If-Match": `"2"`}, nil))
+	requireLimit(t, alice.do("POST", "/api/me/templates", nil, map[string]string{"name": "t2", "body": "x"}))
+	if w := alice.get(path); w.Code != 200 {
+		t.Fatalf("reads are not limited: %d", w.Code)
+	}
+	if got := alice.readDraft(path); got.Body != "two" || got.Revision != 2 {
+		t.Fatalf("a refused write changed the draft: %+v", got)
+	}
+	if _, code, _ := bob.putDraft("/api/me/new-chat-draft", `"0"`, map[string]string{"body": "bob"}); code != 200 {
+		t.Fatalf("another account is limited by alice's writes: %d", code)
+	}
+}

@@ -95,4 +95,32 @@ describe("the server draft outlives a send that was not admitted (PRD 'cleared o
     fireEvent.click(screen.getByText("Send again"));
     await waitFor(() => expect(srv.calls.some((c) => c.startsWith("DELETE"))).toBe(true), { timeout: 3000 });
   });
+
+  it("after a failed send, new text typed in the composer reaches the server", async () => {
+    const srv = draftServer();
+    vi.stubGlobal("fetch", srv.f);
+    await mount([chat("c1")]);
+    fireEvent.change(document.getElementById("composer-input")!, { target: { value: "my message" } });
+    await waitFor(() => expect(srv.calls.filter((c) => c.startsWith("PUT")).length).toBe(1), { timeout: 3000 });
+    api.sendMessage.mockResolvedValueOnce({ ok: false, code: "UPSTREAM_UNAVAILABLE" });
+    fireEvent.submit(document.querySelector("form.composer")!);
+    await screen.findByText("Send again");
+    fireEvent.change(document.getElementById("composer-input")!, { target: { value: "a better message" } });
+    await waitFor(() => expect(srv.calls.filter((c) => c.startsWith("PUT")).length).toBe(2), { timeout: 3000 });
+    expect(srv.calls.some((c) => c.startsWith("DELETE"))).toBe(false);
+  });
+
+  it("after a failed chat creation, the new-chat draft keeps syncing", async () => {
+    const srv = draftServer();
+    vi.stubGlobal("fetch", srv.f);
+    await mount([]);
+    api.createChat.mockResolvedValueOnce({ ok: false, code: "UPSTREAM_UNAVAILABLE" });
+    fireEvent.change(document.getElementById("composer-input")!, { target: { value: "first words" } });
+    await waitFor(() => expect(srv.calls.filter((c) => c.startsWith("PUT")).length).toBe(1), { timeout: 3000 });
+    fireEvent.submit(document.querySelector("form.composer")!);
+    await waitFor(() => expect(api.createChat).toHaveBeenCalled());
+    fireEvent.change(document.getElementById("composer-input")!, { target: { value: "second words" } });
+    await waitFor(() => expect(srv.calls.filter((c) => c.startsWith("PUT")).length).toBe(2), { timeout: 3000 });
+    expect(srv.calls.some((c) => c.startsWith("DELETE"))).toBe(false);
+  });
 });

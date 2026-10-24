@@ -471,6 +471,19 @@ describe("a refusal is not 'offline'", () => {
   });
 });
 
+describe("a share does not wait forever for a read that hangs", () => {
+  it("is applied to the box after the wait, and the poll stops", async () => {
+    srv.f.mockImplementation((_path: string, init?: RequestInit) => {
+      if ((init?.method ?? "GET") === "GET") return new Promise(() => {}) as Promise<Response>; // never settles
+      return Promise.reject(new TypeError("down"));
+    });
+    render(<Device chat={null} share="late share" />);
+    for (let i = 0; i < 60; i++) await act(async () => void (await vi.advanceTimersByTimeAsync(100)));
+    expect(api.text()).toBe("late share");
+    expect(vi.getTimerCount()).toBeLessThan(3); // no interval left polling
+  });
+});
+
 describe("send admission and share plumbing", () => {
   it("the server draft stays until the send is admitted, then the draft is deleted", async () => {
     await mount({ initial: "to send" });
@@ -481,22 +494,63 @@ describe("send admission and share plumbing", () => {
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "to send", revision: 1 }); // not deleted: not admitted yet
     expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
-    await act(async () => admitted());
+    await act(async () => admitted(true));
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
   });
 
-  it("a send that is never admitted leaves the draft on the server, and a reload restores it", async () => {
+  it("a refused send leaves the draft on the server, and a reload restores it", async () => {
     const a = await mount({ initial: "kept text" });
     await settle();
-    api.sync.hold();
+    const end = api.sync.hold();
     await act(async () => api.setDraft(""));
     await settle();
+    await act(async () => end(false));
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "kept text", revision: 1 });
     a.unmount();
     await mount({ initial: "" });
     await settle();
     expect(api.text()).toBe("kept text");
     expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
+  });
+
+  it("after a refused send, text typed next reaches the server", async () => {
+    await mount({ initial: "pre-send" });
+    await settle();
+    const end = api.sync.hold();
+    await act(async () => api.setDraft(""));
+    await settle();
+    await act(async () => end(false)); // the send failed
+    await act(async () => api.setDraft("typed after the failure"));
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "typed after the failure", revision: 2 });
+    expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
+  });
+
+  it("text typed during the hold is saved at once when the send is refused", async () => {
+    await mount({ initial: "pre-send" });
+    await settle();
+    const end = api.sync.hold();
+    await act(async () => api.setDraft(""));
+    await act(async () => api.setDraft("second"));
+    await act(async () => end(false));
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "second", revision: 2 });
+  });
+
+  it("a resend that is admitted after a failure still deletes the draft", async () => {
+    await mount({ initial: "resent text" });
+    await settle();
+    const first = api.sync.hold();
+    await act(async () => api.setDraft(""));
+    await act(async () => first(false));
+    await settle();
+    expect(srv.drafts.get(P1)?.body).toBe("resent text");
+    const second = api.sync.hold(); // Send again
+    await act(async () => second(true));
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
   });
 
   it("text typed while the send was pending is saved instead of deleted once it is admitted", async () => {
@@ -507,7 +561,7 @@ describe("send admission and share plumbing", () => {
     await act(async () => api.setDraft("second thought"));
     await settle();
     expect(srv.drafts.get(P1)?.body).toBe("first");
-    await act(async () => admitted());
+    await act(async () => admitted(true));
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "second thought", revision: 2 });
   });

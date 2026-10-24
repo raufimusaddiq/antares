@@ -8,6 +8,7 @@ import { draftBytes, MAX_DRAFT_BYTES, readDraft, removeDraft, sharedText, writeD
 // syncing pauses and the reader picks which text to keep.
 
 const DEBOUNCE_MS = 800;
+const SHARE_WAIT_MS = 5000; // how long a share waits for the first draft read before using this browser's copy
 
 const withShare = (base: string, share: string) => (base.trim() === "" ? share : `${base.replace(/\s*$/, "")}\n\n${share}`);
 
@@ -22,6 +23,7 @@ interface Slot {
   paused: boolean;
   busy: boolean;
   stale: string | null; // the previous chat's text still in the box until the composer resets; never ours
+  box: string; // what the composer holds for this slot right now, tracked even while the slot is held
   held: boolean; // a send is in flight: the server draft stays until the send is admitted
   shareText: string | null; // the OS share already added to the box: any conflict candidate built later must carry it too
   shared: boolean; // the OS share has been added to this slot's draft
@@ -38,10 +40,11 @@ export interface DraftSyncView {
   retry: () => void;
   /**
    * Call when a send starts, before the box is emptied. The server draft is left alone (the same draft is on the
-   * reader's other devices) until the returned function is called, which is when the send is admitted; it then
-   * deletes the draft, or saves whatever was typed meanwhile. A send that is never admitted never calls it.
+   * reader's other devices) while the send is in flight. Call the returned function on EVERY outcome: with true
+   * once the send is admitted (the draft is deleted, or whatever was typed meanwhile is saved), with false when
+   * it was refused or never started (the server draft stays, and syncing of new text resumes at once).
    */
-  hold: () => () => void;
+  hold: () => (admitted: boolean) => void;
   keepMine: () => void;
   useTheirs: () => void;
 }
@@ -153,7 +156,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
     // resets, and that text must never be read as this chat's.
     const first = slot.current === null; // nothing was on screen before: the box is this chat's own
     const own = first && draftRef.current !== "" ? draftRef.current : loadDraft(email, chatId);
-    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, held: false, shareText: null, shared: false };
+    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, box: own, held: false, shareText: null, shared: false };
     slot.current = s;
     setConflict(null);
     setOffline(false);
@@ -177,6 +180,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       s.stale = null;
     }
     s.latest = draft;
+    s.box = draft;
     if (s.loaded && !s.paused && !s.held && draft === "" && s.synced !== "") saveCleared(email, s.chatId, true); // a deliberate empty box the server has not been told about
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => void (s.loaded ? flush(s) : load(s)), DEBOUNCE_MS);
@@ -188,7 +192,13 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
     if (share === null || chatId !== null) return;
     const s = slot.current;
     if (!s) return;
+    const started = Date.now();
     const id = window.setInterval(() => {
+      if (Date.now() - started > SHARE_WAIT_MS && !s.attempted) {
+        // The first read never settled: do not wait for the server. The text goes into the box (this browser's
+        // copy), and the normal conflict check runs if the read ever finishes.
+        s.attempted = true;
+      }
       if (slot.current !== s || !s.attempted) return; // wait for the first read to finish, whichever way it went
       window.clearInterval(id);
       if (s.shared) return;
@@ -209,8 +219,11 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       const s = slot.current;
       if (!s) return () => {};
       s.held = true;
-      return () => {
+      return (admitted) => {
         s.held = false;
+        // Admitted: the box's current text is what the server should hold (empty = delete). Not admitted: leave the
+        // server copy alone while the box is still empty, but anything typed since is saved like any other edit.
+        s.latest = admitted || s.box !== "" ? s.box : s.synced;
         void flush(s);
       };
     },

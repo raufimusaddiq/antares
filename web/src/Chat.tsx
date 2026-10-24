@@ -334,7 +334,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     sharedTextApplied();
     setShare(null);
   });
-  const sendHold = useRef<(() => void) | null>(null); // releases the server draft once a send is admitted
+  const sendHold = useRef<((admitted: boolean) => void) | null>(null); // holds the server draft while a send is in flight
+  const endSend = (admitted: boolean) => {
+    sendHold.current?.(admitted);
+    sendHold.current = null;
+  };
   const [ownTemplates, setOwnTemplates] = useState<OwnTemplate[]>([]);
   useEffect(() => {
     void listOwnTemplates().then((l) => l && setOwnTemplates(l));
@@ -650,7 +654,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
       let chat = current;
       if (!chat) {
         const c = await newChat();
-        if (!c) return;
+        if (!c) {
+          endSend(false); // nothing was sent
+          return;
+        }
         nav.current++;
         detach();
         setCurrent(c.id);
@@ -664,11 +671,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
       dispatch({ k: "clear" });
       setPending({ input, key, failure: "" });
       const r = await sendMessage(chat, input, key);
-      if (r.ok) {
-        // Admitted: now the draft may leave the server (and the reader's other devices). A failed send keeps it.
-        sendHold.current?.();
-        sendHold.current = null;
-      }
+      // Every outcome ends the hold: admitted deletes the server draft (and the reader's other devices lose it);
+      // refused keeps it and resumes syncing whatever is typed next.
+      endSend(r.ok);
       if (currentRef.current !== chat) return;
       if (!r.ok) {
         // Kept with the same key: sending again repeats the request, it cannot double-send.
@@ -812,7 +817,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
               attach(run.runId, current);
             }
           }}
-          onResend={() => pending && void submit(pending.input, pending.key)}
+          onResend={() => {
+            if (!pending) return;
+            sendHold.current ??= sync.hold(); // a resend that gets admitted must delete the draft too
+            void submit(pending.input, pending.key);
+          }}
         />
         </ReplyContext.Provider>
         {usage && (
