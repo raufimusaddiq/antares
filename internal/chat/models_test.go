@@ -443,3 +443,40 @@ func TestModelsNeedTheAdvertisedRoute(t *testing.T) {
 		}
 	}
 }
+
+// Global policy covers the profile default too: a chat with no saved choice, a new chat and a
+// reset chat all refuse to send while the default is blocked, and no run reaches Hermes.
+func TestBlockedDefaultModelIsNotExempt(t *testing.T) {
+	a := mediaApp(t, visionModel)
+	u := a.user("a")
+	admin := a.account("admin", "ADMIN", "APPROVED", "READY")
+	reset := u.newChat()
+	if code, _ := u.putSettings(reset, map[string]any{"model": kenariOnly}); code != 200 {
+		t.Fatal("setup")
+	}
+	if code, _ := u.putSettings(reset, map[string]any{"reset": true}); code != 200 {
+		t.Fatal("reset")
+	}
+	fresh := u.newChat()
+	if err := store.SetBlockedModels(context.Background(), a.db, admin.id, []string{visionModel}, "r", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	for name, chat := range map[string]string{"new chat": fresh, "reset chat": reset} {
+		w := u.do("POST", "/api/chats/"+chat+"/messages", map[string]string{"Idempotency-Key": nextIdem()}, map[string]string{"input": "hello"})
+		if w.Code != 422 || errCode(t, w) != "MODEL_UNAVAILABLE" {
+			t.Errorf("%s: got %d %s", name, w.Code, w.Body.String())
+		}
+	}
+	if n := len(a.runPosts(t)); n != 0 {
+		t.Fatalf("%d runs reached Hermes with a blocked default", n)
+	}
+	// An unrelated block does not stop the default chat, and the run names the default explicitly.
+	if err := store.SetBlockedModels(context.Background(), a.db, admin.id, []string{kenariOnly}, "r", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	u.send(fresh, "hello")
+	eventually(t, func() bool { return len(a.runPosts(t)) == 1 }, "the default run")
+	if got := a.runPosts(t)[0]["model"]; got != visionModel {
+		t.Fatalf("run named %v, want the checked default", got)
+	}
+}

@@ -1,11 +1,13 @@
 package chat
 
 import (
+	"context"
 	"errors"
 	"net/http"
 	"slices"
 	"unicode/utf8"
 
+	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/kenari"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
@@ -67,19 +69,58 @@ func (s *Service) savedChoiceState(r *http.Request, model string) (string, kenar
 	return "AVAILABLE", cat[i]
 }
 
-// refuseUnrunnableChoice answers 422 MODEL_UNAVAILABLE, before a run is admitted, when the chat's
-// saved model is blocked or gone. It reports whether it answered.
-func (s *Service) refuseUnrunnableChoice(w http.ResponseWriter, r *http.Request, uid, chatID string) bool {
+// effectiveDefault is the model Hermes would run for a chat with no saved choice. The global
+// block list applies to it exactly as it does to a chosen model.
+func (s *Service) effectiveDefault(ctx context.Context, b hermes.Binding) (provider, model string, err error) {
+	inv, err := s.hx.ModelOptions(ctx, b, false)
+	if err != nil {
+		return "", "", err
+	}
+	if inv.Model == "" {
+		return "", "", errNoDefault
+	}
+	return inv.Provider, inv.Model, nil
+}
+
+var errNoDefault = errors.New("chat: the assistant did not report a default model")
+
+// refuseUnrunnableChoice answers 422 MODEL_UNAVAILABLE, before a run is admitted, when the model
+// the next run would use is blocked by policy or (for a saved choice) gone. That is the chat's
+// saved model, else the profile default: a default-model chat is not exempt. When a block list
+// exists and the default cannot be determined, the send is refused rather than assumed allowed.
+// It reports whether it answered.
+func (s *Service) refuseUnrunnableChoice(w http.ResponseWriter, r *http.Request, b hermes.Binding, uid, chatID string) bool {
 	m, err := store.GetChatModel(r.Context(), s.db, uid, chatID)
 	if err != nil {
 		internalError(w, "get chat model", err)
 		return true
 	}
-	if m.Model == "" {
+	const gone = "This chat's model is no longer available. Choose another model; nothing was sent"
+	if m.Model != "" {
+		if state, _ := s.savedChoiceState(r, m.Model); state == "BLOCKED" || state == "NOT_LISTED" {
+			apiError(w, http.StatusUnprocessableEntity, "MODEL_UNAVAILABLE", gone)
+			return true
+		}
 		return false
 	}
-	if state, _ := s.savedChoiceState(r, m.Model); state == "BLOCKED" || state == "NOT_LISTED" {
-		apiError(w, http.StatusUnprocessableEntity, "MODEL_UNAVAILABLE", "This chat's model is no longer available. Choose another model; nothing was sent")
+	blocked, err := store.BlockedModels(r.Context(), s.db)
+	if err != nil {
+		internalError(w, "blocked models", err)
+		return true
+	}
+	if len(blocked) == 0 {
+		return false
+	}
+	_, model, err := s.effectiveDefault(r.Context(), b)
+	switch {
+	case errors.Is(err, errNoDefault):
+		apiError(w, http.StatusUnprocessableEntity, "MODEL_UNAVAILABLE", "The assistant's default model could not be determined, so policy cannot be checked; choose a model")
+		return true
+	case err != nil:
+		s.gateError(w, err)
+		return true
+	case slices.Contains(blocked, model):
+		apiError(w, http.StatusUnprocessableEntity, "MODEL_UNAVAILABLE", "The default model is blocked by policy. Choose another model; nothing was sent")
 		return true
 	}
 	return false

@@ -252,6 +252,39 @@ describe("ModelPicker settings", () => {
     expect(d.find("PUT", "/api/me/model-visibility")[1].body).toEqual({ hidden: [] });
   });
 
+  it("two quick hides keep both, whatever order the answers arrive in", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", null));
+    await open(d);
+    fireEvent.click(screen.getByLabelText("Hide m-reason"));
+    fireEvent.click(screen.getByLabelText("Hide m-plain")); // before the first answer
+    expect(screen.queryByLabelText("m-reason")).toBeNull(); // both are gone at once
+    expect(screen.queryByLabelText("m-plain")).toBeNull();
+    await waitFor(() => expect(d.find("PUT", "/api/me/model-visibility")).toHaveLength(1));
+    expect(d.find("PUT", "/api/me/model-visibility")).toHaveLength(1); // one write at a time
+    await act(async () => d.find("PUT", "/api/me/model-visibility")[0].resolve(200, { hidden: ["m-plain", "m-reason"] }));
+    await waitFor(() => expect(d.find("PUT", "/api/me/model-visibility")).toHaveLength(2));
+    for (const c of d.find("PUT", "/api/me/model-visibility")) expect([...(c.body!.hidden as string[])].sort()).toEqual(["m-plain", "m-reason"]); // no write drops A
+    await act(async () => d.find("PUT", "/api/me/model-visibility")[1].resolve(200, { hidden: ["m-plain", "m-reason"] }));
+    expect(screen.queryByLabelText("m-reason")).toBeNull();
+    expect(screen.queryByLabelText("m-plain")).toBeNull();
+  });
+
+  it("a failed hide shows what the server holds and says so", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", null));
+    await open(d);
+    fireEvent.click(screen.getByLabelText("Hide m-reason"));
+    await waitFor(() => expect(d.find("PUT", "/api/me/model-visibility")).toHaveLength(1));
+    await act(async () => d.find("PUT", "/api/me/model-visibility")[0].resolve(500, { error: { code: "INTERNAL" } }));
+    await waitFor(() => expect(d.find("GET", "/api/me/model-visibility")).toHaveLength(1));
+    await act(async () => d.find("GET", "/api/me/model-visibility")[0].resolve(200, { hidden: [] }));
+    expect(screen.getByLabelText("m-reason")).toBeTruthy(); // back, because the server still shows it
+    expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
   it("names a catalogue outage instead of showing another list", async () => {
     const d = deferred();
     render(<ModelPicker chatId="A" disabled={false} />);

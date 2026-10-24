@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { describeCode, describePrice, describeQuota, getChatModel, getModels, putChatModel, putModelVisibility, type ModelCatalog, type ModelChoice, type ModelEntry } from "./chatApi";
+import { describeCode, describePrice, describeQuota, getChatModel, getModels, getModelVisibility, putChatModel, putModelVisibility, type ModelCatalog, type ModelChoice, type ModelEntry } from "./chatApi";
 
 /**
  * Model picker for one chat (PRD LLM-001..007, CTX-004, issue #115). The models and their metadata
@@ -55,7 +55,8 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
 
   const load = (refresh: boolean) =>
     void getModels(refresh).then((r) => {
-      setCatalog(r.ok ? r.value : null);
+      if (r.ok && hiddenPending.current === 0) hiddenWant.current = new Set(r.value.providers.flatMap((p) => p.models).filter((m) => m.hidden).map((m) => m.id));
+      setCatalog(r.ok ? (hiddenWant.current && hiddenPending.current > 0 ? withHidden(r.value, hiddenWant.current) : r.value) : null);
       setMsg(r.ok ? "" : describeCode(r.code));
     });
 
@@ -89,14 +90,42 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
   };
   const patch = (p: Partial<ModelChoice>) => want.current && change({ ...want.current, ...p });
 
-  /** Replaces this account's hidden set; the server answers with what it holds. */
+  // The account's hidden set. Every change updates the intended set at once and the PUTs go out one at
+  // a time, each carrying the intended set as it is when it is sent, so two quick changes compose
+  // (hide A then B keeps both) and a late answer for the first cannot bring A back. The set belongs to
+  // the account, not to a chat, so a chat switch does not touch it.
+  const hiddenWant = useRef<Set<string> | null>(null);
+  const hiddenQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const hiddenPending = useRef(0);
+  const showHiddenSet = (ids: Set<string>) => setCatalog((c) => c && withHidden(c, ids));
+
   const setHidden = (id: string, hide: boolean) => {
-    const all = (catalog?.providers ?? []).flatMap((p) => p.models);
-    const hidden = all.filter((m) => (m.id === id ? hide : m.hidden)).map((m) => m.id);
-    void putModelVisibility(hidden).then((r) => {
-      if (!r.ok) return setMsg(describeCode(r.code));
-      setMsg("");
-      setCatalog((c) => c && { ...c, providers: c.providers.map((p) => ({ ...p, models: p.models.map((m) => ({ ...m, hidden: r.value.hidden.includes(m.id) })) })) });
+    const next = new Set(hiddenWant.current ?? (catalog?.providers ?? []).flatMap((p) => p.models).filter((m) => m.hidden).map((m) => m.id));
+    if (hide) next.add(id);
+    else next.delete(id);
+    hiddenWant.current = next;
+    showHiddenSet(next);
+    hiddenPending.current += 1;
+    hiddenQueue.current = hiddenQueue.current.then(async () => {
+      const r = await putModelVisibility([...(hiddenWant.current ?? next)]);
+      hiddenPending.current -= 1;
+      if (r.ok) {
+        setMsg("");
+        if (hiddenPending.current === 0) {
+          hiddenWant.current = new Set(r.value.hidden);
+          showHiddenSet(hiddenWant.current);
+        }
+        return;
+      }
+      setMsg(describeCode(r.code));
+      if (hiddenPending.current === 0) {
+        // Show what the server holds, not the change that failed.
+        const back = await getModelVisibility();
+        if (back.ok && hiddenPending.current === 0) {
+          hiddenWant.current = new Set(back.value.hidden);
+          showHiddenSet(hiddenWant.current);
+        }
+      }
     });
   };
 
@@ -199,3 +228,8 @@ function badges(m: ModelEntry): string {
     describePrice(m.price),
   ].join(" · ");
 }
+
+const withHidden = (c: ModelCatalog, ids: Set<string>): ModelCatalog => ({
+  ...c,
+  providers: c.providers.map((p) => ({ ...p, models: p.models.map((m) => ({ ...m, hidden: ids.has(m.id) })) })),
+});

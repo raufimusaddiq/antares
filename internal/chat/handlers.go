@@ -367,7 +367,7 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 		s.gateError(w, err)
 		return
 	}
-	if s.refuseUnrunnableChoice(w, r, uid, chatID) {
+	if s.refuseUnrunnableChoice(w, r, b, uid, chatID) {
 		return
 	}
 	imgs, ok := s.resolveImages(w, r, b, uid, chatID, body.ImageAssetIDs)
