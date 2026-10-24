@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { describe, expect, it, vi } from "vitest";
 
-const source = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8").replace("__VERSION__", "test").replace("__PRECACHE__", "[]");
+const source = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8").replace("__VERSION__", "test").replace("__PRECACHE__", "[]").replace("__OPTIONAL__", "[]");
 
 function worker(fetchImpl: (url: string, init?: any) => Promise<any>, subscribe = vi.fn()) {
   const listeners: Record<string, (event: any) => void> = {};

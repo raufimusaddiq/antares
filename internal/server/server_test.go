@@ -193,7 +193,7 @@ func TestPWAPublicAssets(t *testing.T) {
 				t.Errorf("%s must revalidate", p)
 			}
 		}
-		if p == "/sw.js" && (strings.Contains(rec.Body.String(), "__VERSION__") || strings.Contains(rec.Body.String(), "__PRECACHE__")) {
+		if p == "/sw.js" && (strings.Contains(rec.Body.String(), "__VERSION__") || strings.Contains(rec.Body.String(), "__PRECACHE__") || strings.Contains(rec.Body.String(), "__OPTIONAL__")) {
 			t.Error("service worker was not versioned by the build")
 		}
 		if p == "/offline.html" {
