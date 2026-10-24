@@ -39,6 +39,7 @@ var builtProbes = []probe{
 	{"artifact preview", "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview"},
 	{"search within a chat", "GET /api/chats/{chatId}/search"},
 	{"chat usage and budget", "GET /api/chats/{chatId}/usage"},
+	{"chat input capabilities", "GET /api/chats/{chatId}/input"},
 	{"set chat model", "PUT /api/chats/{chatId}/model"},
 	{"draft read", "GET /api/chats/{chatId}/draft"},
 	{"draft write", "PUT /api/chats/{chatId}/draft"},

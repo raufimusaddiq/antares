@@ -157,6 +157,9 @@ func (s *Service) getMessages(w http.ResponseWriter, r *http.Request) {
 	if stale, err := store.StaleChats(r.Context(), s.db, uid, c.ID, 1, time.Time{}); err == nil && len(stale) == 1 {
 		s.indexTranscript(r.Context(), uid, c, all, read)
 	}
+	if runs, err := store.ChatRunImages(r.Context(), s.db, uid, c.ID); err == nil && len(runs) > 0 {
+		linkRunImages(all, runs)
+	}
 	page, next, err := pageHistory(c.ID, all, before, limit, hash)
 	if err == nil {
 		page = append([]hermes.Message(nil), page...) // stamp a copy, not the transcript

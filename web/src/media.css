@@ -1,0 +1,20 @@
+/* Image attachments and media previews. Selected by data-media so this file needs no
+   class rules in styles.css; fold it in when that file is free to change. */
+[data-media="strip"] { display: flex; flex-wrap: wrap; gap: 8px; margin: 0 0 8px; padding: 0; list-style: none; }
+[data-media="item"] { display: flex; align-items: center; gap: 8px; max-width: 100%; padding: 6px; border: 1px solid var(--border, #8884); border-radius: 8px; }
+[data-media="item"][data-status="failed"] { border-color: var(--danger, #c33); }
+[data-media="thumb"] { width: 56px; height: 56px; object-fit: cover; border-radius: 6px; }
+[data-media="meta"] { display: flex; flex-direction: column; min-width: 0; font-size: 0.8125rem; }
+[data-media="name"] { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 14rem; }
+[data-media="thumbbtn"] { padding: 0; border: 0; background: none; cursor: zoom-in; }
+[data-media="gone"] { font-style: italic; opacity: 0.7; }
+[data-media="audio"] { margin: 0; }
+[data-media="audio"] audio { width: min(100%, 22rem); }
+[data-media="lightbox"] { position: fixed; inset: 0; z-index: 50; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 16px; background: rgba(0, 0, 0, 0.85); }
+[data-media="lightbox"] img { max-width: 100%; max-height: 80vh; object-fit: contain; }
+[data-media="lightbox"] a, [data-media="lightbox"] button { color: #fff; }
+@media (prefers-reduced-motion: no-preference) { [data-media="lightbox"] { animation: media-fade 120ms ease-out; } }
+@keyframes media-fade { from { opacity: 0; } to { opacity: 1; } }
+[data-media="sent"] { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
+[data-media="notice"] { margin: 0 0 8px; color: var(--danger, #c33); font-size: 0.875rem; }
+[data-media="wait"] { font-size: 0.8125rem; opacity: 0.8; }

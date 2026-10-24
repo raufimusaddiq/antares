@@ -11,6 +11,8 @@ import (
 	"mime"
 	"net/http"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/raufimusaddiq/antares/internal/store"
 )
@@ -137,11 +139,18 @@ func (s *Service) getAsset(w http.ResponseWriter, r *http.Request) {
 	}
 	h := w.Header()
 	h.Set("Content-Type", a.MediaType)
-	h.Set("Content-Length", strconv.Itoa(len(content)))
 	h.Set("Cache-Control", "private, no-store")
 	h.Set("X-Content-Type-Options", "nosniff")
+	// Download is the default. ?inline=1 lets the page render the asset in an <img> or an
+	// <audio> element, and only for the raster image and audio types upload validated by
+	// content: never an HTML or SVG payload. The policy keeps a directly opened asset inert.
 	h.Set("Content-Disposition", "attachment")
-	_, _ = w.Write(content)
+	if r.URL.Query().Get("inline") == "1" && (strings.HasPrefix(a.MediaType, "image/") || knownAudio(a.MediaType)) {
+		h.Set("Content-Disposition", "inline")
+		h.Set("Content-Security-Policy", "default-src 'none'; sandbox")
+	}
+	// ServeContent answers Range requests, so audio can seek without a second pipeline.
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(content))
 }
 
 func (s *Service) deleteAsset(w http.ResponseWriter, r *http.Request) {

@@ -2,6 +2,8 @@ package hermes
 
 import (
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -306,5 +308,42 @@ func TestNormalize(t *testing.T) {
 	}
 	if n := Normalize(ev("tool.started", `{"tool_call_id":"../x","name":"`+strings.Repeat("é", 500)+`"}`)); n.ToolID != "" || len(n.Label) > maxLabel {
 		t.Errorf("unbounded or unsafe fields survived: %+v", n)
+	}
+}
+
+// A turn with images sends the canonical text + image_url parts as the last message
+// (what the deployed /v1/runs hands the agent), and a turn without images is unchanged.
+func TestCreateRunSendsImagesInline(t *testing.T) {
+	var bodies []map[string]any
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var b map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&b)
+		bodies = append(bodies, b)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"run_id":"run_1","status":"started"}`)
+	}), ClientOptions{})
+	ctx := context.Background()
+	png := []byte{0x89, 'P', 'N', 'G', 0x0d, 0x0a, 0x1a, 0x0a}
+	if _, err := c.CreateRun(ctx, bind(), RunRequest{SessionID: "s1", Input: "what is this?", Images: []Image{{MediaType: "image/png", Data: png}}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := c.CreateRun(ctx, bind(), RunRequest{SessionID: "s1", Input: "plain"}); err != nil {
+		t.Fatal(err)
+	}
+	if bodies[1]["input"] != "plain" {
+		t.Errorf("text-only input changed: %v", bodies[1]["input"])
+	}
+	msgs, _ := bodies[0]["input"].([]any)
+	if len(msgs) != 1 {
+		t.Fatalf("input = %v", bodies[0]["input"])
+	}
+	last := msgs[0].(map[string]any)
+	parts := last["content"].([]any)
+	txt := parts[0].(map[string]any)
+	img := parts[1].(map[string]any)
+	url := img["image_url"].(map[string]any)["url"].(string)
+	want := "data:image/png;base64," + base64.StdEncoding.EncodeToString(png)
+	if last["role"] != "user" || txt["type"] != "text" || txt["text"] != "what is this?" || img["type"] != "image_url" || url != want {
+		t.Errorf("parts = %v", parts)
 	}
 }

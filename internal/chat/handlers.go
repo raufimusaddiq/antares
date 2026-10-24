@@ -59,6 +59,7 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"PUT /api/me/budget":                                           http.HandlerFunc(s.putBudget),
 		"GET /api/search/chats":                                        http.HandlerFunc(s.searchAll),
 		"GET /api/capabilities":                                        http.HandlerFunc(s.capabilities),
+		"GET /api/chats/{chatId}/input":                                http.HandlerFunc(s.getChatInput),
 		"POST /api/chats/{chatId}/messages":                            http.HandlerFunc(s.postMessage),
 		"GET /api/runs/{runId}":                                        http.HandlerFunc(s.getRun),
 		"GET /api/runs/{runId}/events":                                 http.HandlerFunc(s.runEvents),
@@ -324,6 +325,8 @@ func (s *Service) getChat(w http.ResponseWriter, r *http.Request) {
 
 type postMessageBody struct {
 	Input string `json:"input"`
+	// ImageAssetIDs name the caller's own staged images (POST /api/assets) to send with the text.
+	ImageAssetIDs []string `json:"imageAssetIds"`
 }
 
 func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
@@ -355,8 +358,13 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 		internalError(w, "get chat", err)
 		return
 	}
-	if _, _, err := s.gate(r.Context(), uid); err != nil { // no run is admitted for an account that could not start it
+	b, _, err := s.gate(r.Context(), uid) // no run is admitted for an account that could not start it
+	if err != nil {
 		s.gateError(w, err)
+		return
+	}
+	imgs, ok := s.resolveImages(w, r, b, uid, chatID, body.ImageAssetIDs)
+	if !ok {
 		return
 	}
 	// A busy chat answers RUN_CONFLICT (or the replay of its own run) from AdmitRun;
@@ -396,7 +404,12 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if created {
-		s.start(run, body.Input)
+		if imgs != nil {
+			if err := store.AttachRunImages(r.Context(), s.db, uid, run.ID, imgs.assets()); err != nil {
+				log.Printf("chat: run %s: could not record its images: %v", run.ID, err)
+			}
+		}
+		s.start(run, body.Input, imgs)
 	}
 	// A repeat of the same Idempotency-Key is the same run: nothing is sent again.
 	writeJSON(w, http.StatusAccepted, viewRun(run))

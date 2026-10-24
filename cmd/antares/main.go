@@ -16,6 +16,7 @@ import (
 	"github.com/raufimusaddiq/antares/internal/chat"
 	"github.com/raufimusaddiq/antares/internal/config"
 	"github.com/raufimusaddiq/antares/internal/hermes"
+	"github.com/raufimusaddiq/antares/internal/kenari"
 	"github.com/raufimusaddiq/antares/internal/push"
 	"github.com/raufimusaddiq/antares/internal/secrets"
 	"github.com/raufimusaddiq/antares/internal/store"
@@ -137,7 +138,7 @@ func run() error {
 		return err
 	}
 	defer pusher.Close() // after chats.Close below has stopped the workers that call it
-	chats, err := chat.New(chat.Options{DB: db, Box: box, Hermes: hermesClient, Notifier: pusher})
+	chats, err := chat.New(chat.Options{DB: db, Box: box, Hermes: hermesClient, Kenari: kenari.New(kenari.DefaultURL, nil), Notifier: pusher})
 	if err != nil {
 		return err
 	}

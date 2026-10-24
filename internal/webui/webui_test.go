@@ -103,6 +103,9 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		"/api/capabilities": true,
 		// #107 server drafts and personal templates: the new-chat draft, the template list/create and
 		// /api/me/templates/{id}; a chat's own draft is /api/chats/{id}/draft, covered above.
+		// #101 staged image and audio assets: upload/preview/delete by the server-issued asset id. Owner-checked
+		// on every call; the page never builds one from message text.
+		"/api/assets": true, "/api/assets/": true,
 		"/api/me/new-chat-draft": true, "/api/me/templates": true, "/api/me/templates/": true,
 	}
 	pathRe := regexp.MustCompile(`/api/[A-Za-z0-9_/.-]*`)
