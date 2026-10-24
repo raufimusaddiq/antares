@@ -522,6 +522,17 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     document.getElementById("composer-input")?.focus();
   };
   const [banner, setBanner] = useState("");
+  // Phone layout only (CSS shows the toggles under 40rem): the account actions and the per-chat options stay one tap away.
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  useEffect(() => {
+    if (!menuOpen) return;
+    const away = (e: PointerEvent) => {
+      if (!(e.target as Element | null)?.closest?.(".bar")) setMenuOpen(false);
+    };
+    document.addEventListener("pointerdown", away);
+    return () => document.removeEventListener("pointerdown", away);
+  }, [menuOpen]);
   const [focus, setFocus] = useState<{ chat: string; seq: number; nonce: number } | null>(null); // a search result being opened at its turn
 
   useEffect(() => setDraft(loadDraft(email, current)), [email, current]);
@@ -964,22 +975,32 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   return (
     <div className="chat-app">
-      <header className="bar">
+      <header
+        className="bar"
+        onKeyDown={(e) => {
+          if (e.key === "Escape" && menuOpen) setMenuOpen(false);
+        }}
+      >
         <strong className="brand">
           <AntaresMark size={20} />
           Antares
         </strong>
         <span className="who-am-i">{email}</span>
-        <Notifications />
-        {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? ""} />}
-        {canAdmin && onAdmin && (
-          <button type="button" className="quiet" onClick={onAdmin}>
-            Admin
-          </button>
-        )}
-        <button type="button" className="quiet" onClick={onSignOut}>
-          Sign out
+        <button type="button" className="quiet bar-toggle" aria-expanded={menuOpen} aria-controls="bar-actions" onClick={() => setMenuOpen((o) => !o)}>
+          Menu
         </button>
+        <div id="bar-actions" className={menuOpen ? "bar-actions open" : "bar-actions"}>
+          <Notifications />
+          {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? ""} />}
+          {canAdmin && onAdmin && (
+            <button type="button" className="quiet" onClick={onAdmin}>
+              Admin
+            </button>
+          )}
+          <button type="button" className="quiet" onClick={onSignOut}>
+            Sign out
+          </button>
+        </div>
       </header>
       <nav className="side" aria-label="Conversations">
         <button type="button" onClick={() => void startChat()}>
@@ -1055,34 +1076,39 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           }}
         />
         </ReplyContext.Provider>
-        {usage && (
-          <details className="usage" open={usage.budget.reached}>
-            <summary>{usage.budget.reached ? "Token limit reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens` : "Usage unknown"}</summary>
-            <ul>
-              {describeUsage(usage).map((l) => (
-                <li key={l}>{l}</li>
-              ))}
-            </ul>
-            {usage.turns.length > 0 && (
-              <details>
-                <summary>Per reply{usage.turnsTruncated ? " (newest 100)" : ""}</summary>
-                <ul>
-                  {describeTurns(usage).map((l) => (
-                    <li key={l}>{l}</li>
-                  ))}
-                </ul>
-              </details>
-            )}
-            <BudgetForm
-              limit={usage.budget.limit}
-              onSaved={() => current && void getUsage(current).then((r) => setUsage(r.ok ? r.value : null))}
-            />
-          </details>
-        )}
-        {current && offers(inventory, "models") && <ModelPicker chatId={current} disabled={busy} onChanged={() => setModelTick((n) => n + 1)} />}
-        <Recorder />
+        <button type="button" className="quiet extras-toggle" aria-expanded={moreOpen} aria-controls="chat-extras" onClick={() => setMoreOpen((o) => !o)}>
+          Options
+        </button>
+        <div id="chat-extras" className={moreOpen || usage?.budget.reached ? "extras open" : "extras"}>
+          {usage && (
+            <details className="usage" open={usage.budget.reached}>
+              <summary>{usage.budget.reached ? "Token limit reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens` : "Usage unknown"}</summary>
+              <ul>
+                {describeUsage(usage).map((l) => (
+                  <li key={l}>{l}</li>
+                ))}
+              </ul>
+              {usage.turns.length > 0 && (
+                <details>
+                  <summary>Per reply{usage.turnsTruncated ? " (newest 100)" : ""}</summary>
+                  <ul>
+                    {describeTurns(usage).map((l) => (
+                      <li key={l}>{l}</li>
+                    ))}
+                  </ul>
+                </details>
+              )}
+              <BudgetForm
+                limit={usage.budget.limit}
+                onSaved={() => current && void getUsage(current).then((r) => setUsage(r.ok ? r.value : null))}
+              />
+            </details>
+          )}
+          {current && offers(inventory, "models") && <ModelPicker chatId={current} disabled={busy} onChanged={() => setModelTick((n) => n + 1)} />}
+          <Recorder />
+          <Templates own={ownTemplates} onChange={setOwnTemplates} />
+        </div>
         <DraftNotice sync={sync} />
-        <Templates own={ownTemplates} onChange={setOwnTemplates} />
         <Composer
           value={draft}
           busy={busy}
