@@ -15,7 +15,7 @@ function fakeServer() {
   const f = vi.fn(async (path: string, init?: RequestInit) => {
     const method = init?.method ?? "GET";
     log.push(`${method} ${path}`);
-    if (down || (failPut && method === "PUT")) throw new TypeError("down");
+    if (down || (failPut && method !== "GET")) throw new TypeError("down");
     const cur = drafts.get(path) ?? { body: "", revision: 0 };
     const reply = (status: number, body?: unknown) => ({ status, ok: status < 400, json: async () => body ?? null }) as Response;
     if (method === "GET") return reply(200, cur);
@@ -176,6 +176,62 @@ describe("another device sent or deleted the draft", () => {
     await settle();
     expect(api.sync.conflict).toBeNull();
     expect(srv.drafts.get(P1)).toEqual({ body: "typed after the send, then reload", revision: 3 });
+  });
+});
+
+describe("reload and revert edge cases", () => {
+  it("a clear whose DELETE failed survives a reload: no resurrection, the delete reaches the server", async () => {
+    const a = await mount({ initial: "sent text" });
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "sent text", revision: 1 });
+    srv.setFailPut(true);
+    await act(async () => api.setDraft("")); // sent / cleared while offline: DELETE fails
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "sent text", revision: 1 });
+    a.unmount();
+    srv.setFailPut(false);
+    await mount({ initial: "" }); // reload: local box is empty, the server still has the old text
+    await settle();
+    expect(api.text()).toBe(""); // not brought back
+    expect(api.sync.conflict).toBeNull();
+    expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 }); // the deletion arrived
+  });
+
+  it("a pending clear is a conflict, not a delete, if another device wrote since", async () => {
+    const a = await mount({ initial: "sent text" });
+    await settle();
+    srv.setFailPut(true);
+    await act(async () => api.setDraft(""));
+    await settle();
+    a.unmount();
+    srv.setFailPut(false);
+    srv.drafts.set(P1, { body: "newer from laptop", revision: 2 });
+    await mount({ initial: "" });
+    await settle();
+    expect(api.sync.conflict).toEqual({ theirs: "newer from laptop" });
+    expect(srv.drafts.get(P1)).toEqual({ body: "newer from laptop", revision: 2 });
+  });
+
+  it("an empty box that was never synced still restores the server text", async () => {
+    srv.drafts.set(P1, { body: "from the phone", revision: 3 });
+    await mount({ initial: "" });
+    expect(api.text()).toBe("from the phone");
+  });
+
+  it("Keep this text persists even after the text is edited back to the old synced value", async () => {
+    await mount({ initial: "A" });
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "A", revision: 1 });
+    srv.drafts.set(P1, { body: "B", revision: 2 }); // another device
+    await act(async () => api.setDraft("C"));
+    await settle();
+    expect(api.sync.conflict).toEqual({ theirs: "B" });
+    await act(async () => api.setDraft("A")); // back to what this device last synced
+    await settle();
+    await act(async () => api.sync.keepMine());
+    await settle();
+    expect(api.sync.conflict).toBeNull();
+    expect(srv.drafts.get(P1)).toEqual({ body: "A", revision: 3 }); // the server really holds A now
   });
 });
 

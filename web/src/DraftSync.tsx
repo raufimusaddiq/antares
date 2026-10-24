@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { loadBaseRevision, saveBaseRevision } from "./drafts";
+import { loadBaseRevision, loadCleared, saveBaseRevision, saveCleared } from "./drafts";
 import { readDraft, removeDraft, sharedText, writeDraft } from "./draftApi";
 
 // Keeps the server copy of the draft on screen in step with the text box (PRD §21.6).
@@ -57,9 +57,11 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       s.rev = r.revision;
       s.synced = text;
       saveBaseRevision(email, s.chatId, s.rev);
+      saveCleared(email, s.chatId, false);
       if (slot.current === s) setOffline(false);
     } else if (r.kind === "conflict") {
       s.rev = r.revision;
+      s.synced = r.body; // what the server really holds now, so a later edit back to the old text is still a change
       s.paused = true;
       if (slot.current === s) setConflict({ theirs: r.body });
       return;
@@ -92,10 +94,18 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       const base = loadBaseRevision(email, s.chatId);
       // Text here that the server has not seen, over a server copy this browser was already in step with.
       const ahead = base !== null && base === r.revision;
-      if (local === "" || local === r.body || ahead || (r.body === "" && r.revision === 0)) {
+      if (local === "" && r.body !== "" && loadCleared(email, s.chatId)) {
+        // The box was emptied on purpose and the delete never reached the server. Finish it, unless the
+        // server moved on since: then the other device's text is a conflict, not something to delete.
+        if (!ahead) {
+          s.paused = true;
+          setConflict({ theirs: r.body });
+        }
+      } else if (local === "" || local === r.body || ahead || (r.body === "" && r.revision === 0)) {
         if (local === "" && r.body !== "") setDraftRef.current(r.body);
         s.latest = local === "" ? r.body : local;
         saveBaseRevision(email, s.chatId, r.revision);
+        saveCleared(email, s.chatId, false);
       } else {
         // Both sides hold something the other has not seen. A server body of "" with a revision is a draft
         // that another device sent or deleted: this browser's older text must be chosen, not silently re-saved.
@@ -129,9 +139,10 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
     const s = slot.current;
     if (!s || s.chatId !== chatId) return;
     s.latest = draft;
+    if (s.loaded && !s.paused && draft === "" && s.synced !== "") saveCleared(email, s.chatId, true); // a deliberate empty box the server has not been told about
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => void (s.loaded ? flush(s) : load(s)), DEBOUNCE_MS);
-  }, [draft, chatId, flush, load]);
+  }, [draft, chatId, flush, load, email]);
 
   // Shared text lands in the new-chat draft only and is not sent. It is appended to the text in the box
   // and, when the server disagrees, to the server's candidate too, so either choice keeps it.
@@ -172,6 +183,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       s.latest = conflict.theirs; // s.synced stays the server's own text, so a share kept in `theirs` is written
       s.paused = false;
       saveBaseRevision(email, s.chatId, s.rev); // now in step with the server revision that was just read
+      saveCleared(email, s.chatId, false);
       setDraftRef.current(conflict.theirs);
       setConflict(null);
     },

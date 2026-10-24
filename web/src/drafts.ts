@@ -50,6 +50,28 @@ export function saveBaseRevision(email: string, chatId: string | null, rev: numb
   }
 }
 
+// "The box was emptied on purpose and the server has not been told yet" (a send or a clear whose DELETE
+// failed). Without it a reload cannot tell an emptied box from a box that never had this draft, and would
+// bring the server's old text back.
+const clearedKey = (email: string, chatId: string | null) => `${PREFIX}cleared:${keyOf(email, chatId).slice(PREFIX.length)}`;
+
+export function loadCleared(email: string, chatId: string | null): boolean {
+  try {
+    return localStorage.getItem(clearedKey(email, chatId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function saveCleared(email: string, chatId: string | null, cleared: boolean): void {
+  try {
+    if (cleared) localStorage.setItem(clearedKey(email, chatId), "1");
+    else localStorage.removeItem(clearedKey(email, chatId));
+  } catch {
+    // Unavailable: a reload then restores the server text rather than guessing that a delete was meant.
+  }
+}
+
 /** Sign-out, an expired session and suspension: the next person on this browser inherits nothing. */
 export function purgeDrafts(): void {
   try {
