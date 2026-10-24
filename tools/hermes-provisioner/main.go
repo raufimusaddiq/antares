@@ -214,6 +214,10 @@ func (s *server) deprovision(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"profile": slug, "status": "deprovisioned"})
 }
 
+// sweepEvery must exceed the slowest single docker exec (callTimeout) so a slow
+// sweep cannot make the next tick fire the moment it ends.
+const sweepEvery = 2 * time.Minute
+
 // sweepLoop periodically removes residue directories (see hermes.sweep). It
 // takes the same lock as the mutating handlers so it never races a create.
 func (s *server) sweepLoop(every time.Duration) {
@@ -261,7 +265,7 @@ func main() {
 		log.Fatal("PROVISIONER_ALLOWED_TOOLSETS: ", err)
 	}
 	s := newServerWithPolicy(dockerRunner{container}, token, disabled)
-	go s.sweepLoop(20 * time.Second)
+	go s.sweepLoop(sweepEvery)
 	srv := &http.Server{Addr: addr, Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second}
 	log.Printf("hermes-provisioner listening on %s", addr)
 	log.Fatal(srv.ListenAndServe())
