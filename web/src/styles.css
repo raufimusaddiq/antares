@@ -519,3 +519,20 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
 }
 .recorder { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0 auto 0.5rem; width: 100%; max-width: 48rem; padding: 0 0.5rem; }
 .recorder-note { color: var(--text-2); font-size: 0.85rem; }
+.ou-chart { margin: 0.25rem 0; max-width: 28rem; }
+.ou-chart-svg { width: 100%; height: auto; max-height: 14rem; }
+.ou-axis { stroke: var(--text-2); stroke-width: 1; }
+.ou-bar, .ou-dot, .ou-slice:nth-child(6n+1) { fill: var(--text); }
+.ou-line { stroke: var(--text); stroke-width: 2; }
+.ou-slice { stroke: var(--bg-base); stroke-width: 1; }
+.ou-slice:nth-child(6n+2) { fill: var(--text-2); }
+.ou-slice:nth-child(6n+3) { fill: var(--text); opacity: 0.6; }
+.ou-slice:nth-child(6n+4) { fill: var(--text-2); opacity: 0.6; }
+.ou-slice:nth-child(6n+5) { fill: var(--text); opacity: 0.35; }
+.ou-slice:nth-child(6n+6) { fill: var(--text-2); opacity: 0.35; }
+.ou-chart-data { margin-top: 0.25rem; }
+.ou-chart-data th { font-weight: 400; }
+.ou-field { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; margin: 0.25rem 0; border: 0; padding: 0; }
+.ou-field input[type="text"] { flex: 1 1 10rem; min-width: 0; }
+.ou-option { display: block; flex-basis: 100%; }
+.ou-button:disabled { opacity: 0.5; }
