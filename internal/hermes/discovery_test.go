@@ -141,7 +141,7 @@ func TestDiscoverNeverDefaultsToAvailable(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(inv.Capabilities) != 8 {
+			if len(inv.Capabilities) != 11 {
 				t.Fatalf("want a verdict for every capability, got %d", len(inv.Capabilities))
 			}
 			for _, cp := range inv.Capabilities {
@@ -306,6 +306,30 @@ func TestDiscoverRunControlsFollowAdvertisedRoutes(t *testing.T) {
 		for id, want := range map[string]string{CapApprovals: tc.approvals, CapClarify: tc.clar} {
 			if got := byID(inv, id); got.Status != want || (want == StatusUnsupported && got.Reason == "") {
 				t.Errorf("%s: %s = %q (%q), want %q", name, id, got.Status, got.Reason, want)
+			}
+		}
+	}
+}
+
+// Regenerate, edit-turn and rewind have no verified Hermes route (docs/runbooks/turn-controls.md,
+// issue #109): the inventory must list them as unsupported with a reason, on the real capture and
+// on every degraded one, so the UI shows them disabled instead of omitting or offering them.
+func TestDiscoverTurnControlsAreUnsupportedWithAReason(t *testing.T) {
+	for name, edit := range map[string]func(m map[string]string){
+		"real capture (session_fork advertised)": func(m map[string]string) {},
+		"capabilities route missing":             func(m map[string]string) { delete(m, "/v1/capabilities") },
+	} {
+		m := realBodies(t)
+		edit(m)
+		c, _ := fakeDiscovery(t, m)
+		inv, err := c.Discover(context.Background(), bind())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, id := range []string{CapRegenerate, CapEditTurn, CapRewind} {
+			got := byID(inv, id)
+			if got.Status != StatusUnsupported || got.Reason == "" || got.Label == "" {
+				t.Errorf("%s: %s = %+v, want unsupported with a reason", name, id, got)
 			}
 		}
 	}

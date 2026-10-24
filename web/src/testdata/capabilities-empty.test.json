@@ -7,7 +7,10 @@
     {"id": "skills", "label": "Skills", "status": "unsupported", "reason": "Hermes reports no installed skills"},
     {"id": "tool_progress", "label": "Live tool progress", "status": "available"},
     {"id": "run_approvals", "label": "Run approvals", "status": "unsupported", "reason": "Hermes does not report run_approval_response and approval_events as enabled"},
-    {"id": "clarification", "label": "Clarification prompts", "status": "unsupported", "reason": "Hermes does not advertise a clarification route"}
+    {"id": "clarification", "label": "Clarification prompts", "status": "unsupported", "reason": "Hermes does not advertise a clarification route"},
+            {"id": "regenerate", "label": "Regenerate an answer", "status": "unsupported", "reason": "Hermes has no route to retry an answer; start a new chat instead"},
+            {"id": "edit_turn", "label": "Edit an earlier message", "status": "unsupported", "reason": "Hermes has no route to branch a chat at an earlier message; start a new chat instead"},
+            {"id": "rewind", "label": "Rewind the last turn", "status": "unsupported", "reason": "Hermes has no route to remove the last turn; start a new chat instead"}
   ],
   "toolsets": [],
   "providers": [],
