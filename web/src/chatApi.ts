@@ -63,6 +63,8 @@ export function describeCode(code: string): string {
       return "The assistant is unavailable. Try again shortly.";
     case "UPSTREAM_TIMEOUT":
       return "The assistant did not answer in time.";
+    case "PROMPT_STALE":
+      return "That question is no longer waiting for an answer.";
     case "RUN_CONFLICT":
       return "This conversation is already working on a reply.";
     case "INVALID_REQUEST":
@@ -200,6 +202,39 @@ export const cancelRun = (runId: string) =>
   });
 
 export const getRun = (runId: string) => call("GET", `/api/runs/${encodeURIComponent(runId)}`, parseRunRef);
+
+/** A decision the assistant is waiting for on a run (approval or question). Read from the server, never held only in the browser. */
+export interface RunPrompt {
+  promptId: string;
+  kind: "approval" | "clarify";
+  text: string;
+  detail: string;
+  choices: string[];
+}
+
+const parsePrompt = (v: unknown): RunPrompt | null => {
+  const o = obj(v);
+  if (!o || !str(o.promptId) || (o.kind !== "approval" && o.kind !== "clarify")) return null;
+  const choices = Array.isArray(o.choices) ? o.choices.filter((c): c is string => typeof c === "string") : [];
+  return { promptId: str(o.promptId), kind: o.kind, text: str(o.text), detail: str(o.detail), choices };
+};
+
+export const getRunPrompts = (runId: string) =>
+  call("GET", `/api/runs/${encodeURIComponent(runId)}`, (b): RunPrompt[] | null => {
+    const o = obj(b);
+    if (!o) return null;
+    if (o.prompts === undefined) return [];
+    return Array.isArray(o.prompts) ? o.prompts.map(parsePrompt).filter((p): p is RunPrompt => p !== null) : null;
+  });
+
+const accepted = (b: unknown) => (obj(b)?.accepted === true ? true : null);
+
+/** Only "once" and "deny" exist: the server refuses a standing grant. */
+export const approveRun = (runId: string, promptId: string, choice: "once" | "deny") =>
+  call("POST", `/api/runs/${encodeURIComponent(runId)}/approve`, accepted, { promptId, choice });
+
+export const answerRun = (runId: string, promptId: string, answer: string) =>
+  call("POST", `/api/runs/${encodeURIComponent(runId)}/clarify`, accepted, { promptId, answer });
 
 export function newIdempotencyKey(): string {
   return `web-${crypto.randomUUID()}`;

@@ -86,6 +86,9 @@ func TestDiscoverDerivesFromTheRealCapturedPayloads(t *testing.T) {
 		CapToolsets: StatusAvailable, CapToolProgress: StatusAvailable,
 		// admin_config_rw is false in the captured /v1/capabilities.
 		CapSettings: StatusUnsupported,
+		// run_approval_response, approval_events and the run_approval route are all in the capture;
+		// no clarify route is, so clarification is unsupported (docs/runbooks/run-prompts.md).
+		CapApprovals: StatusAvailable, CapClarify: StatusUnsupported,
 	}
 	for id, st := range want {
 		if got := byID(inv, id); got.Status != st {
@@ -138,7 +141,7 @@ func TestDiscoverNeverDefaultsToAvailable(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(inv.Capabilities) != 6 {
+			if len(inv.Capabilities) != 8 {
 				t.Fatalf("want a verdict for every capability, got %d", len(inv.Capabilities))
 			}
 			for _, cp := range inv.Capabilities {
@@ -256,6 +259,53 @@ func TestDiscoverListsAreNeverNull(t *testing.T) {
 		for _, k := range []string{"providers", "toolsets", "skills", "capabilities"} {
 			if strings.Contains(string(raw), `"`+k+`":null`) {
 				t.Errorf("%s: %s is null in %s", name, k, raw)
+			}
+		}
+	}
+}
+
+// A decision route counts only when Hermes advertises a POST route for it; approvals also need both
+// feature flags. Removing either leaves the capability unsupported with a reason.
+func TestDiscoverRunControlsFollowAdvertisedRoutes(t *testing.T) {
+	mod := func(f func(d map[string]any)) map[string]string {
+		m := realBodies(t)
+		var d map[string]any
+		if err := json.Unmarshal([]byte(m["/v1/capabilities"]), &d); err != nil {
+			t.Fatal(err)
+		}
+		f(d)
+		b, _ := json.Marshal(d)
+		m["/v1/capabilities"] = string(b)
+		return m
+	}
+	for name, tc := range map[string]struct {
+		edit            func(d map[string]any)
+		approvals, clar string
+	}{
+		"clarify route advertised": {func(d map[string]any) {
+			d["endpoints"].(map[string]any)["run_clarify"] = map[string]string{"method": "POST", "path": "/v1/runs/{run_id}/clarify"}
+		}, StatusAvailable, StatusAvailable},
+		"clarify advertised as GET": {func(d map[string]any) {
+			d["endpoints"].(map[string]any)["run_clarify"] = map[string]string{"method": "GET", "path": "/v1/runs/{run_id}/clarify"}
+		}, StatusAvailable, StatusUnsupported},
+		"approval route missing": {func(d map[string]any) {
+			delete(d["endpoints"].(map[string]any), "run_approval")
+		}, StatusUnsupported, StatusUnsupported},
+		"approval events off": {func(d map[string]any) {
+			d["features"].(map[string]any)["approval_events"] = false
+		}, StatusUnsupported, StatusUnsupported},
+		"approval flag a string": {func(d map[string]any) {
+			d["features"].(map[string]any)["run_approval_response"] = "true"
+		}, StatusUnsupported, StatusUnsupported},
+	} {
+		c, _ := fakeDiscovery(t, mod(tc.edit))
+		inv, err := c.Discover(context.Background(), bind())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for id, want := range map[string]string{CapApprovals: tc.approvals, CapClarify: tc.clar} {
+			if got := byID(inv, id); got.Status != want || (want == StatusUnsupported && got.Reason == "") {
+				t.Errorf("%s: %s = %q (%q), want %q", name, id, got.Status, got.Reason, want)
 			}
 		}
 	}

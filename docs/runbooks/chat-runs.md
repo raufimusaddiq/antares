@@ -37,8 +37,9 @@ called on the live container. Every decoder fails closed:
 - Restart: `RecoverRuns` makes `RUNNING` → `DISCONNECTED` and `PENDING` → `FAILED`. A run is **never
   replayed** (no auto-retry of possibly side-effecting work). Retry is a user action: a new run.
 - `UPSTREAM_TIMEOUT` while creating a run → `TIMED_OUT` (it may have started; not replayed).
-- An upstream approval request fails the run (`CAPABILITY_UNAVAILABLE`) and stops it upstream: this slice
-  has no approval UI and nothing is approved or denied on the user's behalf.
+- An approval or question Antares can present is held for the user (`docs/runbooks/run-prompts.md`). One it
+  cannot present safely fails the run (`CAPABILITY_UNAVAILABLE`) and stops it upstream; nothing is ever
+  approved or denied on the user's behalf.
 - Cancel records `CANCELLED` first, closes the upstream stream, then asks Hermes to stop. If the stop is
   not accepted (or the account is no longer eligible) the answer says `upstreamStopped:false` and the UI
   says the assistant may still be working.
@@ -85,7 +86,7 @@ Steer is built; regenerate, edit and rewind have no Hermes route: `docs/runbooks
 
 ## Not in this slice
 
-Rename/delete chat, model picker, approvals, clarify, assets, jobs (still `CAPABILITY_UNAVAILABLE`
+Rename/delete chat, model picker, assets, jobs (still `CAPABILITY_UNAVAILABLE`
 behind the guard). Attaching the versioned OpenUI instruction to a run (PRD §7.2): the renderer is here, the
 per-request instruction mechanism has no verified Hermes shape, so nothing is sent (`docs/runbooks/openui.md`).
 Journals are in memory: after a restart the text streamed so far is rebuilt from Hermes' transcript when the

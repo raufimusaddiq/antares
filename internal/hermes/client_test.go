@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -299,7 +300,7 @@ func TestNormalize(t *testing.T) {
 		{ev("run.completed.maybe", `{}`), Normalized{Kind: KindIgnore}},
 	}
 	for _, tc := range cases {
-		if got := Normalize(tc.in); got != tc.want {
+		if got := Normalize(tc.in); !reflect.DeepEqual(got, tc.want) {
 			t.Errorf("%s %s -> %+v, want %+v", tc.in.Name, tc.in.Data, got, tc.want)
 		}
 	}
