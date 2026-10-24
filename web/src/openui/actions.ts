@@ -13,6 +13,11 @@ import { MAX_REPLY } from "./reply";
 // because it never leaves the browser; an action that needs the server must be
 // added here together with its secured route (same session, approval, ownership
 // and CSRF guards as any request), never by calling fetch from a component.
+//
+// Approving a run and answering the assistant's question (issue #104) are deliberately NOT actions: a
+// component the model wrote must never be able to approve the model's own tool call. Those are buttons
+// in the app's own RunPrompts card, backed by POST /api/runs/{id}/approve and /clarify. A test pins
+// ALLOWED_ACTIONS to ["reply"] so adding one here is a visible decision.
 
 export type Verdict = { ok: true } | { ok: false; reason: string };
 export type Sinks = { reply?: ((text: string) => void) | null };

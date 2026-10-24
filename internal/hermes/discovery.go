@@ -30,6 +30,8 @@ const (
 	CapToolsets     = "toolsets"
 	CapSkills       = "skills"
 	CapToolProgress = "tool_progress"
+	CapApprovals    = "run_approvals"
+	CapClarify      = "clarification"
 )
 
 const (
@@ -88,6 +90,12 @@ type discoveryCaps struct {
 }
 
 func (d discoveryCaps) flag(name string) bool { return string(d.Features[name]) == "true" }
+
+// hasPost reports whether Hermes lists a POST route under name.
+func (d discoveryCaps) hasPost(name string) bool {
+	e, ok := d.Endpoints[name]
+	return ok && e.Method == http.MethodPost && strings.HasPrefix(e.Path, "/v1/runs/{run_id}/") && !strings.Contains(e.Path, "..")
+}
 
 var routeRE = regexp.MustCompile(`^/[A-Za-z0-9_./-]{1,100}$`)
 
@@ -265,7 +273,23 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 		}
 	}
 
-	inv.Capabilities = []Capability{models, lock, settings, tools, skills, progress}
+	// approvals and clarification: a decision Hermes asks for can be answered only through a route it
+	// advertises. Approvals also need the event flag, or Antares would never learn a decision is due.
+	approvals := unsupported(CapApprovals, "Run approvals", why("run_approval_response and approval_events"))
+	if capsOK && caps.flag("run_approval_response") && caps.flag("approval_events") {
+		approvals.Reason = "Hermes does not advertise an approval route"
+		if caps.hasPost("run_approval") {
+			approvals = available(CapApprovals, "Run approvals")
+		}
+	}
+	clarify := unsupported(CapClarify, "Clarification prompts", "Hermes does not advertise a clarification route")
+	if !capsOK {
+		clarify.Reason = why("run_clarify")
+	} else if caps.hasPost("run_clarify") {
+		clarify = available(CapClarify, "Clarification prompts")
+	}
+
+	inv.Capabilities = []Capability{models, lock, settings, tools, skills, progress, approvals, clarify}
 	return inv, nil
 }
 

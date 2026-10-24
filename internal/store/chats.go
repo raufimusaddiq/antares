@@ -298,6 +298,11 @@ func RecoverRuns(ctx context.Context, db *sql.DB, now time.Time) (disconnected, 
 		return 0, 0, err
 	}
 	failed, _ = res.RowsAffected()
+	// An answer that was on its way when the process died may or may not have reached Hermes: the
+	// prompt is open again, and a retry that Hermes no longer recognises settles it (service.Respond).
+	if _, err = db.ExecContext(ctx, `UPDATE run_prompts SET status = 'PENDING' WHERE status = 'SENDING'`); err != nil {
+		return 0, 0, err
+	}
 	return disconnected, failed, nil
 }
 

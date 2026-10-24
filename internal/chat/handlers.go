@@ -64,6 +64,8 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"GET /api/runs/{runId}/events":                                 http.HandlerFunc(s.runEvents),
 		"POST /api/runs/{runId}/cancel":                                http.HandlerFunc(s.cancelRun),
 		"POST /api/runs/{runId}/steer":                                 http.HandlerFunc(s.steerRun),
+		"POST /api/runs/{runId}/approve":                               http.HandlerFunc(s.approveRun),
+		"POST /api/runs/{runId}/clarify":                               http.HandlerFunc(s.clarifyRun),
 
 		"POST /api/assets":                    http.HandlerFunc(s.uploadAsset),
 		"GET /api/assets/{assetId}":           http.HandlerFunc(s.getAsset),
@@ -148,6 +150,9 @@ type runView struct {
 	ErrorCode string `json:"errorCode,omitempty"`
 	CreatedAt string `json:"createdAt"`
 	UpdatedAt string `json:"updatedAt"`
+	// Prompts are the decisions Hermes is waiting for on this run, read from the database: the run
+	// cannot proceed past them, and a reload shows them again. Only getRun fills it.
+	Prompts []promptView `json:"prompts,omitempty"`
 }
 
 func viewRun(r store.Run) runView {
@@ -400,13 +405,83 @@ func (s *Service) getRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	run, err := store.GetRun(r.Context(), s.db, uid, id)
+	var open []store.Prompt
+	if err == nil {
+		open, err = store.OpenPrompts(r.Context(), s.db, uid, id)
+	}
 	switch {
 	case errors.Is(err, store.ErrNoChat):
 		notFound(w)
 	case err != nil:
 		internalError(w, "get run", err)
 	default:
-		writeJSON(w, http.StatusOK, viewRun(run))
+		v := viewRun(run)
+		for _, p := range open {
+			v.Prompts = append(v.Prompts, viewPrompt(p))
+		}
+		writeJSON(w, http.StatusOK, v)
+	}
+}
+
+type approveBody struct {
+	PromptID string `json:"promptId"`
+	Choice   string `json:"choice"`
+}
+
+type clarifyBody struct {
+	PromptID string `json:"promptId"`
+	Answer   string `json:"answer"`
+}
+
+// approveRun and clarifyRun answer a prompt on the caller's own run (PRD §9A.7). The body names the prompt
+// by Antares' own id; the upstream request id and generation are looked up from the stored prompt and never
+// read from the request. A run, prompt or user that does not match is 404, indistinguishable from a
+// missing one.
+func (s *Service) approveRun(w http.ResponseWriter, r *http.Request) {
+	var body approveBody
+	s.answerPrompt(w, r, &body, store.PromptApproval, func() (string, string) { return body.PromptID, body.Choice })
+}
+
+func (s *Service) clarifyRun(w http.ResponseWriter, r *http.Request) {
+	var body clarifyBody
+	s.answerPrompt(w, r, &body, store.PromptClarify, func() (string, string) { return body.PromptID, body.Answer })
+}
+
+func (s *Service) answerPrompt(w http.ResponseWriter, r *http.Request, body any, kind string, fields func() (promptID, value string)) {
+	uid, _ := user(r)
+	id, ok := pathID(r, "runId")
+	if !ok {
+		notFound(w)
+		return
+	}
+	// Ownership before anything about the body is judged, so a foreign run answers like a missing one.
+	if _, err := store.GetRun(r.Context(), s.db, uid, id); errors.Is(err, store.ErrNoChat) {
+		notFound(w)
+		return
+	} else if err != nil {
+		internalError(w, "get run", err)
+		return
+	}
+	if !decode(w, r, body) {
+		return
+	}
+	promptID, value := fields()
+	if !idRE.MatchString(promptID) || !utf8.ValidString(value) {
+		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "The prompt or the answer is not valid")
+		return
+	}
+	err := s.Respond(r.Context(), uid, id, promptID, kind, value)
+	switch {
+	case errors.Is(err, store.ErrNoChat):
+		notFound(w)
+	case errors.Is(err, ErrPromptStale):
+		apiError(w, http.StatusConflict, hermes.CodePromptStale, "That question is no longer waiting for an answer")
+	case errors.Is(err, ErrBadChoice):
+		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "That is not an answer this prompt accepts")
+	case err != nil:
+		s.gateError(w, err)
+	default:
+		writeJSON(w, http.StatusOK, map[string]any{"runId": id, "promptId": promptID, "accepted": true})
 	}
 }
 

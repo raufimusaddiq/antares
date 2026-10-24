@@ -543,3 +543,15 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
 .ou-field input[type="text"] { flex: 1 1 10rem; min-width: 0; }
 .ou-option { display: block; flex-basis: 100%; }
 .ou-button:disabled { opacity: 0.5; }
+
+/* Pending approvals and questions from the assistant (RunPrompts). */
+.run-prompts {
+  display: grid;
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+.run-prompts pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  margin: 0.5rem 0;
+}
