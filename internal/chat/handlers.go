@@ -32,7 +32,19 @@ var (
 // auth.ChatRoutes. The auth layer wraps each in the Active guard (and the CSRF
 // check for mutations); a handler can therefore rely on auth.UserFrom.
 func (s *Service) Handlers() map[string]http.Handler {
+	chatGet, chatPut, chatDel := s.chatDraftAPI().handlers(s)
+	newGet, newPut, newDel := s.newChatDraftAPI().handlers(s)
 	return map[string]http.Handler{
+		"GET /api/chats/{chatId}/draft":                                chatGet,
+		"PUT /api/chats/{chatId}/draft":                                chatPut,
+		"DELETE /api/chats/{chatId}/draft":                             chatDel,
+		"GET /api/me/new-chat-draft":                                   newGet,
+		"PUT /api/me/new-chat-draft":                                   newPut,
+		"DELETE /api/me/new-chat-draft":                                newDel,
+		"GET /api/me/templates":                                        http.HandlerFunc(s.listTemplates),
+		"POST /api/me/templates":                                       http.HandlerFunc(s.createTemplate),
+		"PUT /api/me/templates/{templateId}":                           http.HandlerFunc(s.putTemplate),
+		"DELETE /api/me/templates/{templateId}":                        http.HandlerFunc(s.deleteTemplate),
 		"GET /api/chats":                                               http.HandlerFunc(s.listChats),
 		"POST /api/chats":                                              http.HandlerFunc(s.createChat),
 		"GET /api/chats/{chatId}":                                      http.HandlerFunc(s.getChat),
