@@ -19,10 +19,11 @@ import (
 )
 
 type server struct {
-	h        hermes
-	token    string
-	disabled []string   // toolsets written to every profile at provision and rotate
-	mu       sync.Mutex // one profile mutation at a time
+	h         hermes
+	token     string
+	inference inferenceBootstrap
+	disabled  []string   // toolsets written to every profile at provision and rotate
+	mu        sync.Mutex // one profile mutation at a time
 }
 
 // opCtx returns the context for a whole request. It is detached from the
@@ -43,18 +44,8 @@ func (s *server) begin(w http.ResponseWriter, r *http.Request) (context.Context,
 	return ctx, func() { cancel(); s.mu.Unlock() }
 }
 
-// newServer is for tests: it applies the default policy. main() builds its
-// policy from PROVISIONER_ALLOWED_TOOLSETS and calls newServerWithPolicy.
-func newServer(r Runner, token string) *server {
-	disabled, err := disabledFor(defaultAllowed)
-	if err != nil {
-		panic("hermes-provisioner: default toolset policy is invalid: " + err.Error())
-	}
-	return newServerWithPolicy(r, token, disabled)
-}
-
 func newServerWithPolicy(r Runner, token string, disabled []string) *server {
-	return &server{h: hermes{r}, token: token, disabled: disabled}
+	return &server{h: hermes{r}, token: token, disabled: disabled, inference: inferenceBootstrap{Key: os.Getenv("PROVISIONER_INFERENCE_API_KEY"), BaseURL: os.Getenv("PROVISIONER_INFERENCE_BASE_URL")}}
 }
 
 func (s *server) routes() http.Handler {
@@ -132,6 +123,10 @@ func (s *server) provision(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if !exists {
+		if err := s.inference.validate(); err != nil {
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
 		if err := s.h.create(ctx, slug); err != nil {
 			writeErr(w, http.StatusBadGateway, err.Error()) // fail closed: no key written
 			return
@@ -148,7 +143,11 @@ func (s *server) provision(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "key generation failed")
 		return
 	}
-	if err := s.h.writeKey(ctx, "init", slug, key); err != nil {
+	var bootstrap *inferenceBootstrap
+	if !exists {
+		bootstrap = &s.inference
+	}
+	if err := s.h.writeKey(ctx, "init", slug, key, bootstrap); err != nil {
 		code := http.StatusBadGateway
 		if errors.Is(err, errKeyExists) {
 			code = http.StatusConflict
@@ -187,7 +186,7 @@ func (s *server) rotate(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "key generation failed")
 		return
 	}
-	if err := s.h.writeKey(ctx, "rotate", slug, key); err != nil {
+	if err := s.h.writeKey(ctx, "rotate", slug, key, nil); err != nil {
 		code := http.StatusBadGateway
 		if errors.Is(err, errNoKey) {
 			code = http.StatusConflict
@@ -265,6 +264,9 @@ func main() {
 		log.Fatal("PROVISIONER_ALLOWED_TOOLSETS: ", err)
 	}
 	s := newServerWithPolicy(dockerRunner{container}, token, disabled)
+	if err := s.inference.validate(); err != nil {
+		log.Fatal("PROVISIONER_INFERENCE_API_KEY and PROVISIONER_INFERENCE_BASE_URL must configure the shared inference bootstrap")
+	}
 	go s.sweepLoop(sweepEvery)
 	srv := &http.Server{Addr: addr, Handler: s.routes(), ReadHeaderTimeout: 5 * time.Second}
 	log.Printf("hermes-provisioner listening on %s", addr)

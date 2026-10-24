@@ -89,6 +89,18 @@ Per-user Hermes profiles are created by `tools/hermes-provisioner/`, a small Go 
   (owner approval applies). A lost `/provision` response is recovered with `/rotate`. Details in the
   helper README.
 
+### New-profile inference source (#132)
+
+The owner authorized the shared launch-provider credential for all accounts, while model choices
+remain per account/chat and inbound profile keys remain unique. The helper EnvironmentFile must
+explicitly set `PROVISIONER_INFERENCE_API_KEY` and `PROVISIONER_INFERENCE_BASE_URL`, sourced from
+the operator-managed launch-provider secret and exact endpoint. Neither is a browser/Antares
+input. No value is read from an owner's private profile. See the helper README for the supported
+OpenAI-compatible endpoint validation and new-profile-only behavior. Do not copy live secrets
+into a checkout, logs or commands. Setting runtime values, restarting/deploying the helper and
+repairing old keyless profiles require separate owner-approved operator actions. Merging #132
+does none of those actions. Phase 0 remains FAIL; trusted-user operation only.
+
 ### Deploying the helper (every deploy)
 
 The helper is not in the container image; nothing rebuilds it but the operator. In this order, because

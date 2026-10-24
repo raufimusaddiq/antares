@@ -13,6 +13,16 @@ import (
 	"time"
 )
 
+func newServer(r Runner, token string) *server {
+	disabled, err := disabledFor(defaultAllowed)
+	if err != nil {
+		panic(err)
+	}
+	s := newServerWithPolicy(r, token, disabled)
+	s.inference = inferenceBootstrap{Key: fixtureInferenceKey, BaseURL: "https://provider.example.invalid/v1"}
+	return s
+}
+
 const testToken = "test-token-test-token-test-token-0000"
 
 type fakeRunner struct{ calls [][]string }
@@ -550,7 +560,9 @@ func TestNarrowedPolicyReachesProvisionAndRotate(t *testing.T) {
 	}
 	for _, c := range []struct{ path, slug string }{{"/provision", "u_newuser01"}, {"/rotate", "u_existing1"}} {
 		f := &scripted{list: listFixture}
-		rec := do(t, newServerWithPolicy(f, testToken, disabled), c.path, "Bearer "+testToken, `{"slug":"`+c.slug+`"}`)
+		srv := newServerWithPolicy(f, testToken, disabled)
+		srv.inference = inferenceBootstrap{Key: fixtureInferenceKey, BaseURL: "https://provider.example.invalid/v1"}
+		rec := do(t, srv, c.path, "Bearer "+testToken, `{"slug":"`+c.slug+`"}`)
 		if rec.Code != http.StatusOK {
 			t.Fatalf("%s: got %d %s", c.path, rec.Code, rec.Body)
 		}
