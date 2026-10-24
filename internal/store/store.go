@@ -15,6 +15,7 @@ import (
 	"syscall"
 	"time"
 
+	"golang.org/x/sys/unix"
 	_ "modernc.org/sqlite" // pure-Go driver, no CGO
 )
 
@@ -95,11 +96,13 @@ func Open(path string) (*sql.DB, error) {
 			lock.Close()
 		}
 	}()
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
-	if err != nil {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_RDWR|syscall.O_NOFOLLOW, 0o600)
+	if err != nil && !errors.Is(err, os.ErrExist) {
 		return nil, fmt.Errorf("store: create database file: %w", err)
 	}
-	f.Close()
+	if err == nil {
+		f.Close()
+	}
 	if err := secureFiles(path); err != nil {
 		return nil, err
 	}
@@ -195,13 +198,10 @@ func requireDedicated(dir, base string) error {
 	return nil
 }
 
-// secureFiles forces 0600 on the database file and its WAL sidecars. Missing
-// sidecars are fine. Each file is opened O_NOFOLLOW and chmod-ed through the
-// descriptor, so a symlinked or non-regular file is refused rather than
-// followed to whatever it points at (no check-then-chmod race either).
+// O_PATH pins the chmod target without close releasing SQLite's process-wide POSIX locks.
 func secureFiles(path string) error {
 	for _, suf := range []string{"", "-wal", "-shm", "-journal"} {
-		f, err := os.OpenFile(path+suf, os.O_RDONLY|syscall.O_NOFOLLOW|syscall.O_NONBLOCK, 0)
+		f, err := os.OpenFile(path+suf, unix.O_PATH|syscall.O_NOFOLLOW, 0)
 		if err != nil {
 			if suf != "" && errors.Is(err, os.ErrNotExist) {
 				continue
@@ -213,7 +213,7 @@ func secureFiles(path string) error {
 			err = errors.New("not a regular file")
 		}
 		if err == nil {
-			err = f.Chmod(0o600)
+			err = os.Chmod(fmt.Sprintf("/proc/self/fd/%d", f.Fd()), 0o600)
 		}
 		f.Close()
 		if err != nil {
