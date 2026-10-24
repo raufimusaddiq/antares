@@ -238,6 +238,10 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
         s.held = false;
         // Admitted before the first read finished: nothing can be deleted yet, so remember what was sent.
         if (admitted && !s.loaded && s.sentText !== null && s.sentText !== "") s.pendingClear = s.sentText;
+        // Admitted with an empty box: record the clear durably BEFORE any delete is attempted, and keep it until a delete
+        // succeeds (flush clears it), so a failed DELETE followed by a reload retries the deletion instead of restoring
+        // the sent text. The same marker covers a release before the first read, which cannot delete anything yet.
+        if (admitted && s.box === "") saveCleared(email, s.chatId, true);
         // Admitted: the box's current text is what the server should hold (empty = delete). Not admitted: leave the
         // server copy alone while the box is still empty, but anything typed since is saved like any other edit.
         s.latest = admitted || s.box !== "" ? s.box : s.synced;

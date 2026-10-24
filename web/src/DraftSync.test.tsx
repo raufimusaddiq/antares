@@ -485,6 +485,78 @@ describe("a refusal is not 'offline'", () => {
   });
 });
 
+describe("an admitted send whose DELETE fails", () => {
+  it("is retried after a reload; the sent text does not come back", async () => {
+    const a = await mount({ initial: "sent text" });
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "sent text", revision: 1 });
+    const end = api.sync.hold(); // Send
+    await act(async () => api.setDraft("")); // composer emptied while the send is in flight
+    srv.setFailPut(true); // the DELETE will fail
+    await act(async () => end(true)); // admitted
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "sent text", revision: 1 }); // still there
+    a.unmount();
+    srv.setFailPut(false);
+    await mount({ initial: "" }); // reload
+    await settle();
+    expect(api.text()).toBe(""); // not resurrected
+    expect(api.sync.conflict).toBeNull();
+    expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 }); // and the deletion went through
+  });
+
+  it("a send admitted before the first read, then a failed DELETE, is also retried after a reload", async () => {
+    srv.drafts.set(P1, { body: "sent text", revision: 1 });
+    const open = srv.gateGets();
+    const a = await mount({ initial: "sent text" });
+    const end = api.sync.hold();
+    await act(async () => api.setDraft(""));
+    await act(async () => end(true));
+    srv.setFailPut(true);
+    await act(async () => open());
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "sent text", revision: 1 });
+    a.unmount();
+    srv.setFailPut(false);
+    await mount({ initial: "" });
+    await settle();
+    expect(api.text()).toBe("");
+    expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
+  });
+
+  it("a newer edit from another device survives the retry", async () => {
+    const a = await mount({ initial: "sent text" });
+    await settle();
+    const end = api.sync.hold();
+    await act(async () => api.setDraft(""));
+    srv.setFailPut(true);
+    await act(async () => end(true));
+    await settle();
+    a.unmount();
+    srv.setFailPut(false);
+    srv.drafts.set(P1, { body: "newer text from the laptop", revision: 2 });
+    const deletesBefore = srv.log.filter((l) => l.startsWith("DELETE")).length; // the failed attempt is in the log too
+    await mount({ initial: "" });
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "newer text from the laptop", revision: 2 }); // not deleted
+    expect(srv.log.filter((l) => l.startsWith("DELETE")).length).toBe(deletesBefore);
+    expect(api.sync.conflict).toEqual({ theirs: "newer text from the laptop" }); // offered, not lost
+  });
+
+  it("a refused send leaves no clear marker: a reload restores the draft", async () => {
+    const a = await mount({ initial: "kept" });
+    await settle();
+    const end = api.sync.hold();
+    await act(async () => api.setDraft(""));
+    await act(async () => end(false));
+    a.unmount();
+    await mount({ initial: "" });
+    await settle();
+    expect(api.text()).toBe("kept");
+    expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
+  });
+});
+
 describe("a send admitted before the first read finished", () => {
   it("deletes the sent text once the read returns, instead of restoring it", async () => {
     srv.drafts.set(P1, { body: "sent text", revision: 1 });
@@ -512,7 +584,9 @@ describe("a send admitted before the first read finished", () => {
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "newer text from the laptop", revision: 2 }); // untouched
     expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
-    expect(api.text()).toBe("newer text from the laptop"); // shown to the reader, not lost
+    // The reader sent their text, so the box stays empty; the other device's newer text is offered, not lost or deleted.
+    expect(api.text()).toBe("");
+    expect(api.sync.conflict).toEqual({ theirs: "newer text from the laptop" });
   });
 
   it("a send refused before the read finished leaves the server draft alone", async () => {
