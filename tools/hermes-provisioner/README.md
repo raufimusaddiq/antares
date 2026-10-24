@@ -59,10 +59,10 @@ values refuse helper startup, with a fixed error that does not echo either value
 For a newly created profile, the seeded `model.base_url` must match the declared endpoint
 (trailing slashes are ignored); `${OPENAI_BASE_URL}` and `${env:OPENAI_BASE_URL}` are supported
 references to that same declaration. The launch provider must use the verified OpenAI-compatible
-`custom` or `openai` credential contract. A different provider/key mapping or endpoint fails
+`openai`, `custom` or named `custom:<name>` credential contract. A different provider/key mapping or endpoint fails
 closed before an inbound key is issued. No new model/provider selector or fixed model is added.
 
-Only a new profile with an absent/empty `.env` receives the inference pair. The write is atomic
+Only a profile whose parsed `.env` holds no variable (absent, empty, or just the comment header `profile create` seeds) receives the inference pair; existing comment lines are kept. The write is atomic
 and `0600`; values travel through stdin, never Docker argv. It neither rewrites `config.yaml`
 model choices nor copies unrelated variables, channels, memory or sessions. Existing profiles
 receive no inference bootstrap or shared-key replacement. `/rotate` retains its existing inbound
@@ -82,10 +82,10 @@ therefore never abandons a request after the key is written, even if the caller 
 If a caller still never *receives* a key (client timeout, lost response), the profile has a key
 Antares does not know. `/provision` then returns `409`; recover with `POST /rotate`, which returns a
 fresh key. A provision that fails after `profile create` but before the key is written leaves a
-keyless profile. `/provision` can recover its inbound key only when the existing profile already
-has a non-empty inference key and an endpoint binding matching its model. A retry cannot bypass
-a failed bootstrap. A missing/mismatched inference binding needs separately approved operator
-recovery; the helper does not backfill it or delete/recreate the profile.
+keyless profile. A plain retry of `/provision` completes it: a profile with no variable in its
+`.env` is bootstrapped under the same endpoint/provider checks as a new one; a profile that already
+holds an inference key and a matching endpoint binding keeps it. A profile with other variables but
+no matching binding is refused (`502`); the helper does not backfill it or delete/recreate the profile.
 
 ## Residue directory
 

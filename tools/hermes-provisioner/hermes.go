@@ -74,11 +74,15 @@ try:
             sys.exit(5)
         endpoint = str(model.get("base_url") or "").rstrip("/")
         if endpoint in ("${OPENAI_BASE_URL}", "${env:OPENAI_BASE_URL}"):
-            endpoint = (bootstrap["base_url"] if bootstrap is not None else entries.get("OPENAI_BASE_URL", "")).rstrip("/")
-        if bootstrap is not None:
-            if lines or not endpoint or endpoint != bootstrap["base_url"].rstrip("/"):
+            endpoint = (bootstrap["base_url"] if bootstrap is not None and not entries else entries.get("OPENAI_BASE_URL", "")).rstrip("/")
+        # A profile whose parsed .env holds no variable at all (absent, or only the
+        # comment header profile create seeds) has no inference binding yet: a new
+        # profile, or the retry of a bootstrap that failed after create.
+        if bootstrap is not None and not entries:
+            if not endpoint or endpoint != bootstrap["base_url"].rstrip("/"):
                 sys.exit(5)
-            if model.get("provider") not in ("custom", "openai") or model.get("key_env") not in (None, "", "OPENAI_API_KEY"):
+            provider = str(model.get("provider") or "").strip().lower()
+            if not (provider in ("custom", "openai") or (provider.startswith("custom:") and provider[7:].strip())) or model.get("key_env") not in (None, "", "OPENAI_API_KEY"):
                 sys.exit(5)
             configured_key = model.get("api_key") or model.get("api")
             if configured_key and configured_key not in (bootstrap["key"], "${OPENAI_API_KEY}", "${env:OPENAI_API_KEY}"):

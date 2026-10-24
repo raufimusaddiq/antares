@@ -19,6 +19,10 @@ import (
 
 const fixtureInferenceKey = "fixture-inference-credential-132"
 
+// placeholderEnv has the shape of the .env that `hermes profile create` seeds
+// (_PLACEHOLDER_ENV in Hermes v0.22.2): a comment header, no variable.
+const placeholderEnv = "# Hermes Agent profile environment\n# Add API keys and secrets for this profile below.\n# Lines starting with # are ignored.\n"
+
 type profileRunner struct {
 	root, endpoint string
 	calls          int
@@ -75,6 +79,9 @@ func (f *profileRunner) Run(ctx context.Context, stdin string, args ...string) (
 			return "", "", err
 		}
 		data, _ := json.Marshal(map[string]any{"model": map[string]string{"provider": "custom", "default": "initial-model", "base_url": f.endpoint}})
+		if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(placeholderEnv), 0600); err != nil {
+			return "", "", err
+		}
 		return "", "", os.WriteFile(filepath.Join(dir, "config.yaml"), data, 0600)
 	case len(args) == 7 && args[0] == "hermes" && args[1] == "-p" && args[3] == "config" && args[4] == "set":
 		p := filepath.Join(f.root, args[2], "config.yaml")
@@ -262,8 +269,11 @@ func TestBootstrapMismatchAndRetryFailClosed(t *testing.T) {
 				if response.Code != 502 || strings.Contains(response.Body.String(), `"key"`) || strings.Contains(response.Body.String(), fixtureInferenceKey) {
 					t.Fatal("mismatched endpoint or retry issued/disclosed a credential")
 				}
-				if _, err := os.Stat(filepath.Join(r.root, "u_mismatch132", ".env")); !os.IsNotExist(err) {
+				if _, err := os.Stat(filepath.Join(r.root, "u_mismatch132", ".env")); err != nil && !os.IsNotExist(err) {
 					t.Fatal("mismatch wrote profile credentials")
+				}
+				if b, _ := os.ReadFile(filepath.Join(r.root, "u_mismatch132", ".env")); string(b) != placeholderEnv {
+					t.Fatal("mismatch changed the profile env")
 				}
 			}
 		})
@@ -427,6 +437,7 @@ func TestBootstrapRefusesSymlinkAndConflictingSeededCredential(t *testing.T) {
 				t.Fatal(err)
 			}
 			if name == "symlink" {
+				os.Remove(envPath)
 				if err := os.Symlink(target, envPath); err != nil {
 					t.Fatal(err)
 				}
@@ -451,7 +462,7 @@ func TestBootstrapRefusesSymlinkAndConflictingSeededCredential(t *testing.T) {
 				t.Fatal("pre-existing secret was modified")
 			}
 			if name != "symlink" {
-				if _, err := os.Stat(envPath); !os.IsNotExist(err) {
+				if b, _ := os.ReadFile(envPath); string(b) != placeholderEnv {
 					t.Fatal("conflicting seed wrote credentials")
 				}
 			}
@@ -489,5 +500,51 @@ func TestBootstrapNativeDotenvRecoveryAndUnicodeEndpoint(t *testing.T) {
 	}
 	if !strings.HasPrefix(string(data), raw) {
 		t.Fatal("recovery changed existing provider credential/binding lines")
+	}
+}
+
+func TestProvisionRetryCompletesKeylessPlaceholderProfile(t *testing.T) {
+	endpoint := "https://provider.example.invalid/v1"
+	t.Setenv("PROVISIONER_INFERENCE_API_KEY", fixtureInferenceKey)
+	t.Setenv("PROVISIONER_INFERENCE_BASE_URL", endpoint)
+	r := newProfileRunner(t, endpoint)
+	// State left by a provision that failed after profile create.
+	if _, _, err := r.Run(context.Background(), "", "hermes", "profile", "create", "u_retry132", "--no-alias"); err != nil {
+		t.Fatal(err)
+	}
+	disabled, _ := disabledFor(defaultAllowed)
+	response := do(t, newServerWithPolicy(r, testToken, disabled), "/provision", "Bearer "+testToken, `{"slug":"u_retry132"}`)
+	if response.Code != 200 {
+		t.Fatalf("retry of keyless profile: HTTP%d", response.Code)
+	}
+	env := readProfileEnv(t, r, "u_retry132")
+	if env["OPENAI_API_KEY"] != fixtureInferenceKey || env["OPENAI_BASE_URL"] != endpoint || env["API_SERVER_KEY"] == "" {
+		t.Fatal("retry did not complete the inference binding and inbound key")
+	}
+	raw, _ := os.ReadFile(filepath.Join(r.root, "u_retry132", ".env"))
+	if !strings.HasPrefix(string(raw), placeholderEnv) {
+		t.Fatal("placeholder header was not preserved")
+	}
+}
+
+func TestBootstrapAcceptsNamedCustomProvider(t *testing.T) {
+	endpoint := "https://provider.example.invalid/v1"
+	t.Setenv("PROVISIONER_INFERENCE_API_KEY", fixtureInferenceKey)
+	t.Setenv("PROVISIONER_INFERENCE_BASE_URL", endpoint)
+	for provider, want := range map[string]int{"custom:my-gateway": 200, "Custom:My-Gateway": 200, "custom:": 502, "anthropic": 502} {
+		t.Run(provider, func(t *testing.T) {
+			r := newProfileRunner(t, endpoint)
+			dir := filepath.Join(r.root, "u_named132")
+			if err := os.Mkdir(dir, 0700); err != nil {
+				t.Fatal(err)
+			}
+			data, _ := json.Marshal(map[string]any{"model": map[string]string{"provider": provider, "default": "m", "base_url": endpoint}})
+			os.WriteFile(filepath.Join(dir, "config.yaml"), data, 0600)
+			os.WriteFile(filepath.Join(dir, ".env"), []byte(placeholderEnv), 0600)
+			disabled, _ := disabledFor(defaultAllowed)
+			if got := do(t, newServerWithPolicy(r, testToken, disabled), "/provision", "Bearer "+testToken, `{"slug":"u_named132"}`).Code; got != want {
+				t.Fatalf("provider %q: HTTP%d, want %d", provider, got, want)
+			}
+		})
 	}
 }

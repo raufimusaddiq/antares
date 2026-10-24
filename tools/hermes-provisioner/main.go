@@ -143,11 +143,9 @@ func (s *server) provision(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "key generation failed")
 		return
 	}
-	var bootstrap *inferenceBootstrap
-	if !exists {
-		bootstrap = &s.inference
-	}
-	if err := s.h.writeKey(ctx, "init", slug, key, bootstrap); err != nil {
+	// Offered for an existing profile too: the script applies it only while the
+	// profile holds no variable, so a retry completes a failed bootstrap.
+	if err := s.h.writeKey(ctx, "init", slug, key, &s.inference); err != nil {
 		code := http.StatusBadGateway
 		if errors.Is(err, errKeyExists) {
 			code = http.StatusConflict
