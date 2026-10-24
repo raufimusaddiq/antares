@@ -18,7 +18,7 @@ completed and the page shows as completed (no streaming, reconnecting, failed, c
 Negative proof that a missing reply fails the check (exit 0 means the fault was caught): `--fault drop-send` (the send request is
 aborted) and `--fault stuck-run` (the scratch Hermes holds the run past the timeout; needs the loopback fake at `UPSTREAM`,
 default `http://127.0.0.1:18081`). `--widths 390,375` limits the widths. A fault run leaves a pending or held run on the scratch server: recreate the scratch fixture before the next normal run. It fails (exit 1) on page horizontal overflow, a page that scrolls instead of
-the log, a log under 40% of the screen, a composer outside the viewport, a control under 44 CSS px, or overlapping controls.
+the log, a log under its share of the screen (40% closed, 35% with the keyboard up, 20% and at least three lines on a viewport of 512px or less) or whose newest message is clipped when scrolled to its end, a top-row label (Menu, New chat, Search, the open chat) cut off at an edge, a composer outside the viewport, a control under 44 CSS px, or overlapping controls.
 
 What it does **not** prove: this is an emulator. The on-screen keyboard is a smaller viewport, not the real iOS/Android keyboard;
 browser-chrome collapse and the real notch/home-indicator are not exercised (the inset is Chromium's override). The scratch Hermes
@@ -37,3 +37,6 @@ CI does not run it.
 
 Short viewports (the keyboard is up, or the phone is on its side) keep every control: spacing shrinks, the composer's buttons share
 one row, an attached image becomes one compact row, and with a search open the message area steps aside until Close search.
+
+The keyboard is approximated by a shorter viewport: 45% of the height, 300px at most (375x667 becomes 375x367). A phone on its side
+(568x320) is checked with the keyboard closed only.

@@ -425,10 +425,12 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
   .chat-app .who-am-i { flex: 1 1 calc(100% - 9rem); }
   .chat-app .notify { position: static; }
   /* The conversation list is one scrolling line of chips, not a card: it has no surface of its own. */
-  .side { display: flex; align-items: center; gap: 0.4rem; overflow-x: auto; overflow-y: hidden; padding: 0.15rem 0.25rem; background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
-  .side > button, .side button.item { width: auto; flex: none; margin: 0; max-width: 11rem; min-height: 2.25rem; padding: 0.3rem 0.9rem; }
-  .side ul { display: flex; gap: 0.4rem; margin: 0; }
-  .side li { flex: none; }
+  .side { display: flex; align-items: center; gap: 0.4rem; overflow: hidden; padding: 0.15rem 0.25rem; background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .side > button, .side button.item { width: auto; flex: none; margin: 0; max-width: min(11rem, 100%); min-height: 2.25rem; padding: 0.3rem 0.9rem; }
+  .side > button, .search-toggle { padding-inline: 0.65rem; }
+  /* New chat and Search stay put (never cut off); only the conversation chips scroll, in their own region. */
+  .side > ul { display: flex; flex: 1 1 0; min-width: 0; gap: 0.4rem; margin: 0; overflow-x: auto; overflow-y: hidden; }
+  .side > ul > li { flex: none; max-width: 100%; min-width: 0; }
   .side .label { flex: none; margin: 0; white-space: nowrap; }
   .log { --log-pad: 2.75rem; }
   .screen { margin: 1.5rem 1rem; }
@@ -585,7 +587,8 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
   .search { flex: none; width: auto; margin: 0; }
   .search-body { display: none; }
   .search.open { width: 100%; }
-  .search.open .search-body { display: block; }
+  .search.open .search-body { display: block; flex: 1 1 100%; width: 100%; min-width: 0; }
+  .search.open input[type="search"], .search.open .search-results button.hit { max-width: 100%; }
   .side:has(.search.open) { display: block; max-height: 45dvh; overflow: hidden auto; }
   .side:has(.search.open) > :not(.search) { display: none; }
   .search-filters label { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; }
@@ -600,26 +603,26 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
   .extras.open { display: block; max-height: 40dvh; overflow: auto; }
   /* Composer: the message gets the full row; Attach, Take photo and Send share the row below it. */
   .composer { gap: 0.4rem; padding: 0.5rem; }
-  .composer textarea { flex: 1 0 100%; padding: 0.4rem 0.5rem; resize: none; max-height: min(9rem, 30dvh); }
-  .composer button { flex: 1 1 auto; }
-  .composer button[type="submit"] { flex: 1 1 6rem; }
+  .composer textarea { flex: 1 0 100%; padding: 0.4rem 0.5rem; resize: none; max-height: min(7rem, 16dvh); }
+  .composer button { flex: 1 1 auto; padding-inline: 0.6rem; font-size: 0.875rem; gap: 0.25rem; }
+  .composer button[type="submit"] { flex: 1 1 auto; }
 }
+/* Narrower than a phone in portrait: the arrow goes, the word stays, so the three buttons keep one row. */
+@media (max-width: 23.75rem) { .composer button[type="submit"] .icon { display: none; } }
 
 /* A short viewport (the on-screen keyboard is up, or the phone is on its side): everything stays reachable (header, New chat,
    Search, the conversation chips, Options, the composer with Attach / Take photo / Send); spacing and the log's reserved space
    shrink and the composer's buttons share one row, so it still fits. Not keyed on orientation: a keyboard can make a portrait
    viewport wider than it is tall. */
 @media (max-width: 40rem) and (max-height: 32rem) {
-  .chat-app { gap: 0.125rem; padding-top: max(0.25rem, env(safe-area-inset-top)); padding-bottom: max(0.25rem, env(safe-area-inset-bottom)); }
+  .chat-app { gap: 0; padding-top: max(0.125rem, env(safe-area-inset-top)); padding-bottom: max(0.125rem, env(safe-area-inset-bottom)); }
   .chat-app .bar { min-height: 2.75rem; padding-block: 0; }
   .side { padding-block: 0; }
-  .pane { gap: 0.125rem; }
+  .pane { gap: 0; }
   .log { --log-pad: 0.25rem; padding-bottom: 0.25rem; }
   .vstatus, .vjump { display: none; }
   .composer { padding: 0.25rem; gap: 0.25rem; }
-  .composer textarea { max-height: 20dvh; min-height: 2.75rem; padding-block: 0.25rem; }
-  .composer button { padding-inline: 0.4rem; font-size: 0.8125rem; gap: 0.25rem; }
-  .composer button[type="submit"] .icon { display: none; }
+  .composer textarea { max-height: max(2.75rem, 12dvh); min-height: 2.75rem; padding-block: 0.25rem; }
   .side:has(.search.open) { max-height: 35dvh; }
   /* An attached image keeps its name, type, size and Remove, on one compact row that scrolls sideways. */
   .composer [data-media="strip"] { flex-wrap: nowrap; overflow-x: auto; margin: 0; flex: 1 0 100%; gap: 0.25rem; }

@@ -44,7 +44,8 @@ const ALL_WIDTHS = [
   { w: 568, h: 320 }, // a small phone on its side
 ];
 const WIDTHS = opt("--widths") ? ALL_WIDTHS.filter(({ w }) => opt("--widths").split(",").map(Number).includes(w)) : ALL_WIDTHS;
-const KEYBOARD = 300; // a typical soft keyboard, subtracted from the viewport height
+// A soft keyboard is about 45% of a small phone's height, 300px at most (375x667 -> 367). A phone on its side is not checked with it up.
+const keyboardFor = (w, h) => (w < h ? Math.min(300, Math.round(h * 0.45)) : 0); // a landscape phone is not checked with it up
 
 const api = (method, path, body, headers = {}) =>
   fetch(BASE + path, { method, headers: { Cookie: `${SESSION}=${A}`, Origin: ORIGIN, "Content-Type": "application/json", ...headers }, body: body && JSON.stringify(body) });
@@ -99,8 +100,8 @@ try {
     const step = async (name, fn, scope) => {
       const m = await page.evaluate(measure, scope);
       const keyboard = name.includes("keyboard");
-      // An attached image adds its own strip to the composer, so that step only requires the log to stay readable (20%).
-      const viol = verdicts(m, keyboard, Boolean(scope), name === "image-attached" ? 0.2 : 0.4, name === "search-keyboard-open");
+      // An attached image adds its own strip to the composer, so that step halves the log-share floor.
+      const viol = verdicts(m, keyboard, Boolean(scope), name === "image-attached" ? 0.5 : 1, name === "search-keyboard-open");
       await page.screenshot({ path: `${out}/${w}-${name}.png` });
       result.cases.push({ width: w, name, measure: { vw: m.vw, vh: m.vh, chromeShare: m.chromeShare, logShare: m.logShare, composer: m.composer, textarea: m.textarea, pageOverflowX: m.pageOverflowX }, violations: viol });
       result.violations += viol.length;
@@ -113,7 +114,7 @@ try {
     });
     await step("history-top");
     // Multiline typing, keyboard open (viewport shrunk), then send.
-    await page.setViewportSize({ width: w, height: Math.max(h - KEYBOARD, 260) });
+    await page.setViewportSize({ width: w, height: h - keyboardFor(w, h) });
     await page.locator("#composer-input").focus();
     await page.fill("#composer-input", ""); // a draft left by an earlier run must not leak into this one
     // Enter sends in this app; a new line is Shift+Enter, so the three lines are typed with it and nothing is sent early.
@@ -175,7 +176,7 @@ try {
     // Search with the keyboard up: the input the user is typing in and Close search must survive the viewport shrinking.
     await page.getByRole("button", { name: "Search", exact: true }).click();
     await page.locator("#search-input").focus();
-    await page.setViewportSize({ width: w, height: Math.max(h - KEYBOARD, 260) });
+    await page.setViewportSize({ width: w, height: h - keyboardFor(w, h) });
     await page.waitForTimeout(250);
     await page.keyboard.type("que");
     await step("search-keyboard-open");

@@ -2,7 +2,7 @@
 // scripts/browser-check.mjs (mock backend, runs in CI). `measure` runs inside the page and must stay self-contained.
 export const TARGET = 44;
 // Runs in the page. Returns the facts the verdicts are built from.
-export const measure = (scope) => {
+export const measure = async (scope) => {
   const vw = window.innerWidth;
   const vh = window.innerHeight;
   const rect = (el) => {
@@ -25,11 +25,11 @@ export const measure = (scope) => {
   const small = controls.filter((el) => { const r = el.getBoundingClientRect(); return Math.min(r.width, r.height) < 43.5; }).map((el) => ({ el: label(el), ...rect(el) }));
   const outside = controls.filter((el) => {
     // A control inside a horizontally scrolling strip is reachable by scrolling it; the page itself must not scroll.
-    const strip = el.closest(".side");
+    const strip = el.closest(".side > ul");
     const r = el.getBoundingClientRect();
     // Inside a region that scrolls on purpose (the log, the options drawer, the menu) only horizontal overflow is a defect.
-    if (el.closest(".log, .extras, .bar-actions")) return r.right > vw + 0.5 || r.left < -0.5;
-    if (strip && strip.scrollWidth > strip.clientWidth) return r.bottom < 0 || r.top > vh;
+    if (strip) return r.bottom < 0 || r.top > vh; // the chips scroll sideways in their own region
+    if (el.closest(".log, .extras, .bar-actions, .side")) return r.right > vw + 0.5 || r.left < -0.5;
     return r.right > vw + 0.5 || r.left < -0.5 || r.bottom > vh + 0.5 || r.top < -0.5;
   }).map((el) => ({ el: label(el), ...rect(el) }));
   const overlaps = [];
@@ -62,6 +62,26 @@ export const measure = (scope) => {
     const r = el && shown(el);
     reach[name] = Boolean(r && r.bottom <= vh + 0.5 && r.top >= -0.5 && r.left >= -0.5 && (r.right <= vw + 0.5 || el.closest(".side")));
   }
+  // Labels that must be whole on screen: the top row (Menu, New chat, Search / Close search) and the open conversation's chip.
+  const cut = [];
+  for (const el of [...document.querySelectorAll(".bar button, .side > button, .search-toggle, .side button.item.current")].filter(visible)) {
+    const r = el.getBoundingClientRect();
+    const v = shown(el);
+    if (!v || v.right - v.left < r.width - 1 || v.bottom - v.top < r.height - 1 || r.right > vw + 0.5 || r.left < -0.5) cut.push(label(el));
+  }
+  // The conversation must be readable to its end: scrolled to the bottom, the newest turn is entirely inside the log.
+  const lg = document.querySelector(".log");
+  let newestInView = null;
+  if (lg) {
+    const st = lg.scrollTop;
+    lg.scrollTop = lg.scrollHeight;
+    await new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))); // the virtual list measures real heights on the next frames
+    lg.scrollTop = lg.scrollHeight;
+    const turns = lg.querySelectorAll(".turn");
+    const last = turns[turns.length - 1];
+    if (last) { const a = last.getBoundingClientRect(); const b = lg.getBoundingClientRect(); newestInView = a.bottom <= b.bottom + 2 && (a.top >= b.top - 2 || a.height > b.height); }
+    lg.scrollTop = st;
+  }
   const q = (s) => document.querySelector(s);
   const ta = q(".composer textarea");
   const log = q(".log");
@@ -80,12 +100,13 @@ export const measure = (scope) => {
     chromeShare: bar ? +(((bar.getBoundingClientRect().height + (side && getComputedStyle(side).display !== "none" ? side.getBoundingClientRect().height : 0))) / vh).toFixed(2) : 0,
     textareaClipped: ta ? ta.scrollHeight > ta.clientHeight + 1 : null,
     vstatusOverFirstTurn: vstatus && firstTurn ? (() => { const a = vstatus.getBoundingClientRect(); const b = firstTurn.getBoundingClientRect(); return Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2 && Math.min(a.right, b.right) - Math.max(a.left, b.left) > 2; })() : false,
-    small, outside, overlaps, reach,
+    small, outside, overlaps, reach, cut, newestInView,
   };
 };
 
 export const CURRENT = { w: 0 };
-export const verdicts = (m, keyboard, scoped, minLog = 0.4, searchOpen = false) => {
+// `relax` scales the log-share floor for a state that adds its own strip to the composer (an attached image).
+export const verdicts = (m, keyboard, scoped, relax = 1, searchOpen = false) => {
   const v = [];
   if (scoped) {
     for (const s of m.small) v.push(`target below ${TARGET}px: "${s.el}" ${s.w}x${s.h}`);
@@ -100,9 +121,12 @@ export const verdicts = (m, keyboard, scoped, minLog = 0.4, searchOpen = false) 
   if (m.vw !== CURRENT.w) v.push(`the layout viewport is ${m.vw}px wide, not ${CURRENT.w}px: the page is wider than the screen`);
   if (m.pageScrollY !== 0 || m.bodyScrollable > 1) v.push(`the page itself scrolls (scrollY ${m.pageScrollY}, extra ${m.bodyScrollable}px): the conversation must be the scroll region`);
   if (!searchOpen && m.chromeShare > (keyboard ? 0.45 : 0.3)) v.push(`header+conversation strip take ${Math.round(m.chromeShare * 100)}% of the viewport`);
-  // On a short viewport (a phone on its side) a share of the screen means little; the log must still show a few lines (48px).
-  // With the keyboard up and a draft being typed, the log may shrink to nothing as long as everything else is reachable.
-  if (!keyboard && (m.vh <= 512 ? m.log.h < 48 : m.logShare < minLog)) v.push(`the log gets ${m.log.h}px, ${Math.round(m.logShare * 100)}% of the viewport`);
+  // The conversation keeps a real share of the screen, keyboard open or closed (40% closed, 35% with the keyboard up, 20% and at least three lines (72px) on a
+  // viewport of 512px or less: a phone on its side, or a small phone with the keyboard up), and is readable to its end.
+  const floor = (m.vh > 512 ? (keyboard ? 0.35 : 0.4) : Math.max(0.2, 72 / m.vh)) * relax;
+  if (!searchOpen && m.log.h < floor * m.vh - 1) v.push(`the log gets ${m.log.h}px, ${Math.round(m.logShare * 100)}% of the viewport (<${Math.round(floor * 100)}%)`);
+  if (!searchOpen && m.newestInView === false) v.push("scrolled to its end, the newest message is clipped by the log");
+  for (const name of m.cut) v.push(`cut off at the edge of its row: "${name}"`);
   // With a search open the strip is the working area (input, filters, results), so the chrome-share rule does not apply to that step.
   // With a search open on a short viewport the keyboard belongs to the search box, so the composer steps aside (and must be back after Close).
   const composerAside = searchOpen && m.vh <= 576;

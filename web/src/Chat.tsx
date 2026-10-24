@@ -522,6 +522,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     document.getElementById("composer-input")?.focus();
   };
   const [banner, setBanner] = useState("");
+  // Phone layout: keep the open conversation's chip in view in the sideways-scrolling strip.
+  useEffect(() => {
+    document.querySelector<HTMLElement>(".side button.item.current")?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  }, [current, chats]);
   // Phone layout only (CSS shows the toggles under 40rem): the account actions and the per-chat options stay one tap away.
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);

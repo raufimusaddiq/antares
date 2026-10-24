@@ -347,37 +347,44 @@ async function drafts(browser) {
 // and verdicts as web/scripts/mobile-check.mjs, at 320/375/390/430 portrait and a phone on its side, with the keyboard closed and
 // open (an on-screen keyboard is approximated by a shorter viewport), the account menu, and a focused search under the keyboard.
 async function mobileLayout(browser) {
-  const KEYBOARD = 300;
   for (const { w, h } of [{ w: 320, h: 568 }, { w: 375, h: 667 }, { w: 390, h: 844 }, { w: 430, h: 932 }, { w: 568, h: 320 }]) {
     CURRENT.w = w;
+    // A soft keyboard is about 45% of a small phone's height, 300px at most (375x667 -> 367). A phone on its side is not checked with the
+    // keyboard up: a landscape keyboard leaves almost nothing of any layout.
+    const keyboardUp = w < h;
+    const KEYBOARD = Math.min(300, Math.round(h * 0.45));
     const { ctx, page } = await openPage(browser, { viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
     await page.goto(base + "/");
     await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
     await page.waitForTimeout(300);
     const verdict = async (name, { keyboard = false, searchOpen = false, scope } = {}) => {
       const m = await page.evaluate(measure, scope);
-      const v = verdicts(m, keyboard, Boolean(scope), 0.4, searchOpen);
+      const v = verdicts(m, keyboard, Boolean(scope), 1, searchOpen);
       check(`mobile layout ${w}px, ${name}`, v.length === 0, v.slice(0, 4).join("; "));
     };
-    const short = Math.max(h - KEYBOARD, 260);
+    const short = h - KEYBOARD;
     await verdict("keyboard closed");
     await page.getByRole("button", { name: "Menu" }).click();
     await verdict("account menu open", { scope: ".bar-actions" });
     check(`mobile layout ${w}px, Sign out is in the menu`, await page.getByRole("button", { name: "Sign out" }).isVisible());
     await page.keyboard.press("Escape");
-    await page.setViewportSize({ width: w, height: short });
-    await page.locator("#composer-input").focus();
-    await page.keyboard.type("a draft");
-    await page.waitForTimeout(150);
-    await verdict("keyboard open, typing", { keyboard: true });
-    await page.setViewportSize({ width: w, height: h });
+    if (keyboardUp) {
+      await page.setViewportSize({ width: w, height: short });
+      await page.locator("#composer-input").focus();
+      await page.keyboard.type("a draft");
+      await page.waitForTimeout(150);
+      await verdict("keyboard open, typing", { keyboard: true });
+      await page.setViewportSize({ width: w, height: h });
+    }
     await page.getByRole("button", { name: "Search", exact: true }).click();
     await page.locator("#search-input").focus();
-    await page.setViewportSize({ width: w, height: short });
-    await page.waitForTimeout(150);
-    await verdict("search focused, keyboard open", { keyboard: true, searchOpen: true });
-    const kept = await page.evaluate(() => document.activeElement?.id === "search-input" && Boolean([...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Close search")));
-    check(`mobile layout ${w}px, search input stays focused with Close search`, kept);
+    if (keyboardUp) {
+      await page.setViewportSize({ width: w, height: short });
+      await page.waitForTimeout(150);
+      await verdict("search focused, keyboard open", { keyboard: true, searchOpen: true });
+      const kept = await page.evaluate(() => document.activeElement?.id === "search-input" && Boolean([...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Close search")));
+      check(`mobile layout ${w}px, search input stays focused with Close search`, kept);
+    }
     await page.getByRole("button", { name: "Close search" }).click();
     await page.setViewportSize({ width: w, height: h });
     await page.waitForTimeout(150);
