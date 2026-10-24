@@ -101,6 +101,15 @@ into a checkout, logs or commands. Setting runtime values, restarting/deploying 
 repairing old keyless profiles require separate owner-approved operator actions. Merging #132
 does none of those actions. Phase 0 remains FAIL; trusted-user operation only.
 
+**Launch-profile precondition.** `hermes profile create` seeds a new profile from the launch
+profile's config. Before the helper is used, the launch profile must be pinned to the shared
+endpoint and an accepted provider: `model.provider` of `openai`, `custom`, or the name of a
+`providers.<name>` entry (bare or `custom:<name>`), whose endpoint (`model.base_url` for `openai`
+and unnamed `custom`, `providers.<name>.base_url` for a named provider) equals
+`PROVISIONER_INFERENCE_BASE_URL`, with the key variable unset or `OPENAI_API_KEY`. A default launch
+profile (`provider: auto`, no endpoint), another endpoint, another `key_env` or a `key_cmd` makes
+every `/provision` fail closed with 502 before any key is issued.
+
 ### Deploying the helper (every deploy)
 
 The helper is not in the container image; nothing rebuilds it but the operator. In this order, because

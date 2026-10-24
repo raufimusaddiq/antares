@@ -20,8 +20,8 @@ import (
 const fixtureInferenceKey = "fixture-inference-credential-132"
 
 // placeholderEnv has the shape of the .env that `hermes profile create` seeds
-// (_PLACEHOLDER_ENV in Hermes v0.22.2): a comment header, no variable.
-const placeholderEnv = "# Hermes Agent profile environment\n# Add API keys and secrets for this profile below.\n# Lines starting with # are ignored.\n"
+// (_PLACEHOLDER_ENV, hermes_cli/profiles.py:97 in Hermes v0.22.2, copied verbatim): a comment header, no variable.
+const placeholderEnv = "# Per-profile secrets for this Hermes profile.\n# API keys and tokens set here override the shell environment.\n# Behavioral settings belong in config.yaml, not here.\n"
 
 type profileRunner struct {
 	root, endpoint string
@@ -40,6 +40,12 @@ func newProfileRunner(t *testing.T, endpoint string) *profileRunner {
 		if err := os.WriteFile(filepath.Join(module, name), []byte(body), 0600); err != nil {
 			t.Fatal(err)
 		}
+	}
+	// Mirrors hermes_cli.runtime_provider_custom._get_named_custom_provider for providers:
+	// entries (match by key or alias, endpoint from the entry, key_env lifted), v0.22.2.
+	custom := "import json\n_ALIASES = lambda v: {v, v.replace(' ', '-'), 'custom:' + v.replace(' ', '-')} if v else set()\ndef _get_named_custom_provider(requested, config=None, resolve_credentials=True):\n    req = (requested or '').strip().lower().replace(' ', '-')\n    if not req or req == 'auto': return None\n    for key, entry in (config.get('providers') or {}).items():\n        if not isinstance(entry, dict) or entry.get('enabled') is False: continue\n        names = _ALIASES(str(entry.get('name') or key).strip().lower()) | _ALIASES(str(key).strip().lower())\n        url = entry.get('api') or entry.get('url') or entry.get('base_url') or ''\n        if req not in names or not url: continue\n        out = {'name': entry.get('name', key), 'base_url': url.strip(), 'api_key': str(entry.get('api_key') or '').strip()}\n        ke = str(entry.get('key_env') or entry.get('api_key_env') or '').strip()\n        if ke: out['key_env'] = ke\n        if entry.get('key_cmd'): out['key_cmd'] = entry['key_cmd']\n        return out\n    return None\n"
+	if err := os.WriteFile(filepath.Join(module, "runtime_provider_custom.py"), []byte(custom), 0600); err != nil {
+		t.Fatal(err)
 	}
 	agent := filepath.Join(root, "modules", "agent")
 	if err := os.MkdirAll(agent, 0700); err != nil {
@@ -538,12 +544,76 @@ func TestBootstrapAcceptsNamedCustomProvider(t *testing.T) {
 			if err := os.Mkdir(dir, 0700); err != nil {
 				t.Fatal(err)
 			}
-			data, _ := json.Marshal(map[string]any{"model": map[string]string{"provider": provider, "default": "m", "base_url": endpoint}})
+			data, _ := json.Marshal(map[string]any{"model": map[string]string{"provider": provider, "default": "m", "base_url": endpoint}, "providers": map[string]any{"my-gateway": map[string]any{"base_url": endpoint}}})
 			os.WriteFile(filepath.Join(dir, "config.yaml"), data, 0600)
 			os.WriteFile(filepath.Join(dir, ".env"), []byte(placeholderEnv), 0600)
 			disabled, _ := disabledFor(defaultAllowed)
 			if got := do(t, newServerWithPolicy(r, testToken, disabled), "/provision", "Bearer "+testToken, `{"slug":"u_named132"}`).Code; got != want {
 				t.Fatalf("provider %q: HTTP%d, want %d", provider, got, want)
+			}
+		})
+	}
+}
+
+// writeProfile seeds a profile the way profile create does, with the given config.
+func writeProfile(t *testing.T, r *profileRunner, slug string, cfg map[string]any) {
+	t.Helper()
+	dir := filepath.Join(r.root, slug)
+	if err := os.Mkdir(dir, 0700); err != nil {
+		t.Fatal(err)
+	}
+	data, _ := json.Marshal(cfg)
+	if err := os.WriteFile(filepath.Join(dir, "config.yaml"), data, 0600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".env"), []byte(placeholderEnv), 0600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// The real seeded shape: model.provider is the bare providers.<name> key and
+// model.base_url is empty; the endpoint and key variable live in providers.<name>.
+func TestBootstrapResolvesProvidersEntry(t *testing.T) {
+	endpoint := "https://provider.example.invalid/v1"
+	t.Setenv("PROVISIONER_INFERENCE_API_KEY", fixtureInferenceKey)
+	t.Setenv("PROVISIONER_INFERENCE_BASE_URL", endpoint)
+	for _, tc := range []struct {
+		name, provider, modelURL string
+		entry                    map[string]any
+		want                     int
+	}{
+		{"bare-name-matching-endpoint", "gateway", "", map[string]any{"base_url": endpoint, "key_env": "OPENAI_API_KEY"}, 200},
+		{"bare-name-no-key-env", "gateway", "", map[string]any{"base_url": endpoint}, 200},
+		{"bare-name-env-reference", "gateway", "", map[string]any{"base_url": "${OPENAI_BASE_URL}"}, 200},
+		{"custom-prefix-matching-endpoint", "custom:gateway", "", map[string]any{"base_url": endpoint}, 200},
+		{"bare-name-different-endpoint", "gateway", "", map[string]any{"base_url": "https://other.example.invalid/v1"}, 502},
+		{"custom-prefix-different-endpoint", "custom:gateway", "", map[string]any{"base_url": "https://other.example.invalid/v1"}, 502},
+		{"bare-name-other-key-env", "gateway", "", map[string]any{"base_url": endpoint, "key_env": "OTHER_PROVIDER_KEY"}, 502},
+		{"custom-prefix-other-key-env", "custom:gateway", "", map[string]any{"base_url": endpoint, "api_key_env": "OTHER_PROVIDER_KEY"}, 502},
+		{"key-cmd", "gateway", "", map[string]any{"base_url": endpoint, "key_cmd": "print-token"}, 502},
+		{"literal-foreign-api-key", "gateway", "", map[string]any{"base_url": endpoint, "api_key": "someone-elses-key"}, 502},
+		{"model-url-matches-but-entry-differs", "custom:gateway", endpoint, map[string]any{"base_url": "https://other.example.invalid/v1"}, 502},
+		{"model-url-matches-but-entry-other-key-env", "custom:gateway", endpoint, map[string]any{"base_url": endpoint, "key_env": "OTHER_PROVIDER_KEY"}, 502},
+		{"no-providers-entry", "gateway", "", nil, 502},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			r := newProfileRunner(t, endpoint)
+			cfg := map[string]any{"model": map[string]any{"provider": tc.provider, "default": "m", "base_url": tc.modelURL}}
+			if tc.entry != nil {
+				cfg["providers"] = map[string]any{"gateway": tc.entry}
+			}
+			writeProfile(t, r, "u_providers132", cfg)
+			disabled, _ := disabledFor(defaultAllowed)
+			response := do(t, newServerWithPolicy(r, testToken, disabled), "/provision", "Bearer "+testToken, `{"slug":"u_providers132"}`)
+			if response.Code != tc.want {
+				t.Fatalf("HTTP%d, want %d", response.Code, tc.want)
+			}
+			raw, _ := os.ReadFile(filepath.Join(r.root, "u_providers132", ".env"))
+			if tc.want == 502 && string(raw) != placeholderEnv {
+				t.Fatal("refused provision wrote credentials")
+			}
+			if tc.want == 200 && !strings.Contains(string(raw), "OPENAI_API_KEY=") {
+				t.Fatal("accepted provision did not bootstrap")
 			}
 		})
 	}

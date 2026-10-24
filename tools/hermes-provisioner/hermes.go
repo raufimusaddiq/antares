@@ -72,7 +72,19 @@ try:
         model = config.get("model", {})
         if not isinstance(model, dict):
             sys.exit(5)
-        endpoint = str(model.get("base_url") or "").rstrip("/")
+        # Route the way the runtime does: a named provider takes its endpoint and
+        # key variable from its providers.<name> / custom_providers entry, never
+        # from the model block; only openai and an unnamed custom use model.*.
+        provider = str(model.get("provider") or "").strip().lower()
+        route = model
+        if provider != "openai":
+            from hermes_cli.runtime_provider_custom import _get_named_custom_provider
+            route = _get_named_custom_provider(provider, config=config, resolve_credentials=False)
+            if route is None and provider == "custom":
+                route = model
+            elif route is None or route.get("key_cmd"):
+                sys.exit(5)
+        endpoint = str(route.get("base_url") or "").rstrip("/")
         if endpoint in ("${OPENAI_BASE_URL}", "${env:OPENAI_BASE_URL}"):
             endpoint = (bootstrap["base_url"] if bootstrap is not None and not entries else entries.get("OPENAI_BASE_URL", "")).rstrip("/")
         # A profile whose parsed .env holds no variable at all (absent, or only the
@@ -81,10 +93,9 @@ try:
         if bootstrap is not None and not entries:
             if not endpoint or endpoint != bootstrap["base_url"].rstrip("/"):
                 sys.exit(5)
-            provider = str(model.get("provider") or "").strip().lower()
-            if not (provider in ("custom", "openai") or (provider.startswith("custom:") and provider[7:].strip())) or model.get("key_env") not in (None, "", "OPENAI_API_KEY"):
+            if route.get("key_env") not in (None, "", "OPENAI_API_KEY") or route.get("api_key_env") not in (None, "", "OPENAI_API_KEY"):
                 sys.exit(5)
-            configured_key = model.get("api_key") or model.get("api")
+            configured_key = route.get("api_key") or route.get("api")
             if configured_key and configured_key not in (bootstrap["key"], "${OPENAI_API_KEY}", "${env:OPENAI_API_KEY}"):
                 sys.exit(5)
             if key == bootstrap["key"]:

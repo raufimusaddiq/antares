@@ -57,9 +57,9 @@ ambient-secret fallback, credential discovery or runtime rotation is added. Miss
 values refuse helper startup, with a fixed error that does not echo either value.
 
 For a newly created profile, the seeded `model.base_url` must match the declared endpoint
-(trailing slashes are ignored); `${OPENAI_BASE_URL}` and `${env:OPENAI_BASE_URL}` are supported
+(trailing slashes are ignored). For a named provider (`providers.<name>`, bare or `custom:<name>`) the endpoint and `key_env` are read from that entry, resolved by Hermes' own `_get_named_custom_provider`, not from the model block; for `openai` and unnamed `custom` they come from `model.*`. `${OPENAI_BASE_URL}` and `${env:OPENAI_BASE_URL}` are supported
 references to that same declaration. The launch provider must use the verified OpenAI-compatible
-`openai`, `custom` or named `custom:<name>` credential contract. A different provider/key mapping or endpoint fails
+`openai`, `custom` or named `custom:<name>` credential contract. The key variable must be unset or `OPENAI_API_KEY`, with no `key_cmd`. A different provider/key mapping or endpoint fails
 closed before an inbound key is issued. No new model/provider selector or fixed model is added.
 
 Only a profile whose parsed `.env` holds no variable (absent, empty, or just the comment header `profile create` seeds) receives the inference pair; existing comment lines are kept. The write is atomic
