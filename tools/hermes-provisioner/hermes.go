@@ -79,27 +79,36 @@ var (
 
 type hermes struct{ r Runner }
 
-func (h hermes) exists(ctx context.Context, slug string) (bool, error) {
+// liveProfiles runs one `hermes profile list` and returns the profile names it
+// reports. Each call loads the whole agent CLI, so callers that need several
+// answers must reuse the result.
+func (h hermes) liveProfiles(ctx context.Context) (map[string]bool, error) {
 	out, stderr, err := h.r.Run(ctx, "", "hermes", "profile", "list")
 	if err != nil {
-		return false, fmt.Errorf("%w: profile list: %s", errUpstream, brief(stderr))
+		return nil, fmt.Errorf("%w: profile list: %s", errUpstream, brief(stderr))
 	}
-	found, sawDefault := false, false
+	live, sawDefault := map[string]bool{}, false
 	for _, line := range strings.Split(out, "\n") {
 		f := strings.Fields(strings.TrimPrefix(strings.TrimSpace(line), "◆"))
-		if len(f) > 0 && f[0] == "default" {
+		if len(f) == 0 {
+			continue
+		}
+		if f[0] == "default" {
 			sawDefault = true
 		}
-		if len(f) > 0 && f[0] == slug {
-			found = true
-		}
+		live[f[0]] = true
 	}
 	if !sawDefault {
 		// default always exists; not seeing it means the output format changed
 		// and "absent" would be a guess.
-		return false, fmt.Errorf("%w: profile list output not recognised", errUpstream)
+		return nil, fmt.Errorf("%w: profile list output not recognised", errUpstream)
 	}
-	return found, nil
+	return live, nil
+}
+
+func (h hermes) exists(ctx context.Context, slug string) (bool, error) {
+	live, err := h.liveProfiles(ctx)
+	return live[slug], err
 }
 
 func (h hermes) create(ctx context.Context, slug string) error {
@@ -196,15 +205,23 @@ func (h hermes) sweep(ctx context.Context) (removed []string, err error) {
 	if err != nil {
 		return nil, fmt.Errorf("%w: listing profiles dir: %s", errUpstream, brief(stderr))
 	}
+	var candidates []string
 	for _, name := range strings.Split(out, "\n") {
-		if validateSlug(name) != nil {
-			continue
+		if validateSlug(name) == nil {
+			candidates = append(candidates, name)
 		}
-		live, err := h.exists(ctx, name)
-		if err != nil {
-			return removed, err
-		}
-		if live {
+	}
+	if len(candidates) == 0 {
+		return nil, nil
+	}
+	// One profile list per sweep, not one per directory: each costs seconds of
+	// CPU, and N of them overran the tick.
+	live, err := h.liveProfiles(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, name := range candidates {
+		if live[name] {
 			continue
 		}
 		if err := h.removeResidue(ctx, name); err != nil {

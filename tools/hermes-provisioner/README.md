@@ -55,7 +55,7 @@ keyless profile, which a plain retry of `/provision` completes.
 ## Residue directory
 
 Hermes' gateway recreates the (empty) profile directory about 30s after a delete, when it unserves
-the profile, so `/deprovision` alone cannot leave `/opt/data/profiles/` clean. A sweeper (every 20s,
+the profile, so `/deprovision` alone cannot leave `/opt/data/profiles/` clean. A sweeper (every 2 minutes, one `hermes profile list` per sweep,
 under the same lock as the mutating endpoints) `rmdir`s empty directories whose name is a valid `u_`
 slug and is not a live profile. Other names, such as `.deleted`, are never touched.
 

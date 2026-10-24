@@ -3,11 +3,14 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"runtime/debug"
 	"strings"
 	"testing"
+	"time"
 )
 
 const testToken = "test-token-test-token-test-token-0000"
@@ -312,6 +315,94 @@ func TestSweepRemovesOnlyDeadValidatedSlugs(t *testing.T) {
 		if c[0] == "rmdir" && c[2] != profilesDir+"/u_goneuser1" {
 			t.Fatalf("rmdir on %v", c)
 		}
+	}
+}
+
+// manyDirsRunner holds n leftover u_ directories, all dead, and counts calls.
+type manyDirsRunner struct {
+	n          int
+	listErr    error
+	listStderr string
+	lists      int
+	rmdirs     []string
+}
+
+func (f *manyDirsRunner) Run(_ context.Context, _ string, args ...string) (string, string, error) {
+	switch {
+	case args[0] == "ls":
+		var b strings.Builder
+		for i := 0; i < f.n; i++ {
+			fmt.Fprintf(&b, "u_gone%05d\n", i)
+		}
+		return b.String(), "", nil
+	case args[0] == "hermes" && len(args) > 2 && args[2] == "list":
+		f.lists++
+		if f.listErr != nil {
+			return "", f.listStderr, f.listErr
+		}
+		return listFixture, f.listStderr, nil
+	case args[0] == "test":
+		return "", "", nil // directory exists
+	case args[0] == "rmdir":
+		f.rmdirs = append(f.rmdirs, args[2])
+	}
+	return "", "", nil
+}
+
+func TestSweepListsProfilesOncePerSweepAndRemovesLeftovers(t *testing.T) {
+	const dirs = 25
+	f := &manyDirsRunner{n: dirs}
+	removed, err := (hermes{f}).sweep(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if f.lists != 1 {
+		t.Fatalf("%d profile list invocations for %d directories, want 1", f.lists, dirs)
+	}
+	if len(removed) != dirs || len(f.rmdirs) != dirs {
+		t.Fatalf("removed %d, rmdir %d, want %d", len(removed), len(f.rmdirs), dirs)
+	}
+	if f.rmdirs[0] != profilesDir+"/u_gone00000" {
+		t.Fatalf("rmdir on %q", f.rmdirs[0])
+	}
+}
+
+func TestSweepSkipsProfileListWithNothingToCheck(t *testing.T) {
+	f := &manyDirsRunner{}
+	if _, err := (hermes{f}).sweep(context.Background()); err != nil || f.lists != 0 {
+		t.Fatalf("lists %d, err %v", f.lists, err)
+	}
+}
+
+// One hermes profile list costs about 9s of wall clock on the live host. A
+// sweep of any realistic number of directories must fit in the tick.
+func TestSweepFitsItsTick(t *testing.T) {
+	const listCost = 9 * time.Second
+	if sweepEvery <= callTimeout {
+		t.Fatalf("sweepEvery %v must exceed one docker exec bound %v", sweepEvery, callTimeout)
+	}
+	f := &manyDirsRunner{n: 50}
+	if _, err := (hermes{f}).sweep(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if cost := time.Duration(f.lists) * listCost; cost >= sweepEvery {
+		t.Fatalf("sweep costs %v, tick is %v", cost, sweepEvery)
+	}
+}
+
+func TestSweepIgnoresStderrWarningOnSuccess(t *testing.T) {
+	f := &manyDirsRunner{n: 2, listStderr: "WARNING: Error loading config file: open /home/u/.docker/config.json: permission denied"}
+	removed, err := (hermes{f}).sweep(context.Background())
+	if err != nil || len(removed) != 2 {
+		t.Fatalf("removed %v, %v", removed, err)
+	}
+}
+
+func TestSweepSurfacesRealListFailure(t *testing.T) {
+	f := &manyDirsRunner{n: 2, listErr: exitErr(1), listStderr: "boom"}
+	removed, err := (hermes{f}).sweep(context.Background())
+	if !errors.Is(err, errUpstream) || len(removed) != 0 || len(f.rmdirs) != 0 {
+		t.Fatalf("removed %v, rmdirs %v, err %v", removed, f.rmdirs, err)
 	}
 }
 
