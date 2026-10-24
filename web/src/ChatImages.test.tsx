@@ -10,7 +10,7 @@ vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi"
 vi.mock("./mediaApi", async (orig) => ({ ...(await orig<typeof import("./mediaApi")>()), ...media }));
 
 import { Chat, Transcript } from "./Chat";
-import { parseHistory } from "./chatApi";
+import { parseHistory, stripImageMarkers } from "./chatApi";
 import { planRetry } from "./retry";
 
 const ID = "ab".repeat(16);
@@ -300,6 +300,43 @@ describe("retry after reload or navigation", () => {
     expect(media.sendMessageWithImages).not.toHaveBeenCalled();
   });
 });
+
+// Review round 2, IMPORTANT: only the transport placeholders are removed; a trailing "[image]" the user typed is data.
+describe("literal [image] text survives the history parse", () => {
+  const one = [{ assetId: ID, mediaType: "image/png", available: true }];
+  const two = [...one, { assetId: "cd".repeat(16), mediaType: "image/png", available: true }];
+  const parse = (text: string, attachments: typeof one) => parseHistory({ messages: [{ seq: 0, role: "user", text, attachments }] })!.turns[0].text;
+
+  it("strips exactly as many placeholders as attachments", () => {
+    expect(parse("explain [image]\n[image]", one)).toBe("explain [image]");
+    expect(parse("explain [image]\n[image]\n[image]", two)).toBe("explain [image]");
+    expect(parse("a [image] b [image]\n[image]\n[image]", two)).toBe("a [image] b [image]");
+    expect(parse("explain\n[image]\n[image]", two)).toBe("explain");
+    expect(parse("[image]\n[image]", one)).toBe("[image]");
+  });
+  it("keeps text it cannot account for", () => {
+    expect(stripImageMarkers("explain", 1)).toBe("explain");
+    expect(stripImageMarkers("explain [image]", 2)).toBe("explain [image]");
+  });
+  it("reload retry re-sends the original prompt, literal token included, with its attachment", async () => {
+    media.sendMessageWithImages.mockResolvedValue(ok({ runId: "r2" }));
+    api.listChats.mockResolvedValue(ok({ chats: [{ ...chat("c1"), activeRunId: "r1" }], nextCursor: "" }));
+    api.getMessages.mockResolvedValue(parseHistoryResult("explain [image]\n[image]", one));
+    api.getRun.mockResolvedValue(ok({ runId: "r1", status: "FAILED" }));
+    media.getImageInput.mockResolvedValue(verdict(true));
+    render(<Chat email="a@example.test" onSignOut={() => {}} />);
+    await waitFor(() => expect(FakeSource.all).toHaveLength(1));
+    fail();
+    fireEvent.click(await screen.findByRole("button", { name: "Try again" }));
+    await waitFor(() => expect(media.sendMessageWithImages).toHaveBeenCalledTimes(1));
+    expect(media.sendMessageWithImages.mock.calls[0]).toEqual(["c1", "explain [image]", expect.any(String), [ID]]);
+  });
+});
+
+function parseHistoryResult(text: string, attachments: { assetId: string; mediaType: string; available: boolean }[]) {
+  const page = parseHistory({ messages: [{ seq: 0, role: "user", text, attachments }], nextCursor: "", total: 1 })!;
+  return ok(page);
+}
 
 describe("planRetry", () => {
   const t = (text: string, attachments?: ReturnType<typeof att>) => ({ seq: 0, role: "user" as const, text, ...(attachments ? { attachments } : {}) });

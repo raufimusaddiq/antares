@@ -140,6 +140,17 @@ export interface HistoryPage {
   total: number;
 }
 
+/** Removes exactly n trailing "[image]" transport placeholders (as the server's link check does); a "[image]" the user typed stays. */
+export function stripImageMarkers(text: string, n: number): string {
+  let t = text;
+  for (let i = 0; i < n; i++) {
+    const trimmed = t.replace(/\s+$/, "");
+    if (!trimmed.endsWith("[image]")) return text; // not what the server linked: keep it as received
+    t = trimmed.slice(0, -"[image]".length);
+  }
+  return t.replace(/\s+$/, "");
+}
+
 function parseAttachments(v: unknown): AttachmentRef[] {
   if (!Array.isArray(v)) return [];
   const out: AttachmentRef[] = [];
@@ -161,7 +172,7 @@ export function parseHistory(v: unknown): HistoryPage | null {
     if (typeof mo.seq !== "number" || !Number.isInteger(mo.seq) || mo.seq < 0) return null;
     const attachments = parseAttachments(mo.attachments);
     // The history read renders each image as "[image]"; when the images are shown as thumbnails the markers go.
-    const text = attachments.length > 0 ? str(mo.text).replace(/(\s*\[image\])+\s*$/, "") : str(mo.text);
+    const text = attachments.length > 0 ? stripImageMarkers(str(mo.text), attachments.length) : str(mo.text);
     turns.push({ seq: mo.seq, role: mo.role, text, ref: str(mo.ref) || undefined, ...(attachments.length > 0 ? { attachments } : {}) });
   }
   for (let i = 1; i < turns.length; i++) if (turns[i].seq <= turns[i - 1].seq) return null;
