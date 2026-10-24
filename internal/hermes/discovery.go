@@ -32,6 +32,9 @@ const (
 	CapToolProgress = "tool_progress"
 	CapApprovals    = "run_approvals"
 	CapClarify      = "clarification"
+	CapRegenerate   = "regenerate"
+	CapEditTurn     = "edit_turn"
+	CapRewind       = "rewind"
 )
 
 const (
@@ -289,7 +292,27 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 		clarify = available(CapClarify, "Clarification prompts")
 	}
 
-	inv.Capabilities = []Capability{models, lock, settings, tools, skills, progress, approvals, clarify}
+	// Turn controls (PRD §21.5, issue #109). No route in the deployed Hermes retries, edits or truncates
+	// a turn (docs/runbooks/turn-controls.md), so none can be advertised, and a whole-session fork or a
+	// second run in the same session is not a substitute. They are listed, always unsupported, so the UI
+	// shows them disabled with the reason. A control becomes available only with a verified route, a
+	// fixture and a handler that uses it.
+	turnReason := "Hermes has no route to %s; start a new chat instead"
+	if !capsOK {
+		turnReason = why("a turn route")
+	}
+	turnCap := func(id, label, what string) Capability {
+		r := turnReason
+		if capsOK {
+			r = strings.Replace(turnReason, "%s", what, 1)
+		}
+		return unsupported(id, label, r)
+	}
+	regenerate := turnCap(CapRegenerate, "Regenerate an answer", "retry an answer")
+	editTurn := turnCap(CapEditTurn, "Edit an earlier message", "branch a chat at an earlier message")
+	rewind := turnCap(CapRewind, "Rewind the last turn", "remove the last turn")
+
+	inv.Capabilities = []Capability{models, lock, settings, tools, skills, progress, approvals, clarify, regenerate, editTurn, rewind}
 	return inv, nil
 }
 

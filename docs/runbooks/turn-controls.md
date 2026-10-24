@@ -26,6 +26,17 @@ Image id at the time of reading: `sha256:9c5561579f3ffdf333401797094ac3a743738d6
   user's chat id is `404`, byte-identical to an id that never existed, and Hermes is never contacted. Only
   the owner learns of the 501.
 
+## Capability flags (issue #109)
+
+`GET /api/capabilities` lists `regenerate`, `edit_turn` and `rewind` with `status: unsupported` and a reason
+(`internal/hermes/discovery.go`, `TestDiscoverTurnControlsAreUnsupportedWithAReason`). The client's `offers()`
+therefore returns false for them, and the web app renders Regenerate, Edit and Rewind as `aria-disabled` buttons with no handler, each with its reason visible beside it (`TurnControls` in `web/src/Chat.tsx`; newest user turn gets Edit, newest assistant turn gets Regenerate and Rewind; wraps on narrow screens). They become `available`
+only when a verified Hermes route (fixture + file:line in the table above), a handler that uses it, and the
+destructive-operation guards (confirmation, active-run refusal, search-index invalidation, metadata-only audit
+event, ownership re-check) land together. A whole-session `/fork` or a second `POST /v1/runs` does not qualify.
+
+**Upstream status:** regenerate, edit-turn and rewind are `UPSTREAM_BLOCKED` on the deployed Hermes.
+
 ## Steer semantics
 
 - Ownership: `store.GetRun(userID, runID)`; a foreign run is `404` before Hermes is contacted.
