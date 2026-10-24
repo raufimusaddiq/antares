@@ -22,6 +22,7 @@ interface Slot {
   paused: boolean;
   busy: boolean;
   stale: string | null; // the previous chat's text still in the box until the composer resets; never ours
+  held: boolean; // a send is in flight: the server draft stays until the send is admitted
   shareText: string | null; // the OS share already added to the box: any conflict candidate built later must carry it too
   shared: boolean; // the OS share has been added to this slot's draft
 }
@@ -35,6 +36,12 @@ export interface DraftSyncView {
   refusal: string | null;
   /** Try the server again after a failed read. */
   retry: () => void;
+  /**
+   * Call when a send starts, before the box is emptied. The server draft is left alone (the same draft is on the
+   * reader's other devices) until the returned function is called, which is when the send is admitted; it then
+   * deletes the draft, or saves whatever was typed meanwhile. A send that is never admitted never calls it.
+   */
+  hold: () => () => void;
   keepMine: () => void;
   useTheirs: () => void;
 }
@@ -51,11 +58,13 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
   const [conflict, setConflict] = useState<{ theirs: string } | null>(null);
   const [offline, setOffline] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
+  const onSharedRef = useRef(onShared);
+  onSharedRef.current = onShared;
   const setDraftRef = useRef(setDraft);
   setDraftRef.current = setDraft;
 
   const flush = useCallback(async (s: Slot): Promise<void> => {
-    if (!s.loaded || s.paused || s.busy || s.latest === s.synced) return;
+    if (!s.loaded || s.paused || s.busy || s.held || s.latest === s.synced) return;
     const text = s.latest;
     const bytes = draftBytes(text);
     if (bytes > MAX_DRAFT_BYTES) {
@@ -144,7 +153,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
     // resets, and that text must never be read as this chat's.
     const first = slot.current === null; // nothing was on screen before: the box is this chat's own
     const own = first && draftRef.current !== "" ? draftRef.current : loadDraft(email, chatId);
-    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, shareText: null, shared: false };
+    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, held: false, shareText: null, shared: false };
     slot.current = s;
     setConflict(null);
     setOffline(false);
@@ -168,7 +177,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       s.stale = null;
     }
     s.latest = draft;
-    if (s.loaded && !s.paused && draft === "" && s.synced !== "") saveCleared(email, s.chatId, true); // a deliberate empty box the server has not been told about
+    if (s.loaded && !s.paused && !s.held && draft === "" && s.synced !== "") saveCleared(email, s.chatId, true); // a deliberate empty box the server has not been told about
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => void (s.loaded ? flush(s) : load(s)), DEBOUNCE_MS);
   }, [draft, chatId, flush, load, email]);
@@ -187,15 +196,24 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       s.shareText = share; // from here on every conflict candidate is built with it, wherever the conflict comes from
       setConflict((c) => (c ? { theirs: withShare(c.theirs, share) } : c));
       setDraftRef.current(withShare(s.latest, share));
-      onShared();
+      onSharedRef.current();
     }, 50);
     return () => window.clearInterval(id);
-  }, [share, chatId, onShared]);
+  }, [share, chatId]);
 
   return {
     conflict,
     offline,
     refusal,
+    hold: () => {
+      const s = slot.current;
+      if (!s) return () => {};
+      s.held = true;
+      return () => {
+        s.held = false;
+        void flush(s);
+      };
+    },
     retry: () => {
       const s = slot.current;
       if (s) void (s.loaded ? flush(s) : load(s));
@@ -254,9 +272,25 @@ export function DraftNotice({ sync }: { sync: DraftSyncView }) {
   return null;
 }
 
-/** Read the text of an OS share once, and take it out of the address bar so a reload does not add it again. */
+// The share is read from the address bar once per page load and kept here until it is applied. A React
+// initializer may run twice (StrictMode), so the second call must see the same text, not an empty bar.
+let taken: string | null | undefined;
+
+/** The text of an OS share, taken out of the address bar so a reload does not add it again. */
 export function takeSharedText(): string | null {
-  const t = sharedText(window.location.search);
-  if (t !== null) window.history.replaceState(null, "", "/");
-  return t;
+  if (taken === undefined) {
+    taken = sharedText(window.location.search);
+    if (taken !== null) window.history.replaceState(null, "", "/");
+  }
+  return taken;
+}
+
+/** The share has been put in the draft: forget it. */
+export function sharedTextApplied(): void {
+  taken = null;
+}
+
+/** Tests only: start from a page that has not been read yet. */
+export function resetSharedTextForTests(): void {
+  taken = undefined;
 }

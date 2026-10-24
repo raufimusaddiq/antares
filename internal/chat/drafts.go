@@ -22,6 +22,11 @@ var templateNameRE = regexp.MustCompile(fmt.Sprintf(`^[a-z0-9][a-z0-9_-]{0,%d}$`
 
 const templateNameRule = "A template name is 1-32 characters: a letter or digit first, then letters, digits, - or _"
 
+// maxDraftRequestBytes is the body cap of a draft write. JSON can spell one draft byte as six (\u00XX), so the
+// cap is sized for a draft AT its bound in that worst case: a draft the size check accepts must never be
+// refused earlier as an opaque 413, and one over the bound gets the DRAFT_TOO_LARGE reason.
+const maxDraftRequestBytes = store.MaxDraftBytes*6 + 1024
+
 type draftBody struct {
 	Body string `json:"body"`
 }
@@ -154,7 +159,7 @@ func (a draftAPI) handlers(s *Service) (get, put, del http.HandlerFunc) {
 			return
 		}
 		var b draftBody
-		if !decode(w, r, &b) || !validDraft(w, b) {
+		if !decodeMax(w, r, &b, maxDraftRequestBytes) || !validDraft(w, b) {
 			return
 		}
 		d, err := a.put(r, uid, b.Body, rev)

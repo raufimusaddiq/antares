@@ -66,6 +66,7 @@ function written(r: { status: number; json: unknown }): DraftWrite {
 function refusalReason(r: { status: number; json: unknown }): string {
   const e = rec(rec(r.json).error);
   if (typeof e.code === "string" && e.code.startsWith("DRAFT_") && typeof e.message === "string") return e.message.slice(0, 200);
+  if (r.status === 413) return "The draft is too large for the server to accept. It stays in this browser only; shorten it to sync.";
   return `The server did not accept this draft (HTTP ${r.status}).`;
 }
 

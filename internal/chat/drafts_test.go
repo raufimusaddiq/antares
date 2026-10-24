@@ -403,3 +403,25 @@ func TestDeleteRecreateNeverReusesARevision(t *testing.T) {
 		}
 	}
 }
+
+// A draft AT the byte bound whose JSON form is larger than the generic 64 KiB body cap is accepted;
+// one byte more is the documented 422, never an opaque 413.
+func TestDraftAtTheBoundSurvivesJSONEscaping(t *testing.T) {
+	a := newApp(t)
+	u := a.user("a")
+	path := "/api/chats/" + u.newChat() + "/draft"
+	quotes := strings.Repeat(`"`, store.MaxDraftBytes) // 32768 bytes of text, 65539 bytes of JSON
+	if d, code, _ := u.putDraft(path, `"0"`, map[string]string{"body": quotes}); code != 200 || d.Revision != 1 {
+		t.Fatalf("32768 quotes = %d %+v", code, d)
+	}
+	ctl := strings.Repeat("\x01", store.MaxDraftBytes) // six bytes of JSON each: the worst case
+	if d, code, _ := u.putDraft(path, `"1"`, map[string]string{"body": ctl}); code != 200 || d.Revision != 2 {
+		t.Fatalf("32768 control characters = %d %+v", code, d)
+	}
+	if got := u.readDraft(path); len(got.Body) != store.MaxDraftBytes {
+		t.Fatalf("stored %d bytes", len(got.Body))
+	}
+	if d, code, _ := u.putDraft(path, `"2"`, map[string]string{"body": quotes + `"`}); code != 422 || d.Error.Code != "DRAFT_TOO_LARGE" {
+		t.Fatalf("one byte over = %d %+v", code, d)
+	}
+}

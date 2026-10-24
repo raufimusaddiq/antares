@@ -177,7 +177,12 @@ func pathID(r *http.Request, name string) (string, bool) {
 // server alone may choose (profile, key, session id, …) is therefore a 400,
 // never ignored and never forwarded.
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	return decodeMax(w, r, v, maxBodyBytes)
+}
+
+// decodeMax is decode with its own body cap, for a route whose legitimate body can be larger than a chat message.
+func decodeMax(w http.ResponseWriter, r *http.Request, v any, max int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, max)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil && !(errors.Is(err, io.EOF) && isEmptyOK(v)) {

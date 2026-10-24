@@ -38,7 +38,7 @@ import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
 import { RunPrompts } from "./RunPrompts";
 import { loadDraft, matchTemplates, mergeTemplates, saveDraft, type Template } from "./drafts";
-import { DraftNotice, takeSharedText, useDraftSync } from "./DraftSync";
+import { DraftNotice, sharedTextApplied, takeSharedText, useDraftSync } from "./DraftSync";
 import { listOwnTemplates, type OwnTemplate } from "./draftApi";
 import { Templates } from "./Templates";
 
@@ -330,7 +330,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   useEffect(() => setDraft(loadDraft(email, current)), [email, current]);
   // Text the OS shared to the app: it waits in the new-chat draft, never in a chat and never sent.
   const [share, setShare] = useState<string | null>(takeSharedText);
-  const sync = useDraftSync(email, current, draft, onDraft, share, () => setShare(null));
+  const sync = useDraftSync(email, current, draft, onDraft, share, () => {
+    sharedTextApplied();
+    setShare(null);
+  });
+  const sendHold = useRef<(() => void) | null>(null); // releases the server draft once a send is admitted
   const [ownTemplates, setOwnTemplates] = useState<OwnTemplate[]>([]);
   useEffect(() => {
     void listOwnTemplates().then((l) => l && setOwnTemplates(l));
@@ -660,6 +664,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
       dispatch({ k: "clear" });
       setPending({ input, key, failure: "" });
       const r = await sendMessage(chat, input, key);
+      if (r.ok) {
+        // Admitted: now the draft may leave the server (and the reader's other devices). A failed send keeps it.
+        sendHold.current?.();
+        sendHold.current = null;
+      }
       if (currentRef.current !== chat) return;
       if (!r.ok) {
         // Kept with the same key: sending again repeats the request, it cannot double-send.
@@ -700,6 +709,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   const onSubmit = () => {
     const input = draft.trim();
+    sendHold.current = sync.hold();
     setDraft("");
     saveDraft(email, currentRef.current, "");
     void submit(input, newIdempotencyKey());

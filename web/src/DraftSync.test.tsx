@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render } from "@testing-library/react";
-import { useEffect, useState } from "react";
-import { DraftNotice, useDraftSync } from "./DraftSync";
+import { StrictMode, useEffect, useState } from "react";
+import { DraftNotice, resetSharedTextForTests, sharedTextApplied, takeSharedText, useDraftSync } from "./DraftSync";
 import { sharedText } from "./draftApi";
 import { loadDraft, matchTemplates, mergeTemplates, saveBaseRevision, saveDraft, TEMPLATES } from "./drafts";
 
@@ -52,7 +52,13 @@ afterEach(() => {
 const settle = () => act(async () => void (await vi.advanceTimersByTimeAsync(1000)));
 
 let api: { setDraft: (v: string) => void; setChat: (c: string | null) => void; text: () => string; sync: ReturnType<typeof useDraftSync> };
-function Device({ chat = "c1", initial = "", share = null }: { chat?: string | null; initial?: string; share?: string | null }) {
+function Device({ chat = "c1", initial = "", share = null, busyRender = false }: { chat?: string | null; initial?: string; share?: string | null; busyRender?: boolean }) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    if (!busyRender) return;
+    const id = setInterval(() => setTick((n) => n + 1), 20); // the page keeps re-rendering
+    return () => clearInterval(id);
+  }, [busyRender]);
   const [c, setC] = useState<string | null>(chat);
   const [d, setD] = useState(initial);
   const sync = useDraftSync("a@x.test", c, d, setD, share, () => {});
@@ -462,5 +468,75 @@ describe("a refusal is not 'offline'", () => {
     await settle();
     expect(r.container.textContent).toContain("this browser only");
     expect(r.container.textContent).toContain("Retry");
+  });
+});
+
+describe("send admission and share plumbing", () => {
+  it("the server draft stays until the send is admitted, then the draft is deleted", async () => {
+    await mount({ initial: "to send" });
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "to send", revision: 1 });
+    const admitted = api.sync.hold(); // send starts
+    await act(async () => api.setDraft("")); // the box is emptied at once
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "to send", revision: 1 }); // not deleted: not admitted yet
+    expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
+    await act(async () => admitted());
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
+  });
+
+  it("a send that is never admitted leaves the draft on the server, and a reload restores it", async () => {
+    const a = await mount({ initial: "kept text" });
+    await settle();
+    api.sync.hold();
+    await act(async () => api.setDraft(""));
+    await settle();
+    a.unmount();
+    await mount({ initial: "" });
+    await settle();
+    expect(api.text()).toBe("kept text");
+    expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
+  });
+
+  it("text typed while the send was pending is saved instead of deleted once it is admitted", async () => {
+    await mount({ initial: "first" });
+    await settle();
+    const admitted = api.sync.hold();
+    await act(async () => api.setDraft(""));
+    await act(async () => api.setDraft("second thought"));
+    await settle();
+    expect(srv.drafts.get(P1)?.body).toBe("first");
+    await act(async () => admitted());
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "second thought", revision: 2 });
+  });
+
+  it("the share survives StrictMode's second initializer call", () => {
+    resetSharedTextForTests();
+    window.history.replaceState(null, "", "/?share=1&text=hello");
+    let seen: string | null = "unset";
+    function Probe() {
+      const [v] = useState(takeSharedText);
+      seen = v;
+      return null;
+    }
+    render(
+      <StrictMode>
+        <Probe />
+      </StrictMode>,
+    );
+    expect(seen).toBe("hello");
+    expect(window.location.search).toBe(""); // taken out of the address bar
+    sharedTextApplied();
+    expect(takeSharedText()).toBeNull();
+    resetSharedTextForTests();
+  });
+
+  it("the share is applied even while the page keeps re-rendering with a new callback each time", async () => {
+    render(<Device chat={null} share="shared words" busyRender />); // not mount(): its settle() would let the poll fire unobserved
+    // Small steps, each flushed: the page re-renders every 20 ms, well inside the 50 ms poll.
+    for (let i = 0; i < 60; i++) await act(async () => void (await vi.advanceTimersByTimeAsync(20)));
+    expect(api.text()).toBe("shared words");
   });
 });
