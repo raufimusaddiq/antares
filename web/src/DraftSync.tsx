@@ -26,6 +26,8 @@ interface Slot {
   box: string; // what the composer holds for this slot right now, tracked even while the slot is held
   sentText: string | null; // the text a send in flight took out of the box
   pendingClear: string | null; // admitted before the first read finished: delete this text from the server when it is read
+  readWhileHeld: boolean; // the first read came back while a send was in flight; it was recorded, not applied
+  heldAhead: boolean; // ...and the server was still at the revision this browser last synced
   held: boolean; // a send is in flight: the server draft stays until the send is admitted
   shareText: string | null; // the OS share already added to the box: any conflict candidate built later must carry it too
   shared: boolean; // the OS share has been added to this slot's draft
@@ -126,7 +128,16 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       const local = s.latest;
       s.synced = r.body;
       const base = loadBaseRevision(email, s.chatId);
-      if (s.pendingClear !== null && local === "" && r.body === s.pendingClear) {
+      if (s.held) {
+        // A send is in flight. Applying the server body now would put the message being sent back into the box (and,
+        // once the box is read as that text, make the admission unable to delete it). Record the read and let the
+        // outcome of the send decide: see the release function in hold().
+        s.readWhileHeld = true;
+        s.heldAhead = base !== null && base === r.revision;
+        s.loaded = true;
+        return;
+      }
+      if (s.pendingClear !== null && local === "" && (r.body === s.pendingClear || (base !== null && base === r.revision))) {
         // The send was admitted before this read came back, and the server still holds exactly the text that was sent:
         // finish the clear (flush deletes it at the revision just read). A different body is another device's newer
         // text and is not touched: it falls through to the normal path below and is shown, not deleted.
@@ -170,7 +181,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
     // resets, and that text must never be read as this chat's.
     const first = slot.current === null; // nothing was on screen before: the box is this chat's own
     const own = first && draftRef.current !== "" ? draftRef.current : loadDraft(email, chatId);
-    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, box: own, sentText: null, pendingClear: null, held: false, shareText: null, shared: false };
+    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, box: own, sentText: null, pendingClear: null, readWhileHeld: false, heldAhead: false, held: false, shareText: null, shared: false };
     slot.current = s;
     setConflict(null);
     setOffline(false);
@@ -236,16 +247,44 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       s.sentText = s.box; // hold() runs before the box is emptied
       return (admitted) => {
         s.held = false;
-        // Admitted before the first read finished: nothing can be deleted yet, so remember what was sent.
-        if (admitted && !s.loaded && s.sentText !== null && s.sentText !== "") s.pendingClear = s.sentText;
+        const sent = s.sentText ?? "";
         // Admitted with an empty box: record the clear durably BEFORE any delete is attempted, and keep it until a delete
         // succeeds (flush clears it), so a failed DELETE followed by a reload retries the deletion instead of restoring
-        // the sent text. The same marker covers a release before the first read, which cannot delete anything yet.
+        // the sent text. A refused send writes none.
         if (admitted && s.box === "") saveCleared(email, s.chatId, true);
-        // Admitted: the box's current text is what the server should hold (empty = delete). Not admitted: leave the
-        // server copy alone while the box is still empty, but anything typed since is saved like any other edit.
-        s.latest = admitted || s.box !== "" ? s.box : s.synced;
-        void flush(s);
+        if (!s.loaded) {
+          // The first read has not come back: nothing can be deleted yet, so remember what was sent (load() finishes it).
+          if (admitted && sent !== "") s.pendingClear = sent;
+          s.latest = admitted || s.box !== "" ? s.box : s.synced;
+          void flush(s);
+          return;
+        }
+        if (s.box !== "") {
+          s.latest = s.box; // typed while the send was pending: that is the draft now (the write is compare-and-set)
+          void flush(s);
+          return;
+        }
+        const here = slot.current === s;
+        if (admitted) {
+          if (!s.readWhileHeld || s.synced === sent || s.heldAhead) {
+            s.latest = ""; // delete at the revision held (compare-and-set: another device's newer edit makes it a conflict)
+            if (s.readWhileHeld) saveBaseRevision(email, s.chatId, s.rev); // proven safe: a reload after a failed DELETE retries it
+            void flush(s);
+          } else if (s.synced === "") {
+            s.latest = "";
+            saveCleared(email, s.chatId, false); // nothing on the server to delete
+          } else {
+            // The read, taken while sending, shows text that is not what was sent and not what this browser last synced:
+            // another device's newer edit. Offer it; never delete it.
+            s.latest = "";
+            s.paused = true;
+            if (here) setConflict({ theirs: s.shareText === null ? s.synced : withShare(s.synced, s.shareText) });
+          }
+          return;
+        }
+        // Refused: the server draft stays. Another device's newer text, read meanwhile, is shown instead of staying hidden.
+        s.latest = s.synced;
+        if (s.readWhileHeld && s.synced !== "" && s.synced !== sent && !s.heldAhead && here) setDraftRef.current(s.synced);
       };
     },
     retry: () => {

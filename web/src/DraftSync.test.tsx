@@ -557,6 +557,88 @@ describe("an admitted send whose DELETE fails", () => {
   });
 });
 
+describe("the first read returns while a send is pending", () => {
+  const startSend = async (serverDraft: { body: string; revision: number }, initial = "sent text") => {
+    srv.drafts.set(P1, serverDraft);
+    const open = srv.gateGets();
+    const a = await mount({ initial });
+    const end = api.sync.hold(); // Send
+    await act(async () => api.setDraft("")); // composer emptied at once
+    await act(async () => open()); // THE READ COMES BACK NOW, before sendMessage has answered
+    await settle();
+    return { end, a };
+  };
+
+  it("does not put the message being sent back; admission then deletes the server draft", async () => {
+    const { end } = await startSend({ body: "sent text", revision: 1 });
+    expect(api.text()).toBe(""); // not restored while the send is pending
+    expect(srv.log.some((l) => l.startsWith("DELETE") || l.startsWith("PUT"))).toBe(false);
+    await act(async () => end(true));
+    await settle();
+    expect(api.text()).toBe("");
+    expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
+    expect(api.sync.conflict).toBeNull();
+  });
+
+  it("a refused send keeps the server draft and does not duplicate it into the box", async () => {
+    const { end } = await startSend({ body: "sent text", revision: 1 });
+    await act(async () => end(false));
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "sent text", revision: 1 });
+    expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
+    expect(api.text()).toBe("");
+  });
+
+  it("an admitted send deletes a draft this browser last synced, even if the unsynced tail was never saved", async () => {
+    saveBaseRevision("a@x.test", "c1", 1); // this browser was in step with revision 1
+    const { end } = await startSend({ body: "sent", revision: 1 }, "sent text typed since");
+    await act(async () => end(true));
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
+    expect(api.sync.conflict).toBeNull();
+  });
+
+  it("another device's newer edit is offered on admission and never deleted", async () => {
+    const { end } = await startSend({ body: "newer text from the laptop", revision: 3 });
+    await act(async () => end(true));
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "newer text from the laptop", revision: 3 });
+    expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
+    expect(api.sync.conflict).toEqual({ theirs: "newer text from the laptop" });
+    expect(api.text()).toBe("");
+  });
+
+  it("another device's newer edit is shown when the send is refused", async () => {
+    const { end } = await startSend({ body: "newer text from the laptop", revision: 3 });
+    await act(async () => end(false));
+    await settle();
+    expect(api.text()).toBe("newer text from the laptop");
+    expect(srv.drafts.get(P1)).toEqual({ body: "newer text from the laptop", revision: 3 });
+  });
+
+  it("admission, a failed DELETE and a reload still delete the draft", async () => {
+    const { end, a } = await startSend({ body: "sent text", revision: 1 });
+    srv.setFailPut(true);
+    await act(async () => end(true));
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "sent text", revision: 1 });
+    a.unmount();
+    srv.setFailPut(false);
+    await mount({ initial: "" });
+    await settle();
+    expect(api.text()).toBe("");
+    expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
+  });
+
+  it("text typed while the send is pending replaces the draft instead of being lost", async () => {
+    const { end } = await startSend({ body: "sent text", revision: 1 });
+    await act(async () => api.setDraft("a new thought"));
+    await act(async () => end(true));
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "a new thought", revision: 2 });
+  });
+});
+
 describe("a send admitted before the first read finished", () => {
   it("deletes the sent text once the read returns, instead of restoring it", async () => {
     srv.drafts.set(P1, { body: "sent text", revision: 1 });
