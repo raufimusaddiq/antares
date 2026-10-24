@@ -148,3 +148,44 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		t.Fatalf("scanned only %d files", n)
 	}
 }
+
+// PERF-001: the OpenUI runtime and the chart renderer are on-demand chunks. The
+// shell must not load or preload them, and the entry script must not contain
+// their code, so a chat with no rich content never pays for them.
+func TestOpenUIChunksAreNotInTheInitialBundle(t *testing.T) {
+	html, err := fs.ReadFile(FS(), "index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Strings that exist only in the lazy modules: Block.tsx (renderer) and Chart.tsx.
+	lazy := map[string]string{"Block-": "ou-block", "Chart-": "ou-chart-svg"}
+	for prefix := range lazy {
+		if strings.Contains(string(html), "/assets/"+prefix) {
+			t.Errorf("index.html loads or preloads the %s chunk", prefix)
+		}
+	}
+	entries := regexp.MustCompile(`src="(/assets/[^"]+\.js)"`).FindAllStringSubmatch(string(html), -1)
+	if len(entries) == 0 {
+		t.Fatal("no entry script in index.html")
+	}
+	for _, m := range entries {
+		b, err := fs.ReadFile(FS(), strings.TrimPrefix(m[1], "/"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, marker := range lazy {
+			if strings.Contains(string(b), marker) {
+				t.Errorf("entry script %s contains %q, which belongs to a lazy chunk", m[1], marker)
+			}
+		}
+	}
+	for prefix, marker := range lazy {
+		files, _ := fs.Glob(FS(), "assets/"+prefix+"*.js")
+		if len(files) != 1 {
+			t.Fatalf("want exactly one %s chunk in the bundle, got %v", prefix, files)
+		}
+		if b, _ := fs.ReadFile(FS(), files[0]); !strings.Contains(string(b), marker) {
+			t.Errorf("%s does not contain %q: the check above would pass vacuously", files[0], marker)
+		}
+	}
+}

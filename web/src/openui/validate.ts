@@ -18,8 +18,8 @@ export type Verdict = { ok: true } | { ok: false; reason: string };
 
 // Which components may sit inside which (containers only; everything else is a leaf).
 const CONTAINS: Record<string, readonly string[]> = {
-  Stack: ["Text", "Heading", "Badge", "Metric", "BulletList", "Table", "Divider", "Card"],
-  Card: ["Text", "Heading", "Badge", "Metric", "BulletList", "Table", "Divider"],
+  Stack: ["Text", "Heading", "Badge", "Metric", "BulletList", "Table", "Divider", "Chart", "Button", "Input", "Choice", "Card"],
+  Card: ["Text", "Heading", "Badge", "Metric", "BulletList", "Table", "Divider", "Chart", "Button", "Input", "Choice"],
 };
 
 let parser: ReturnType<typeof createParser> | undefined;
@@ -29,6 +29,23 @@ interface Node {
   typeName?: unknown;
   props?: Record<string, unknown>;
   hasDynamicProps?: unknown;
+}
+
+// The parser does not enforce the schema's min/max or cross-prop rules, so the ones that matter are here.
+const MAX_POINTS = 24;
+function shape(name: string, props: Record<string, unknown>): string | null {
+  if (name === "Chart") {
+    const { labels, values } = props;
+    if (!Array.isArray(labels) || !Array.isArray(values)) return "chart data";
+    if (labels.length < 1 || labels.length > MAX_POINTS) return "chart size";
+    if (labels.length !== values.length) return "chart labels and values differ";
+    if (!values.every((v) => typeof v === "number" && Number.isFinite(v))) return "chart value";
+  }
+  if (name === "Choice") {
+    const { options } = props;
+    if (!Array.isArray(options) || options.length < 2 || options.length > 12) return "choice options";
+  }
+  return null;
 }
 
 export function check(source: string): Verdict {
@@ -69,11 +86,13 @@ export function check(source: string): Verdict {
     if (!ALLOWED_COMPONENTS.includes(name)) return `component ${name}`;
     if (parent !== null && !CONTAINS[parent]?.includes(name)) return `${name} inside ${parent}`;
     if (n.hasDynamicProps) return "dynamic props";
+    const bad = shape(name, n.props ?? {});
+    if (bad) return bad;
     if (++nodes > MAX_NODES) return "too many components";
     if (depth > MAX_DEPTH) return "nested too deeply";
     for (const val of Object.values(n.props ?? {})) {
-      const bad = visit(val, name, depth + 1);
-      if (bad) return bad;
+      const inner = visit(val, name, depth + 1);
+      if (inner) return inner;
     }
     return null;
   };
