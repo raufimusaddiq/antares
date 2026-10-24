@@ -555,3 +555,5 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
   overflow-wrap: anywhere;
   margin: 0.5rem 0;
 }
+
+.codeblock pre:focus-visible, .tablewrap:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

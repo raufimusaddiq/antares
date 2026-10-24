@@ -150,7 +150,7 @@ function CodeBlock({ text, lang }: { text: string; lang: string }) {
           {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
         </button>
       </div>
-      <pre>
+      <pre tabIndex={0} role="region" aria-label={`${lang || "text"} code`}>
         <code data-lang={lang || undefined}>
           {text}
         </code>
@@ -201,7 +201,7 @@ function renderBlock(b: Block, k: string): ReactNode {
       return <CodeBlock text={b.text} lang={b.lang} />;
     case "table":
       return (
-        <div className="tablewrap">
+        <div className="tablewrap" tabIndex={0} role="region" aria-label="Table">
           <table>
             <thead>
               <tr>

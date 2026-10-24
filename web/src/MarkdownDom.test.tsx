@@ -55,4 +55,23 @@ describe("Markdown in a real DOM", () => {
     rerender(<Markdown text={"```py\nprint(1)\nprint(2)"} />);
     expect(screen.getByRole("button", { name: "Copy" })).toBeTruthy();
   });
+
+  it("scrollable code and table regions are keyboard reachable and named", () => {
+    const host = document.createElement("div");
+    host.innerHTML = md("```py\nx = 1\n```\n\n| a | b |\n|---|---|\n| 1 | 2 |");
+    for (const el of Array.from(host.querySelectorAll("pre, .tablewrap"))) {
+      expect(el.getAttribute("tabindex")).toBe("0");
+      expect(el.getAttribute("role")).toBe("region");
+      expect(el.getAttribute("aria-label")).toBeTruthy();
+    }
+  });
+
+  it("mixed Markdown with inline and fenced code renders as text, not markup", () => {
+    const host = document.createElement("div");
+    host.innerHTML = md("**b** *i* `<b>x</b>`\n\n- one\n- <u>two</u>\n\n```html\n<img src=x onerror=alert(1)>\n```");
+    expect(host.querySelector("strong,em,code,li,pre")).not.toBeNull();
+    expect(host.querySelector("img,u,b")).toBeNull();
+    expect(host.textContent).toContain("<img src=x onerror=alert(1)>");
+    expect(host.textContent).toContain("<u>two</u>");
+  });
 });
