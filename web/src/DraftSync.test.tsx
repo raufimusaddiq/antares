@@ -493,7 +493,7 @@ describe("an admitted send whose DELETE fails", () => {
     const end = api.sync.hold(); // Send
     await act(async () => api.setDraft("")); // composer emptied while the send is in flight
     srv.setFailPut(true); // the DELETE will fail
-    await act(async () => end(true)); // admitted
+    await act(async () => end.release(true)); // admitted
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "sent text", revision: 1 }); // still there
     a.unmount();
@@ -511,7 +511,7 @@ describe("an admitted send whose DELETE fails", () => {
     const a = await mount({ initial: "sent text" });
     const end = api.sync.hold();
     await act(async () => api.setDraft(""));
-    await act(async () => end(true));
+    await act(async () => end.release(true));
     srv.setFailPut(true);
     await act(async () => open());
     await settle();
@@ -530,7 +530,7 @@ describe("an admitted send whose DELETE fails", () => {
     const end = api.sync.hold();
     await act(async () => api.setDraft(""));
     srv.setFailPut(true);
-    await act(async () => end(true));
+    await act(async () => end.release(true));
     await settle();
     a.unmount();
     srv.setFailPut(false);
@@ -548,7 +548,7 @@ describe("an admitted send whose DELETE fails", () => {
     await settle();
     const end = api.sync.hold();
     await act(async () => api.setDraft(""));
-    await act(async () => end(false));
+    await act(async () => end.release(false));
     a.unmount();
     await mount({ initial: "" });
     await settle();
@@ -573,7 +573,7 @@ describe("the first read returns while a send is pending", () => {
     const { end } = await startSend({ body: "sent text", revision: 1 });
     expect(api.text()).toBe(""); // not restored while the send is pending
     expect(srv.log.some((l) => l.startsWith("DELETE") || l.startsWith("PUT"))).toBe(false);
-    await act(async () => end(true));
+    await act(async () => end.release(true));
     await settle();
     expect(api.text()).toBe("");
     expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
@@ -582,7 +582,7 @@ describe("the first read returns while a send is pending", () => {
 
   it("a refused send keeps the server draft and does not duplicate it into the box", async () => {
     const { end } = await startSend({ body: "sent text", revision: 1 });
-    await act(async () => end(false));
+    await act(async () => end.release(false));
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "sent text", revision: 1 });
     expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
@@ -592,7 +592,7 @@ describe("the first read returns while a send is pending", () => {
   it("an admitted send deletes a draft this browser last synced, even if the unsynced tail was never saved", async () => {
     saveBaseRevision("a@x.test", "c1", 1); // this browser was in step with revision 1
     const { end } = await startSend({ body: "sent", revision: 1 }, "sent text typed since");
-    await act(async () => end(true));
+    await act(async () => end.release(true));
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
     expect(api.sync.conflict).toBeNull();
@@ -600,7 +600,7 @@ describe("the first read returns while a send is pending", () => {
 
   it("another device's newer edit is offered on admission and never deleted", async () => {
     const { end } = await startSend({ body: "newer text from the laptop", revision: 3 });
-    await act(async () => end(true));
+    await act(async () => end.release(true));
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "newer text from the laptop", revision: 3 });
     expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
@@ -610,7 +610,7 @@ describe("the first read returns while a send is pending", () => {
 
   it("another device's newer edit is shown when the send is refused", async () => {
     const { end } = await startSend({ body: "newer text from the laptop", revision: 3 });
-    await act(async () => end(false));
+    await act(async () => end.release(false));
     await settle();
     expect(api.text()).toBe("newer text from the laptop");
     expect(srv.drafts.get(P1)).toEqual({ body: "newer text from the laptop", revision: 3 });
@@ -619,7 +619,7 @@ describe("the first read returns while a send is pending", () => {
   it("admission, a failed DELETE and a reload still delete the draft", async () => {
     const { end, a } = await startSend({ body: "sent text", revision: 1 });
     srv.setFailPut(true);
-    await act(async () => end(true));
+    await act(async () => end.release(true));
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "sent text", revision: 1 });
     a.unmount();
@@ -633,7 +633,7 @@ describe("the first read returns while a send is pending", () => {
   it("text typed while the send is pending replaces the draft instead of being lost", async () => {
     const { end } = await startSend({ body: "sent text", revision: 1 });
     await act(async () => api.setDraft("a new thought"));
-    await act(async () => end(true));
+    await act(async () => end.release(true));
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "a new thought", revision: 2 });
   });
@@ -646,7 +646,7 @@ describe("a send admitted before the first read finished", () => {
     await mount({ initial: "sent text" });
     const end = api.sync.hold(); // Send
     await act(async () => api.setDraft(""));
-    await act(async () => end(true)); // admitted while unloaded: flush has nothing to talk to yet
+    await act(async () => end.release(true)); // admitted while unloaded: flush has nothing to talk to yet
     await act(async () => open());
     await settle();
     expect(api.text()).toBe(""); // not resurrected
@@ -660,7 +660,7 @@ describe("a send admitted before the first read finished", () => {
     await mount({ initial: "sent text" });
     const end = api.sync.hold();
     await act(async () => api.setDraft(""));
-    await act(async () => end(true));
+    await act(async () => end.release(true));
     srv.drafts.set(P1, { body: "newer text from the laptop", revision: 2 }); // written before the read is answered
     await act(async () => open());
     await settle();
@@ -677,7 +677,7 @@ describe("a send admitted before the first read finished", () => {
     await mount({ initial: "kept" });
     const end = api.sync.hold();
     await act(async () => api.setDraft(""));
-    await act(async () => end(false));
+    await act(async () => end.release(false));
     await act(async () => open());
     await settle();
     expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
@@ -708,7 +708,7 @@ describe("send admission and share plumbing", () => {
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "to send", revision: 1 }); // not deleted: not admitted yet
     expect(srv.log.some((l) => l.startsWith("DELETE"))).toBe(false);
-    await act(async () => admitted(true));
+    await act(async () => admitted.release(true));
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
   });
@@ -719,7 +719,7 @@ describe("send admission and share plumbing", () => {
     const end = api.sync.hold();
     await act(async () => api.setDraft(""));
     await settle();
-    await act(async () => end(false));
+    await act(async () => end.release(false));
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "kept text", revision: 1 });
     a.unmount();
@@ -735,7 +735,7 @@ describe("send admission and share plumbing", () => {
     const end = api.sync.hold();
     await act(async () => api.setDraft(""));
     await settle();
-    await act(async () => end(false)); // the send failed
+    await act(async () => end.release(false)); // the send failed
     await act(async () => api.setDraft("typed after the failure"));
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "typed after the failure", revision: 2 });
@@ -748,7 +748,7 @@ describe("send admission and share plumbing", () => {
     const end = api.sync.hold();
     await act(async () => api.setDraft(""));
     await act(async () => api.setDraft("second"));
-    await act(async () => end(false));
+    await act(async () => end.release(false));
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "second", revision: 2 });
   });
@@ -758,11 +758,11 @@ describe("send admission and share plumbing", () => {
     await settle();
     const first = api.sync.hold();
     await act(async () => api.setDraft(""));
-    await act(async () => first(false));
+    await act(async () => first.release(false));
     await settle();
     expect(srv.drafts.get(P1)?.body).toBe("resent text");
     const second = api.sync.hold(); // Send again
-    await act(async () => second(true));
+    await act(async () => second.release(true));
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
   });
@@ -775,7 +775,7 @@ describe("send admission and share plumbing", () => {
     await act(async () => api.setDraft("second thought"));
     await settle();
     expect(srv.drafts.get(P1)?.body).toBe("first");
-    await act(async () => admitted(true));
+    await act(async () => admitted.release(true));
     await settle();
     expect(srv.drafts.get(P1)).toEqual({ body: "second thought", revision: 2 });
   });

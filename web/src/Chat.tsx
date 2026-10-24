@@ -38,7 +38,7 @@ import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
 import { RunPrompts } from "./RunPrompts";
 import { loadDraft, matchTemplates, mergeTemplates, saveDraft, type Template } from "./drafts";
-import { DraftNotice, sharedTextApplied, takeSharedText, useDraftSync } from "./DraftSync";
+import { DraftNotice, sharedTextApplied, takeSharedText, useDraftSync, NO_HOLD, type SendHold } from "./DraftSync";
 import { listOwnTemplates, type OwnTemplate } from "./draftApi";
 import { Templates } from "./Templates";
 
@@ -64,6 +64,7 @@ interface Pending {
   input: string;
   key: string;
   failure: string; // empty while sending
+  hold: SendHold; // this send's claim on the server draft, kept for a resend
 }
 
 // ---- presentational pieces (no hooks: rendered to static markup in tests) -----
@@ -119,7 +120,7 @@ const turnKey = (t: Turn) => String(t.seq);
 
 export interface TranscriptProps {
   turns: Turn[];
-  pending: Pending | null;
+  pending: Omit<Pending, "hold"> | null;
   run: LiveRun | null;
   /** More (older) turns exist on the server. */
   hasMore?: boolean;
@@ -334,11 +335,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     sharedTextApplied();
     setShare(null);
   });
-  const sendHold = useRef<((admitted: boolean) => void) | null>(null); // holds the server draft while a send is in flight
-  const endSend = (admitted: boolean) => {
-    sendHold.current?.(admitted);
-    sendHold.current = null;
-  };
+
   const [ownTemplates, setOwnTemplates] = useState<OwnTemplate[]>([]);
   useEffect(() => {
     void listOwnTemplates().then((l) => l && setOwnTemplates(l));
@@ -649,41 +646,43 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   }, [detach, newChat]);
 
   const submit = useCallback(
-    async (input: string, key: string) => {
-      setBanner("");
-      let chat = current;
-      if (!chat) {
-        const c = await newChat();
-        if (!c) {
-          endSend(false); // nothing was sent
+    async (input: string, key: string, hold: SendHold) => {
+      // This submission owns `hold` and ends it exactly once, whichever way it leaves (SendHold.release ignores repeats).
+      try {
+        setBanner("");
+        let chat = current;
+        if (!chat) {
+          const c = await newChat();
+          if (!c) return; // nothing was sent
+          nav.current++;
+          detach();
+          setCurrent(c.id);
+          currentRef.current = c.id;
+          setTurns([]);
+          setCursor("");
+          chat = c.id;
+        }
+        blankChat.current = "";
+        lastInput.current = input;
+        dispatch({ k: "clear" });
+        setPending({ input, key, failure: "", hold });
+        const r = await sendMessage(chat, input, key);
+        // Every outcome ends the hold: admitted deletes the server draft (and the reader's other devices lose it);
+        // refused keeps it and resumes syncing whatever is typed next.
+        hold.release(r.ok);
+        if (currentRef.current !== chat) return;
+        if (!r.ok) {
+          // Kept with the same key: sending again repeats the request, it cannot double-send.
+          setPending({ input, key, failure: describeCode(r.code), hold });
           return;
         }
-        nav.current++;
-        detach();
-        setCurrent(c.id);
-        currentRef.current = c.id;
-        setTurns([]);
-        setCursor("");
-        chat = c.id;
+        setPending(null);
+        setChats((l) => l.map((x) => (x.id === chat ? { ...x, activeRunId: r.value.runId } : x)));
+        setTurns((t) => [...t, { seq: t.length > 0 ? t[t.length - 1].seq + 1 : 0, role: "user", text: input }]);
+        attach(r.value.runId, chat);
+      } finally {
+        hold.release(false); // a path that left without an answer (no-op if already released)
       }
-      blankChat.current = "";
-      lastInput.current = input;
-      dispatch({ k: "clear" });
-      setPending({ input, key, failure: "" });
-      const r = await sendMessage(chat, input, key);
-      // Every outcome ends the hold: admitted deletes the server draft (and the reader's other devices lose it);
-      // refused keeps it and resumes syncing whatever is typed next.
-      endSend(r.ok);
-      if (currentRef.current !== chat) return;
-      if (!r.ok) {
-        // Kept with the same key: sending again repeats the request, it cannot double-send.
-        setPending({ input, key, failure: describeCode(r.code) });
-        return;
-      }
-      setPending(null);
-      setChats((l) => l.map((x) => (x.id === chat ? { ...x, activeRunId: r.value.runId } : x)));
-      setTurns((t) => [...t, { seq: t.length > 0 ? t[t.length - 1].seq + 1 : 0, role: "user", text: input }]);
-      attach(r.value.runId, chat);
     },
     [attach, current, detach, newChat],
   );
@@ -714,10 +713,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   const onSubmit = () => {
     const input = draft.trim();
-    sendHold.current = sync.hold();
+    const hold = sync.hold();
     setDraft("");
     saveDraft(email, currentRef.current, "");
-    void submit(input, newIdempotencyKey());
+    void submit(input, newIdempotencyKey(), hold);
   };
 
   const onCancel = () => {
@@ -809,7 +808,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           onRetry={() => {
             const last = [...turns].reverse().find((t) => t.role === "user");
             const input = lastInput.current || last?.text || "";
-            if (input) void submit(input, newIdempotencyKey());
+            if (input) void submit(input, newIdempotencyKey(), NO_HOLD); // a re-ask of an earlier message, not the draft
           }}
           onReconnect={() => {
             if (run && current) {
@@ -819,8 +818,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           }}
           onResend={() => {
             if (!pending) return;
-            sendHold.current ??= sync.hold(); // a resend that gets admitted must delete the draft too
-            void submit(pending.input, pending.key);
+            // A resend gets its own hold on the same draft (the first was released when the send was refused).
+            void submit(pending.input, pending.key, pending.hold.again());
           }}
         />
         </ReplyContext.Provider>

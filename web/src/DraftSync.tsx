@@ -29,10 +29,20 @@ interface Slot {
   readWhileHeld: boolean; // the first read came back while a send was in flight; it was recorded, not applied
   heldAhead: boolean; // ...and the server was still at the revision this browser last synced
   abandoned: boolean; // the chat scope changed away from this slot; it only finishes an admitted clear now
-  held: boolean; // a send is in flight: the server draft stays until the send is admitted
+  holds: number; // sends in flight on this slot: while any, the server draft stays until each is admitted or refused
   shareText: string | null; // the OS share already added to the box: any conflict candidate built later must carry it too
   shared: boolean; // the OS share has been added to this slot's draft
 }
+
+/** One send's claim on a slot's server draft. Each submission owns its own, so overlapping sends cannot release each other's. */
+export interface SendHold {
+  /** Ends this send's hold, once: true = admitted, false = refused or never started. Later calls do nothing. */
+  release: (admitted: boolean) => void;
+  /** A fresh hold on the same draft for a resend of the same text, taken after this one was released. */
+  again: () => SendHold;
+}
+
+export const NO_HOLD: SendHold = { release: () => {}, again: () => NO_HOLD }; // nothing on screen to hold
 
 export interface DraftSyncView {
   /** The other device's text, while the two disagree. Syncing is paused until one is chosen. */
@@ -49,7 +59,7 @@ export interface DraftSyncView {
    * once the send is admitted (the draft is deleted, or whatever was typed meanwhile is saved), with false when
    * it was refused or never started (the server draft stays, and syncing of new text resumes at once).
    */
-  hold: () => (admitted: boolean) => void;
+  hold: () => SendHold;
   keepMine: () => void;
   useTheirs: () => void;
 }
@@ -75,7 +85,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
   setDraftRef.current = setDraft;
 
   const flush = useCallback(async (s: Slot): Promise<void> => {
-    if (!s.loaded || s.paused || s.busy || s.held || s.latest === s.synced) return;
+    if (!s.loaded || s.paused || s.busy || s.holds > 0 || s.latest === s.synced) return;
     const text = s.latest;
     const bytes = draftBytes(text);
     if (bytes > MAX_DRAFT_BYTES) {
@@ -132,7 +142,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       const local = s.latest;
       s.synced = r.body;
       const base = loadBaseRevision(email, s.chatId);
-      if (s.held) {
+      if (s.holds > 0) {
         // A send is in flight. Applying the server body now would put the message being sent back into the box (and,
         // once the box is read as that text, make the admission unable to delete it). Record the read and let the
         // outcome of the send decide: see the release function in hold().
@@ -193,7 +203,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
     // resets, and that text must never be read as this chat's.
     const first = slot.current === null; // nothing was on screen before: the box is this chat's own
     const own = first && draftRef.current !== "" ? draftRef.current : loadDraft(email, chatId);
-    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, box: own, sentText: null, pendingClear: null, readWhileHeld: false, heldAhead: false, abandoned: false, held: false, shareText: null, shared: false };
+    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, box: own, sentText: null, pendingClear: null, readWhileHeld: false, heldAhead: false, abandoned: false, holds: 0, shareText: null, shared: false };
     slot.current = s;
     setConflict(null);
     setOffline(false);
@@ -223,7 +233,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
     }
     s.latest = draft;
     s.box = draft;
-    if (s.loaded && !s.paused && !s.held && draft === "" && s.synced !== "") saveCleared(email, s.chatId, true); // a deliberate empty box the server has not been told about
+    if (s.loaded && !s.paused && s.holds === 0 && draft === "" && s.synced !== "") saveCleared(email, s.chatId, true); // a deliberate empty box the server has not been told about
     window.clearTimeout(timer.current);
     timer.current = window.setTimeout(() => void (s.loaded ? flush(s) : load(s)), DEBOUNCE_MS);
   }, [draft, chatId, flush, load, email]);
@@ -253,18 +263,15 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
     return () => window.clearInterval(id);
   }, [share, chatId]);
 
-  return {
-    conflict,
-    offline,
-    refusal,
-    hold: () => {
-      const s = slot.current;
-      if (!s) return () => {};
-      s.held = true;
-      s.sentText = s.box; // hold() runs before the box is emptied
-      return (admitted) => {
-        s.held = false;
-        const sent = s.sentText ?? "";
+  // A hold belongs to ONE submission (and to the slot that was on screen when it started, which may be left later).
+  const holdSlot = (s: Slot, sent: string): SendHold => {
+    s.holds++;
+    s.sentText = sent;
+    let done = false;
+    const release = (admitted: boolean) => {
+      if (done) return; // exactly once per submission
+      done = true;
+        s.holds = Math.max(0, s.holds - 1);
         // Admitted with an empty box: record the clear durably BEFORE any delete is attempted, and keep it until a delete
         // succeeds (flush clears it), so a failed DELETE followed by a reload retries the deletion instead of restoring
         // the sent text. A refused send writes none.
@@ -306,7 +313,18 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
         // Refused: the server draft stays. Another device's newer text, read meanwhile, is shown instead of staying hidden.
         s.latest = s.synced;
         if (s.readWhileHeld && s.synced !== "" && s.synced !== sent && !s.heldAhead && here) setDraftRef.current(s.synced);
-      };
+    };
+    return { release, again: () => holdSlot(s, sent) };
+  };
+
+  return {
+    conflict,
+    offline,
+    refusal,
+    hold: () => {
+      const s = slot.current;
+      if (!s) return NO_HOLD;
+      return holdSlot(s, s.box); // hold() runs before the box is emptied
     },
     retry: () => {
       const s = slot.current;

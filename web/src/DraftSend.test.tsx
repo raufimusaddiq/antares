@@ -208,3 +208,80 @@ describe("a send from the new-chat composer clears the new-chat server draft eve
     expect(srv.calls.filter((c) => c.startsWith("PUT")).length).toBe(0); // nothing was written back
   });
 });
+
+// Each submission owns its own hold: overlapping sends in two chats must not release one another's.
+describe("overlapping sends in different chats", () => {
+  const C1 = "/api/chats/c1/draft";
+  const C2 = "/api/chats/c2/draft";
+  const text = () => (document.getElementById("composer-input") as HTMLTextAreaElement).value;
+  const openSecond = () => fireEvent.click(document.querySelectorAll("nav.side li button")[1]);
+
+  const setup = async () => {
+    const srv = draftServer();
+    vi.stubGlobal("fetch", srv.f);
+    srv.docs.set(C1, { body: "draft one", revision: 1 });
+    srv.docs.set(C2, { body: "draft two", revision: 1 });
+    saveDraft("a@example.test", "c1", "draft one");
+    saveDraft("a@example.test", "c2", "draft two");
+    const answers: Record<string, (v: unknown) => void> = {};
+    api.sendMessage.mockImplementation((chatId: string) => new Promise((r) => (answers[chatId] = r)));
+    await mount([chat("c1"), chat("c2")]);
+    await waitFor(() => expect(text()).toBe("draft one"));
+    fireEvent.submit(document.querySelector("form.composer")!); // send A in c1
+    await waitFor(() => expect(answers.c1).toBeDefined());
+    openSecond(); // navigate to c2 before A answers
+    await waitFor(() => expect(text()).toBe("draft two"));
+    fireEvent.submit(document.querySelector("form.composer")!); // send B in c2
+    await waitFor(() => expect(answers.c2).toBeDefined());
+    return { srv, answers };
+  };
+  const admitted = ok({ runId: "r1", status: "PENDING" });
+  const refused = { ok: false, code: "UPSTREAM_UNAVAILABLE" };
+
+  for (const order of [["c1", "c2"], ["c2", "c1"]]) {
+    it(`A admitted, B refused, answers in order ${order.join(" then ")}: A's draft is cleared, B's is kept and both holds end`, async () => {
+      const { srv, answers } = await setup();
+      for (const id of order) await act(async () => answers[id](id === "c1" ? admitted : refused));
+      await waitFor(() => expect(srv.docs.get(C1)).toEqual({ body: "", revision: 2 }), { timeout: 3000 });
+      await new Promise((r) => setTimeout(r, 1200));
+      expect(srv.docs.get(C2)).toEqual({ body: "draft two", revision: 1 }); // refused: not deleted
+      expect(srv.calls.filter((c) => c.startsWith("DELETE") && c.includes("/c2/")).length).toBe(0);
+      // B's hold ended: what is typed next in c2 reaches the server.
+      fireEvent.change(document.getElementById("composer-input")!, { target: { value: "typed after the refusal" } });
+      await waitFor(() => expect(srv.docs.get(C2)).toEqual({ body: "typed after the refusal", revision: 2 }), { timeout: 3000 });
+    });
+
+    it(`A refused, B admitted, answers in order ${order.join(" then ")}: B's draft is cleared, A's is kept and both holds end`, async () => {
+      const { srv, answers } = await setup();
+      for (const id of order) await act(async () => answers[id](id === "c2" ? admitted : refused));
+      await waitFor(() => expect(srv.docs.get(C2)).toEqual({ body: "", revision: 2 }), { timeout: 3000 });
+      await new Promise((r) => setTimeout(r, 1200));
+      expect(srv.docs.get(C1)).toEqual({ body: "draft one", revision: 1 });
+      expect(srv.calls.filter((c) => c.startsWith("DELETE") && c.includes("/c1/")).length).toBe(0);
+      // A's hold ended too: go back to c1 and type; it reaches the server.
+      fireEvent.click(document.querySelectorAll("nav.side li button")[0]);
+      await waitFor(() => expect(text()).toBe("draft one"));
+      fireEvent.change(document.getElementById("composer-input")!, { target: { value: "back in one" } });
+      await waitFor(() => expect(srv.docs.get(C1)).toEqual({ body: "back in one", revision: 2 }), { timeout: 3000 });
+    });
+  }
+
+  it("a resend of a new-chat send clears the new-chat draft it came from", async () => {
+    const srv = draftServer();
+    vi.stubGlobal("fetch", srv.f);
+    srv.docs.set("/api/me/new-chat-draft", { body: "saved text", revision: 1 });
+    saveDraft("a@example.test", null, "saved text");
+    api.createChat.mockResolvedValue(ok(chat("c9")));
+    api.sendMessage.mockResolvedValueOnce(refused);
+    await mount([]);
+    await waitFor(() => expect(text()).toBe("saved text"));
+    await waitFor(() => expect(srv.calls.some((c) => c.startsWith("GET /api/me/new-chat-draft"))).toBe(true));
+    fireEvent.submit(document.querySelector("form.composer")!);
+    await screen.findByText("Send again");
+    expect(srv.docs.get("/api/me/new-chat-draft")).toEqual({ body: "saved text", revision: 1 }); // refused: kept
+    api.sendMessage.mockResolvedValueOnce(admitted);
+    fireEvent.click(screen.getByText("Send again"));
+    await waitFor(() => expect(srv.docs.get("/api/me/new-chat-draft")).toEqual({ body: "", revision: 2 }), { timeout: 3000 });
+  });
+});
+
