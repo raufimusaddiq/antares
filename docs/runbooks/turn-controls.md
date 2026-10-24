@@ -30,7 +30,7 @@ Image id at the time of reading: `sha256:9c5561579f3ffdf333401797094ac3a743738d6
 
 `GET /api/capabilities` lists `regenerate`, `edit_turn` and `rewind` with `status: unsupported` and a reason
 (`internal/hermes/discovery.go`, `TestDiscoverTurnControlsAreUnsupportedWithAReason`). The client's `offers()`
-therefore returns false for them, and the web app has no control for any of the three. They become `available`
+therefore returns false for them, and the web app renders Regenerate, Edit and Rewind as `aria-disabled` buttons with no handler, each with its reason visible beside it (`TurnControls` in `web/src/Chat.tsx`; newest user turn gets Edit, newest assistant turn gets Regenerate and Rewind; wraps on narrow screens). They become `available`
 only when a verified Hermes route (fixture + file:line in the table above), a handler that uses it, and the
 destructive-operation guards (confirmation, active-run refusal, search-index invalidation, metadata-only audit
 event, ownership re-check) land together. A whole-session `/fork` or a second `POST /v1/runs` does not qualify.

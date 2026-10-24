@@ -557,3 +557,9 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
 }
 
 .codeblock pre:focus-visible, .tablewrap:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+/* Turn controls: disabled, compact, wrapping on a narrow screen. */
+.turn-controls { display: flex; flex-wrap: wrap; gap: 0.2rem 0.75rem; margin-top: 0.35rem; font-size: 0.8rem; }
+.turn-control { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem; min-width: 0; max-width: 100%; }
+.turn-control button[aria-disabled="true"] { opacity: 0.6; cursor: not-allowed; padding: 0.1rem 0.5rem; }
+.turn-control small { overflow-wrap: anywhere; }

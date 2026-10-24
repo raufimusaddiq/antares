@@ -126,6 +126,44 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
 
 const turnKey = (t: Turn) => String(t.seq);
 
+/**
+ * Regenerate, edit and rewind (PRD §21.5, UXP-ACC-012). Hermes has no route for any of them, so each
+ * is a button that cannot be activated and says why, in text, from the server's capability answer.
+ * There is deliberately no handler: when a verified route lands, this is where it is wired.
+ */
+const TURN_CONTROLS = {
+  regenerate: { id: "regenerate", label: "Regenerate" },
+  edit: { id: "edit_turn", label: "Edit" },
+  rewind: { id: "rewind", label: "Rewind" },
+} as const;
+
+export function turnControlReason(inv: Inventory | null, id: string): string {
+  const row = inv?.capabilities.find((c) => c.id === id);
+  if (!row) return "Availability unknown";
+  return row.available ? "Not available in this app yet" : row.reason || "Not supported by Hermes";
+}
+
+export function TurnControls({ inv, kinds, seq }: { inv: Inventory | null; kinds: readonly (keyof typeof TURN_CONTROLS)[]; seq: number }) {
+  return (
+    <div className="turn-controls" role="group" aria-label="Turn controls">
+      {kinds.map((k) => {
+        const c = TURN_CONTROLS[k];
+        const rid = `tc-${k}-${seq}`;
+        return (
+          <span key={k} className="turn-control">
+            <button type="button" className="quiet" aria-disabled="true" aria-describedby={rid} data-control={k}>
+              {c.label}
+            </button>
+            <small id={rid} className="label">
+              {turnControlReason(inv, c.id)}
+            </small>
+          </span>
+        );
+      })}
+    </div>
+  );
+}
+
 /** The images a user turn carried. Previews load on demand from the owner's asset route. */
 function SentImages({ refs }: { refs: readonly AttachmentRef[] }) {
   if (refs.length === 0) return null;
@@ -152,6 +190,8 @@ export interface TranscriptProps {
   focusNonce?: number;
   /** The chat these turns belong to; without it nothing is offered for download. */
   chatId?: string;
+  /** The capability answer the turn controls read; null shows them disabled as unknown. */
+  inventory?: Inventory | null;
   /** Bumped when the run's stream reports a prompt opened or closed; the prompts themselves come from the server. */
   promptTick?: number;
   onCancel: () => void;
@@ -163,7 +203,10 @@ export interface TranscriptProps {
 const never = () => {};
 
 export function Transcript(props: TranscriptProps) {
-  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0, chatId } = props;
+  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0, chatId, inventory = null } = props;
+  // Compact: the controls sit on the newest turn of each role only, not on every message.
+  const lastUser = turns.reduce((n, t) => (t.role === "user" ? t.seq : n), -1);
+  const lastAssistant = turns.reduce((n, t) => (t.role === "assistant" ? t.seq : n), -1);
   const renderTurn = useCallback(
     (t: Turn) => (
       <article className={`turn ${t.role}`} data-found={t.seq === focusSeq ? "true" : undefined} aria-current={t.seq === focusSeq ? "location" : undefined}>
@@ -171,9 +214,11 @@ export function Transcript(props: TranscriptProps) {
         {t.role === "user" ? <Markdown text={t.text} /> : <MessageBody text={t.role === "assistant" ? hideMediaPaths(t.text).text : t.text} streaming={false} />}
         {t.role === "user" && t.attachments && <SentImages refs={t.attachments} />}
         {t.role === "assistant" && chatId && t.ref && <Artifacts chatId={chatId} seq={t.seq} turnRef={t.ref} text={t.text} />}
+        {chatId && t.role === "user" && t.seq === lastUser && <TurnControls inv={inventory} kinds={["edit"]} seq={t.seq} />}
+        {chatId && t.role === "assistant" && t.seq === lastAssistant && <TurnControls inv={inventory} kinds={["regenerate", "rewind"]} seq={t.seq} />}
       </article>
     ),
-    [focusSeq, chatId],
+    [focusSeq, chatId, inventory, lastUser, lastAssistant],
   );
   const note = loadingMore ? (
     "Loading older messages…"
@@ -976,6 +1021,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         <Transcript
           key={current ?? "new"}
           chatId={current ?? undefined}
+          inventory={inventory}
           turns={turns}
           pending={pending}
           run={run}
