@@ -17,6 +17,14 @@ Code: `web/src/openui/*`, `web/src/MessageBody.tsx`. Package: `@openuidev/react-
   of the chat on screen through `ReplyContext`, provided by `Chat.tsx`. They never send; the reader reviews and presses
   Send, so the follow-up is an ordinary authenticated message in the current chat (PRD §7.4). Without a provider the
   buttons are disabled. No Go route is involved, so there is no new server surface to authorize.
+- **Action choke point** (`actions.ts`, shipped in the on-demand `Block-*` chunk because only `library.tsx` and `Block.tsx` import it): everything a block can do goes through `runAction(name, payload, sinks)`.
+  The name must be an own key of the action table (so `constructor`/`__proto__` are refused); the only action is `reply`.
+  The payload is rebuilt by `cleanReply` (string only, control and bidi-override characters removed, trimmed, 1-500
+  characters) before a handler sees it; that function is the sanitisation point. `Block.tsx` routes the renderer's
+  `onAction` through `runAction` with **no sinks**, so a model-declared action never does anything. An action that needs the
+  server must be added to the table together with its secured Go route (session, approval, ownership, CSRF), never by a
+  component calling `fetch`. `actions.test.tsx` pins the refusals, that a payload reaches only the composer sink, and (by
+  scanning the renderer's sources) that no DOM sink or dynamic code exists in `web/src/openui/*` or `MessageBody.tsx`.
 - **Charts** (`Chart.tsx`): bar, line and pie as plain SVG from `kind`, `title`, `labels`, `values` (1-24 points, finite
   numbers, labels and values the same length; checked in `validate.ts` because the parser does not enforce schema
   min/max). The numbers are also shown as a text table. The renderer is its own on-demand chunk (`Chart-*.js`, ~2 kB)
