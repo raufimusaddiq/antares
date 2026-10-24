@@ -1,0 +1,180 @@
+import { useCallback, useEffect, useRef, useState } from "react";
+import { readDraft, removeDraft, sharedText, writeDraft } from "./draftApi";
+
+// Keeps the server copy of the draft on screen in step with the text box (PRD §21.6).
+// The browser copy in drafts.ts stays the instant path; this adds the other devices.
+// A write names the revision it last saw. If the server moved on, nothing is overwritten:
+// syncing pauses and the reader picks which text to keep.
+
+const DEBOUNCE_MS = 800;
+
+interface Slot {
+  chatId: string | null;
+  rev: number;
+  synced: string; // the text the server holds at `rev`
+  latest: string;
+  loaded: boolean;
+  paused: boolean;
+  busy: boolean;
+  shared: boolean; // the OS share has been added to this slot's draft
+}
+
+export interface DraftSyncView {
+  /** The other device's text, while the two disagree. Syncing is paused until one is chosen. */
+  conflict: { theirs: string } | null;
+  /** The server copy is unreachable: the draft survives in this browser only. */
+  offline: boolean;
+  keepMine: () => void;
+  useTheirs: () => void;
+}
+
+/**
+ * chatId null is the new-chat draft. `share` is text the OS handed to the app; it is appended
+ * to the new-chat draft once that draft has loaded, and never sent.
+ */
+export function useDraftSync(chatId: string | null, draft: string, setDraft: (v: string) => void, share: string | null, onShared: () => void): DraftSyncView {
+  const slot = useRef<Slot | null>(null);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+  const timer = useRef<number | undefined>(undefined);
+  const [conflict, setConflict] = useState<{ theirs: string } | null>(null);
+  const [offline, setOffline] = useState(false);
+  const setDraftRef = useRef(setDraft);
+  setDraftRef.current = setDraft;
+
+  const flush = useCallback(async (s: Slot): Promise<void> => {
+    if (!s.loaded || s.paused || s.busy || s.latest === s.synced) return;
+    s.busy = true;
+    const text = s.latest;
+    const r = text === "" ? (s.rev === 0 ? { kind: "ok", revision: 0 } as const : await removeDraft(s.chatId, s.rev)) : await writeDraft(s.chatId, text, s.rev);
+    s.busy = false;
+    if (r.kind === "ok") {
+      s.rev = r.revision;
+      s.synced = text;
+      if (slot.current === s) setOffline(false);
+    } else if (r.kind === "conflict") {
+      s.rev = r.revision;
+      s.paused = true;
+      if (slot.current === s) setConflict({ theirs: r.body });
+      return;
+    } else {
+      if (slot.current === s) setOffline(true);
+      return;
+    }
+    if (s.latest !== s.synced) void flush(s); // typed while the write was in flight
+  }, []);
+
+  // Load the server copy when the chat on screen changes; flush the one being left.
+  useEffect(() => {
+    const s: Slot = { chatId, rev: 0, synced: "", latest: draftRef.current, loaded: false, paused: false, busy: false, shared: false };
+    slot.current = s;
+    setConflict(null);
+    setOffline(false);
+    let live = true;
+    void readDraft(chatId).then((r) => {
+      if (!live) return;
+      if (r.kind !== "ok") {
+        setOffline(true);
+        return;
+      }
+      s.rev = r.revision;
+      const local = draftRef.current;
+      if (r.revision === 0 || local === "" || local === r.body) {
+        s.synced = r.body;
+        if (local === "" && r.body !== "") setDraftRef.current(r.body);
+        s.latest = local === "" ? r.body : local;
+      } else {
+        // This browser holds text the server does not, and the server holds text this browser has not seen.
+        s.synced = r.body;
+        s.latest = local;
+        s.paused = true;
+        setConflict({ theirs: r.body });
+      }
+      s.loaded = true;
+      void flush(s);
+    });
+    return () => {
+      live = false;
+      window.clearTimeout(timer.current);
+      void flush(s); // the text typed just before leaving this chat still goes to this chat's draft
+    };
+  }, [chatId, flush]);
+
+  // Debounced write of whatever is in the box.
+  useEffect(() => {
+    const s = slot.current;
+    if (!s || s.chatId !== chatId) return;
+    s.latest = draft;
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => void flush(s), DEBOUNCE_MS);
+  }, [draft, chatId, flush]);
+
+  // Shared text lands in the new-chat draft only, after that draft has loaded, and is not sent.
+  useEffect(() => {
+    if (share === null || chatId !== null) return;
+    const s = slot.current;
+    if (!s) return;
+    const id = window.setInterval(() => {
+      if (slot.current !== s || !s.loaded) return;
+      window.clearInterval(id);
+      if (s.shared) return;
+      s.shared = true;
+      const base = s.paused ? s.synced : s.latest;
+      setDraftRef.current(base.trim() === "" ? share : `${base.replace(/\s*$/, "")}\n\n${share}`);
+      onShared();
+    }, 50);
+    return () => window.clearInterval(id);
+  }, [share, chatId, onShared]);
+
+  return {
+    conflict,
+    offline,
+    keepMine: () => {
+      const s = slot.current;
+      if (!s) return;
+      s.paused = false;
+      setConflict(null);
+      void flush(s);
+    },
+    useTheirs: () => {
+      const s = slot.current;
+      if (!s || !conflict) return;
+      s.synced = conflict.theirs;
+      s.latest = conflict.theirs;
+      s.paused = false;
+      setDraftRef.current(conflict.theirs);
+      setConflict(null);
+    },
+  };
+}
+
+export function DraftNotice({ sync }: { sync: DraftSyncView }) {
+  if (sync.conflict) {
+    return (
+      <p className="draft-note" role="status">
+        This draft was changed on another device. Your text is kept here and is not saved until you choose.{" "}
+        <button type="button" className="quiet" onClick={sync.keepMine}>
+          Keep this text
+        </button>{" "}
+        <button type="button" className="quiet" onClick={sync.useTheirs}>
+          Use the other device&rsquo;s text
+        </button>
+      </p>
+    );
+  }
+  if (sync.offline) {
+    return (
+      <p className="draft-note" role="status">
+        This draft is saved in this browser only.
+      </p>
+    );
+  }
+  return null;
+}
+
+/** Read the text of an OS share once, and take it out of the address bar so a reload does not add it again. */
+export function takeSharedText(): string | null {
+  const t = sharedText(window.location.search);
+  if (t !== null) window.history.replaceState(null, "", "/");
+  return t;
+}

@@ -35,7 +35,10 @@ import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
-import { loadDraft, matchTemplates, saveDraft, type Template } from "./drafts";
+import { loadDraft, matchTemplates, mergeTemplates, saveDraft, type Template } from "./drafts";
+import { DraftNotice, takeSharedText, useDraftSync } from "./DraftSync";
+import { listOwnTemplates, type OwnTemplate } from "./draftApi";
+import { Templates } from "./Templates";
 
 const MAX_INPUT = 32_000;
 const RECONNECT_TRIES = 5;
@@ -203,9 +206,9 @@ export function Transcript(props: TranscriptProps) {
 // On macOS Ctrl+B/E are caret movement in a text field, so the shortcuts there are Cmd only.
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
-export function Composer(props: { value: string; busy: boolean; onChange: (v: string) => void; onSubmit: () => void }) {
+export function Composer(props: { value: string; busy: boolean; onChange: (v: string) => void; onSubmit: () => void; templates?: readonly Template[] }) {
   const empty = props.value.trim() === "";
-  const matches = matchTemplates(props.value);
+  const matches = matchTemplates(props.value, props.templates);
   const insert = (t: Template) => {
     props.onChange(t.body);
     document.getElementById("composer-input")?.focus();
@@ -314,6 +317,13 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const [focus, setFocus] = useState<{ chat: string; seq: number; nonce: number } | null>(null); // a search result being opened at its turn
 
   useEffect(() => setDraft(loadDraft(email, current)), [email, current]);
+  // Text the OS shared to the app: it waits in the new-chat draft, never in a chat and never sent.
+  const [share, setShare] = useState<string | null>(takeSharedText);
+  const sync = useDraftSync(current, draft, onDraft, share, () => setShare(null));
+  const [ownTemplates, setOwnTemplates] = useState<OwnTemplate[]>([]);
+  useEffect(() => {
+    void listOwnTemplates().then((l) => l && setOwnTemplates(l));
+  }, []);
 
   const es = useRef<EventSource | null>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -549,6 +559,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         });
         return;
       }
+      if (share !== null) return; // a share lands in the new-chat draft; opening the latest chat would hide it
       if (r.value.chats.length > 0) open(r.value.chats[0]);
     });
     return () => {
@@ -805,7 +816,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         )}
         {current && offers(inventory, "models") && <ModelPicker chatId={current} disabled={busy} />}
         <Recorder />
-        <Composer value={draft} busy={busy} onChange={onDraft} onSubmit={onSubmit} />
+        <DraftNotice sync={sync} />
+        <Templates own={ownTemplates} onChange={setOwnTemplates} />
+        <Composer value={draft} busy={busy} onChange={onDraft} onSubmit={onSubmit} templates={mergeTemplates(ownTemplates)} />
       </main>
     </div>
   );

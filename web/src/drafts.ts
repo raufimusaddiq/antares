@@ -1,5 +1,5 @@
-// Unsent composer text, kept in this browser's localStorage and nowhere else. It is
-// never sent to the server and is not encrypted. A key names the account and the chat,
+// Unsent composer text. This file is the browser-local copy (localStorage, not encrypted); the
+// server copy that follows the account across devices is DraftSync.tsx. Both are unencrypted. A key names the account and the chat,
 // so one account never reads another's draft and one chat never shows another's.
 
 const PREFIX = "antares:draft:v1:";
@@ -56,9 +56,15 @@ export const TEMPLATES: readonly Template[] = [
   { name: "steps", body: "Give me a step-by-step plan to:\n\n" },
 ];
 
+/** The built-in set with the reader's own templates on top; an own template replaces a built-in of the same name. */
+export function mergeTemplates(own: readonly Template[]): Template[] {
+  const names = new Set(own.map((t) => t.name));
+  return [...own, ...TEMPLATES.filter((t) => !names.has(t.name))].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** Templates for a composer whose whole text is "/" plus a name prefix; none once the text has a space or newline. */
-export function matchTemplates(text: string): Template[] {
-  if (!/^\/[a-z]*$/i.test(text)) return [];
+export function matchTemplates(text: string, list: readonly Template[] = TEMPLATES): Template[] {
+  if (!/^\/[a-z0-9_-]*$/i.test(text)) return [];
   const q = text.slice(1).toLowerCase();
-  return TEMPLATES.filter((t) => t.name.startsWith(q));
+  return list.filter((t) => t.name.startsWith(q));
 }
