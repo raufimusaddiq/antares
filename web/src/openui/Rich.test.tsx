@@ -54,6 +54,20 @@ describe("safe actions", () => {
     expect(add).toHaveBeenCalledWith("Size: M");
   });
 
+  it("two Choices with the same label are independent and each adds its own selection", () => {
+    const add = vi.fn();
+    withReply('root = Stack([Choice("Size", ["S", "M"]), Choice("Size", ["S", "M"])])', add);
+    const radios = screen.getAllByRole("radio") as HTMLInputElement[];
+    expect(new Set(radios.map((r) => r.name)).size).toBe(2);
+    fireEvent.click(radios[1]); // first group: M
+    fireEvent.click(radios[2]); // second group: S
+    expect(radios.map((r) => r.checked)).toEqual([false, true, true, false]);
+    const [b1, b2] = screen.getAllByRole("button", { name: "Add to message" });
+    fireEvent.click(b1);
+    fireEvent.click(b2);
+    expect(add.mock.calls).toEqual([["Size: M"], ["Size: S"]]);
+  });
+
   it("reply text from the model is plain text in the handler, not markup", () => {
     const add = vi.fn();
     withReply('root = Stack([Button("<b>x</b>", "<img src=x onerror=alert(1)>")])', add);

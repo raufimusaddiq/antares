@@ -1,6 +1,6 @@
 import "./zodConfig"; // must stay first: see the file
 import { createLibrary, defineComponent } from "@openuidev/react-lang";
-import { lazy, Suspense, useContext, useState } from "react";
+import { lazy, Suspense, useContext, useId, useState } from "react";
 import { z } from "zod/v4";
 import { MAX_REPLY, ReplyContext } from "./reply";
 
@@ -157,12 +157,13 @@ const Choice = defineComponent({
   props: z.object({ label: text(80), options: z.array(text(80)).min(2).max(12) }),
   component: function ChoiceView({ props }) {
     const [i, setI] = useState(-1);
+    const group = useId(); // per instance: two Choices with the same label must not share a radio group
     return (
       <fieldset className="ou-field">
         <legend>{props.label}</legend>
         {props.options.map((o, k) => (
           <label key={k} className="ou-option">
-            <input type="radio" name={props.label} checked={i === k} onChange={() => setI(k)} /> {o}
+            <input type="radio" name={group} checked={i === k} onChange={() => setI(k)} /> {o}
           </label>
         ))}
         <ReplyButton label="Add to message" disabled={i < 0} text={`${props.label}: ${props.options[i] ?? ""}`} />
