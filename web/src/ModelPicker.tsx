@@ -1,17 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { describeCode, describeQuota, getChatModel, getModels, putChatModel, type ModelCatalog, type ModelChoice } from "./chatApi";
+import { describeCode, describePrice, describeQuota, getChatModel, getModels, getModelVisibility, putChatModel, putModelVisibility, type ModelCatalog, type ModelChoice, type ModelEntry } from "./chatApi";
 
 /**
- * Model picker for one chat (PRD LLM-001..007, CTX-004). The list is the assistant's own
- * inventory for this account; a model it reports unavailable is shown but cannot be chosen,
- * reasoning and priority controls appear only where the inventory says they are supported,
- * and anything it did not report reads "Unavailable".
+ * Model picker for one chat (PRD LLM-001..007, CTX-004, issue #115). The models and their metadata
+ * come from the Kenari catalogue; a model whose provider the assistant cannot use is shown but cannot
+ * be chosen, the reasoning control offers only the levels the catalogue publishes for that model and
+ * the assistant accepts, a service tier is never offered (the reason is shown), and anything the
+ * catalogue did not publish reads "unknown". Hiding a model changes only this account's own list.
  */
 export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; disabled: boolean; onChanged?: () => void }) {
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
   const [choice, setChoice] = useState<ModelChoice | null | undefined>(undefined); // undefined = not read yet
   const [query, setQuery] = useState("");
   const [msg, setMsg] = useState("");
+  const [showHidden, setShowHidden] = useState(false);
 
   // Every response is applied only if it belongs to this chat and is the newest request for it. A save
   // that resolves after the chat changed, or after a newer save or read, is dropped: it must never show
@@ -53,7 +55,8 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
 
   const load = (refresh: boolean) =>
     void getModels(refresh).then((r) => {
-      setCatalog(r.ok ? r.value : null);
+      if (r.ok && hiddenPending.current === 0) hiddenWant.current = new Set(r.value.providers.flatMap((p) => p.models).filter((m) => m.hidden).map((m) => m.id));
+      setCatalog(r.ok ? (hiddenWant.current && hiddenPending.current > 0 ? withHidden(r.value, hiddenWant.current) : r.value) : null);
       setMsg(r.ok ? "" : describeCode(r.code));
     });
 
@@ -64,9 +67,7 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
     gen.current += 1;
     const seq = ++counter.current;
     newest.current.set(forChat, seq);
-    const body = next
-      ? { provider: next.provider, model: next.model, reasoningEffort: next.reasoningEffort || undefined, serviceTier: next.serviceTier || undefined }
-      : { reset: true as const };
+    const body = next ? { model: next.model, reasoningEffort: next.reasoningEffort || undefined } : { reset: true as const };
     const current = () => newest.current.get(forChat) === seq && chat.current === forChat;
     enqueue(forChat, async () => {
       if (newest.current.get(forChat) !== seq) return; // superseded before it was sent
@@ -89,13 +90,52 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
   };
   const patch = (p: Partial<ModelChoice>) => want.current && change({ ...want.current, ...p });
 
+  // The account's hidden set. Every change updates the intended set at once and the PUTs go out one at
+  // a time, each carrying the intended set as it is when it is sent, so two quick changes compose
+  // (hide A then B keeps both) and a late answer for the first cannot bring A back. The set belongs to
+  // the account, not to a chat, so a chat switch does not touch it.
+  const hiddenWant = useRef<Set<string> | null>(null);
+  const hiddenQueue = useRef<Promise<unknown>>(Promise.resolve());
+  const hiddenPending = useRef(0);
+  const showHiddenSet = (ids: Set<string>) => setCatalog((c) => c && withHidden(c, ids));
+
+  const setHidden = (id: string, hide: boolean) => {
+    const next = new Set(hiddenWant.current ?? (catalog?.providers ?? []).flatMap((p) => p.models).filter((m) => m.hidden).map((m) => m.id));
+    if (hide) next.add(id);
+    else next.delete(id);
+    hiddenWant.current = next;
+    showHiddenSet(next);
+    hiddenPending.current += 1;
+    hiddenQueue.current = hiddenQueue.current.then(async () => {
+      const r = await putModelVisibility([...(hiddenWant.current ?? next)]);
+      hiddenPending.current -= 1;
+      if (r.ok) {
+        setMsg("");
+        if (hiddenPending.current === 0) {
+          hiddenWant.current = new Set(r.value.hidden);
+          showHiddenSet(hiddenWant.current);
+        }
+        return;
+      }
+      setMsg(describeCode(r.code));
+      if (hiddenPending.current === 0) {
+        // Show what the server holds, not the change that failed.
+        const back = await getModelVisibility();
+        if (back.ok && hiddenPending.current === 0) {
+          hiddenWant.current = new Set(back.value.hidden);
+          showHiddenSet(hiddenWant.current);
+        }
+      }
+    });
+  };
+
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
-    return (catalog?.providers ?? []).map((p) => ({ ...p, models: p.models.filter((m) => !q || `${p.name} ${m.id}`.toLowerCase().includes(q)) }));
-  }, [catalog, query]);
+    return (catalog?.providers ?? []).map((p) => ({ ...p, models: p.models.filter((m) => (showHidden || !m.hidden || m.id === choice?.model) && (!q || `${p.name} ${m.id}`.toLowerCase().includes(q))) }));
+  }, [catalog, query, showHidden, choice?.model]);
 
   const label = choice === undefined ? "Model" : choice ? `Model: ${choice.model}` : catalog?.default ? `Model: ${catalog.default.model} (default)` : "Model: default";
-  const current = catalog?.providers.find((p) => p.slug === choice?.provider)?.models.find((m) => m.id === choice?.model);
+  const current = catalog?.providers.flatMap((p) => p.models).find((m) => m.id === choice?.model);
 
   return (
     <details className="usage" onToggle={(e) => e.currentTarget.open && load(true)}>
@@ -106,6 +146,9 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
         <>
           <label>
             Search models <input type="search" value={query} onChange={(e) => setQuery(e.target.value)} />
+          </label>
+          <label>
+            <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Show hidden models
           </label>
           {disabled && <p>A reply is running. The choice applies to your next message.</p>}
           {shown.map((p) => (
@@ -122,16 +165,16 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
                       type="radio"
                       name="model"
                       disabled={!m.available}
-                      checked={choice?.provider === p.slug && choice.model === m.id}
+                      checked={choice?.model === m.id}
                       onChange={() => change({ provider: p.slug, model: m.id, reasoningEffort: "", serviceTier: "" })}
                     />{" "}
                     {m.id}
                     {!m.available && " (unavailable)"}
                   </label>{" "}
-                  <small>
-                    Reasoning: {m.reasoning === null ? "Unavailable" : m.reasoning ? "yes" : "no"} · Priority tier: {m.priority === null ? "Unavailable" : m.priority ? "yes" : "no"} · Context window: Unavailable · Price:{" "}
-                    {m.price ? (m.price.free ? "free" : `in ${m.price.input || "Unavailable"}, out ${m.price.output || "Unavailable"}, cache ${m.price.cache || "Unavailable"}`) : "Unavailable"}
-                  </small>
+                  <button type="button" aria-label={`${m.hidden ? "Show" : "Hide"} ${m.id}`} onClick={() => setHidden(m.id, !m.hidden)}>
+                    {m.hidden ? "Show" : "Hide"}
+                  </button>{" "}
+                  <small>{badges(m)}</small>
                 </div>
               ))}
               <ul>
@@ -143,7 +186,7 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
           ))}
           {choice && current && (
             <div>
-              {current.reasoning === true && (
+              {current.reasoningEfforts.length > 0 && (
                 <label>
                   Reasoning effort{" "}
                   <select
@@ -151,7 +194,7 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
                     onChange={(e) => patch({ reasoningEffort: e.target.value })}
                   >
                     <option value="">Default</option>
-                    {catalog.reasoningEfforts.map((x) => (
+                    {current.reasoningEfforts.map((x) => (
                       <option key={x} value={x}>
                         {x}
                       </option>
@@ -159,18 +202,11 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
                   </select>
                 </label>
               )}{" "}
-              {current.priority === true && (
-                <label>
-                  <input
-                    type="checkbox"
-                    checked={choice.serviceTier === "priority"}
-                    onChange={(e) => patch({ serviceTier: e.target.checked ? "priority" : "" })}
-                  />{" "}
-                  Priority tier
-                </label>
-              )}
               <p>
-                <small>Effort levels are the ones the assistant accepts; it does not report which a model supports, so the provider may adjust one.</small>
+                <small>
+                  {current.reasoning === true && current.reasoningEfforts.length === 0 ? "This model reasons, but the catalogue does not publish its levels, so none can be chosen. " : ""}
+                  Service tier: not offered{catalog.unsupported.serviceTier ? ` (${catalog.unsupported.serviceTier})` : ""}.
+                </small>
               </p>
             </div>
           )}
@@ -180,3 +216,20 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
     </details>
   );
 }
+
+/** One line of metadata for a model; anything the catalogue did not publish is "unknown". */
+function badges(m: ModelEntry): string {
+  const kinds = (l: string[]) => (l.length ? l.join(", ") : "unknown");
+  return [
+    `Input: ${m.modalities ? kinds(m.modalities.input) : "unknown"}`,
+    `Output: ${m.modalities ? kinds(m.modalities.output) : "unknown"}`,
+    `Reasoning: ${m.reasoning === null ? "unknown" : m.reasoning ? "yes" : "no"}`,
+    `Context window: ${m.contextWindow === null ? "unknown" : `${m.contextWindow.toLocaleString("en-US")} tokens`}`,
+    describePrice(m.price),
+  ].join(" · ");
+}
+
+const withHidden = (c: ModelCatalog, ids: Set<string>): ModelCatalog => ({
+  ...c,
+  providers: c.providers.map((p) => ({ ...p, models: p.models.map((m) => ({ ...m, hidden: ids.has(m.id) })) })),
+});

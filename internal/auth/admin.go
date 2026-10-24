@@ -100,6 +100,8 @@ func (a *Auth) registerAdmin(mux *http.ServeMux) {
 	mux.Handle("POST /api/admin/users/{userId}/tenant-binding", a.adminRoute(true, a.adminRequeue(store.RequeueProvision)))
 	mux.Handle("POST /api/admin/users/{userId}/tenant-verify", a.adminRoute(true, a.adminRequeue(store.RequeueVerify)))
 	mux.Handle("GET /api/admin/audit", a.adminRoute(false, a.adminAudit))
+	mux.Handle("GET /api/admin/model-policy", a.adminRoute(false, a.adminModelPolicy))
+	mux.Handle("PUT /api/admin/model-policy", a.adminRoute(true, a.adminSetModelPolicy))
 }
 
 func targetID(w http.ResponseWriter, r *http.Request, a *Auth) (string, bool) {
@@ -313,4 +315,42 @@ func (a *Auth) adminError(w http.ResponseWriter, r *http.Request, err error) {
 		log.Printf("auth: admin action failed: %v", err)
 		a.apiError(w, r, http.StatusInternalServerError, "INTERNAL", "Could not complete the action")
 	}
+}
+
+// The global model block list (PRD §26.1, LLM-ACC-003). It is policy, not user content: an
+// admin sets which models nobody may pick; it always wins over a user's own hiding.
+type modelPolicy struct {
+	Blocked []string `json:"blocked"`
+}
+
+func (a *Auth) adminModelPolicy(w http.ResponseWriter, r *http.Request) {
+	ids, err := store.BlockedModels(r.Context(), a.db)
+	if err != nil {
+		a.apiError(w, r, http.StatusInternalServerError, "INTERNAL", "Something went wrong")
+		return
+	}
+	writeJSON(w, http.StatusOK, modelPolicy{Blocked: ids})
+}
+
+func (a *Auth) adminSetModelPolicy(w http.ResponseWriter, r *http.Request) {
+	r.Body = http.MaxBytesReader(w, r.Body, 64<<10)
+	dec := json.NewDecoder(r.Body)
+	dec.DisallowUnknownFields()
+	var body modelPolicy
+	if dec.Decode(&body) != nil || dec.Decode(&struct{}{}) != io.EOF || body.Blocked == nil || len(body.Blocked) > store.MaxModelIDs {
+		a.apiError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "Body must be {\"blocked\": [model ids]} and nothing else")
+		return
+	}
+	for _, id := range body.Blocked {
+		if id == "" || len(id) > 200 || !utf8.ValidString(id) || strings.ContainsFunc(id, unicode.IsControl) {
+			a.apiError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "blocked carries an invalid model id")
+			return
+		}
+	}
+	actor, _ := UserFrom(r.Context())
+	if err := store.SetBlockedModels(r.Context(), a.db, actor.ID, body.Blocked, newRequestID(), a.now()); err != nil {
+		a.apiError(w, r, http.StatusInternalServerError, "INTERNAL", "Something went wrong")
+		return
+	}
+	a.adminModelPolicy(w, r)
 }

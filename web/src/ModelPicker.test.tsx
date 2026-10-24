@@ -2,34 +2,39 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describeQuota, parseModels } from "./chatApi";
+import { describePrice, describeQuota, parseModels } from "./chatApi";
 import { ModelPicker } from "./ModelPicker";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
+const model = (id: string, o: Record<string, unknown> = {}) => ({ id, available: true, hidden: false, reasoning: null, reasoningEfforts: [], modalities: null, contextWindow: null, price: null, ...o });
+
 const catalog = {
+  source: "kenari",
   fetchedAt: "t",
-  default: { provider: "alpha", model: "m-reason" },
-  reasoningEfforts: ["low", "high"],
+  default: { provider: "custom", model: "m-plain" },
+  unsupported: { serviceTier: "Kenari does not publish a service tier for any model, so none can be selected" },
   providers: [
     {
-      slug: "alpha", name: "Alpha", available: true,
+      slug: "custom", name: "Custom", available: true,
       models: [
-        { id: "m-reason", available: true, reasoning: true, serviceTier: true, price: null },
-        { id: "m-plain", available: true, reasoning: false, serviceTier: null, price: null },
+        model("m-reason", { reasoning: true, reasoningEfforts: ["low", "high"], modalities: { input: ["text", "image"], output: ["text"] }, contextWindow: 1000000, price: { source: "kenari", currency: "IDR", unit: "micro_idr_per_1m_tokens", free: false, input: 2750000000, output: 5500000000, cacheRead: null } }),
+        model("m-plain", { reasoning: false }),
+        model("m-quiet", { reasoning: true }),
       ],
       quota: { state: "AVAILABLE", windows: [{ label: "5h", usedPercent: 0, resetsAt: "", scope: "account" }] },
     },
-    { slug: "beta", name: "Beta", available: false, reason: "paste KEY", models: [{ id: "b1", available: false, reasoning: null, serviceTier: null, price: null }], quota: { state: "PROVIDER_USAGE_UNAVAILABLE" } },
+    { slug: "beta", name: "Beta", available: false, reason: "paste KEY", models: [model("b1", { available: false })], quota: { state: "PROVIDER_USAGE_UNAVAILABLE" } },
   ],
 };
 
 describe("parseModels", () => {
-  it("keeps unreported values null and unavailable models unavailable", () => {
+  it("keeps unpublished values null and unavailable models unavailable", () => {
     const c = parseModels(catalog)!;
-    expect(c.providers[1].models[0]).toMatchObject({ available: false, reasoning: null, priority: null });
-    expect(c.providers[0].models[1].priority).toBeNull();
+    expect(c.providers[1].models[0]).toMatchObject({ available: false, reasoning: null, modalities: null, contextWindow: null, price: null });
+    expect(c.providers[0].models[0].price).toMatchObject({ currency: "IDR", input: 2750000000, cacheRead: null });
     expect(c.providers[1].quota).toBeNull();
+    expect(c.unsupported.serviceTier).toContain("Kenari");
   });
   it("rejects what is not a catalog", () => {
     expect(parseModels({})).toBeNull();
@@ -39,6 +44,11 @@ describe("parseModels", () => {
     const c = parseModels(catalog)!;
     expect(describeQuota(c.providers[1])[0]).toContain("unavailable");
     expect(describeQuota(c.providers[0])[0]).toContain("0% used");
+  });
+  it("prints a price with its provenance and a missing number as unknown, never 0", () => {
+    const c = parseModels(catalog)!;
+    expect(describePrice(c.providers[0].models[0].price)).toBe("Price (Kenari): in Rp 2.750, out Rp 5.500, cached in unknown per 1M tokens");
+    expect(describePrice(null)).toBe("Price: unknown");
   });
 });
 
@@ -57,16 +67,19 @@ afterEach(() => {
 
 describe("ModelPicker", () => {
   it("disables a model the assistant reports unavailable, and shows controls only where supported", async () => {
-    respond({ "GET /api/models": catalog, "GET /api/chats/c1": { id: "c1", model: { provider: "alpha", model: "m-plain" } } });
+    respond({ "GET /api/models": catalog, "GET /api/chats/c1": { id: "c1", model: { provider: "custom", model: "m-plain" } } });
     const el = document.createElement("div");
     document.body.append(el);
     await act(async () => createRoot(el).render(<ModelPicker chatId="c1" disabled={false} />));
     await act(async () => { el.querySelector("details")!.open = true; el.querySelector("details")!.dispatchEvent(new Event("toggle")); });
     const radios = [...el.querySelectorAll<HTMLInputElement>("input[type=radio]")];
-    expect(radios.map((r) => [r.disabled, r.checked])).toEqual([[false, false], [false, true], [true, false]]);
-    expect(el.textContent).toContain("Unavailable"); // context window, never inferred
-    expect(el.querySelector("select")).toBeNull(); // m-plain lists no reasoning
-    expect(el.querySelector("input[type=checkbox]")).toBeNull(); // and no priority tier
+    expect(radios.map((r) => [r.disabled, r.checked])).toEqual([[false, false], [false, true], [false, false], [true, false]]);
+    expect(el.textContent).toContain("Context window: unknown"); // never inferred
+    expect(el.textContent).toContain("Context window: 1,000,000 tokens");
+    expect(el.textContent).toContain("Input: text, image");
+    expect(el.querySelector("select")).toBeNull(); // m-plain publishes no reasoning levels
+    expect(el.textContent).toContain("Service tier: not offered"); // with the reason, never a toggle
+    expect(el.textContent).toContain("Kenari does not publish a service tier");
     expect(el.textContent).toContain("Provider usage: unavailable");
   });
 });
@@ -106,8 +119,8 @@ async function answerGet(d: ReturnType<typeof deferred>, path: string, n: number
 }
 
 const chatOf = (id: string, model: unknown) => ({ id, model });
-const mA = { provider: "alpha", model: "m-reason" };
-const mB = { provider: "alpha", model: "m-plain" };
+const mA = { provider: "custom", model: "m-reason" };
+const mB = { provider: "custom", model: "m-plain" };
 
 async function open(d: ReturnType<typeof deferred>) {
   const details = document.querySelector("details")!;
@@ -144,7 +157,7 @@ describe("ModelPicker races", () => {
     expect(checkedModel()).toEqual(["m-plain"]); // B still shows B's own choice
 
     // B is not overwritten by A's choice: changing B sends B's provider/model to B
-    await waitFor(() => expect(screen.queryByRole("checkbox")).toBeNull()); // m-plain lists no priority tier
+    await waitFor(() => expect(screen.queryByLabelText(/Priority/)).toBeNull()); // no service tier is ever offered
     fireEvent.click(screen.getByText("Use the default model"));
     await waitFor(() => expect(d.find("PUT", "/api/chats/B/model")).toHaveLength(1));
     expect(d.find("PUT", "/api/chats/B/model")[0].body).toEqual({ reset: true });
@@ -165,7 +178,7 @@ describe("ModelPicker races", () => {
     fireEvent.change(await screen.findByLabelText(/Reasoning effort/), { target: { value: "high" } });
     await waitFor(() => expect(d.find("PUT", "/api/chats/B/model")).toHaveLength(1));
     // B keeps its own state (no priority tier from A) and only the effort differs
-    expect(d.find("PUT", "/api/chats/B/model")[0].body).toEqual({ provider: "alpha", model: "m-reason", reasoningEffort: "high" });
+    expect(d.find("PUT", "/api/chats/B/model")[0].body).toEqual({ model: "m-reason", reasoningEffort: "high" });
   });
 
   it("overlapping saves go out in order and only the newest response is applied", async () => {
@@ -204,6 +217,88 @@ describe("ModelPicker races", () => {
   });
 });
 
+describe("ModelPicker settings", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  it("offers only the published effort levels, and says so when a reasoning model publishes none", async () => {
+    const d = deferred();
+    const { rerender } = render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", mA));
+    await open(d);
+    const select = (await screen.findByLabelText(/Reasoning effort/)) as HTMLSelectElement;
+    expect([...select.options].map((o) => o.value)).toEqual(["", "low", "high"]);
+    rerender(<ModelPicker chatId="B" disabled={false} />);
+    await answerGet(d, "/api/chats/B", 0, chatOf("B", { provider: "custom", model: "m-quiet" }));
+    await waitFor(() => expect(screen.queryByLabelText(/Reasoning effort/)).toBeNull());
+    expect(document.body.textContent).toContain("does not publish its levels");
+  });
+
+  it("hides a model for this account only through the visibility endpoint, and a hidden model can be shown again", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", null));
+    await open(d);
+    fireEvent.click(screen.getByLabelText("Hide m-reason"));
+    await waitFor(() => expect(d.find("PUT", "/api/me/model-visibility")).toHaveLength(1));
+    expect(d.find("PUT", "/api/me/model-visibility")[0].body).toEqual({ hidden: ["m-reason"] });
+    await act(async () => d.find("PUT", "/api/me/model-visibility")[0].resolve(200, { hidden: ["m-reason"] }));
+    expect(screen.queryByLabelText("m-reason")).toBeNull();
+    fireEvent.click(screen.getByLabelText("Show hidden models"));
+    fireEvent.click(await screen.findByLabelText("Show m-reason"));
+    await waitFor(() => expect(d.find("PUT", "/api/me/model-visibility")).toHaveLength(2));
+    expect(d.find("PUT", "/api/me/model-visibility")[1].body).toEqual({ hidden: [] });
+  });
+
+  it("two quick hides keep both, whatever order the answers arrive in", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", null));
+    await open(d);
+    fireEvent.click(screen.getByLabelText("Hide m-reason"));
+    fireEvent.click(screen.getByLabelText("Hide m-plain")); // before the first answer
+    expect(screen.queryByLabelText("m-reason")).toBeNull(); // both are gone at once
+    expect(screen.queryByLabelText("m-plain")).toBeNull();
+    await waitFor(() => expect(d.find("PUT", "/api/me/model-visibility")).toHaveLength(1));
+    expect(d.find("PUT", "/api/me/model-visibility")).toHaveLength(1); // one write at a time
+    await act(async () => d.find("PUT", "/api/me/model-visibility")[0].resolve(200, { hidden: ["m-plain", "m-reason"] }));
+    await waitFor(() => expect(d.find("PUT", "/api/me/model-visibility")).toHaveLength(2));
+    for (const c of d.find("PUT", "/api/me/model-visibility")) expect([...(c.body!.hidden as string[])].sort()).toEqual(["m-plain", "m-reason"]); // no write drops A
+    await act(async () => d.find("PUT", "/api/me/model-visibility")[1].resolve(200, { hidden: ["m-plain", "m-reason"] }));
+    expect(screen.queryByLabelText("m-reason")).toBeNull();
+    expect(screen.queryByLabelText("m-plain")).toBeNull();
+  });
+
+  it("a failed hide shows what the server holds and says so", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", null));
+    await open(d);
+    fireEvent.click(screen.getByLabelText("Hide m-reason"));
+    await waitFor(() => expect(d.find("PUT", "/api/me/model-visibility")).toHaveLength(1));
+    await act(async () => d.find("PUT", "/api/me/model-visibility")[0].resolve(500, { error: { code: "INTERNAL" } }));
+    await waitFor(() => expect(d.find("GET", "/api/me/model-visibility")).toHaveLength(1));
+    await act(async () => d.find("GET", "/api/me/model-visibility")[0].resolve(200, { hidden: [] }));
+    expect(screen.getByLabelText("m-reason")).toBeTruthy(); // back, because the server still shows it
+    expect(screen.getByRole("alert")).toBeTruthy();
+  });
+
+  it("names a catalogue outage instead of showing another list", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", null));
+    const details = document.querySelector("details")!;
+    details.open = true;
+    fireEvent(details, new Event("toggle"));
+    await waitFor(() => expect(d.find("GET", "/api/models").length).toBeGreaterThan(0));
+    await act(async () => d.find("GET", "/api/models")[0].resolve(503, { error: { code: "CATALOGUE_UNAVAILABLE" } }));
+    expect(screen.getByRole("alert").textContent).toContain("model list could not be read");
+    expect(screen.queryByRole("radio")).toBeNull();
+  });
+});
+
 // ---- A -> B -> A with writes still queued -------------------------------------------------
 
 /** A fake server: a PUT takes effect when it ARRIVES (is sent), a read reports the state when it is answered. */
@@ -220,7 +315,7 @@ function serverFake(initial: Record<string, unknown>) {
       const chat = url.split("/")[3];
       if (method === "PUT") {
         const b = JSON.parse(String(init!.body));
-        server[chat] = b.reset ? null : { provider: b.provider, model: b.model, reasoningEffort: b.reasoningEffort, serviceTier: b.serviceTier };
+        server[chat] = b.reset ? null : { provider: "custom", model: b.model, reasoningEffort: b.reasoningEffort, serviceTier: b.serviceTier };
         arrivals.push({ chat, model: b.reset ? "(default)" : b.model });
         return pending.push({ method, chat, answer: () => reply(200, { chatId: chat, model: server[chat] }) });
       }
@@ -266,7 +361,7 @@ describe("ModelPicker keeps one chat's writes ordered across chat switches", () 
     await new Promise((r) => setTimeout(r, 30));
 
     // The SERVER's final choice for A is A3, and A2 (superseded while queued) was never sent after it.
-    expect(f.server.A).toMatchObject({ provider: "alpha", model: "m-reason" });
+    expect(f.server.A).toMatchObject({ provider: "custom", model: "m-reason" });
     expect(f.arrivals.at(-1)).toEqual({ chat: "A", model: "m-reason" });
     expect(f.arrivals.filter((a) => a.chat === "A" && a.model === "m-plain")).toEqual([]);
     expect(f.server.B).toEqual(mB); // B untouched

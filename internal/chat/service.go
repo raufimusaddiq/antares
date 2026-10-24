@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"log"
+	"slices"
 	"sync"
 	"time"
 
@@ -171,6 +172,26 @@ func (s *Service) runNew(ctx context.Context, l *liveRun, run store.Run, input s
 		// The model that was checked for image input is the model that runs: named explicitly,
 		// so a profile default that changed in between cannot swap in one that was not checked.
 		req.Provider, req.Model, req.Images = imgs.provider, imgs.model, imgs.hermesImages()
+	}
+	// Last gate before dispatch: policy applies to the model that will actually run. A chat on the
+	// profile default has it resolved and named explicitly, so a default changed or blocked since
+	// admission can neither run nor be swapped for another.
+	if blocked, err := store.BlockedModels(ctx, s.db); err != nil {
+		s.finish(l, store.RunFailed, hermes.CodeHermesUnavailable, "")
+		return
+	} else if len(blocked) > 0 {
+		if req.Model == "" {
+			p, m, err := s.effectiveDefault(ctx, b)
+			if err != nil {
+				s.finish(l, store.RunFailed, "MODEL_UNAVAILABLE", "")
+				return
+			}
+			req.Provider, req.Model = p, m
+		}
+		if slices.Contains(blocked, req.Model) {
+			s.finish(l, store.RunFailed, "MODEL_UNAVAILABLE", "")
+			return
+		}
 	}
 	hid, err := s.hx.CreateRun(ctx, b, req)
 	if err != nil {

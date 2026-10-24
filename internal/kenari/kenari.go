@@ -50,13 +50,39 @@ func contains(l []string, k string) bool {
 	return false
 }
 
+// Pricing is what Kenari publishes for one model. A number it left out is nil: unknown, not zero.
+type Pricing struct {
+	Currency, Unit string
+	Free           bool
+	Input, Output  *float64
+	CacheRead      *float64
+}
+
+// Model is one catalogue row, limited to what the model picker shows. Pointer and nil-able
+// fields are nil when Kenari did not publish them, which callers must show as unknown.
+type Model struct {
+	ID, Name        string
+	Endpoints       []string
+	Modalities      Modalities
+	HasModalities   bool
+	ContextLength   *float64
+	Reasoning       *bool
+	ReasoningLevels []string // supported_reasoning_levels; nil when not published
+	Pricing         *Pricing
+	SunsetAt        string
+}
+
+// Chat reports whether Kenari lists the model for chat completions.
+func (m Model) Chat() bool { return contains(m.Endpoints, "chat") }
+
 type Catalogue struct {
 	url string
 	hc  *http.Client
 	now func() time.Time
 
 	mu      sync.Mutex
-	models  map[string]Modalities
+	models  []Model
+	byID    map[string]Model
 	fetched time.Time
 }
 
@@ -75,15 +101,30 @@ func New(url string, hc *http.Client) *Catalogue {
 // read and does not list the model (unknown, not "text only"). err is ErrUnavailable when the
 // catalogue could not be read and no answer younger than an hour is held.
 func (c *Catalogue) Lookup(ctx context.Context, id string) (m Modalities, found bool, err error) {
-	models, err := c.load(ctx)
-	if err != nil {
+	row, found, err := c.Get(ctx, id)
+	if err != nil || !found || !row.HasModalities {
 		return Modalities{}, false, err
 	}
-	m, found = models[id]
-	return m, found, nil
+	return row.Modalities, true, nil
 }
 
-func (c *Catalogue) load(ctx context.Context) (map[string]Modalities, error) {
+// Get returns the catalogue row for id; found is false when the catalogue was read and does not list it.
+func (c *Catalogue) Get(ctx context.Context, id string) (Model, bool, error) {
+	if _, err := c.load(ctx); err != nil {
+		return Model{}, false, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	m, ok := c.byID[id]
+	return m, ok, nil
+}
+
+// List returns every row in Kenari's order, or ErrUnavailable.
+func (c *Catalogue) List(ctx context.Context) ([]Model, error) {
+	return c.load(ctx)
+}
+
+func (c *Catalogue) load(ctx context.Context) ([]Model, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.models != nil && c.now().Sub(c.fetched) < freshFor {
@@ -97,10 +138,14 @@ func (c *Catalogue) load(ctx context.Context) (map[string]Modalities, error) {
 		return nil, ErrUnavailable
 	}
 	c.models, c.fetched = models, c.now()
+	c.byID = make(map[string]Model, len(models))
+	for _, m := range models {
+		c.byID[m.ID] = m
+	}
 	return models, nil
 }
 
-func (c *Catalogue) fetch(ctx context.Context) (map[string]Modalities, error) {
+func (c *Catalogue) fetch(ctx context.Context) ([]Model, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.url, nil)
 	if err != nil {
 		return nil, err
@@ -116,22 +161,46 @@ func (c *Catalogue) fetch(ctx context.Context) (map[string]Modalities, error) {
 	}
 	var d struct {
 		Data []struct {
-			ID         string `json:"id"`
+			ID         string   `json:"id"`
+			Name       string   `json:"name"`
+			Endpoints  []string `json:"endpoints"`
 			Modalities *struct {
 				Input  []string `json:"input"`
 				Output []string `json:"output"`
 			} `json:"modalities"`
+			ContextLength *float64 `json:"context_length"`
+			Reasoning     *bool    `json:"reasoning"`
+			Levels        []string `json:"supported_reasoning_levels"`
+			SunsetAt      *string  `json:"sunset_at"`
+			Pricing       *struct {
+				Currency  string   `json:"currency"`
+				Unit      string   `json:"unit"`
+				Free      bool     `json:"free"`
+				Input     *float64 `json:"input"`
+				Output    *float64 `json:"output"`
+				CacheRead *float64 `json:"cache_read"`
+			} `json:"pricing"`
 		} `json:"data"`
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, maxBody)).Decode(&d); err != nil {
 		return nil, err
 	}
-	out := make(map[string]Modalities, len(d.Data))
+	out := make([]Model, 0, len(d.Data))
 	for _, m := range d.Data {
-		if m.ID == "" || m.Modalities == nil { // a model with no published modalities stays unknown
+		if m.ID == "" {
 			continue
 		}
-		out[m.ID] = Modalities{Input: m.Modalities.Input, Output: m.Modalities.Output}
+		row := Model{ID: m.ID, Name: m.Name, Endpoints: m.Endpoints, ContextLength: m.ContextLength, Reasoning: m.Reasoning, ReasoningLevels: m.Levels}
+		if m.Modalities != nil { // a model with no published modalities stays unknown
+			row.Modalities, row.HasModalities = Modalities{Input: m.Modalities.Input, Output: m.Modalities.Output}, true
+		}
+		if m.SunsetAt != nil {
+			row.SunsetAt = *m.SunsetAt
+		}
+		if p := m.Pricing; p != nil {
+			row.Pricing = &Pricing{Currency: p.Currency, Unit: p.Unit, Free: p.Free, Input: p.Input, Output: p.Output, CacheRead: p.CacheRead}
+		}
+		out = append(out, row)
 	}
 	return out, nil
 }

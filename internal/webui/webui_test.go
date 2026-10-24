@@ -99,6 +99,8 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		"/api/me/budget": true,
 		// #100 model picker inventory; the per-chat choice is /api/chats/{id}/model, covered above.
 		"/api/models": true,
+		// #115 the account's own model visibility; the per-chat settings are /api/chats/{id}/settings, covered above.
+		"/api/me/model-visibility": true,
 		// Phase 2b slice 1: live capability discovery (account-scoped, no conversation content).
 		"/api/capabilities": true,
 		// #107 server drafts and personal templates: the new-chat draft, the template list/create and

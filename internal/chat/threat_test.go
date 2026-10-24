@@ -41,6 +41,8 @@ var builtProbes = []probe{
 	{"chat usage and budget", "GET /api/chats/{chatId}/usage"},
 	{"chat input capabilities", "GET /api/chats/{chatId}/input"},
 	{"set chat model", "PUT /api/chats/{chatId}/model"},
+	{"chat settings read", "GET /api/chats/{chatId}/settings"},
+	{"chat settings write", "PUT /api/chats/{chatId}/settings"},
 	{"draft read", "GET /api/chats/{chatId}/draft"},
 	{"draft write", "PUT /api/chats/{chatId}/draft"},
 	{"draft delete", "DELETE /api/chats/{chatId}/draft"},
@@ -58,7 +60,7 @@ var builtProbes = []probe{
 }
 
 // idFree are built routes with no id in the path: they must scope by the caller.
-var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "GET /api/capabilities", "POST /api/assets", "GET /api/models",
+var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "GET /api/capabilities", "POST /api/assets", "GET /api/models", "GET /api/me/model-visibility", "PUT /api/me/model-visibility",
 	"GET /api/me/new-chat-draft", "PUT /api/me/new-chat-draft", "DELETE /api/me/new-chat-draft", "GET /api/me/templates", "POST /api/me/templates"}
 
 // templateRoutes carry a template id, not a chat or run id; their cross-user probes live in

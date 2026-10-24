@@ -44,6 +44,9 @@ const CODES = [
   "SEARCH_TIMEOUT",
   "BUDGET_REACHED",
   "MODEL_UNAVAILABLE",
+  "MODEL_TRANSPORT_UNAVAILABLE",
+  "OPTION_UNSUPPORTED",
+  "CATALOGUE_UNAVAILABLE",
 ] as const;
 
 /** Words shown for a code. The server's own message is never displayed. */
@@ -80,6 +83,12 @@ export function describeCode(code: string): string {
       return "This conversation has reached the token limit you set, so it takes no new messages. Raise or remove the limit under Usage to continue.";
     case "MODEL_UNAVAILABLE":
       return "That model or option is not available right now. Nothing was changed.";
+    case "MODEL_TRANSPORT_UNAVAILABLE":
+      return "The assistant has no working provider for that model right now. Nothing was changed.";
+    case "OPTION_UNSUPPORTED":
+      return "That setting is not supported for this model. Nothing was changed.";
+    case "CATALOGUE_UNAVAILABLE":
+      return "The model list could not be read. Try again shortly.";
     case "NETWORK":
       return "Could not reach Antares. Check your connection.";
     default:
@@ -471,13 +480,29 @@ export interface ModelChoice {
   serviceTier: string;
 }
 
+export interface ModelPrice {
+  source: string;
+  currency: string;
+  unit: string;
+  free: boolean;
+  /** null = the catalogue did not publish it. */
+  input: number | null;
+  output: number | null;
+  cacheRead: number | null;
+}
+
 export interface ModelEntry {
   id: string;
   available: boolean;
-  /** null = the assistant did not say. Never read as false. */
+  /** The caller's own preference: hidden from this picker unless "show hidden" is on. */
+  hidden: boolean;
+  /** null = the catalogue did not say. Never read as false. */
   reasoning: boolean | null;
-  priority: boolean | null;
-  price: { input: string; output: string; cache: string; free: boolean } | null;
+  /** Effort levels the catalogue publishes for this model that the assistant also accepts. */
+  reasoningEfforts: string[];
+  modalities: { input: string[]; output: string[] } | null;
+  contextWindow: number | null;
+  price: ModelPrice | null;
 }
 
 export interface QuotaWindow {
@@ -501,11 +526,13 @@ export interface ModelCatalog {
   fetchedAt: string;
   default: { provider: string; model: string } | null;
   providers: ProviderEntry[];
-  reasoningEfforts: string[];
+  /** Controls that are not offered, with the reason (e.g. serviceTier). */
+  unsupported: Record<string, string>;
 }
 
 const bool = (v: unknown): boolean | null => (typeof v === "boolean" ? v : null);
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+const numOrNull = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
 export function parseModels(v: unknown): ModelCatalog | null {
   const o = obj(v);
@@ -514,7 +541,7 @@ export function parseModels(v: unknown): ModelCatalog | null {
   return {
     fetchedAt: str(o.fetchedAt),
     default: d && str(d.model) ? { provider: str(d.provider), model: str(d.model) } : null,
-    reasoningEfforts: arr(o.reasoningEfforts).filter((x): x is string => typeof x === "string"),
+    unsupported: Object.fromEntries(Object.entries(obj(o.unsupported) ?? {}).filter(([, r]) => typeof r === "string")) as Record<string, string>,
     providers: arr(o.providers).flatMap((p) => {
       const po = obj(p);
       if (!po || !str(po.slug)) return [];
@@ -533,12 +560,16 @@ export function parseModels(v: unknown): ModelCatalog | null {
           const mo = obj(m);
           if (!mo || !str(mo.id)) return [];
           const pr = obj(mo.price);
+          const mod = obj(mo.modalities);
           return [{
             id: str(mo.id),
             available: po.available === true && mo.available === true,
+            hidden: mo.hidden === true,
             reasoning: bool(mo.reasoning),
-            priority: bool(mo.serviceTier),
-            price: pr ? { input: str(pr.input), output: str(pr.output), cache: str(pr.cache), free: pr.free === true } : null,
+            reasoningEfforts: strings(mo.reasoningEfforts),
+            modalities: mod ? { input: strings(mod.input), output: strings(mod.output) } : null,
+            contextWindow: numOrNull(mo.contextWindow),
+            price: pr ? { source: str(pr.source), currency: str(pr.currency), unit: str(pr.unit), free: pr.free === true, input: numOrNull(pr.input), output: numOrNull(pr.output), cacheRead: numOrNull(pr.cacheRead) } : null,
           }];
         }),
       }];
@@ -560,11 +591,37 @@ export const getChatModel = (chatId: string) =>
     return o ? { choice: parseModelChoice(o.model) } : null;
   });
 
-export const putChatModel = (chatId: string, body: { reset: true } | { provider: string; model: string; reasoningEffort?: string; serviceTier?: string }) =>
+/** The provider is never sent: the server resolves it from the account's own profile. */
+export const putChatModel = (chatId: string, body: { reset: true } | { model: string; reasoningEffort?: string }) =>
   call("PUT", `/api/chats/${encodeURIComponent(chatId)}/model`, (b): { choice: ModelChoice | null } | null => {
     const o = obj(b);
     return o ? { choice: parseModelChoice(o.model) } : null;
   }, body);
+
+/** The caller's own hidden models (never another user's); [] reveals everything. */
+export const getModelVisibility = () =>
+  call("GET", "/api/me/model-visibility", (b): { hidden: string[] } | null => {
+    const o = obj(b);
+    return o && Array.isArray(o.hidden) ? { hidden: strings(o.hidden) } : null;
+  });
+
+export const putModelVisibility = (hidden: string[]) =>
+  call("PUT", "/api/me/model-visibility", (b): { hidden: string[] } | null => {
+    const o = obj(b);
+    return o && Array.isArray(o.hidden) ? { hidden: strings(o.hidden) } : null;
+  }, { hidden });
+
+/** Words for a model's published price; a value the catalogue left out is "unknown", never 0. */
+export function describePrice(p: ModelPrice | null): string {
+  if (!p) return "Price: unknown";
+  if (p.free) return "Price: free (Kenari)";
+  const money = (v: number | null) => {
+    if (v === null) return "unknown";
+    return p.currency === "IDR" && p.unit === "micro_idr_per_1m_tokens" ? `Rp ${(v / 1e6).toLocaleString("id-ID")}` : `${v} ${p.currency}`;
+  };
+  const per = p.currency === "IDR" && p.unit === "micro_idr_per_1m_tokens" ? " per 1M tokens" : ` (${p.unit})`;
+  return `Price (Kenari): in ${money(p.input)}, out ${money(p.output)}, cached in ${money(p.cacheRead)}${per}`;
+}
 
 /** Words for a provider's quota windows; absence is stated, never shown as 0%. */
 export function describeQuota(p: ProviderEntry): string[] {
