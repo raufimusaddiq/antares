@@ -586,7 +586,7 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
   .search-body { display: none; }
   .search.open { width: 100%; }
   .search.open .search-body { display: block; }
-  .side:has(.search.open) { display: block; max-height: 60dvh; overflow: hidden auto; }
+  .side:has(.search.open) { display: block; max-height: 45dvh; overflow: hidden auto; }
   .side:has(.search.open) > :not(.search) { display: none; }
   .search-filters label { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; }
   .search-filters input[type="checkbox"] { width: 1.4rem; height: 1.4rem; }
@@ -614,11 +614,17 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
   .vstatus, .vjump { display: none; }
   .composer textarea { max-height: 20dvh; min-height: 2.75rem; }
 }
-/* A very short, narrow viewport (the keyboard is up on a small phone): the conversation strip folds away until it is dismissed.
+/* A very short, narrow viewport (the keyboard is up on a small phone): the conversation strip folds away until it is dismissed,
+   unless a search is open: its focused input and Close search stay, with a bounded results area.
    Not keyed on orientation: a keyboard can make a portrait viewport wider than it is tall. */
 @media (max-width: 40rem) and (max-height: 32rem) {
-  .chat-app { grid-template-rows: auto minmax(0, 1fr); }
-  .chat-app > .side { display: none; }
+  .chat-app:not(:has(.search.open)) { grid-template-rows: auto minmax(0, 1fr); }
+  .chat-app:not(:has(.search.open)) > .side { display: none; }
+  .side:has(.search.open) { max-height: 35dvh; }
+}
+/* Search open with the keyboard up: the keyboard belongs to the search box, so the message area steps aside until Close search. */
+@media (max-width: 40rem) and (max-height: 36rem) {
+  .chat-app:has(.search.open) .composer, .chat-app:has(.search.open) .extras-toggle { display: none; }
 }
 
 /* Touch targets: 44 CSS px on a phone or any coarse pointer. */

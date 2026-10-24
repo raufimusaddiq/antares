@@ -29,13 +29,20 @@ const SESSION = "__Host-antares_session";
 const outArg = process.argv.indexOf("--out");
 const out = outArg > 0 ? process.argv[outArg + 1] : mkdtempSync("/tmp/antares-mobile-");
 mkdirSync(out, { recursive: true });
+const opt = (name) => (process.argv.includes(name) ? process.argv[process.argv.indexOf(name) + 1] : undefined);
+// --fault drop-send | stuck-run: negative proof that the reply requirement bites. The run must then FAIL on the reply step
+// (exit 0 means the fault was detected, exit 1 means a missing reply slipped through). --widths 390,375 limits the widths.
+const FAULT = opt("--fault");
+if (FAULT && !["drop-send", "stuck-run"].includes(FAULT)) throw new Error("--fault is drop-send or stuck-run");
 const TARGET = 44;
-const WIDTHS = [
+const REPLY_TIMEOUT = 25000;
+const ALL_WIDTHS = [
   { w: 320, h: 568 },
   { w: 375, h: 667 },
   { w: 390, h: 844 },
   { w: 430, h: 932 },
 ];
+const WIDTHS = opt("--widths") ? ALL_WIDTHS.filter(({ w }) => opt("--widths").split(",").map(Number).includes(w)) : ALL_WIDTHS;
 const KEYBOARD = 300; // a typical soft keyboard, subtracted from the viewport height
 
 const api = (method, path, body, headers = {}) =>
@@ -125,20 +132,28 @@ const measure = (scope) => {
   };
 };
 
-const verdicts = (m, keyboard, scoped, minLog = 0.4) => {
+const CURRENT = { w: 0 };
+const verdicts = (m, keyboard, scoped, minLog = 0.4, searchOpen = false) => {
   const v = [];
   if (scoped) {
     for (const s of m.small) v.push(`target below ${TARGET}px: "${s.el}" ${s.w}x${s.h}`);
     for (const s of m.outside) v.push(`control outside the viewport: "${s.el}"`);
     for (const [a, b] of m.overlaps) v.push(`controls overlap: "${a}" / "${b}"`);
     if (m.pageOverflowX > 0) v.push(`page overflows horizontally by ${m.pageOverflowX}px`);
+    if (m.vw !== CURRENT.w) v.push(`the layout viewport is ${m.vw}px wide, not ${CURRENT.w}px: the page is wider than the screen`);
     return v;
   }
   if (m.pageOverflowX > 0) v.push(`page overflows horizontally by ${m.pageOverflowX}px`);
+  // A page wider than the device is shrunk to fit, which makes every measurement look smaller than it is.
+  if (m.vw !== CURRENT.w) v.push(`the layout viewport is ${m.vw}px wide, not ${CURRENT.w}px: the page is wider than the screen`);
   if (m.pageScrollY !== 0 || m.bodyScrollable > 1) v.push(`the page itself scrolls (scrollY ${m.pageScrollY}, extra ${m.bodyScrollable}px): the conversation must be the scroll region`);
-  if (m.chromeShare > (keyboard ? 0.45 : 0.3)) v.push(`header+conversation strip take ${Math.round(m.chromeShare * 100)}% of the viewport`);
+  if (!searchOpen && m.chromeShare > (keyboard ? 0.45 : 0.3)) v.push(`header+conversation strip take ${Math.round(m.chromeShare * 100)}% of the viewport`);
   if (!keyboard && m.logShare < minLog) v.push(`the log gets ${Math.round(m.logShare * 100)}% of the viewport (<${minLog * 100}%)`);
-  if (!m.textarea) v.push("composer textarea missing");
+  // With a search open the strip is the working area (input, filters, results), so the chrome-share rule does not apply to that step.
+  // With a search open on a short viewport the keyboard belongs to the search box, so the composer steps aside (and must be back after Close).
+  const composerAside = searchOpen && m.vh <= 576;
+  if (composerAside) { /* nothing below applies to the composer */ }
+  else if (!m.textarea || m.textarea.w === 0) v.push("composer textarea missing");
   else {
     if (m.textarea.h < TARGET) v.push(`textarea is ${m.textarea.h}px tall (<${TARGET})`);
     if (m.textarea.w < 120) v.push(`textarea is ${m.textarea.w}px wide (<120)`);
@@ -152,11 +167,17 @@ const verdicts = (m, keyboard, scoped, minLog = 0.4) => {
   return v;
 };
 
+// stuck-run: the scratch fake Hermes holds every run far longer than the reply timeout, so the reply streams forever. Loopback only.
+const UPSTREAM = process.env.UPSTREAM ?? "http://127.0.0.1:18081";
+if (!/^http:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(UPSTREAM)) throw new Error("UPSTREAM must be the loopback scratch fake Hermes");
+const hold = (ms) => fetch(`${UPSTREAM}/_ctl?hold_ms=${ms}`).catch(() => {});
+if (FAULT === "stuck-run") await hold(120000);
 const browser = await chromium.launch({ executablePath: process.env.CHROME });
 const result = { browser: browser.version(), emulator: true, physicalDevice: false, cases: [], violations: 0 };
 try {
   await seed();
   for (const { w, h } of WIDTHS) {
+    CURRENT.w = w;
     const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 3, isMobile: true, hasTouch: true, userAgent: "Mozilla/5.0 (Linux; Android 14; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0 Mobile Safari/537.36" });
     await ctx.addCookies([{ name: SESSION, value: A, domain: new URL(BASE).hostname, path: "/", secure: true, httpOnly: true }]);
     // The scratch server's same-origin check wants its configured PUBLIC_ORIGIN; the browser talks to loopback.
@@ -164,7 +185,10 @@ try {
     // The scratch Hermes has no image catalogue, so the server truthfully says images are off. To lay out Attach and Take photo
     // (what the owner's account shows), only the browser-side answer to the capability probe is replaced; uploads go to the real API.
     await ctx.route(/\/api\/chats\/[^/]+\/input$/, (route) => route.fulfill({ json: { image: { available: true, reason: null, model: "scratch-vision", maxImages: 4, maxTotalBytes: 6291456 } } }));
+    if (FAULT === "drop-send") await ctx.route(/\/api\/chats\/[^/]+\/messages$/, (route) => (route.request().method() === "POST" ? route.abort() : route.continue()));
     const page = await ctx.newPage();
+    let chatId = "";
+    page.on("request", (r) => { const m = /\/api\/chats\/([^/?]+)\/messages(\?|$)/.exec(r.url()); if (m && r.method() === "GET") chatId = m[1]; });
     await page.goto(BASE + "/", { waitUntil: "networkidle" });
     await page.waitForSelector(".chat-app", { timeout: 15000 });
     await page.getByRole("button", { name: /^mobile-check/ }).first().click();
@@ -174,7 +198,7 @@ try {
       const m = await page.evaluate(measure, scope);
       const keyboard = name.includes("keyboard");
       // An attached image adds its own strip to the composer, so that step only requires the log to stay readable (20%).
-      const viol = verdicts(m, keyboard, Boolean(scope), name === "image-attached" ? 0.2 : 0.4);
+      const viol = verdicts(m, keyboard, Boolean(scope), name === "image-attached" ? 0.2 : 0.4, name === "search-keyboard-open");
       await page.screenshot({ path: `${out}/${w}-${name}.png` });
       result.cases.push({ width: w, name, measure: { vw: m.vw, vh: m.vh, chromeShare: m.chromeShare, logShare: m.logShare, composer: m.composer, textarea: m.textarea, pageOverflowX: m.pageOverflowX }, violations: viol });
       result.violations += viol.length;
@@ -189,16 +213,48 @@ try {
     // Multiline typing, keyboard open (viewport shrunk), then send.
     await page.setViewportSize({ width: w, height: Math.max(h - KEYBOARD, 260) });
     await page.locator("#composer-input").focus();
-    await page.keyboard.type("First line of a longer message\nsecond line\nthird line that is long enough to wrap onto another row on a narrow phone screen");
+    await page.fill("#composer-input", ""); // a draft left by an earlier run must not leak into this one
+    // Enter sends in this app; a new line is Shift+Enter, so the three lines are typed with it and nothing is sent early.
+    const lines = ["First line of a longer message", "second line", "third line that is long enough to wrap onto another row on a narrow phone screen"];
+    for (const [i, line] of lines.entries()) {
+      if (i > 0) await page.keyboard.press("Shift+Enter");
+      await page.keyboard.type(line);
+    }
+    if ((await page.locator("#composer-input").inputValue()).split("\n").length !== 3) throw new Error("the multiline draft was not kept as three lines");
     await page.waitForTimeout(200);
     await step("keyboard-open-multiline");
     await page.setViewportSize({ width: w, height: h });
     await page.waitForTimeout(200);
     await step("keyboard-closed-multiline");
+    // The reply must be NEW and non-empty relative to the state before sending, completed on the server and shown as completed in
+    // the page (no streaming / reconnecting / failed / cancelled / partial). A timeout is a failure, never a pass.
+    const replies = async () => {
+      const r = await api("GET", `/api/chats/${chatId}/messages`);
+      const turns = r.ok ? ((await r.json()).messages ?? []) : [];
+      return turns.filter((t) => t.role === "assistant" && String(t.text ?? "").trim() !== "").map((t) => t.seq);
+    };
+    if (!chatId) throw new Error("could not tell which chat is open");
+    const before = await replies();
+    const t0 = Date.now();
     await page.locator('.composer button[type="submit"]').click({ timeout: 8000 });
-    await page.waitForFunction(() => document.querySelectorAll(".log .turn.assistant").length >= 7 && !document.querySelector(".run-streaming"), null, { timeout: 20000 }).catch(() => {});
+    const terminalDom = () => page.evaluate(() => ({
+      live: document.querySelectorAll(".run-streaming, .run-reconnecting, .run-failed, .run-cancelled, .partial, .log .turn.pending").length,
+      alerts: [...document.querySelectorAll(".log [role=alert], .pane > [role=alert]")].map((e) => (e.textContent ?? "").trim().slice(0, 80)),
+      text: [...document.querySelectorAll(".log .turn.assistant")].at(-1)?.textContent?.trim().length ?? 0,
+    }));
+    let reply = { ok: false, why: "no new reply" };
+    while (Date.now() - t0 < REPLY_TIMEOUT) {
+      const now = await replies();
+      const fresh = now.filter((q) => !before.includes(q));
+      const dom = await terminalDom();
+      if (fresh.length === 1 && dom.live === 0 && dom.alerts.length === 0 && dom.text > 0) { reply = { ok: true, ms: Date.now() - t0 }; break; }
+      reply = { ok: false, why: `new replies ${fresh.length}, page still live/partial ${dom.live}, alerts ${JSON.stringify(dom.alerts)}, last reply text ${dom.text} chars` };
+      await page.waitForTimeout(250);
+    }
     await step("after-reply");
     const fail = (msg) => { result.violations++; result.cases.at(-1).violations.push(msg); };
+    if (!reply.ok) { fail(`no new non-empty completed reply within ${REPLY_TIMEOUT / 1000}s: ${reply.why}`); result.replyMissing = true; } else result.cases.at(-1).replyMs = reply.ms;
+    if (FAULT) { await ctx.close(); continue; }
     // Account actions: reachable through the compact menu, closed again by Escape.
     await page.getByRole("button", { name: "Menu" }).click();
     await step("menu-open", null, ".bar-actions");
@@ -214,6 +270,22 @@ try {
     if ((await page.locator(".search-results button.hit").count()) === 0) fail("search returned no result for seeded text");
     await page.getByRole("button", { name: "Close search" }).click();
     if (await page.locator("#search-input").isVisible()) fail("the search box did not close");
+    // Search with the keyboard up: the input the user is typing in and Close search must survive the viewport shrinking.
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await page.locator("#search-input").focus();
+    await page.setViewportSize({ width: w, height: Math.max(h - KEYBOARD, 260) });
+    await page.waitForTimeout(250);
+    await page.keyboard.type("que");
+    await step("search-keyboard-open");
+    const inView = (sel) => page.evaluate((q) => { const e = document.querySelector(q); if (!e) return false; const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && r.top >= -0.5 && r.bottom <= innerHeight + 0.5; }, sel);
+    if (!(await inView("#search-input"))) fail("the search input is not visible inside the viewport when the keyboard is up");
+    if ((await page.evaluate(() => document.activeElement?.id)) !== "search-input") fail("the search input lost focus when the keyboard opened");
+    if (!(await inView(".search-toggle"))) fail("Close search is not visible inside the viewport when the keyboard is up");
+    await page.getByRole("button", { name: "Close search" }).click();
+    if (await page.locator("#search-input").isVisible()) fail("Close search did not close the search with the keyboard up");
+    if (!(await inView("#composer-input"))) fail("the composer did not come back after Close search with the keyboard up");
+    await page.setViewportSize({ width: w, height: h });
+    await page.waitForTimeout(200);
     // Options: usage, model, voice note and templates open on demand.
     await page.getByRole("button", { name: "Options" }).click();
     await step("options-open", null, ".extras");
@@ -224,7 +296,8 @@ try {
     await step("switched-chat");
     // Attach and remove an image (real /api/assets upload; the send path is not exercised against a vision model here).
     await page.locator("input[type=file][aria-label='Choose images']").setInputFiles({ name: "t.png", mimeType: "image/png", buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGNgYGD4DwABBAEAX+XDSwAAAABJRU5ErkJggg==", "base64") });
-    await page.waitForSelector("[data-media='strip'] li", { timeout: 8000 }).catch(() => {});
+    await page.waitForSelector("[data-media='strip'] li", { timeout: 8000 });
+    await page.waitForFunction(() => document.querySelector("[data-media='strip'] li") && !document.querySelector("[data-media='strip'] progress"), null, { timeout: 8000 }); // measure the settled strip, not the upload in flight
     await step("image-attached");
     const removeBtn = page.getByRole("button", { name: /^Remove/ });
     if ((await removeBtn.count()) === 0) fail("the attached image shows no Remove control");
@@ -244,7 +317,14 @@ try {
   console.log(JSON.stringify(result, null, 2));
   process.exit(2);
 } finally {
+  if (FAULT === "stuck-run") await hold(800);
   await browser.close();
 }
 console.log(JSON.stringify({ ...result, out }, null, 2));
+if (FAULT) {
+  // The fault run stops at the reply step; it passes only if the reply requirement caught the fault.
+  const caught = result.replyMissing === true;
+  console.error(caught ? `fault ${FAULT}: missing reply detected (expected)` : `fault ${FAULT}: a missing reply was NOT detected`);
+  process.exit(caught ? 0 : 1);
+}
 process.exit(result.violations > 0 ? 1 : 0);
