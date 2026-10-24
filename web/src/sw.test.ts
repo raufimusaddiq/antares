@@ -4,13 +4,14 @@ import { describe, expect, it, vi } from "vitest";
 
 const origin = "https://app.test";
 const paths = ["/offline.html", "/assets/app-hash.js", "/assets/offline-hash.css"];
+const optionalPaths = ["/assets/Block-hash.js", "/assets/Chart-hash.js"];
 const source = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
 
 function worker() {
   const listeners: Record<string, (event: any) => void> = {};
   const entries = new Map<string, Response>();
   const cache = {
-    put: vi.fn(async (path: string, response: Response) => { entries.set(new URL(path, origin).href, response); }),
+    put: vi.fn(async (path: string | Request, response: Response) => { entries.set(new URL(typeof path === "string" ? path : path.url, origin).href, response); }),
     match: vi.fn(async (request: string | Request) => entries.get(new URL(typeof request === "string" ? request : request.url, origin).href)),
     keys: async () => [...entries.keys()].map(url => new Request(url)),
     delete: vi.fn(async (request: Request) => entries.delete(request.url)),
@@ -18,7 +19,7 @@ function worker() {
   const fetch = vi.fn(async () => new Response("public"));
   const caches = { open: vi.fn(async () => cache), keys: async () => ["antares-public-test", "unrelated"], delete: vi.fn() };
   const self = { location: { origin }, addEventListener: (name: string, fn: (event: any) => void) => { listeners[name] = fn; }, clients: { claim: vi.fn() }, skipWaiting: vi.fn() };
-  runInNewContext(source.replace("__VERSION__", "test").replace("__PRECACHE__", JSON.stringify(paths)), { self, caches, fetch, URL, Response, Set });
+  runInNewContext(source.replace("__VERSION__", "test").replace("__PRECACHE__", JSON.stringify(paths)).replace("__OPTIONAL__", JSON.stringify(optionalPaths)), { self, caches, fetch, URL, Response, Set });
   const fire = async (name: string, extra = {}) => {
     let pending: Promise<unknown> | undefined;
     const respondWith = vi.fn((promise: Promise<unknown>) => { pending = promise; });
@@ -36,6 +37,30 @@ describe("public-only service worker", () => {
     expect(w.fetch).toHaveBeenCalledWith("/offline.html", { credentials: "omit", cache: "reload" });
     w.cache.put.mockClear();
     await w.fire("fetch", { request: { url: `${origin}/chat/private`, method: "GET", mode: "navigate" } });
+    expect(w.cache.put).not.toHaveBeenCalled();
+  });
+
+  it("does not fetch optional chunks at install; caches them on first use and serves them offline", async () => {
+    const w = worker();
+    await w.fire("install");
+    expect(w.fetch.mock.calls.map(call => (call as unknown[])[0])).not.toContain(optionalPaths[0]);
+    const request = { url: `${origin}${optionalPaths[0]}`, method: "GET", mode: "cors" };
+    const first = await w.fire("fetch", { request });
+    expect(first.respondWith).toHaveBeenCalled();
+    expect(w.entries.has(request.url)).toBe(true);
+    w.fetch.mockRejectedValue(new Error("offline"));
+    const again = await w.fire("fetch", { request });
+    expect(await (again.result as Response).text()).toBe("public");
+    w.entries.set(`${origin}/api/me`, new Response("private"));
+    await w.fire("message", { data: { type: "PURGE_USER_STATE" } });
+    expect(w.entries.has(request.url)).toBe(true);
+    expect(w.entries.has(`${origin}/api/me`)).toBe(false);
+  });
+
+  it("does not cache a failed optional chunk response", async () => {
+    const w = worker();
+    w.fetch.mockResolvedValue(new Response("nope", { status: 500 }));
+    await w.fire("fetch", { request: { url: `${origin}${optionalPaths[1]}`, method: "GET", mode: "cors" } });
     expect(w.cache.put).not.toHaveBeenCalled();
   });
 

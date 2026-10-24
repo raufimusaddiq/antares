@@ -35,7 +35,13 @@ const css = readFileSync(join(dist, "offline.css"));
 const cssPath = `/assets/offline-${createHash("sha256").update(css).digest("hex").slice(0, 16)}.css`;
 writeFileSync(join(dist, cssPath), css);
 writeFileSync(join(dist, "offline.html"), readFileSync(join(dist, "offline.html"), "utf8").replace("/offline.css", cssPath));
-const precache = ["/offline.html", ...readdirSync(join(dist, "assets")).filter(name => /-[\w-]+\.(js|css)$/.test(name)).sort().map(name => `/assets/${name}`)];
+const hashed = readdirSync(join(dist, "assets")).filter(name => /-[\w-]+\.(js|css)$/.test(name)).sort().map(name => `/assets/${name}`);
+// Install-time precache is what the shell loads (entry, runtime, CSS); every other chunk is on demand
+// and cached by the worker on first use.
+const shell = readFileSync(join(dist, "index.html"), "utf8");
+const isShell = path => shell.includes(path) || path.startsWith("/assets/offline-");
+const precache = ["/offline.html", ...hashed.filter(isShell)];
+const optional = hashed.filter(path => !isShell(path));
 writeFileSync(join(dist, "sw.js"), readFileSync(join(web, "public", "sw.js"), "utf8")
-  .replace("__VERSION__", version).replace("__PRECACHE__", JSON.stringify(precache)));
+  .replace("__VERSION__", version).replace("__PRECACHE__", JSON.stringify(precache)).replace("__OPTIONAL__", JSON.stringify(optional)));
 writeFileSync(out, version + "\n");
