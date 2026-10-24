@@ -7,7 +7,7 @@ import { describeCode, describeQuota, getChatModel, getModels, putChatModel, typ
  * reasoning and priority controls appear only where the inventory says they are supported,
  * and anything it did not report reads "Unavailable".
  */
-export function ModelPicker({ chatId, disabled }: { chatId: string; disabled: boolean }) {
+export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; disabled: boolean; onChanged?: () => void }) {
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
   const [choice, setChoice] = useState<ModelChoice | null | undefined>(undefined); // undefined = not read yet
   const [query, setQuery] = useState("");
@@ -76,6 +76,7 @@ export function ModelPicker({ chatId, disabled }: { chatId: string; disabled: bo
         want.current = r.value.choice;
         setChoice(r.value.choice);
         setMsg("");
+        onChanged?.(); // what the chat can accept (images) follows its model
       } else {
         setMsg(describeCode(r.code));
         const back = await getChatModel(forChat); // the failed change is not the saved one: show what the server holds

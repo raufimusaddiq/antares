@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/raufimusaddiq/antares/internal/hermes"
+	"github.com/raufimusaddiq/antares/internal/kenari"
 	"github.com/raufimusaddiq/antares/internal/secrets"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
@@ -35,6 +36,9 @@ type Options struct {
 	// Heartbeat is the SSE keep-alive interval, which is also how often an open
 	// stream re-checks that the account is still eligible. Default 15s.
 	Heartbeat time.Duration
+	// Kenari is the model catalogue image input is checked against. Nil means image input is
+	// reported unavailable (CATALOGUE_NOT_CONFIGURED), never assumed.
+	Kenari *kenari.Catalogue
 	// Notifier, if set, is told when a run reaches a terminal status (UXP-002).
 	Notifier Notifier
 }
@@ -55,6 +59,7 @@ type Service struct {
 	backoff   func(int) time.Duration
 	heartbeat time.Duration
 	notifier  Notifier
+	kenari    *kenari.Catalogue
 
 	base context.Context
 	stop context.CancelFunc
@@ -77,7 +82,7 @@ func New(o Options) (*Service, error) {
 		o.Heartbeat = 15 * time.Second
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier,
+	return &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari,
 		base: ctx, stop: cancel, live: map[string]*liveRun{}}, nil
 }
 
@@ -133,7 +138,7 @@ func (s *Service) register(l *liveRun) {
 func sessionKey(userID string) string { return "chatui:user:" + userID }
 
 // start launches the worker for a freshly admitted run.
-func (s *Service) start(run store.Run, input string) *liveRun {
+func (s *Service) start(run store.Run, input string, imgs *turnImages) *liveRun {
 	l := newLive(run.ID, run.UserID, run.ChatID)
 	ctx, cancel := context.WithCancel(s.base)
 	l.cancelWorker = cancel
@@ -142,12 +147,12 @@ func (s *Service) start(run store.Run, input string) *liveRun {
 	go func() {
 		defer s.wg.Done()
 		defer cancel()
-		s.runNew(ctx, l, run, input)
+		s.runNew(ctx, l, run, input, imgs)
 	}()
 	return l
 }
 
-func (s *Service) runNew(ctx context.Context, l *liveRun, run store.Run, input string) {
+func (s *Service) runNew(ctx context.Context, l *liveRun, run store.Run, input string, imgs *turnImages) {
 	b, _, err := s.gate(ctx, run.UserID)
 	if err != nil {
 		s.finish(l, store.RunFailed, hermes.CodeOf(err), "")
@@ -158,10 +163,16 @@ func (s *Service) runNew(ctx context.Context, l *liveRun, run store.Run, input s
 		s.finish(l, store.RunFailed, hermes.CodeHermesUnavailable, "")
 		return
 	}
-	hid, err := s.hx.CreateRun(ctx, b, hermes.RunRequest{
+	req := hermes.RunRequest{
 		SessionID: run.HermesSession, Input: input, SessionKey: sessionKey(run.UserID), IdempotencyKey: "antares-" + run.ID,
 		Provider: choice.Provider, Model: choice.Model, Reasoning: choice.Reasoning, ServiceTier: choice.ServiceTier,
-	})
+	}
+	if imgs != nil {
+		// The model that was checked for image input is the model that runs: named explicitly,
+		// so a profile default that changed in between cannot swap in one that was not checked.
+		req.Provider, req.Model, req.Images = imgs.provider, imgs.model, imgs.hermesImages()
+	}
+	hid, err := s.hx.CreateRun(ctx, b, req)
 	if err != nil {
 		if ctx.Err() != nil { // cancelled while admitting
 			s.finish(l, store.RunCancelled, "", "")

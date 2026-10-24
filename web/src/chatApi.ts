@@ -3,6 +3,7 @@
 // those). Every failure comes back as a code from the fixed API vocabulary.
 
 import { purgeUserState } from "./pwa";
+import type { AttachmentRef } from "./MediaPreview";
 
 export interface ChatSummary {
   id: string;
@@ -19,6 +20,8 @@ export interface Turn {
   text: string;
   /** The server's hash of this turn; quoted back to name it (artifact links). Absent on turns not read from history. */
   ref?: string;
+  /** Images the user sent with this turn (owner assets; available is false once deleted). */
+  attachments?: AttachmentRef[];
 }
 
 export type ApiResult<T> = { ok: true; value: T } | { ok: false; code: string; status: number };
@@ -137,6 +140,27 @@ export interface HistoryPage {
   total: number;
 }
 
+/** Removes exactly n trailing "[image]" transport placeholders (as the server's link check does); a "[image]" the user typed stays. */
+export function stripImageMarkers(text: string, n: number): string {
+  let t = text;
+  for (let i = 0; i < n; i++) {
+    const trimmed = t.replace(/\s+$/, "");
+    if (!trimmed.endsWith("[image]")) return text; // not what the server linked: keep it as received
+    t = trimmed.slice(0, -"[image]".length);
+  }
+  return t.replace(/\s+$/, "");
+}
+
+function parseAttachments(v: unknown): AttachmentRef[] {
+  if (!Array.isArray(v)) return [];
+  const out: AttachmentRef[] = [];
+  for (const a of v) {
+    const o = obj(a);
+    if (o && /^[0-9a-f]{32}$/.test(str(o.assetId)) && str(o.mediaType).startsWith("image/")) out.push({ assetId: str(o.assetId), mediaType: str(o.mediaType), available: o.available === true });
+  }
+  return out;
+}
+
 export function parseHistory(v: unknown): HistoryPage | null {
   const o = obj(v);
   if (!o || !Array.isArray(o.messages)) return null;
@@ -146,7 +170,10 @@ export function parseHistory(v: unknown): HistoryPage | null {
     if (!mo || (mo.role !== "user" && mo.role !== "assistant")) continue;
     // A turn without a usable position cannot be placed: the page is refused, not guessed at.
     if (typeof mo.seq !== "number" || !Number.isInteger(mo.seq) || mo.seq < 0) return null;
-    turns.push({ seq: mo.seq, role: mo.role, text: str(mo.text), ref: str(mo.ref) || undefined });
+    const attachments = parseAttachments(mo.attachments);
+    // The history read renders each image as "[image]"; when the images are shown as thumbnails the markers go.
+    const text = attachments.length > 0 ? stripImageMarkers(str(mo.text), attachments.length) : str(mo.text);
+    turns.push({ seq: mo.seq, role: mo.role, text, ref: str(mo.ref) || undefined, ...(attachments.length > 0 ? { attachments } : {}) });
   }
   for (let i = 1; i < turns.length; i++) if (turns[i].seq <= turns[i - 1].seq) return null;
   return { turns, nextCursor: str(o.nextCursor), total: typeof o.total === "number" ? o.total : turns.length };

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -282,6 +283,16 @@ type RunRequest struct {
 	// Optional per-run model choice, sent as body provider/model/model_options (the fields
 	// _request_agent_overrides reads). Empty means the profile's default.
 	Provider, Model, Reasoning, ServiceTier string
+	// Images are the user's own staged images for this turn, already validated and owner-resolved
+	// by the caller. They travel inline as data URLs (gateway/platforms/api_server.py accepts
+	// data:image/... only); Hermes receives nothing it can fetch from Antares.
+	Images []Image
+}
+
+// Image is one validated raster image (png, jpeg or gif) to send with the turn's text.
+type Image struct {
+	MediaType string
+	Data      []byte
 }
 
 // CreateRun starts a run (PRD §6.2 step 4) and returns Hermes' run id.
@@ -592,6 +603,18 @@ type Message struct {
 	// Ref is the turn hash the history API stamps on a page (never read from Hermes). A
 	// client quotes it back to name this exact turn; see chat.turnHash.
 	Ref string `json:"ref,omitempty"`
+	// Images counts the image parts of a user turn (Hermes renders each as "[image]" in the
+	// history read). Attachments are the owner's assets matched to them by the chat layer.
+	Images      int          `json:"images,omitempty"`
+	Attachments []Attachment `json:"attachments,omitempty"`
+}
+
+// Attachment is one image the user sent with a turn. Available is false once the staged
+// asset was deleted: the turn keeps its record, the preview is gone.
+type Attachment struct {
+	AssetID   string `json:"assetId"`
+	MediaType string `json:"mediaType"`
+	Available bool   `json:"available"`
 }
 
 // ErrHistoryTooLarge means the transcript exceeds what the adapter will hold.
@@ -712,6 +735,17 @@ func contentText(v any) string {
 // chat with no choice sends exactly what it always did.
 func runBody(r RunRequest) map[string]any {
 	body := map[string]any{"session_id": r.SessionID, "input": r.Input}
+	if len(r.Images) > 0 {
+		// POST /v1/runs reads the last message's content and hands it to the agent without
+		// normalising it (api_server_runs.py _run_user_message), so the canonical parts the
+		// agent pipeline understands are sent directly: "text" and "image_url".
+		parts := []map[string]any{{"type": "text", "text": r.Input}}
+		for _, im := range r.Images {
+			parts = append(parts, map[string]any{"type": "image_url", "image_url": map[string]string{
+				"url": "data:" + im.MediaType + ";base64," + base64.StdEncoding.EncodeToString(im.Data)}})
+		}
+		body["input"] = []map[string]any{{"role": "user", "content": parts}}
+	}
 	if r.Model != "" {
 		body["model"] = r.Model
 		if r.Provider != "" {

@@ -26,7 +26,7 @@ and locks nothing.
 | Item | Status | Why (evidence) |
 |---|---|---|
 | `LLM-003` per-model effort list | **Partly blocked** | Hermes omits `supported_efforts` on purpose (`inventory.py:545`); only the accepted ladder (`api_server.py:291`) is known. Antares offers the ladder only for models listing `reasoning:true` and says the provider may clamp. |
-| `LLM-006` context window, cache price per model | **Blocked** | Neither is in the inventory (`inventory.py` has no `context_length`/`context_window`; `pricing.cache` is often null). Shown "Unavailable". Input/output modalities are not in the payload either. |
+| `LLM-006` context window, cache price per model | **Blocked** | Neither is in the inventory (`inventory.py` has no `context_length`/`context_window`; `pricing.cache` is often null). Shown "Unavailable". Input/output modalities are not in the payload either; the owner designated the Kenari catalogue as their source (`docs/runbooks/media.md`). |
 | `CTX-001` context % | **Blocked** | Hermes reports no per-call prompt size or model context length; run `usage` is a per-run sum (`api_server_runs.py:88-92`). Percentage stays omitted (existing #81 behaviour: `carriedTokens` null). |
 | `CTX-002` compaction indicator, manual compact | **Blocked** | No compress/compact route in the route table (`api_server.py:1646-1692`, `api_server_runs.py:243`) and no compaction field on run status or events; compression is visible only as a session-id rotation (`api_server.py:4134-4143`). No command is invented. |
 | `CTX-003` reasoning tokens, cost | **Blocked** | `_USAGE_FIELDS` (`api_server_runs.py:88-92`) has input/output/total/cache read/cache write only. Estimated cost stays #81's. |

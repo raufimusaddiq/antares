@@ -33,10 +33,16 @@ import { Artifacts } from "./Artifacts";
 import { ExportChat } from "./ExportChat";
 import { fenceSelection, inFence, indentInFence, toggleList, wrapSelection, type Edit } from "./composerEdit";
 import { Notifications } from "./Notifications";
+import { ImageStrip, useImageAttachments, type Attachment } from "./ImageAttachments";
+import { SentImage } from "./MediaPreview";
+import { describeImageReason, describeImageSend, getImageInput, imageFilesFrom, sendMessageWithImages, IMAGE_TYPES, type ImageInput } from "./mediaApi";
+import { hideMediaPaths } from "./mediaTags";
+import { planRetry } from "./retry";
 import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
+import type { AttachmentRef } from "./MediaPreview";
 import { RunPrompts } from "./RunPrompts";
 import { loadDraft, matchTemplates, mergeTemplates, saveDraft, type Template } from "./drafts";
 import { DraftNotice, sharedTextApplied, takeSharedText, useDraftSync, NO_HOLD, type SendHold } from "./DraftSync";
@@ -66,6 +72,7 @@ interface Pending {
   key: string;
   failure: string; // empty while sending
   hold: SendHold; // this send's claim on the server draft, kept for a resend
+  images?: AttachmentRef[]; // the staged images sent with it; a resend or retry carries them again, never drops them
 }
 
 // ---- presentational pieces (no hooks: rendered to static markup in tests) -----
@@ -89,7 +96,7 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
       {run.text !== "" && (
         <div className={run.phase === "completed" ? "" : "partial"}>
           {run.phase !== "completed" && !live && <p className="label">Partial response</p>}
-          <MessageBody text={run.text} streaming={live} />
+          <MessageBody text={hideMediaPaths(run.text).text} streaming={live} />
         </div>
       )}
       {live && run.text === "" && <p className="label">Working…</p>}
@@ -118,6 +125,18 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
 }
 
 const turnKey = (t: Turn) => String(t.seq);
+
+/** The images a user turn carried. Previews load on demand from the owner's asset route. */
+function SentImages({ refs }: { refs: readonly AttachmentRef[] }) {
+  if (refs.length === 0) return null;
+  return (
+    <div data-media="sent" role="group" aria-label="Images you sent">
+      {refs.map((r, i) => (
+        <SentImage key={r.assetId} att={r} index={i} />
+      ))}
+    </div>
+  );
+}
 
 export interface TranscriptProps {
   turns: Turn[];
@@ -149,7 +168,8 @@ export function Transcript(props: TranscriptProps) {
     (t: Turn) => (
       <article className={`turn ${t.role}`} data-found={t.seq === focusSeq ? "true" : undefined} aria-current={t.seq === focusSeq ? "location" : undefined}>
         <h2 className="who">{t.role === "user" ? "You" : "Assistant"}</h2>
-        {t.role === "user" ? <Markdown text={t.text} /> : <MessageBody text={t.text} streaming={false} />}
+        {t.role === "user" ? <Markdown text={t.text} /> : <MessageBody text={t.role === "assistant" ? hideMediaPaths(t.text).text : t.text} streaming={false} />}
+        {t.role === "user" && t.attachments && <SentImages refs={t.attachments} />}
         {t.role === "assistant" && chatId && t.ref && <Artifacts chatId={chatId} seq={t.seq} turnRef={t.ref} text={t.text} />}
       </article>
     ),
@@ -177,6 +197,7 @@ export function Transcript(props: TranscriptProps) {
         <article className="turn user pending">
           <h2 className="who">You</h2>
           <Markdown text={pending.input} />
+          <SentImages refs={pending.images ?? []} />
           {pending.failure ? (
             <p className="notice" role="alert">
               Not sent: {pending.failure}{" "}
@@ -213,8 +234,41 @@ export function Transcript(props: TranscriptProps) {
 // On macOS Ctrl+B/E are caret movement in a text field, so the shortcuts there are Cmd only.
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
-export function Composer(props: { value: string; busy: boolean; onChange: (v: string) => void; onSubmit: () => void; templates?: readonly Template[] }) {
+/** What the composer needs to attach images. Absent = the composer is text only. */
+export interface ComposerImages {
+  /** The server's verdict for this chat's model (GET /api/chats/{id}/input). False hides the picker. */
+  available: boolean;
+  reason: string | null;
+  items: Attachment[];
+  notice: string | null;
+  /** An image is still uploading or failed: sending waits, nothing is dropped. */
+  pending: boolean;
+  onFiles: (files: File[]) => void;
+  onRemove: (key: string) => void;
+  onRetry: (key: string) => void;
+}
+
+const IMAGE_ACCEPT = IMAGE_TYPES.join(",");
+
+export function Composer(props: { value: string; busy: boolean; onChange: (v: string) => void; onSubmit: () => void; templates?: readonly Template[]; images?: ComposerImages }) {
+  const img = props.images;
+  const blocked = img?.pending === true;
   const empty = props.value.trim() === "";
+  const [refusal, setRefusal] = useState("");
+  const picker = useRef<HTMLInputElement>(null);
+  const camera = useRef<HTMLInputElement>(null);
+  // An image the model cannot take is refused out loud, never discarded and never sent anyway.
+  const takeFiles = (files: File[]): boolean => {
+    if (files.length === 0 || !img) return false;
+    if (img.available) {
+      setRefusal("");
+      img.onFiles(files);
+    } else {
+      setRefusal(describeImageReason(img.reason));
+    }
+    return true;
+  };
+  const coarse = typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(pointer: coarse)").matches;
   const matches = matchTemplates(props.value, props.templates);
   const insert = (t: Template) => {
     props.onChange(t.body);
@@ -275,7 +329,7 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (matches.length > 0) insert(matches[0]); // an open template menu: Enter picks, it does not send "/sum"
-      else if (!empty && !props.busy) props.onSubmit();
+      else if (!empty && !props.busy && !blocked) props.onSubmit();
     }
   };
   return (
@@ -283,9 +337,22 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
       className="composer"
       onSubmit={(e: FormEvent) => {
         e.preventDefault();
-        if (!empty && !props.busy) props.onSubmit();
+        if (!empty && !props.busy && !blocked) props.onSubmit();
+      }}
+      onDragOver={(e) => {
+        if (img && Array.from(e.dataTransfer?.types ?? []).includes("Files")) e.preventDefault();
+      }}
+      onDrop={(e) => {
+        const files = imageFilesFrom(e.dataTransfer);
+        if (takeFiles(files)) e.preventDefault();
       }}
     >
+      {img && <ImageStrip items={img.items} onRemove={img.onRemove} onRetry={img.onRetry} />}
+      {(refusal || img?.notice) && (
+        <p data-media="notice" role="alert">
+          {refusal || img?.notice}
+        </p>
+      )}
       {matches.length > 0 && (
         <ul className="templates" aria-label="Templates">
           {matches.map((t) => (
@@ -311,6 +378,11 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
         onChange={(e) => props.onChange(e.target.value)}
         aria-describedby="composer-hint"
         onKeyDown={onKey}
+        onPaste={(e) => {
+          // Only a pasted image is taken over; pasted text goes in as usual.
+          const files = imageFilesFrom(e.clipboardData);
+          if (takeFiles(files)) e.preventDefault();
+        }}
         onBlur={() => release(false)}
         onCompositionStart={() => (composing.current = true)}
         onCompositionEnd={() => (composing.current = false)}
@@ -321,7 +393,50 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
       <span className="sr" role="status">
         {releasedNote ? "Tab now moves focus out of the code block." : ""}
       </span>
-      <button type="submit" disabled={empty || props.busy}>
+      {img?.available && (
+        <>
+          <input
+            ref={picker}
+            type="file"
+            accept={IMAGE_ACCEPT}
+            multiple
+            hidden
+            aria-label="Choose images"
+            onChange={(e) => {
+              takeFiles(Array.from(e.target.files ?? []));
+              e.target.value = "";
+            }}
+          />
+          <button type="button" className="quiet" onClick={() => picker.current?.click()}>
+            Attach image
+          </button>
+          {coarse && (
+            <>
+              <input
+                ref={camera}
+                type="file"
+                accept={IMAGE_ACCEPT}
+                capture="environment"
+                hidden
+                aria-label="Take a photo"
+                onChange={(e) => {
+                  takeFiles(Array.from(e.target.files ?? []));
+                  e.target.value = "";
+                }}
+              />
+              <button type="button" className="quiet" onClick={() => camera.current?.click()}>
+                Take photo
+              </button>
+            </>
+          )}
+        </>
+      )}
+      {blocked && (
+        <span data-media="wait" role="status">
+          Waiting for images: let uploads finish, or retry or remove a failed one.
+        </span>
+      )}
+      <button type="submit" disabled={empty || props.busy || blocked}>
         Send
         <svg className="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M5 12h14M13 6l6 6-6 6" />
@@ -381,7 +496,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const timer = useRef<number | undefined>(undefined);
   const attempts = useRef(0);
   const currentRef = useRef<string | null>(null);
-  const lastInput = useRef("");
+  const att = useImageAttachments();
+  const { discard: discardImages, release: releaseImages } = att;
   const turnsRef = useRef<Turn[]>([]);
   const cursorRef = useRef("");
   const blankChat = useRef(""); // id of the chat New chat created and nothing has been sent into yet
@@ -524,6 +640,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const open = useCallback(
     (c: ChatSummary) => {
       nav.current++;
+      discardImages(); // staged images belong to the message being written in the chat being left
       detach();
       attempts.current = 0;
       setCurrent(c.id);
@@ -657,6 +774,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
       return;
     }
     creating.current = true;
+    discardImages();
     const at = ++nav.current;
     setBanner("");
     try {
@@ -682,7 +800,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   }, [detach, newChat]);
 
   const submit = useCallback(
-    async (input: string, key: string, hold: SendHold) => {
+    async (input: string, key: string, hold: SendHold, images: AttachmentRef[] = []) => {
       // This submission owns `hold` and ends it exactly once, whichever way it leaves (SendHold.release ignores repeats).
       try {
         setBanner("");
@@ -707,10 +825,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           chat = c.id;
         }
         blankChat.current = "";
-        lastInput.current = input;
         dispatch({ k: "clear" });
-        setPending({ input, key, failure: "", hold });
-        const r = await sendMessage(chat, input, key);
+        setPending({ input, key, failure: "", hold, images });
+        const r = images.length > 0 ? await sendMessageWithImages(chat, input, key, images.map((i) => i.assetId)) : await sendMessage(chat, input, key);
         // Every outcome ends the hold: admitted deletes the server draft (and the reader's other devices lose it);
         // refused keeps it and resumes syncing whatever is typed next.
         hold.release(r.ok);
@@ -724,18 +841,19 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         }
         if (!r.ok) {
           // Kept with the same key: sending again repeats the request, it cannot double-send.
-          setPending({ input, key, failure: describeCode(r.code), hold });
+          setPending({ input, key, failure: images.length > 0 ? describeImageSend(r.code) : describeCode(r.code), hold, images });
           return;
         }
+        if (images.length > 0) releaseImages(); // admitted: the strip is done, the staged assets stay for the history thumbnails
         setPending(null);
         setChats((l) => l.map((x) => (x.id === chat ? { ...x, activeRunId: r.value.runId } : x)));
-        setTurns((t) => [...t, { seq: t.length > 0 ? t[t.length - 1].seq + 1 : 0, role: "user", text: input }]);
+        setTurns((t) => [...t, { seq: t.length > 0 ? t[t.length - 1].seq + 1 : 0, role: "user", text: input, ...(images.length > 0 ? { attachments: images } : {}) }]);
         attach(r.value.runId, chat);
       } finally {
         hold.release(false); // a path that left without an answer (no-op if already released)
       }
     },
-    [attach, current, detach, newChat, email],
+    [attach, current, detach, newChat, email, releaseImages],
   );
 
   // A disconnected run still occupies the chat: reconnect or cancel it first.
@@ -762,12 +880,25 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     return () => ctl.abort();
   }, []);
 
+  // Whether the next message may carry images is the server's answer for this chat's model (from the
+  // model catalogue), read again when the chat, its model or its run state changes. Unknown is "off".
+  const [imageInput, setImageInput] = useState<ImageInput | null>(null);
+  const [modelTick, setModelTick] = useState(0);
+  useEffect(() => setImageInput(null), [current]);
+  useEffect(() => {
+    if (!current || busy) return;
+    const ctl = new AbortController();
+    void getImageInput(current, ctl.signal).then((r) => !ctl.signal.aborted && setImageInput(r.ok ? r.value : null));
+    return () => ctl.abort();
+  }, [current, busy, modelTick]);
+
   const onSubmit = () => {
     const input = draft.trim();
     const hold = sync.hold();
     setDraft("");
     saveDraft(email, currentRef.current, "");
-    void submit(input, newIdempotencyKey(), hold);
+    const refs: AttachmentRef[] = att.items.filter((a) => a.status === "ready" && a.assetId).map((a) => ({ assetId: a.assetId as string, mediaType: a.file.type, available: true }));
+    void submit(input, newIdempotencyKey(), hold, refs);
   };
 
   const onCancel = () => {
@@ -857,9 +988,13 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           focusSeq={focus && focus.chat === current && reachOf(turns, cursor, focus.seq) === "held" ? focus.seq : null}
           onCancel={onCancel}
           onRetry={() => {
-            const last = [...turns].reverse().find((t) => t.role === "user");
-            const input = lastInput.current || last?.text || "";
-            if (input) void submit(input, newIdempotencyKey(), NO_HOLD); // a re-ask of an earlier message, not the draft
+            // Text and images come from the same turn of this chat (see retry.ts); never from state left by another send.
+            const plan = planRetry(turns);
+            if (plan.kind === "send") void submit(plan.text, newIdempotencyKey(), NO_HOLD, plan.images); // a re-ask of an earlier message, not the draft
+            else if (plan.kind === "redraft") {
+              onDraft(draft.trim() === "" ? plan.text : `${draft.replace(/\s*$/, "")}\n\n${plan.text}`);
+              setBanner(plan.why);
+            }
           }}
           onReconnect={() => {
             if (run && current) {
@@ -870,7 +1005,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           onResend={() => {
             if (!pending) return;
             // A resend gets its own hold on the same draft (the first was released when the send was refused).
-            void submit(pending.input, pending.key, pending.hold.again());
+            void submit(pending.input, pending.key, pending.hold.again(), pending.images ?? []);
           }}
         />
         </ReplyContext.Provider>
@@ -898,11 +1033,27 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             />
           </details>
         )}
-        {current && offers(inventory, "models") && <ModelPicker chatId={current} disabled={busy} />}
+        {current && offers(inventory, "models") && <ModelPicker chatId={current} disabled={busy} onChanged={() => setModelTick((n) => n + 1)} />}
         <Recorder />
         <DraftNotice sync={sync} />
         <Templates own={ownTemplates} onChange={setOwnTemplates} />
-        <Composer value={draft} busy={busy} onChange={onDraft} onSubmit={onSubmit} templates={mergeTemplates(ownTemplates)} />
+        <Composer
+          value={draft}
+          busy={busy}
+          onChange={onDraft}
+          onSubmit={onSubmit}
+          templates={mergeTemplates(ownTemplates)}
+          images={{
+            available: imageInput?.available === true,
+            reason: imageInput ? imageInput.reason : current ? "CATALOGUE_UNAVAILABLE" : "NO_CHAT",
+            items: att.items,
+            notice: att.notice,
+            pending: att.pending,
+            onFiles: att.add,
+            onRemove: att.remove,
+            onRetry: att.retry,
+          }}
+        />
       </main>
     </div>
   );

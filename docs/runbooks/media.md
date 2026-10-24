@@ -1,5 +1,7 @@
 # Media contracts and remaining gaps (#101, PRD §27.3)
 
+Updated by the #101 finish branch: sections marked **(finish)** supersede the earlier 2026-10-24 text.
+
 The 2026-10-24 probes used separate disposable profiles and two newly labelled synthetic media
 TEST users. Synthetic identities exercise Antares authorization; they do not test Google OIDC.
 Production stayed on `458820cee34c1b280e3eb3d5d76fe9241be2f2cf`. Phase 0 remains FAIL and
@@ -36,22 +38,86 @@ Sanitized HTTP fixtures:
 - [`t101-invalid-image-input.body.json`](../hermes/fixtures/t101-invalid-image-input.body.json)
 - [`t101-artifact-upload.body.json`](../hermes/fixtures/t101-artifact-upload.body.json)
 
-## Acceptance status
+## Model capability source (finish)
 
-| Requirement | Verified behavior | Remaining work |
+Per the owner (#101 comment, 2026-10-24): the model catalogue and capabilities come from **kenari.id**, the
+provider Hermes is configured with, not from Hermes' model inventory. `GET https://kenari.id/v1/models` is public
+and unauthenticated; it publishes `modalities.input` / `modalities.output` per model (read 2026-10-24: 111 models,
+combinations such as `[text,image,file]→[text]`, `[text]→[image]`, `[text]→[audio]`, `[text,image]→[video]`).
+`deepseek-v4-1-flash`, the model Hermes runs today, lists `image` input. A trimmed real copy is
+[`internal/kenari/testdata/models.json`](../../internal/kenari/testdata/models.json).
+
+- `internal/kenari` reads it with no credential, no cookie and no redirects, caches 10 minutes, serves a last good answer
+  for at most an hour during an outage, then fails closed. A model it does not list is *unknown*, never "text only".
+- Execution stays Hermes. The model checked is the model run: for an image turn Antares resolves the chat's saved
+  choice (else the profile default Hermes reports, which says *which* model, not what it can do), checks that id in the
+  catalogue, and sends that same provider/model explicitly in the run body. `TestImageSendUsesCheckedModelAndInlineBytes`
+  and `TestImageSendChecksTheChatsChosenModelNotTheDefault` assert the id on the wire.
+- Fail closed, visibly: text-only model, unlisted model, catalogue unreachable or not configured → `GET /api/chats/{id}/input`
+  reports `available:false` with a reason, the composer hides the picker and refuses a pasted/dropped image with that
+  reason, and `POST …/messages` with `imageAssetIds` answers `422 IMAGE_INPUT_UNAVAILABLE`. An image is never dropped to
+  let a text-only send through.
+- Deployment note: the Antares container needs outbound HTTPS to `kenari.id`. Without it image input stays off
+  (`CATALOGUE_UNAVAILABLE`); nothing else changes. No new configuration was added: the URL is a constant.
+
+## Verified image transport (finish)
+
+Read from the deployed container's source, read-only (`docker exec -u hermes hermes …`, no request made):
+`POST /v1/runs` takes `input` as a string or a messages list and uses the last message's `content`
+(`gateway/platforms/api_server_runs.py` `_run_user_message`, line 670). Unlike `/v1/chat/completions`
+(`_normalize_multimodal_content`, `api_server.py:503`) the runs path does **not** normalise content parts, so Antares sends the
+canonical parts the agent pipeline understands: `{"type":"text"}` and `{"type":"image_url","image_url":{"url":"data:image/…;base64,…"}}`.
+`agent.run_conversation` accepts a list `user_message` (`agent/conversation_loop.py:167`). The whole request is capped at
+10,000,000 bytes (`MAX_REQUEST_BYTES`, `api_server.py:235`); base64 adds a third, so Antares allows 4 images and 6 MiB of
+image bytes per message. The history read (`inline_images=false`, `hermes_cli/web_routers/sessions.py:690`) renders each image as `[image]`. That marker is
+**not** used to find a turn. A thumbnail is linked only to a transcript turn that verifies: the run reached Hermes (has a Hermes
+run id; a run refused before admission is never a candidate), the turn sits at the same position among the chat's user turns as
+the run does among the chat's accepted runs, and the turn's text equals the run's own text (salted digest stored at send,
+`turn_digest`) followed by exactly as many `[image]` placeholders as images sent. Any miss (steered or compacted history, rewritten
+text, failed admission, literal `[image]` typed by the user) leaves the turn unlinked. "Try again" re-sends a turn's text and
+images together from that turn of the chat on screen; an unlinked or since-deleted image turn is not re-sent without its images,
+its text goes back into the box instead.
+
+**Not verified live**: that the selected model actually *receives and describes* the image through `/v1/runs`. That needs a
+credentialed run, which this development authorization excludes. See "Open" below.
+
+## Acceptance status (finish)
+
+Status words follow PRD §27.3's table: IMPLEMENTED / TESTED / UPSTREAM_BLOCKED / OPEN.
+
+| Requirement | Status | Evidence |
 |---|---|---|
-| MEDIA-EXT-001 | Existing API stages png/jpeg/gif with magic/declared-format agreement, 8 MiB/25 MP limits, owner-bound IDs and private responses. Live spoofed MIME, SVG, byte and pixel refusals passed. | Composer thumbnail/progress/retry/camera UI is not built. It needs a verified usable selected-model input capability before images can be sent. |
-| MEDIA-EXT-002 | Inline image run admission exists upstream. Model metadata supplies no vision guarantee; inference failed with provider 401. | Fix upstream authentication and establish selected-model vision support, then implement owner-resolved image input in Antares. No input is silently discarded. |
-| MEDIA-EXT-003 | User B receives 404 on user A's staged image GET/DELETE; A retains access. Authenticated download matches the uploaded bytes and is `private, no-store` plus `nosniff`. | Generated-image ingestion/display/download replay remains unverified: provider authentication prevents generation, and browser artifacts are disabled and one-shot. Capture a real owned output reference first. |
-| MEDIA-EXT-004 | No generated-video result or runnable video job was observed. | Upstream output/job contract and successful generation are required before progress, playback and retry UI. |
-| MEDIA-EXT-005 | Existing private audio staging is covered by package tests; no successful generated audio result was captured. | TTS output contract and a supported transcription path remain unverified. Do not infer them from agent tool names or invent native audio routes. |
-| MEDIA-EXT-006 | Existing tool-progress handling is tested; these failed model turns produced no media tool lifecycle. | Capture a successful media tool run before claiming media activity/output presentation. |
-| MEDIA-EXT-007 | Media is not rendered, so there is no eager preview fetch. Existing staged asset download is an attachment response. | Media rendering, range streaming and §14 media benchmarks are not delivered. Add and measure them with the first verified media consumer. |
+| MEDIA-EXT-001 | IMPLEMENTED, TESTED | Paste, drop, file picker, and a camera button on coarse-pointer devices; chip with name/type/size/thumbnail/progress/retry/remove (`web/src/ImageAttachments.tsx`, `ChatImages.test.tsx`, `ImageAttachments.test.tsx`). Magic bytes, spoofed MIME, SVG/WebP refusal, 8 MiB/25 MP limits, owner-bound ids, `private, no-store`: existing `TestImageStagingOwnerOnlyAndValidated`, `TestImageUploadRefusals`. Real camera capture is browser/device dependent and was not run on a device. |
+| MEDIA-EXT-002 | IMPLEMENTED, TESTED (Antares side); live model reception OPEN | Kenari-sourced capability, pinned model id, refusal cases: `TestImageSendUsesCheckedModelAndInlineBytes`, `TestImageSendRefusedWhenVisionIsNotConfirmed`, `TestHermesInventoryDoesNotDecideVision`, `TestCreateRunSendsImagesInline`, `ChatImages.test.tsx`. |
+| MEDIA-EXT-003 | User-sent images: IMPLEMENTED, TESTED. Generated images: UPSTREAM_BLOCKED | Thumbnail, lightbox, download, history replay while the asset exists, "no longer available" after deletion: `TestHistoryLinksOwnImagesAndSurvivesDeletion`, `TestAssetPreviewHeadersAndRange`, `ImageAttachments.test.tsx`. Cross-owner: `TestImageCrossOwnerDenied` (B cannot send, preview or delete A's image; same 404 as an unknown id). Generated: below. |
+| MEDIA-EXT-004 | UPSTREAM_BLOCKED | No generated-video result or async job contract has been observed; video output goes through the same blocked delivery as images. |
+| MEDIA-EXT-005 | PARTIAL | Owned-audio player (`OwnedAudio`: native controls, `preload="none"`, Range-capable source, download) is built and tested; nothing feeds it generated audio (blocked below). Voice input (Recorder) is unchanged. TTS tool output and a native `/v1/audio/speech` are not conflated and neither is wired. |
+| MEDIA-EXT-006 | PARTIAL | A `MEDIA:<host path>` tag in an assistant turn or streaming reply is replaced with a statement; the path is never shown (`web/src/mediaTags.ts`, `ChatImages.test.tsx`). No media tool lifecycle has been observed, so media activity presentation is not claimed. |
+| MEDIA-EXT-007 | PARTIAL | Lazy thumbnails, on-demand audio, `Range` support via `http.ServeContent` (`TestAssetPreviewHeadersAndRange`). §14 media benchmarks were not run. |
 
-The protocol exists, while several model/output guarantees remain unverified. This report does
-not close #101, claim complete multimedia support, or turn missing UI into a passed acceptance test.
+## Generated media: exact blocker (finish)
 
-## Commands and evidence
+Generated images and audio are returned by Hermes' tools as `MEDIA:<path>` where `<path>` is a file on the Hermes host
+(`tools/tts_tool.py:358`). Hermes resolves those tags to inline data URLs only in `/v1/chat/completions` and
+`/v1/responses` (`_resolve_media_to_data_urls`, called from `api_server_openai_routes.py:980,1179,1422`, images only,
+≤ 5 MiB). **`/v1/runs`, the route Antares uses, never calls it**, so the tag reaches Antares unresolved. Antares may not
+read Hermes' data directories (AGENTS.md), and the artifact routes are one-shot, principal-scoped and disabled
+(`404 browser_control_disabled`, above). Nothing was invented around this.
+
+Smallest change that unblocks it, all on the Hermes side, none in Antares:
+apply the same tag-to-bytes resolution (or an owner-scoped, durable media download route) to the `/v1/runs` final output,
+transcript and events. A config-only alternative does not exist: enabling `browser_extension_control` exposes browser control,
+which §9A.6 forbids enabling automatically, and its downloads are one-shot.
+
+## Open
+
+- Live vision proof: one credentialed run through a disposable scoped profile with `internal/chat/testdata/scene-320x240.png`
+  against `deepseek-v4-1-flash`, confirming the answer describes the picture. Excluded by this authorization; needs the
+  owner's go-ahead.
+- Generated image/audio/video display (blocked above), TTS/transcription contracts, §14 media benchmarks.
+- Camera capture on a real phone; real-browser paste/drag behaviour (jsdom only here).
+
+## Commands and evidence (2026-10-24 probes)
 
 The authenticated helper `POST /provision` created one new random profile for the upstream probe.
 Scoped calls: `GET /v1/capabilities`, `GET /v1/models`, `GET /api/model/options`,
