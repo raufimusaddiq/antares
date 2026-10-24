@@ -335,19 +335,29 @@ func TestTemplateValidationAndBounds(t *testing.T) {
 	a := newApp(t)
 	u := a.user("a")
 	for name, body := range map[string]map[string]string{
-		"empty name":   {"name": "", "body": "x"},
-		"space inside": {"name": "a b", "body": "x"},
-		"slash":        {"name": "/run", "body": "x"},
-		"dash first":   {"name": "-abc", "body": "x"},
-		"underscore 1": {"name": "_abc", "body": "x"},
-		"too long":     {"name": strings.Repeat("a", 33), "body": "x"},
-		"empty body":   {"name": "ok", "body": ""},
-		"big body":     {"name": "ok", "body": strings.Repeat("x", store.MaxTemplateBody+1)},
-		"nul":          {"name": "ok", "body": "a\x00b"},
+		"empty name":     {"name": "", "body": "x"},
+		"space inside":   {"name": "a b", "body": "x"},
+		"slash":          {"name": "/run", "body": "x"},
+		"dash first":     {"name": "-abc", "body": "x"},
+		"underscore 1":   {"name": "_abc", "body": "x"},
+		"too long":       {"name": strings.Repeat("a", 33), "body": "x"},
+		"empty body":     {"name": "ok", "body": ""},
+		"big body":       {"name": "ok", "body": strings.Repeat("x", store.MaxTemplateBody+1)},
+		"nul":            {"name": "ok", "body": "a\x00b"},
+		"cjk over bytes": {"name": "ok", "body": strings.Repeat("漢", 3000)}, // 3000 characters, 9000 bytes
 	} {
 		if _, code := u.tpl("POST", "/api/me/templates", body); code != 422 {
 			t.Errorf("%s accepted: %d", name, code)
 		}
+	}
+	if r, code := u.tpl("POST", "/api/me/templates", map[string]string{"name": "ok", "body": strings.Repeat("漢", 3000)}); code != 422 || r.Error.Code != "TEMPLATE_BODY_TOO_LARGE" {
+		t.Errorf("9000-byte body = %d %+v", code, r)
+	}
+	if w := u.do("POST", "/api/me/templates", nil, map[string]string{"name": "ok", "body": strings.Repeat("漢", 3000)}); !strings.Contains(w.Body.String(), "9000 bytes; the limit is 8192 bytes") {
+		t.Errorf("refusal does not say why: %s", w.Body.String())
+	}
+	if r, code := u.tpl("POST", "/api/me/templates", map[string]string{"name": "ok", "body": ""}); code != 422 || r.Error.Code != "TEMPLATE_BODY_REQUIRED" {
+		t.Errorf("empty body = %d %+v", code, r)
 	}
 	if r, code := u.tpl("POST", "/api/me/templates", map[string]string{"name": strings.Repeat("a", store.MaxTemplateName), "body": "x"}); code != 201 {
 		t.Errorf("a name of exactly MaxTemplateName characters = %d %+v", code, r)

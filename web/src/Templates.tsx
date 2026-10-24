@@ -1,12 +1,12 @@
 import { useState, type FormEvent } from "react";
-import { addTemplate, removeTemplate, saveTemplate, type OwnTemplate } from "./draftApi";
+import { addTemplate, draftBytes, MAX_TEMPLATE_BYTES, removeTemplate, saveTemplate, type OwnTemplate } from "./draftApi";
 
 // Your own slash templates: add, edit and delete. A template is text the composer inserts for you to
 // edit; choosing one runs nothing. Built-in ones are not listed here and cannot be changed.
 
 const WORDS = {
   taken: "You already have a template with that name.",
-  invalid: "A name is 1-32 characters: a letter or digit first, then letters, digits, - or _. The text is required.",
+  invalid: "The server did not accept that name or text.",
   gone: "That template no longer exists. It may have been deleted on another device.",
   failed: "Could not save the template.",
 } as const;
@@ -23,14 +23,19 @@ export function Templates({ own, onChange }: { own: OwnTemplate[]; onChange: (l:
   };
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    const bytes = draftBytes(body);
+    if (bytes > MAX_TEMPLATE_BYTES) {
+      // The bound is bytes (a CJK character is 3), and the box counts characters: say the real reason, send nothing.
+      return setMsg(`The text is ${bytes.toLocaleString("en-US")} bytes; the limit is ${MAX_TEMPLATE_BYTES.toLocaleString("en-US")} bytes. Shorten it.`);
+    }
     if (editing === null) {
       const r = await addTemplate(name, body);
-      if (!r.ok) return setMsg(WORDS[r.reason]);
+      if (!r.ok) return setMsg(r.message ?? WORDS[r.reason]);
       onChange([...own, r.value]);
     } else {
       const r = await saveTemplate(editing, name, body);
       if (!r.ok) {
-        setMsg(WORDS[r.reason]);
+        setMsg(r.message ?? WORDS[r.reason]);
         if (r.reason === "gone") {
           onChange(own.filter((x) => x.id !== editing));
           reset();

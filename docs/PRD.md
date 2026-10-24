@@ -1397,7 +1397,7 @@ All endpoints below are **new Chat UI Go application endpoints**. They are not c
 | Push preference | `PUT /api/me/notifications` | App user preference | Owner-only; admin suspension overrides |
 | Chat search | `GET /api/search/chats?q=&cursor=&limit=`, `GET /api/chats/{id}/search?q=&cursor=` | Verified native Hermes search **or** owned SQLite FTS derived index | Owner filter included *inside* search query, not client filter |
 | Drafts | `GET/PUT/DELETE /api/chats/{id}/draft`; `GET/PUT/DELETE /api/me/new-chat-draft` | App SQLite `drafts` | Owner+revision/ETag to resolve multi-device concurrent edits |
-| Templates | `GET/POST /api/me/templates`, `PATCH/DELETE /api/me/templates/{id}` | App SQLite user templates | Text only; admin defaults optionally separate read-only route |
+| Templates | `GET/POST /api/me/templates`, `PUT/DELETE /api/me/templates/{id}` | App SQLite user templates | Text only; admin defaults optionally separate read-only route |
 | Voice upload | `POST /api/assets` (audio kind), `POST /api/assets/{id}/transcribe` | Owned media staging; Hermes-side STT **only if documented and verified** | Capability-gated; no direct provider in Chat UI; rate/size/duration caps |
 | Context / usage | `GET /api/chats/{id}/usage`, `GET /api/me/usage?range=`, `GET /api/me/budget`, `PUT /api/me/budget` | Hermes session/run usage; sanitized price catalog; app budget prefs | Owner-only, price provenance, unknown ≠ 0 |
 | Regenerate / edit / rewind | `POST /api/chats/{id}/regenerate`, `POST /api/chats/{id}/edit-turn`, `POST /api/chats/{id}/rewind` | **Only** verified Hermes turn mutation/fork semantic; never raw DB or Python | Owner + pending-run guard + clear destructive confirmation + capability flag |

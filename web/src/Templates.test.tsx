@@ -55,7 +55,7 @@ describe("editing own templates", () => {
   });
 
   it("invalid input and a server failure keep the template unchanged", async () => {
-    stub(422, { error: { code: "INVALID_REQUEST" } });
+    stub(422, { error: { code: "TEMPLATE_NAME_INVALID", message: "A template name is 1-32 characters: a letter or digit first, then letters, digits, - or _" } });
     render(<Host initial={[one]} />);
     fireEvent.click(screen.getByRole("button", { name: "Edit template deploy" }));
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
@@ -73,6 +73,28 @@ describe("editing own templates", () => {
     fireEvent.click(screen.getByRole("button", { name: "Save changes" }));
     expect((await screen.findByRole("alert")).textContent).toContain("no longer exists");
     expect(latest).toEqual([]);
+  });
+
+  it("a text over the byte bound is refused before sending, with the real size", async () => {
+    const f = stub(201, one);
+    render(<Host initial={[]} />);
+    fireEvent.change(fields().name, { target: { value: "cjk" } });
+    fireEvent.change(fields().text, { target: { value: "漢".repeat(3000) } }); // 3000 characters, 9000 bytes
+    fireEvent.click(screen.getByRole("button", { name: "Add template" }));
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("9,000 bytes");
+    expect(alert.textContent).toContain("8,192 bytes");
+    expect(alert.textContent).not.toContain("required");
+    expect(f).not.toHaveBeenCalled();
+  });
+
+  it("a server 422 shows the server's own message, not a generic one", async () => {
+    stub(422, { error: { code: "TEMPLATE_BODY_TOO_LARGE", message: "The template text is 9000 bytes; the limit is 8192 bytes" } });
+    render(<Host initial={[]} />);
+    fireEvent.change(fields().name, { target: { value: "x" } });
+    fireEvent.change(fields().text, { target: { value: "short" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add template" }));
+    expect((await screen.findByRole("alert")).textContent).toBe("The template text is 9000 bytes; the limit is 8192 bytes");
   });
 
   it("Cancel returns to adding without saving", () => {

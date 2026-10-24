@@ -93,19 +93,30 @@ export async function listOwnTemplates(): Promise<OwnTemplate[] | null> {
 }
 
 /** `taken` = the name is already used; `invalid` = the server refused the name or body. */
-export async function addTemplate(name: string, body: string): Promise<{ ok: true; value: OwnTemplate } | { ok: false; reason: "taken" | "invalid" | "failed" }> {
+/** The server bounds a template's text at this many BYTES (internal/store MaxTemplateBody). */
+export const MAX_TEMPLATE_BYTES = 8192;
+
+/** `message` is the server's own reason for a 422 (TEMPLATE_* codes), shown as it is. */
+export type TemplateFail<R extends string> = { ok: false; reason: R; message?: string };
+
+function templateMessage(r: { status: number; json: unknown }): string | undefined {
+  const e = rec(rec(r.json).error);
+  return r.status === 422 && typeof e.code === "string" && e.code.startsWith("TEMPLATE_") && typeof e.message === "string" ? e.message.slice(0, 200) : undefined;
+}
+
+export async function addTemplate(name: string, body: string): Promise<{ ok: true; value: OwnTemplate } | TemplateFail<"taken" | "invalid" | "failed">> {
   const r = await send("POST", "/api/me/templates", undefined, { name, body });
   const t = r.status === 201 ? parseTemplate(r.json) : null;
   if (t) return { ok: true, value: t };
-  return { ok: false, reason: r.status === 409 ? "taken" : r.status === 422 ? "invalid" : "failed" };
+  return { ok: false, reason: r.status === 409 ? "taken" : r.status === 422 ? "invalid" : "failed", message: templateMessage(r) };
 }
 
 /** Change a template in place. `gone` = it no longer exists (deleted on another device). */
-export async function saveTemplate(id: string, name: string, body: string): Promise<{ ok: true; value: OwnTemplate } | { ok: false; reason: "taken" | "invalid" | "gone" | "failed" }> {
+export async function saveTemplate(id: string, name: string, body: string): Promise<{ ok: true; value: OwnTemplate } | TemplateFail<"taken" | "invalid" | "gone" | "failed">> {
   const r = await send("PUT", `/api/me/templates/${encodeURIComponent(id)}`, undefined, { name, body });
   const t = r.status === 200 ? parseTemplate(r.json) : null;
   if (t) return { ok: true, value: t };
-  return { ok: false, reason: r.status === 409 ? "taken" : r.status === 422 ? "invalid" : r.status === 404 ? "gone" : "failed" };
+  return { ok: false, reason: r.status === 409 ? "taken" : r.status === 422 ? "invalid" : r.status === 404 ? "gone" : "failed", message: templateMessage(r) };
 }
 
 export async function removeTemplate(id: string): Promise<boolean> {

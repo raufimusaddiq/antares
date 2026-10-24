@@ -56,6 +56,22 @@ func (s draftScope) args(userID string) []any {
 	return []any{userID}
 }
 
+// errCASMiss means a compare-and-set UPDATE matched no row although the transaction had just read the
+// expected revision. The write lock makes that impossible today; if it ever happens the write must fail
+// loudly, never be reported as saved.
+var errCASMiss = errors.New("store: draft compare-and-set matched no row")
+
+// oneRow turns an UPDATE's result into an error unless exactly one row changed.
+func oneRow(res sql.Result, err error) error {
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return errCASMiss
+	}
+	return nil
+}
+
 // requireChat fails with ErrNoChat unless the chat is the user's own live chat.
 func (s draftScope) requireChat(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
@@ -117,8 +133,8 @@ func (s draftScope) put(ctx context.Context, db *sql.DB, userID, body string, if
 		}
 	} else {
 		w := s.where()
-		_, err = tx.ExecContext(ctx, `UPDATE `+s.table+` SET body = ?, revision = ?, updated_at = ? WHERE `+w+` AND revision = ?`,
-			append([]any{body, next.Revision, next.UpdatedAt}, append(s.args(userID), cur.Revision)...)...)
+		err = oneRow(tx.ExecContext(ctx, `UPDATE `+s.table+` SET body = ?, revision = ?, updated_at = ? WHERE `+w+` AND revision = ?`,
+			append([]any{body, next.Revision, next.UpdatedAt}, append(s.args(userID), cur.Revision)...)...))
 	}
 	if err != nil {
 		return Draft{}, err
@@ -151,8 +167,8 @@ func (s draftScope) del(ctx context.Context, db *sql.DB, userID string, ifRevisi
 	}
 	next := Draft{Revision: cur.Revision + 1, UpdatedAt: ts(now)}
 	w := s.where()
-	if _, err := tx.ExecContext(ctx, `UPDATE `+s.table+` SET body = '', revision = ?, updated_at = ? WHERE `+w+` AND revision = ?`,
-		append([]any{next.Revision, next.UpdatedAt}, append(s.args(userID), cur.Revision)...)...); err != nil {
+	if err := oneRow(tx.ExecContext(ctx, `UPDATE `+s.table+` SET body = '', revision = ?, updated_at = ? WHERE `+w+` AND revision = ?`,
+		append([]any{next.Revision, next.UpdatedAt}, append(s.args(userID), cur.Revision)...)...)); err != nil {
 		return Draft{}, err
 	}
 	return next, tx.Commit()

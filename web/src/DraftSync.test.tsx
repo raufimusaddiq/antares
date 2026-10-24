@@ -335,6 +335,24 @@ describe("share to draft", () => {
     expect(srv.drafts.get(NEW)).toEqual({ body: "local text\n\nX", revision: 3 });
   });
 
+  it("a share taken while the first read failed is in both conflict choices once the read succeeds", async () => {
+    const NEW = "/api/me/new-chat-draft";
+    srv.setDown(true);
+    await mount({ chat: null, initial: "local text", share: "X" });
+    await settle();
+    expect(api.text()).toBe("local text\n\nX"); // consumed by the local candidate while offline
+    srv.drafts.set(NEW, { body: "server text", revision: 2 });
+    srv.setDown(false);
+    await act(async () => api.sync.retry());
+    await settle();
+    expect(api.sync.conflict).toEqual({ theirs: "server text\n\nX" });
+    expect(srv.drafts.get(NEW)).toEqual({ body: "server text", revision: 2 });
+    await act(async () => api.sync.useTheirs());
+    await settle();
+    expect(api.text()).toBe("server text\n\nX"); // the share is still there
+    expect(srv.drafts.get(NEW)).toEqual({ body: "server text\n\nX", revision: 3 });
+  });
+
   it("lands in the new-chat draft, appended, and is never sent", async () => {
     srv.drafts.set("/api/me/new-chat-draft", { body: "earlier", revision: 1 });
     await mount({ chat: null, share: "shared words" });

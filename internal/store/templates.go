@@ -4,8 +4,10 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"strings"
 	"time"
+
+	"modernc.org/sqlite"
+	sqlite3 "modernc.org/sqlite/lib"
 )
 
 // Personal slash templates (PRD §21.6, UXP-006, issue #107). A template is stored text
@@ -40,7 +42,12 @@ func scanTemplate(row interface{ Scan(...any) error }) (Template, error) {
 	return t, err
 }
 
-func isUnique(err error) bool { return err != nil && strings.Contains(err.Error(), "UNIQUE") }
+// isNameTaken is true only for a violation of UNIQUE (user_id, name). It matches the driver's extended
+// result code, not the error text, so a primary-key collision on id is not reported as a name conflict.
+func isNameTaken(err error) bool {
+	var e *sqlite.Error
+	return errors.As(err, &e) && e.Code() == sqlite3.SQLITE_CONSTRAINT_UNIQUE
+}
 
 // ListTemplates returns the owner's templates by name.
 func ListTemplates(ctx context.Context, db *sql.DB, userID string) ([]Template, error) {
@@ -78,7 +85,7 @@ func CreateTemplate(ctx context.Context, db *sql.DB, userID, name, body string, 
 	t := Template{ID: NewID(), UserID: userID, Name: name, Body: body, CreatedAt: ts(now), UpdatedAt: ts(now)}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO prompt_templates (`+templateCols+`) VALUES (?,?,?,?,?,?)`,
 		t.ID, t.UserID, t.Name, t.Body, t.CreatedAt, t.UpdatedAt); err != nil {
-		if isUnique(err) {
+		if isNameTaken(err) {
 			return Template{}, ErrTemplateName
 		}
 		return Template{}, err
@@ -90,7 +97,7 @@ func CreateTemplate(ctx context.Context, db *sql.DB, userID, name, body string, 
 func UpdateTemplate(ctx context.Context, db *sql.DB, userID, id, name, body string, now time.Time) (Template, error) {
 	res, err := db.ExecContext(ctx, `UPDATE prompt_templates SET name = ?, body = ?, updated_at = ? WHERE id = ? AND user_id = ?`,
 		name, body, ts(now), id, userID)
-	if isUnique(err) {
+	if isNameTaken(err) {
 		return Template{}, ErrTemplateName
 	}
 	if err != nil {

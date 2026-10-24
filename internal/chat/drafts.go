@@ -219,9 +219,13 @@ func validTemplate(w http.ResponseWriter, b *templateBody) bool {
 	b.Name = strings.ToLower(strings.TrimSpace(b.Name))
 	switch {
 	case !templateNameRE.MatchString(b.Name):
-		apiError(w, http.StatusUnprocessableEntity, "INVALID_REQUEST", templateNameRule)
-	case b.Body == "" || len(b.Body) > store.MaxTemplateBody || !utf8.ValidString(b.Body) || strings.ContainsRune(b.Body, 0):
-		apiError(w, http.StatusUnprocessableEntity, "INVALID_REQUEST", "A template body is 1-8192 bytes of text")
+		apiError(w, http.StatusUnprocessableEntity, "TEMPLATE_NAME_INVALID", templateNameRule)
+	case b.Body == "":
+		apiError(w, http.StatusUnprocessableEntity, "TEMPLATE_BODY_REQUIRED", "A template needs some text")
+	case len(b.Body) > store.MaxTemplateBody:
+		apiError(w, http.StatusUnprocessableEntity, "TEMPLATE_BODY_TOO_LARGE", fmt.Sprintf("The template text is %d bytes; the limit is %d bytes", len(b.Body), store.MaxTemplateBody))
+	case !utf8.ValidString(b.Body) || strings.ContainsRune(b.Body, 0):
+		apiError(w, http.StatusUnprocessableEntity, "TEMPLATE_BODY_INVALID", "The template text is not valid text")
 	default:
 		return true
 	}

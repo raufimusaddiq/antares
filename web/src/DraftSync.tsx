@@ -9,6 +9,8 @@ import { draftBytes, MAX_DRAFT_BYTES, readDraft, removeDraft, sharedText, writeD
 
 const DEBOUNCE_MS = 800;
 
+const withShare = (base: string, share: string) => (base.trim() === "" ? share : `${base.replace(/\s*$/, "")}\n\n${share}`);
+
 interface Slot {
   chatId: string | null;
   rev: number;
@@ -20,6 +22,7 @@ interface Slot {
   paused: boolean;
   busy: boolean;
   stale: string | null; // the previous chat's text still in the box until the composer resets; never ours
+  shareText: string | null; // the OS share already added to the box: any conflict candidate built later must carry it too
   shared: boolean; // the OS share has been added to this slot's draft
 }
 
@@ -80,7 +83,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       s.rev = r.revision;
       s.synced = r.body; // what the server really holds now, so a later edit back to the old text is still a change
       s.paused = true;
-      if (slot.current === s) setConflict({ theirs: r.body });
+      if (slot.current === s) setConflict({ theirs: s.shareText === null ? r.body : withShare(r.body, s.shareText) });
       return;
     } else {
       if (slot.current === s) setOffline(true);
@@ -116,7 +119,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
         // server moved on since: then the other device's text is a conflict, not something to delete.
         if (!ahead) {
           s.paused = true;
-          setConflict({ theirs: r.body });
+          setConflict({ theirs: s.shareText === null ? r.body : withShare(r.body, s.shareText) });
         }
       } else if (local === "" || local === r.body || ahead || (r.body === "" && r.revision === 0)) {
         if (local === "" && r.body !== "") setDraftRef.current(r.body);
@@ -127,7 +130,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
         // Both sides hold something the other has not seen. A server body of "" with a revision is a draft
         // that another device sent or deleted: this browser's older text must be chosen, not silently re-saved.
         s.paused = true;
-        setConflict({ theirs: r.body });
+        setConflict({ theirs: s.shareText === null ? r.body : withShare(r.body, s.shareText) });
       }
       s.loaded = true;
       void flush(s);
@@ -141,7 +144,7 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
     // resets, and that text must never be read as this chat's.
     const first = slot.current === null; // nothing was on screen before: the box is this chat's own
     const own = first && draftRef.current !== "" ? draftRef.current : loadDraft(email, chatId);
-    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, shared: false };
+    const s: Slot = { chatId, rev: 0, synced: "", latest: own, stale: !first && draftRef.current !== own ? draftRef.current : null, loaded: false, loading: false, attempted: false, paused: false, busy: false, shareText: null, shared: false };
     slot.current = s;
     setConflict(null);
     setOffline(false);
@@ -181,9 +184,9 @@ export function useDraftSync(email: string, chatId: string | null, draft: string
       window.clearInterval(id);
       if (s.shared) return;
       s.shared = true;
-      const add = (base: string) => (base.trim() === "" ? share : `${base.replace(/\s*$/, "")}\n\n${share}`);
-      setConflict((c) => (c ? { theirs: add(c.theirs) } : c));
-      setDraftRef.current(add(s.latest));
+      s.shareText = share; // from here on every conflict candidate is built with it, wherever the conflict comes from
+      setConflict((c) => (c ? { theirs: withShare(c.theirs, share) } : c));
+      setDraftRef.current(withShare(s.latest, share));
       onShared();
     }, 50);
     return () => window.clearInterval(id);
