@@ -2,6 +2,7 @@ import "./zodConfig"; // must stay first: see the file
 import { createLibrary, defineComponent } from "@openuidev/react-lang";
 import { lazy, Suspense, useContext, useId, useState } from "react";
 import { z } from "zod/v4";
+import { runAction } from "./actions";
 import { MAX_REPLY, ReplyContext } from "./reply";
 
 // Charts are drawn by a separate on-demand chunk (PERF-001): the library holds only the schema.
@@ -122,7 +123,7 @@ const Chart = defineComponent({
 function ReplyButton({ label, text: reply, disabled }: { label: string; text: string; disabled?: boolean }) {
   const add = useContext(ReplyContext);
   return (
-    <button type="button" className="ou-button" disabled={!add || disabled} onClick={() => add?.(reply)}>
+    <button type="button" className="ou-button" disabled={!add || disabled} onClick={() => runAction("reply", reply, { reply: add })}>
       {label}
     </button>
   );
