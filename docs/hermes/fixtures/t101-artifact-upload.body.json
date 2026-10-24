@@ -1,0 +1,8 @@
+{
+  "error": {
+    "message": "Browser control is not enabled on this server.",
+    "type": "invalid_request_error",
+    "param": null,
+    "code": "browser_control_disabled"
+  }
+}
