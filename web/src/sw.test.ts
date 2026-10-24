@@ -57,6 +57,13 @@ describe("public-only service worker", () => {
     expect(w.entries.has(`${origin}/api/me`)).toBe(false);
   });
 
+  it("still serves an optional chunk when the cache write is rejected", async () => {
+    const w = worker();
+    w.cache.put.mockRejectedValue(new Error("QuotaExceededError"));
+    const { result } = await w.fire("fetch", { request: { url: `${origin}${optionalPaths[0]}`, method: "GET", mode: "cors" } });
+    expect(await (result as Response).text()).toBe("public");
+  });
+
   it("does not cache a failed optional chunk response", async () => {
     const w = worker();
     w.fetch.mockResolvedValue(new Response("nope", { status: 500 }));

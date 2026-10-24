@@ -38,8 +38,8 @@ writeFileSync(join(dist, "offline.html"), readFileSync(join(dist, "offline.html"
 const hashed = readdirSync(join(dist, "assets")).filter(name => /-[\w-]+\.(js|css)$/.test(name)).sort().map(name => `/assets/${name}`);
 // Install-time precache is what the shell loads (entry, runtime, CSS); every other chunk is on demand
 // and cached by the worker on first use.
-const shell = readFileSync(join(dist, "index.html"), "utf8");
-const isShell = path => shell.includes(path) || path.startsWith("/assets/offline-");
+const shell = new Set([...readFileSync(join(dist, "index.html"), "utf8").matchAll(/(?:src|href)="([^"]+)"/g)].map(m => m[1]));
+const isShell = path => shell.has(path) || path.startsWith("/assets/offline-");
 const precache = ["/offline.html", ...hashed.filter(isShell)];
 const optional = hashed.filter(path => !isShell(path));
 writeFileSync(join(dist, "sw.js"), readFileSync(join(web, "public", "sw.js"), "utf8")

@@ -44,7 +44,10 @@ self.addEventListener("fetch", event => {
       if (hit) return hit;
       const response = await fetch(request);
       if (optional.has(request.url) && response.ok && !response.redirected && !/no-store/i.test(response.headers.get("Cache-Control") || "")) {
-        await cache.put(request, response.clone());
+        // A full or failing cache must not cost the page a chunk it already downloaded.
+        try {
+          await cache.put(request, response.clone());
+        } catch {}
       }
       return response;
     })());
