@@ -61,8 +61,11 @@ writes only `audit_log` because it has no actor and is not an approval decision.
   is rejected (it would nest the database a level down).
 - The database file and any existing `-wal`/`-shm` sidecars are forced to 0600 before the first
   connection, and again after the pragmas run (SQLite creates sidecars lazily and only copies the db
-  file's mode when it creates them). Each is opened `O_NOFOLLOW` and chmod-ed via the descriptor, so a symlinked or non-regular
-  sidecar is refused, never followed. Sidecars from a restore are chmod-ed, never deleted: deleting a
+  file's mode when it creates them). Linux `O_PATH|O_NOFOLLOW` pins each regular file; chmod uses
+  `/proc/self/fd/<fd>`. Closing an `O_PATH` handle preserves SQLite's POSIX locks, while closing a
+  separate ordinary descriptor for the same inode would release that process's locks. The host
+  must provide `/proc/self/fd`; failure refuses startup. Symlinked or non-regular sidecars are
+  refused. Sidecars from a restore are chmod-ed, never deleted: deleting a
   WAL loses committed rows.
 - Paths containing `?`, `#` or `%` are rejected (the driver would rewrite them), and
   `PRAGMA database_list` proves the file the driver opened is the file that was secured.
