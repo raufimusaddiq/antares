@@ -27,10 +27,11 @@ import { ModelPicker } from "./ModelPicker";
 import { mergeNewest, prependOlder, reachOf } from "./history";
 import { SearchPanel } from "./Search";
 import { MessageBody } from "./MessageBody";
+import { Markdown } from "./Markdown";
 import { MAX_REPLY, ReplyContext } from "./openui/reply";
 import { Artifacts } from "./Artifacts";
 import { ExportChat } from "./ExportChat";
-import { indentInFence, wrapSelection, type Edit } from "./composerEdit";
+import { fenceSelection, inFence, indentInFence, toggleList, wrapSelection, type Edit } from "./composerEdit";
 import { Notifications } from "./Notifications";
 import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
@@ -148,7 +149,7 @@ export function Transcript(props: TranscriptProps) {
     (t: Turn) => (
       <article className={`turn ${t.role}`} data-found={t.seq === focusSeq ? "true" : undefined} aria-current={t.seq === focusSeq ? "location" : undefined}>
         <h2 className="who">{t.role === "user" ? "You" : "Assistant"}</h2>
-        {t.role === "user" ? <p className="plain">{t.text}</p> : <MessageBody text={t.text} streaming={false} />}
+        {t.role === "user" ? <Markdown text={t.text} /> : <MessageBody text={t.text} streaming={false} />}
         {t.role === "assistant" && chatId && t.ref && <Artifacts chatId={chatId} seq={t.seq} turnRef={t.ref} text={t.text} />}
       </article>
     ),
@@ -175,7 +176,7 @@ export function Transcript(props: TranscriptProps) {
       {pending && (
         <article className="turn user pending">
           <h2 className="who">You</h2>
-          <p className="plain">{pending.input}</p>
+          <Markdown text={pending.input} />
           {pending.failure ? (
             <p className="notice" role="alert">
               Not sent: {pending.failure}{" "}
@@ -241,14 +242,37 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
     caret.current = [edit.start, edit.end];
     props.onChange(edit.value);
   };
+  // Escape inside a code fence hands Tab back to the browser until the next other key (no keyboard trap).
+  const released = useRef(false);
+  const [releasedNote, setReleasedNote] = useState(false);
+  const composing = useRef(false);
+  const release = (on: boolean) => {
+    released.current = on;
+    setReleasedNote(on);
+  };
   const onKey = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     const t = e.currentTarget;
-    if ((IS_MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey && !e.shiftKey && !e.nativeEvent.isComposing) {
+    // Mid-composition keys (an IME's Enter, Tab or shortcut) belong to the IME. Safari reports the Enter
+    // that ends a composition after compositionend, with keyCode 229 and isComposing already false.
+    if (e.nativeEvent.isComposing || e.keyCode === 229 || composing.current) return;
+    if (["Shift", "Control", "Alt", "Meta"].includes(e.key)) return;
+    if (e.key === "Escape") {
+      if (inFence(t.value, t.selectionStart)) release(true);
+      return;
+    }
+    const wasReleased = released.current;
+    if (released.current) release(false);
+    const mod = (IS_MAC ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey) && !e.altKey;
+    if (mod && !e.shiftKey) {
       apply(e, wrapSelection(t.value, t.selectionStart, t.selectionEnd, e.key));
-    } else if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.nativeEvent.isComposing) {
+    } else if (mod && e.code === "Digit8") {
+      apply(e, toggleList(t.value, t.selectionStart, t.selectionEnd));
+    } else if (mod && e.code === "KeyE") {
+      apply(e, fenceSelection(t.value, t.selectionStart, t.selectionEnd));
+    } else if (e.key === "Tab" && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !wasReleased) {
       apply(e, indentInFence(t.value, t.selectionStart, t.selectionEnd));
     }
-    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+    if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
       if (matches.length > 0) insert(matches[0]); // an open template menu: Enter picks, it does not send "/sum"
       else if (!empty && !props.busy) props.onSubmit();
@@ -285,8 +309,18 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
         value={props.value}
         placeholder="Write a message"
         onChange={(e) => props.onChange(e.target.value)}
+        aria-describedby="composer-hint"
         onKeyDown={onKey}
+        onBlur={() => release(false)}
+        onCompositionStart={() => (composing.current = true)}
+        onCompositionEnd={() => (composing.current = false)}
       />
+      <span id="composer-hint" className="sr">
+        Enter sends, Shift+Enter adds a line. Inside a code block, Tab indents; press Escape then Tab, or Shift+Tab, to move on.
+      </span>
+      <span className="sr" role="status">
+        {releasedNote ? "Tab now moves focus out of the code block." : ""}
+      </span>
       <button type="submit" disabled={empty || props.busy}>
         Send
         <svg className="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">

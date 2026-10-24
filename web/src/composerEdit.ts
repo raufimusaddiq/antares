@@ -25,3 +25,42 @@ export function indentInFence(value: string, start: number, end: number): Edit |
   if (start !== end || !inFence(value, start)) return null;
   return { value: value.slice(0, start) + "  " + value.slice(start), start: start + 2, end: start + 2 };
 }
+
+/** Start of the line holding `pos`, and the end of the line holding `pos`. */
+const lineStart = (value: string, pos: number) => value.lastIndexOf("\n", pos - 1) + 1;
+const lineEnd = (value: string, pos: number) => {
+  const i = value.indexOf("\n", pos);
+  return i === -1 ? value.length : i;
+};
+
+/**
+ * Ctrl/Cmd+Shift+8: toggle a "- " bullet on every line the selection touches. If all of them already
+ * have one it is removed. Not offered inside a code fence, where a bullet would be code text.
+ */
+export function toggleList(value: string, start: number, end: number): Edit | null {
+  if (inFence(value, start)) return null;
+  const from = lineStart(value, start);
+  // A selection ending at the start of a line does not touch that line.
+  const to = lineEnd(value, end > start && value[end - 1] === "\n" ? end - 1 : end);
+  const lines = value.slice(from, to).split("\n");
+  const all = lines.every((l) => l.startsWith("- "));
+  const out = lines.map((l) => (all ? l.slice(2) : "- " + l));
+  const delta = all ? -2 : 2;
+  return {
+    value: value.slice(0, from) + out.join("\n") + value.slice(to),
+    start: Math.max(from, start + delta),
+    end: Math.max(from, end + delta * lines.length),
+  };
+}
+
+/**
+ * Ctrl/Cmd+Shift+E: put the selection (or an empty block, caret inside) in a ``` fence on its own lines.
+ * Not offered inside a fence: a nested fence would close the block it sits in.
+ */
+export function fenceSelection(value: string, start: number, end: number): Edit | null {
+  if (inFence(value, start)) return null;
+  const open = (start === 0 || value[start - 1] === "\n" ? "" : "\n") + "```\n";
+  const close = "\n```" + (end >= value.length || value[end] === "\n" ? "" : "\n");
+  const at = start + open.length;
+  return { value: value.slice(0, start) + open + value.slice(start, end) + close + value.slice(end), start: at, end: at + (end - start) };
+}
