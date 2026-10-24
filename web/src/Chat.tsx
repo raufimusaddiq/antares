@@ -127,7 +127,7 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
 const turnKey = (t: Turn) => String(t.seq);
 
 /**
- * Regenerate, edit and rewind (PRD §21.5, UXP-ACC-012). Hermes has no route for any of them, so each
+ * Regenerate, edit and rewind (PRD §21.5, UXP-ACC-012). The assistant backend has no route for any of them, so each
  * is a button that cannot be activated and says why, in text, from the server's capability answer.
  * There is deliberately no handler: when a verified route lands, this is where it is wired.
  */
@@ -140,7 +140,7 @@ const TURN_CONTROLS = {
 export function turnControlReason(inv: Inventory | null, id: string): string {
   const row = inv?.capabilities.find((c) => c.id === id);
   if (!row) return "Availability unknown";
-  return row.available ? "Not available in this app yet" : row.reason || "Not supported by Hermes";
+  return row.available ? "Not available in this app yet" : row.reason || "Not supported by the assistant backend";
 }
 
 export function TurnControls({ inv, kinds, seq }: { inv: Inventory | null; kinds: readonly (keyof typeof TURN_CONTROLS)[]; seq: number }) {
