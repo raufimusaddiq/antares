@@ -32,7 +32,19 @@ var (
 // auth.ChatRoutes. The auth layer wraps each in the Active guard (and the CSRF
 // check for mutations); a handler can therefore rely on auth.UserFrom.
 func (s *Service) Handlers() map[string]http.Handler {
+	chatGet, chatPut, chatDel := s.chatDraftAPI().handlers(s)
+	newGet, newPut, newDel := s.newChatDraftAPI().handlers(s)
 	return map[string]http.Handler{
+		"GET /api/chats/{chatId}/draft":                                chatGet,
+		"PUT /api/chats/{chatId}/draft":                                chatPut,
+		"DELETE /api/chats/{chatId}/draft":                             chatDel,
+		"GET /api/me/new-chat-draft":                                   newGet,
+		"PUT /api/me/new-chat-draft":                                   newPut,
+		"DELETE /api/me/new-chat-draft":                                newDel,
+		"GET /api/me/templates":                                        http.HandlerFunc(s.listTemplates),
+		"POST /api/me/templates":                                       http.HandlerFunc(s.createTemplate),
+		"PUT /api/me/templates/{templateId}":                           http.HandlerFunc(s.putTemplate),
+		"DELETE /api/me/templates/{templateId}":                        http.HandlerFunc(s.deleteTemplate),
 		"GET /api/chats":                                               http.HandlerFunc(s.listChats),
 		"POST /api/chats":                                              http.HandlerFunc(s.createChat),
 		"GET /api/chats/{chatId}":                                      http.HandlerFunc(s.getChat),
@@ -165,7 +177,12 @@ func pathID(r *http.Request, name string) (string, bool) {
 // server alone may choose (profile, key, session id, …) is therefore a 400,
 // never ignored and never forwarded.
 func decode(w http.ResponseWriter, r *http.Request, v any) bool {
-	r.Body = http.MaxBytesReader(w, r.Body, maxBodyBytes)
+	return decodeMax(w, r, v, maxBodyBytes)
+}
+
+// decodeMax is decode with its own body cap, for a route whose legitimate body can be larger than a chat message.
+func decodeMax(w http.ResponseWriter, r *http.Request, v any, max int64) bool {
+	r.Body = http.MaxBytesReader(w, r.Body, max)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil && !(errors.Is(err, io.EOF) && isEmptyOK(v)) {

@@ -92,7 +92,7 @@ func New(o Options) (*Auth, error) {
 	if o.Limits != nil {
 		limits = *o.Limits
 	}
-	if limits.RunsPerMinute < 1 || limits.MessagesPerMinute < 1 || limits.UploadsPerMinute < 1 || limits.ArtifactsPerMinute < 1 || limits.HistoryPerMinute < 1 || limits.SSEConnections < 1 {
+	if limits.RunsPerMinute < 1 || limits.MessagesPerMinute < 1 || limits.UploadsPerMinute < 1 || limits.ArtifactsPerMinute < 1 || limits.HistoryPerMinute < 1 || limits.DraftWritesPerMinute < 1 || limits.SSEConnections < 1 {
 		return nil, errors.New("request limits must be positive integers")
 	}
 	a := &Auth{limits: newRequestLimits(limits), db: o.DB, ep: o.Endpoints, clientID: o.ClientID, secret: o.ClientSecret,

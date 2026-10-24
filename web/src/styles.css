@@ -519,6 +519,13 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
 }
 .recorder { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0 auto 0.5rem; width: 100%; max-width: 48rem; padding: 0 0.5rem; }
 .recorder-note { color: var(--text-2); font-size: 0.85rem; }
+
+/* ---- server draft notice and own templates ---- */
+.draft-note { margin: 0 0 0.5rem; font-size: 0.875rem; }
+.template-manager { margin: 0 0 0.5rem; font-size: 0.875rem; }
+.template-manager ul { margin: 0.25rem 0; padding: 0; list-style: none; }
+.template-manager li { display: flex; align-items: center; gap: 0.5rem; }
+.template-manager form { display: grid; gap: 0.5rem; margin-top: 0.5rem; }
 .ou-chart { margin: 0.25rem 0; max-width: 28rem; }
 .ou-chart-svg { width: 100%; height: auto; max-height: 14rem; }
 .ou-axis { stroke: var(--text-2); stroke-width: 1; }

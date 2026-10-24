@@ -40,6 +40,9 @@ var builtProbes = []probe{
 	{"search within a chat", "GET /api/chats/{chatId}/search"},
 	{"chat usage and budget", "GET /api/chats/{chatId}/usage"},
 	{"set chat model", "PUT /api/chats/{chatId}/model"},
+	{"draft read", "GET /api/chats/{chatId}/draft"},
+	{"draft write", "PUT /api/chats/{chatId}/draft"},
+	{"draft delete", "DELETE /api/chats/{chatId}/draft"},
 	{"run status", "GET /api/runs/{runId}"},
 	{"run events (SSE recovery)", "GET /api/runs/{runId}/events"},
 	{"run cancel", "POST /api/runs/{runId}/cancel"},
@@ -54,7 +57,12 @@ var builtProbes = []probe{
 }
 
 // idFree are built routes with no id in the path: they must scope by the caller.
-var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "GET /api/capabilities", "POST /api/assets", "GET /api/models"}
+var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "GET /api/capabilities", "POST /api/assets", "GET /api/models",
+	"GET /api/me/new-chat-draft", "PUT /api/me/new-chat-draft", "DELETE /api/me/new-chat-draft", "GET /api/me/templates", "POST /api/me/templates"}
+
+// templateRoutes carry a template id, not a chat or run id; their cross-user probes live in
+// drafts_test.go (TestTemplatesAreOwnerScoped), which owns the fixture that creates one.
+var templateRoutes = []string{"PUT /api/me/templates/{templateId}", "DELETE /api/me/templates/{templateId}"}
 
 // notBuilt are the §25 / Phase 3 surfaces with no route in this build. Each is
 // an honest gap, not an omission: the test below proves the gap is real (no
@@ -64,8 +72,6 @@ var notBuilt = []struct {
 	paths                []string // where it would live; must stay unrouted
 	stub                 bool     // a registered 501 placeholder rather than no route at all
 }{
-	{"saved drafts", "UXP-ACC-005/008", "no draft storage exists yet", []string{"/api/drafts", "/api/drafts/%s", "/api/chats/%s/draft"}, false},
-	{"templates", "UXP-ACC-005/009", "no template storage exists yet", []string{"/api/templates", "/api/templates/%s"}, false},
 	{"push subscriptions", "UXP-ACC-002/003", "no push subscription endpoint exists yet", []string{"/api/push/subscriptions", "/api/push/subscribe", "/api/push/subscriptions/%s"}, false},
 	{"exports", "UXP-ACC-016", "no export endpoint exists yet", []string{"/api/chats/%s/export", "/api/exports", "/api/exports/%s"}, false},
 	{"voice uploads", "UXP-ACC-006", "no transcription endpoint exists: Hermes has no speech-to-text route (BLOCKED_BY_UPSTREAM); /api/assets only stages audio, see assets_test.go", []string{"/api/voice", "/api/transcribe", "/api/voice/%s", "/api/assets/%s/transcribe"}, false},
@@ -395,6 +401,9 @@ func TestEveryChatRouteIsClassified(t *testing.T) {
 	}
 	for _, k := range idFree {
 		covered[k] = "caller-scoped list/create"
+	}
+	for _, k := range templateRoutes {
+		covered[k] = "probed in drafts_test.go"
 	}
 	for k := range built {
 		if covered[k] == "" {

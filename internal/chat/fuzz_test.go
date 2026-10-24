@@ -62,7 +62,7 @@ func newOwnFuzz(t testing.TB) *ownFuzz {
 	// Keep repeated ownership probes reaching handlers; quota enforcement has its own tests.
 	limits := auth.DefaultLimits()
 	limits.RunsPerMinute, limits.MessagesPerMinute, limits.ArtifactsPerMinute = math.MaxInt, math.MaxInt, math.MaxInt
-	limits.HistoryPerMinute = math.MaxInt
+	limits.HistoryPerMinute, limits.DraftWritesPerMinute = math.MaxInt, math.MaxInt
 	v.a.limits = &limits
 	v.a.h = rebuild(t, v.a, v.a.svc)
 	bob := v.a.user("bobby")
@@ -148,6 +148,24 @@ func TestOwnershipOverHTTPRepeatedProbes(t *testing.T) {
 		}
 	}
 	t.Fatal("run admission probe is missing")
+}
+
+// Draft and template writes have their own per-account bucket; a fuzzer (or an attacker) hammering a foreign chat's
+// draft must keep getting the same 404, not trade it for a 429 once its own budget runs out.
+func TestOwnershipOverHTTPRepeatedDraftWrites(t *testing.T) {
+	o := newOwnFuzz(t)
+	n := 0
+	for ri, p := range o.routes {
+		if strings.HasPrefix(p.key, "PUT /api/chats/{chatId}/draft") || strings.HasPrefix(p.key, "DELETE /api/chats/{chatId}/draft") {
+			for range 300 { // well past the default of 240 a minute
+				o.try(t, uint8(ri), o.v.chatID)
+				n++
+			}
+		}
+	}
+	if n == 0 {
+		t.Fatal("draft write probes are missing")
+	}
 }
 
 func FuzzOwnershipOverHTTP(f *testing.F) {

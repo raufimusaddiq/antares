@@ -332,7 +332,7 @@ CHROME=~/.cache/ms-playwright/chromium-1223/chrome-linux64/chrome PLAYWRIGHT_COR
   over the wire as B: 404. Browser HTTP cache: `fetch('/api/me', {cache:'only-if-cached'})` fails (not stored);
   `Cache-Control: no-store` on `/api/*` and on `/`.
 - **Answer: the service-worker cache cannot leak one user's data to another**; it never holds user data.
-- **One residual that is not the service worker:** composer drafts live in same-origin `localStorage`, keyed by
+- **One residual that is not the service worker:** composer drafts keep a browser-local copy (since #107 also a server copy per account and chat, owner-scoped and unencrypted) in same-origin `localStorage`, keyed by
   the account's email (`antares:draft:v1:<email>:chat:<id>`), unencrypted. In the test A's draft was still readable by
   B's page script after the cookie swap (the app itself would not show it to B). `purgeDrafts()` runs on sign-out,
   401 and suspension while the app is open; a session that simply expires with the tab closed leaves the draft until

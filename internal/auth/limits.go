@@ -16,8 +16,8 @@ func DefaultLimits() Limits { return quota.DefaultLimits() }
 const maxLimitAccounts = 10000
 
 type accountLimit struct {
-	start                                                time.Time
-	runs, messages, uploads, artifacts, history, streams int
+	start                                                        time.Time
+	runs, messages, uploads, artifacts, history, drafts, streams int
 }
 
 // shortcut: counters reset on restart; use shared state before adding replicas.
@@ -39,11 +39,23 @@ const (
 	artifactPreview  = "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview"
 )
 
+// draftWrite is the shared bucket of the composer-draft and personal-template writes.
+const draftWrite = "draft-write"
+
+var draftWrites = map[string]bool{
+	"PUT /api/chats/{chatId}/draft": true, "DELETE /api/chats/{chatId}/draft": true,
+	"PUT /api/me/new-chat-draft": true, "DELETE /api/me/new-chat-draft": true,
+	"POST /api/me/templates": true, "PUT /api/me/templates/{templateId}": true, "DELETE /api/me/templates/{templateId}": true,
+}
+
 func (a *Auth) limit(route string, next http.Handler) http.Handler {
 	switch route {
 	case "POST /api/chats/{chatId}/messages", "POST /api/assets", "GET /api/runs/{runId}/events", artifactDownload, artifactPreview, assetRead, historyRead:
 	default:
-		return next
+		if !draftWrites[route] {
+			return next
+		}
+		route = draftWrite
 	}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		u, _ := UserFrom(r.Context())
@@ -79,7 +91,7 @@ func (l *requestLimits) acquire(id, route string, now time.Time) (int, func()) {
 		l.accounts[id] = b
 	}
 	if !now.Before(b.start.Add(time.Minute)) {
-		b.start, b.runs, b.messages, b.uploads, b.artifacts, b.history = now, 0, 0, 0, 0, 0
+		b.start, b.runs, b.messages, b.uploads, b.artifacts, b.history, b.drafts = now, 0, 0, 0, 0, 0, 0
 	}
 	retry := int((b.start.Add(time.Minute).Sub(now) + time.Second - 1) / time.Second)
 	switch route {
@@ -108,6 +120,12 @@ func (l *requestLimits) acquire(id, route string, now time.Time) (int, func()) {
 			return retry, nil
 		}
 		b.history++
+	case draftWrite:
+		// Each is a write transaction; the web client debounces to about one per second per open composer.
+		if b.drafts >= l.config.DraftWritesPerMinute {
+			return retry, nil
+		}
+		b.drafts++
 	case "GET /api/runs/{runId}/events":
 		if b.streams >= l.config.SSEConnections {
 			return -1, nil // A live connection has no known release time.

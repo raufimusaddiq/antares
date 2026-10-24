@@ -37,7 +37,10 @@ import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type Li
 import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
 import { RunPrompts } from "./RunPrompts";
-import { loadDraft, matchTemplates, saveDraft, type Template } from "./drafts";
+import { loadDraft, matchTemplates, mergeTemplates, saveDraft, type Template } from "./drafts";
+import { DraftNotice, sharedTextApplied, takeSharedText, useDraftSync, NO_HOLD, type SendHold } from "./DraftSync";
+import { listOwnTemplates, type OwnTemplate } from "./draftApi";
+import { Templates } from "./Templates";
 
 const MAX_INPUT = 32_000;
 const RECONNECT_TRIES = 5;
@@ -61,6 +64,7 @@ interface Pending {
   input: string;
   key: string;
   failure: string; // empty while sending
+  hold: SendHold; // this send's claim on the server draft, kept for a resend
 }
 
 // ---- presentational pieces (no hooks: rendered to static markup in tests) -----
@@ -116,7 +120,7 @@ const turnKey = (t: Turn) => String(t.seq);
 
 export interface TranscriptProps {
   turns: Turn[];
-  pending: Pending | null;
+  pending: Omit<Pending, "hold"> | null;
   run: LiveRun | null;
   /** More (older) turns exist on the server. */
   hasMore?: boolean;
@@ -208,9 +212,9 @@ export function Transcript(props: TranscriptProps) {
 // On macOS Ctrl+B/E are caret movement in a text field, so the shortcuts there are Cmd only.
 const IS_MAC = typeof navigator !== "undefined" && /Mac|iPhone|iPad/.test(navigator.platform);
 
-export function Composer(props: { value: string; busy: boolean; onChange: (v: string) => void; onSubmit: () => void }) {
+export function Composer(props: { value: string; busy: boolean; onChange: (v: string) => void; onSubmit: () => void; templates?: readonly Template[] }) {
   const empty = props.value.trim() === "";
-  const matches = matchTemplates(props.value);
+  const matches = matchTemplates(props.value, props.templates);
   const insert = (t: Template) => {
     props.onChange(t.body);
     document.getElementById("composer-input")?.focus();
@@ -310,6 +314,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const [promptTick, setPromptTick] = useState(0);
   const [pending, setPending] = useState<Pending | null>(null);
   const [draft, setDraft] = useState("");
+  const draftNow = useRef(""); // what the box holds right now, for code that runs after an await
+  draftNow.current = draft;
   // Typing writes the draft of the chat on screen. Switching chats loads that chat's draft;
   // nothing else ever writes, so text typed in one chat cannot land in another's key.
   const onDraft = (v: string) => {
@@ -325,6 +331,17 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const [focus, setFocus] = useState<{ chat: string; seq: number; nonce: number } | null>(null); // a search result being opened at its turn
 
   useEffect(() => setDraft(loadDraft(email, current)), [email, current]);
+  // Text the OS shared to the app: it waits in the new-chat draft, never in a chat and never sent.
+  const [share, setShare] = useState<string | null>(takeSharedText);
+  const sync = useDraftSync(email, current, draft, onDraft, share, () => {
+    sharedTextApplied();
+    setShare(null);
+  });
+
+  const [ownTemplates, setOwnTemplates] = useState<OwnTemplate[]>([]);
+  useEffect(() => {
+    void listOwnTemplates().then((l) => l && setOwnTemplates(l));
+  }, []);
 
   const es = useRef<EventSource | null>(null);
   const timer = useRef<number | undefined>(undefined);
@@ -561,6 +578,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         });
         return;
       }
+      if (share !== null) return; // a share lands in the new-chat draft; opening the latest chat would hide it
       if (r.value.chats.length > 0) open(r.value.chats[0]);
     });
     return () => {
@@ -630,37 +648,60 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   }, [detach, newChat]);
 
   const submit = useCallback(
-    async (input: string, key: string) => {
-      setBanner("");
-      let chat = current;
-      if (!chat) {
-        const c = await newChat();
-        if (!c) return;
-        nav.current++;
-        detach();
-        setCurrent(c.id);
-        currentRef.current = c.id;
-        setTurns([]);
-        setCursor("");
-        chat = c.id;
+    async (input: string, key: string, hold: SendHold) => {
+      // This submission owns `hold` and ends it exactly once, whichever way it leaves (SendHold.release ignores repeats).
+      try {
+        setBanner("");
+        let chat = current;
+        if (!chat) {
+          const c = await newChat();
+          if (!c) {
+            // Nothing was sent and no retry entry exists, so the message goes back into the box (ahead of anything typed
+            // since) and into this browser's copy: it is the only place it still lives if autosave had not run yet.
+            if (currentRef.current === null && hold.text.trim() !== "") {
+              const typed = draftNow.current;
+              onDraft(typed.trim() === "" ? hold.text : `${hold.text.replace(/\s*$/, "")}\n\n${typed}`);
+            }
+            return;
+          }
+          nav.current++;
+          detach();
+          setCurrent(c.id);
+          currentRef.current = c.id;
+          setTurns([]);
+          setCursor("");
+          chat = c.id;
+        }
+        blankChat.current = "";
+        lastInput.current = input;
+        dispatch({ k: "clear" });
+        setPending({ input, key, failure: "", hold });
+        const r = await sendMessage(chat, input, key);
+        // Every outcome ends the hold: admitted deletes the server draft (and the reader's other devices lose it);
+        // refused keeps it and resumes syncing whatever is typed next.
+        hold.release(r.ok);
+        if (currentRef.current !== chat) {
+          if (!r.ok && hold.text.trim() !== "" && loadDraft(email, chat) === "") {
+            // Refused while the reader was elsewhere: the pending entry is gone, so keep the message in that chat's own
+            // draft for when they come back. Never over a draft that has text.
+            saveDraft(email, chat, hold.text);
+          }
+          return;
+        }
+        if (!r.ok) {
+          // Kept with the same key: sending again repeats the request, it cannot double-send.
+          setPending({ input, key, failure: describeCode(r.code), hold });
+          return;
+        }
+        setPending(null);
+        setChats((l) => l.map((x) => (x.id === chat ? { ...x, activeRunId: r.value.runId } : x)));
+        setTurns((t) => [...t, { seq: t.length > 0 ? t[t.length - 1].seq + 1 : 0, role: "user", text: input }]);
+        attach(r.value.runId, chat);
+      } finally {
+        hold.release(false); // a path that left without an answer (no-op if already released)
       }
-      blankChat.current = "";
-      lastInput.current = input;
-      dispatch({ k: "clear" });
-      setPending({ input, key, failure: "" });
-      const r = await sendMessage(chat, input, key);
-      if (currentRef.current !== chat) return;
-      if (!r.ok) {
-        // Kept with the same key: sending again repeats the request, it cannot double-send.
-        setPending({ input, key, failure: describeCode(r.code) });
-        return;
-      }
-      setPending(null);
-      setChats((l) => l.map((x) => (x.id === chat ? { ...x, activeRunId: r.value.runId } : x)));
-      setTurns((t) => [...t, { seq: t.length > 0 ? t[t.length - 1].seq + 1 : 0, role: "user", text: input }]);
-      attach(r.value.runId, chat);
     },
-    [attach, current, detach, newChat],
+    [attach, current, detach, newChat, email],
   );
 
   // A disconnected run still occupies the chat: reconnect or cancel it first.
@@ -689,9 +730,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   const onSubmit = () => {
     const input = draft.trim();
+    const hold = sync.hold();
     setDraft("");
     saveDraft(email, currentRef.current, "");
-    void submit(input, newIdempotencyKey());
+    void submit(input, newIdempotencyKey(), hold);
   };
 
   const onCancel = () => {
@@ -783,7 +825,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           onRetry={() => {
             const last = [...turns].reverse().find((t) => t.role === "user");
             const input = lastInput.current || last?.text || "";
-            if (input) void submit(input, newIdempotencyKey());
+            if (input) void submit(input, newIdempotencyKey(), NO_HOLD); // a re-ask of an earlier message, not the draft
           }}
           onReconnect={() => {
             if (run && current) {
@@ -791,7 +833,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
               attach(run.runId, current);
             }
           }}
-          onResend={() => pending && void submit(pending.input, pending.key)}
+          onResend={() => {
+            if (!pending) return;
+            // A resend gets its own hold on the same draft (the first was released when the send was refused).
+            void submit(pending.input, pending.key, pending.hold.again());
+          }}
         />
         </ReplyContext.Provider>
         {usage && (
@@ -820,7 +866,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         )}
         {current && offers(inventory, "models") && <ModelPicker chatId={current} disabled={busy} />}
         <Recorder />
-        <Composer value={draft} busy={busy} onChange={onDraft} onSubmit={onSubmit} />
+        <DraftNotice sync={sync} />
+        <Templates own={ownTemplates} onChange={setOwnTemplates} />
+        <Composer value={draft} busy={busy} onChange={onDraft} onSubmit={onSubmit} templates={mergeTemplates(ownTemplates)} />
       </main>
     </div>
   );

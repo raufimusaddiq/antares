@@ -1,5 +1,5 @@
-// Unsent composer text, kept in this browser's localStorage and nowhere else. It is
-// never sent to the server and is not encrypted. A key names the account and the chat,
+// Unsent composer text. This file is the browser-local copy (localStorage, not encrypted); the
+// server copy that follows the account across devices is DraftSync.tsx. Both are unencrypted. A key names the account and the chat,
 // so one account never reads another's draft and one chat never shows another's.
 
 const PREFIX = "antares:draft:v1:";
@@ -24,6 +24,51 @@ export function saveDraft(email: string, chatId: string | null, text: string): v
     else localStorage.setItem(keyOf(email, chatId), text);
   } catch {
     // Storage unavailable or full: the draft just does not survive a reload.
+  }
+}
+
+// The server revision this browser's copy was last in step with. Without it a later reopen cannot tell
+// "my text is newer than the server's" from "another device sent or deleted the draft since"; with it,
+// a deleted draft's tombstone is a conflict to resolve and not an empty slate to overwrite.
+const baseKey = (email: string, chatId: string | null) => `${PREFIX}rev:${keyOf(email, chatId).slice(PREFIX.length)}`;
+
+/** The synced revision, or null if this browser never synced this draft. */
+export function loadBaseRevision(email: string, chatId: string | null): number | null {
+  try {
+    const v = localStorage.getItem(baseKey(email, chatId));
+    return v !== null && /^\d+$/.test(v) ? Number(v) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function saveBaseRevision(email: string, chatId: string | null, rev: number): void {
+  try {
+    localStorage.setItem(baseKey(email, chatId), String(rev));
+  } catch {
+    // Without a baseline the next reopen reconciles conservatively (it asks).
+  }
+}
+
+// "The box was emptied on purpose and the server has not been told yet" (a send or a clear whose DELETE
+// failed). Without it a reload cannot tell an emptied box from a box that never had this draft, and would
+// bring the server's old text back.
+const clearedKey = (email: string, chatId: string | null) => `${PREFIX}cleared:${keyOf(email, chatId).slice(PREFIX.length)}`;
+
+export function loadCleared(email: string, chatId: string | null): boolean {
+  try {
+    return localStorage.getItem(clearedKey(email, chatId)) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function saveCleared(email: string, chatId: string | null, cleared: boolean): void {
+  try {
+    if (cleared) localStorage.setItem(clearedKey(email, chatId), "1");
+    else localStorage.removeItem(clearedKey(email, chatId));
+  } catch {
+    // Unavailable: a reload then restores the server text rather than guessing that a delete was meant.
   }
 }
 
@@ -56,9 +101,15 @@ export const TEMPLATES: readonly Template[] = [
   { name: "steps", body: "Give me a step-by-step plan to:\n\n" },
 ];
 
+/** The built-in set with the reader's own templates on top; an own template replaces a built-in of the same name. */
+export function mergeTemplates(own: readonly Template[]): Template[] {
+  const names = new Set(own.map((t) => t.name));
+  return [...own, ...TEMPLATES.filter((t) => !names.has(t.name))].sort((a, b) => a.name.localeCompare(b.name));
+}
+
 /** Templates for a composer whose whole text is "/" plus a name prefix; none once the text has a space or newline. */
-export function matchTemplates(text: string): Template[] {
-  if (!/^\/[a-z]*$/i.test(text)) return [];
+export function matchTemplates(text: string, list: readonly Template[] = TEMPLATES): Template[] {
+  if (!/^\/[a-z0-9_-]*$/i.test(text)) return [];
   const q = text.slice(1).toLowerCase();
-  return TEMPLATES.filter((t) => t.name.startsWith(q));
+  return list.filter((t) => t.name.startsWith(q));
 }
