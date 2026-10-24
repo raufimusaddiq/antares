@@ -24,3 +24,16 @@ What it does **not** prove: this is an emulator. The on-screen keyboard is a sma
 browser-chrome collapse and the real notch/home-indicator are not exercised (the inset is Chromium's override). The scratch Hermes
 has no image catalogue, so the capability probe is answered in the browser to lay out Attach/Take photo; a send with an image is
 not exercised. Those need a physical phone. Screenshots from real accounts are private: never attach them to GitHub.
+
+## The CI-runnable layout check
+
+`ONLY=mobile-layout node scripts/browser-check.mjs` (job `mobile-layout` in `.github/workflows/ci.yml`) runs the same measurements
+and verdicts (`web/scripts/mobile-layout.mjs`) against the mock backend, so it needs no scratch server: 320/375/390/430 portrait
+and a phone on its side (568x320), keyboard closed and open, the account menu, and a focused search under the keyboard. It also
+requires New chat, Search, Menu, Options and the composer's Attach image / Take photo / Send to be reachable on screen in every
+state (a control that is `display: none` fails). `CHROME` selects the browser; CI uses a pinned chrome-headless-shell and
+playwright-core. The rest of `browser-check.mjs` (500-turn scroll, prepend, OpenUI) is the Phase 1 gate and is timing-sensitive;
+CI does not run it.
+
+Short viewports (the keyboard is up, or the phone is on its side) keep every control: spacing shrinks, the composer's buttons share
+one row, an attached image becomes one compact row, and with a search open the message area steps aside until Close search.

@@ -917,6 +917,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   // Usage is read from the server whenever the chat changes or a reply ends. A failed read shows nothing, never a number.
   const [usage, setUsage] = useState<ChatUsage | null>(null);
+  // A reached token limit keeps the options open (the notice is in them); the toggle reports what is actually shown.
+  const extrasOpen = moreOpen || usage?.budget.reached === true;
   useEffect(() => {
     setUsage(null);
     if (!current || busy) return;
@@ -1076,10 +1078,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           }}
         />
         </ReplyContext.Provider>
-        <button type="button" className="quiet extras-toggle" aria-expanded={moreOpen} aria-controls="chat-extras" onClick={() => setMoreOpen((o) => !o)}>
+        <button type="button" className="quiet extras-toggle" aria-expanded={extrasOpen} aria-controls="chat-extras" onClick={() => setMoreOpen((o) => !o)}>
           Options
         </button>
-        <div id="chat-extras" className={moreOpen || usage?.budget.reached ? "extras open" : "extras"}>
+        <div id="chat-extras" className={extrasOpen ? "extras open" : "extras"}>
           {usage && (
             <details className="usage" open={usage.budget.reached}>
               <summary>{usage.budget.reached ? "Token limit reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens` : "Usage unknown"}</summary>

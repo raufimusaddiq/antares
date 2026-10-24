@@ -11,6 +11,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout runs just the phone layout checks, which CI runs)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -19,6 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
+import { measure, verdicts, CURRENT } from "../web/scripts/mobile-layout.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, "..", "internal", "webui", "dist");
@@ -80,6 +82,16 @@ function api(req, res, url) {
     if (hold) return void hold.then(reply);
     return void setTimeout(reply, state.delayMs);
   }
+  // The rest of what the chat screen reads on load, with the real response shapes, so no failure notice distorts the layout.
+  if (url.pathname === "/api/capabilities") return send(200, { capabilities: [], toolsets: [], providers: [], skills: [] });
+  if (url.pathname === "/api/me/templates") return send(200, { templates: [] });
+  if (/^\/api\/(me\/new-chat-draft|chats\/[0-9a-f]{32}\/draft)$/.test(url.pathname)) {
+    if (req.method === "DELETE") { res.writeHead(204); return void res.end(); }
+    return send(200, { body: "", revision: 0 });
+  }
+  if (/^\/api\/chats\/[0-9a-f]{32}\/usage$/.test(url.pathname)) return send(200, { runs: { finished: 0, reported: 0 }, cost: { amount: null }, context: { windowTokens: null }, budget: { limitTokens: null, usedTokens: null, enforced: false, reached: false, basis: "" }, tokens: null, turns: [], turnsTruncated: false });
+  // Images on, as on the owner's account, so the composer is laid out with Attach image and Take photo.
+  if (/^\/api\/chats\/[0-9a-f]{32}\/input$/.test(url.pathname)) return send(200, { image: { available: true, reason: null, model: "mock-vision", maxImages: 4, maxTotalBytes: 6291456 } });
   return send(404, { error: { code: "NOT_FOUND", message: "x", requestId: "r" } });
 }
 
@@ -331,6 +343,49 @@ async function drafts(browser) {
   await ctx.close();
 }
 
+// Phone layout (#138) in a real browser against the mock backend, so it runs in CI with no scratch server: the same measurements
+// and verdicts as web/scripts/mobile-check.mjs, at 320/375/390/430 portrait and a phone on its side, with the keyboard closed and
+// open (an on-screen keyboard is approximated by a shorter viewport), the account menu, and a focused search under the keyboard.
+async function mobileLayout(browser) {
+  const KEYBOARD = 300;
+  for (const { w, h } of [{ w: 320, h: 568 }, { w: 375, h: 667 }, { w: 390, h: 844 }, { w: 430, h: 932 }, { w: 568, h: 320 }]) {
+    CURRENT.w = w;
+    const { ctx, page } = await openPage(browser, { viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+    await page.goto(base + "/");
+    await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
+    await page.waitForTimeout(300);
+    const verdict = async (name, { keyboard = false, searchOpen = false, scope } = {}) => {
+      const m = await page.evaluate(measure, scope);
+      const v = verdicts(m, keyboard, Boolean(scope), 0.4, searchOpen);
+      check(`mobile layout ${w}px, ${name}`, v.length === 0, v.slice(0, 4).join("; "));
+    };
+    const short = Math.max(h - KEYBOARD, 260);
+    await verdict("keyboard closed");
+    await page.getByRole("button", { name: "Menu" }).click();
+    await verdict("account menu open", { scope: ".bar-actions" });
+    check(`mobile layout ${w}px, Sign out is in the menu`, await page.getByRole("button", { name: "Sign out" }).isVisible());
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: w, height: short });
+    await page.locator("#composer-input").focus();
+    await page.keyboard.type("a draft");
+    await page.waitForTimeout(150);
+    await verdict("keyboard open, typing", { keyboard: true });
+    await page.setViewportSize({ width: w, height: h });
+    await page.getByRole("button", { name: "Search", exact: true }).click();
+    await page.locator("#search-input").focus();
+    await page.setViewportSize({ width: w, height: short });
+    await page.waitForTimeout(150);
+    await verdict("search focused, keyboard open", { keyboard: true, searchOpen: true });
+    const kept = await page.evaluate(() => document.activeElement?.id === "search-input" && Boolean([...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Close search")));
+    check(`mobile layout ${w}px, search input stays focused with Close search`, kept);
+    await page.getByRole("button", { name: "Close search" }).click();
+    await page.setViewportSize({ width: w, height: h });
+    await page.waitForTimeout(150);
+    await verdict("keyboard closed again");
+    await ctx.close();
+  }
+}
+
 async function mobile(browser) {
   const { ctx, page, consoleErrors } = await openPage(browser, { viewport: { width: Number(process.env.MOBILE_WIDTH || 390), height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
   await page.goto(base + "/");
@@ -353,7 +408,7 @@ async function mobile(browser) {
     };
   });
   check("mobile: no horizontal scroll", m.overflowX <= 0, `scrollWidth - viewport = ${m.overflowX}`);
-  check("mobile: composer is on screen and usable", m.composerVisible && m.composerFont >= 16 && m.sendH >= 36, `font ${m.composerFont}px, send button ${Math.round(m.sendH)}px high`);
+  check("mobile: composer is on screen and usable", m.composerVisible && m.composerFont >= 16 && m.sendH >= 44, `font ${m.composerFont}px, send button ${Math.round(m.sendH)}px high`);
   check("mobile: the conversation has room (the page itself does not scroll)", m.logH >= m.innerH * 0.35 && !m.pageScrolls, `conversation ${Math.round(m.logH)} of ${m.innerH}px`);
   // Scroll back on a phone viewport too.
   let g = 0;
@@ -376,7 +431,7 @@ async function mobile(browser) {
 
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 base = `http://127.0.0.1:${server.address().port}`;
-const browser = await chromium.launch();
+const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
 console.log(`# ${await browser.version()} (Chromium), bundle ${fs.readdirSync(path.join(dist, "assets")).filter((f) => f.endsWith(".js")).join(", ")}`);
 const only = process.env.ONLY;
 try {
@@ -385,6 +440,7 @@ try {
   if (!only || only === "rich") await rich(browser);
   if (!only || only === "drafts") await drafts(browser);
   if (!only || only === "mobile") await mobile(browser);
+  if (!only || only === "mobile" || only === "mobile-layout") await mobileLayout(browser); // no timing in it: this is the one CI runs
 } finally {
   await browser.close();
   server.close();

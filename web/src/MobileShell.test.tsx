@@ -4,7 +4,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
-const api = vi.hoisted(() => ({ listChats: vi.fn(), getMessages: vi.fn(), getRun: vi.fn() }));
+const api = vi.hoisted(() => ({ listChats: vi.fn(), getMessages: vi.fn(), getRun: vi.fn(), getUsage: vi.fn() }));
 vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi")>()), ...api }));
 
 import { Chat } from "./Chat";
@@ -16,6 +16,7 @@ beforeEach(() => {
   api.listChats.mockResolvedValue(ok({ chats: [], nextCursor: "" }));
   api.getMessages.mockResolvedValue(ok({ turns: [], nextCursor: "", total: 0 }));
   api.getRun.mockResolvedValue({ ok: false, code: "NOT_FOUND" });
+  api.getUsage.mockResolvedValue({ ok: false, code: "NOT_FOUND" });
 });
 afterEach(() => {
   cleanup();
@@ -73,5 +74,16 @@ describe("phone layout toggles", () => {
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(drawer?.classList.contains("open")).toBe(true);
+  });
+
+  it("reports the options as expanded while a reached token limit holds them open", async () => {
+    const usage = { tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, total: 2 }, finishedRuns: 1, reportedRuns: 1, costIDR: null, unpricedRuns: 0, unknownModelRuns: 0, turns: [], turnsTruncated: false, priceListDate: "", windowTokens: null, budget: { limit: 10000, used: 20000, enforced: true, reached: true, basis: "" } };
+    api.listChats.mockResolvedValue(ok({ chats: [{ id: "c1", title: "Talk", createdAt: "", updatedAt: "", activeRunId: "" }], nextCursor: "" }));
+    api.getUsage.mockResolvedValue(ok(usage));
+    await mount();
+    fireEvent.click(await screen.findByRole("button", { name: "Talk" }));
+    const toggle = screen.getByRole("button", { name: "Options" });
+    await waitFor(() => expect(document.getElementById("chat-extras")?.classList.contains("open")).toBe(true));
+    expect(toggle.getAttribute("aria-expanded")).toBe("true"); // what is shown and what is announced agree
   });
 });
