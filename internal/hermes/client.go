@@ -38,6 +38,7 @@ const (
 	CodeRateLimited       = "RATE_LIMITED"
 	CodeCapabilityNA      = "CAPABILITY_UNAVAILABLE"
 	CodeSteerRefused      = "STEER_REFUSED"
+	CodePromptStale       = "PROMPT_STALE"
 )
 
 const (
@@ -421,6 +422,56 @@ func (c *Client) SteerRun(ctx context.Context, b Binding, runID, text string) er
 		return fail(CodeSteerRefused)
 	}
 	return nil
+}
+
+// RespondApproval delivers the user's decision on a pending approval (POST /v1/runs/{id}/approval).
+// requestID and generation are the exact values Hermes sent with the prompt; Hermes' authority mode
+// accepts exactly {request_id, execution_generation, choice}, its legacy mode {choice, request_id}, so
+// the generation is sent only when the prompt carried one. 409 (not pending, stale generation) is
+// PROMPT_STALE: the decision is gone upstream, nothing was applied.
+func (c *Client) RespondApproval(ctx context.Context, b Binding, runID, requestID string, generation *int64, choice string) error {
+	body := map[string]any{"request_id": requestID, "choice": choice}
+	if generation != nil {
+		body["execution_generation"] = *generation
+	}
+	return c.respond(ctx, b, runID, "approval", body)
+}
+
+// RespondClarify delivers the user's answer to a pending clarification (POST /v1/runs/{id}/clarify).
+// Hermes accepts it only with the exact {request_id, execution_generation, answer}, so a prompt that
+// carried no generation cannot be answered and the call is refused before anything is sent.
+func (c *Client) RespondClarify(ctx context.Context, b Binding, runID, requestID string, generation *int64, answer string) error {
+	if generation == nil {
+		return fail(CodeCapabilityNA)
+	}
+	return c.respond(ctx, b, runID, "clarify", map[string]any{"request_id": requestID, "execution_generation": *generation, "answer": answer})
+}
+
+func (c *Client) respond(ctx context.Context, b Binding, runID, route string, body map[string]any) error {
+	if !ValidID(runID) || !ValidID(body["request_id"].(string)) {
+		return fail(CodeHermesUnavailable)
+	}
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	resp, err := c.do(ctx, b, http.MethodPost, "/v1/runs/"+url.PathEscape(runID)+"/"+route, nil, body)
+	if err != nil {
+		if CodeOf(err) == CodeRunConflict {
+			return fail(CodePromptStale)
+		}
+		return err
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	return resp.Body.Close()
+}
+
+// Advertises reports whether Hermes lists a POST route under the endpoint name in /v1/capabilities.
+// Anything unclear is false: an answer is only ever sent to a route Hermes itself advertised.
+func (c *Client) Advertises(ctx context.Context, b Binding, endpoint string) (bool, error) {
+	caps, ok, tenant := c.discoveryDoc(ctx, b)
+	if tenant {
+		return false, fail(CodeTenantNotReady)
+	}
+	return ok && caps.hasPost(endpoint), nil
 }
 
 // Event is one upstream SSE frame, undecoded.

@@ -193,7 +193,7 @@ func (s *Service) runNew(ctx context.Context, l *liveRun, run store.Run, input s
 // a terminal frame proves nothing: the run's state is read back from Hermes.
 func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, b hermes.Binding, hid string) {
 	var terminal *hermes.Normalized
-	needsApproval := false
+	failClosed := false
 	for attempt := 0; ; attempt++ {
 		err := s.hx.StreamEvents(ctx, b, hid, func(ev hermes.Event) error {
 			n := hermes.Normalize(ev)
@@ -204,9 +204,17 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 				l.emit("tool.started", map[string]string{"toolCallId": n.ToolID, "label": n.Label}, false)
 			case hermes.KindToolCompleted:
 				l.emit("tool.completed", map[string]string{"toolCallId": n.ToolID, "summary": n.Summary}, false)
-			case hermes.KindApproval:
-				needsApproval = true
-				return errStop
+			case hermes.KindApproval, hermes.KindClarify:
+				if !s.holdPrompt(ctx, l, userID, runID, b, n) {
+					failClosed = true
+					return errStop
+				}
+			case hermes.KindPromptSettled:
+				if n.PromptID != "" {
+					if err := store.SettlePrompt(s.base, s.db, userID, runID, n.PromptID, s.now()); err != nil {
+						log.Printf("chat: run %s: could not settle a prompt: %v", runID, err)
+					}
+				}
 			case hermes.KindTerminal:
 				t := n
 				terminal = &t
@@ -217,10 +225,10 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 		switch {
 		case ctx.Err() != nil || l.wasCancelled():
 			return // the cancel path owns the outcome
-		case needsApproval:
-			// Hermes is waiting for a consent this build has no way to collect. Nothing
-			// is approved or denied on the user's behalf: the run is stopped and ends
-			// failed, visibly.
+		case failClosed:
+			// Hermes is waiting for a decision Antares cannot collect (no request id to answer,
+			// a route Hermes does not advertise, nothing the user may safely choose). Nothing is
+			// approved or denied on the user's behalf: the run is stopped and ends failed, visibly.
 			s.stopUpstream(userID, hid)
 			s.finish(l, store.RunFailed, hermes.CodeCapabilityNA, "")
 			return
@@ -317,6 +325,11 @@ func (s *Service) finish(l *liveRun, to, code, output string) {
 	if s.notifier != nil && store.RunTerminal(run.Status) {
 		s.notifier.RunFinished(run.UserID, run.ID, run.ChatID, run.Status) // the stored status, so a cancel is never a completion
 	}
+	if store.RunTerminal(run.Status) { // no decision can still be pending on a run that is over
+		if err := store.SettlePrompts(ctx, s.db, run.UserID, run.ID, s.now()); err != nil {
+			log.Printf("chat: run %s: could not settle its prompts: %v", l.runID, err)
+		}
+	}
 	if store.RunTerminal(run.Status) { // the transcript gained turns: its search index is stale
 		if err := store.InvalidateChatIndex(ctx, s.db, run.UserID, run.ChatID, s.now()); err != nil {
 			log.Printf("chat: run %s: could not mark search index stale: %v", l.runID, err)
@@ -396,6 +409,9 @@ func (s *Service) Cancel(ctx context.Context, userID, runID string) (run store.R
 	if !moved { // it ended on its own between the read and the write: report what happened
 		run, err = store.GetRun(ctx, s.db, userID, runID)
 		return run, false, err
+	}
+	if err := store.SettlePrompts(ctx, s.db, userID, runID, s.now()); err != nil {
+		log.Printf("chat: run %s: could not settle its prompts: %v", runID, err)
 	}
 	l := s.liveFor(runID)
 	if l != nil {

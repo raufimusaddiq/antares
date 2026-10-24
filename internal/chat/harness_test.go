@@ -50,6 +50,7 @@ type fakeRun struct {
 	stopped bool
 	opens   chan struct{} // one token per upstream stream subscription
 	ended   chan struct{} // one token per upstream stream that ended
+	prompts *fakePrompts  // decisions this run is blocked on (prompts_test.go)
 }
 
 type fakeHermes struct {
@@ -285,6 +286,8 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
+		case len(parts) == 2 && (parts[1] == "approval" || parts[1] == "clarify") && r.Method == "POST":
+			f.answerPrompt(w, fr, parts[1], body)
 		default:
 			http.NotFound(w, r)
 		}

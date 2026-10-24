@@ -36,6 +36,7 @@ import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
+import { RunPrompts } from "./RunPrompts";
 import { loadDraft, matchTemplates, saveDraft, type Template } from "./drafts";
 
 const MAX_INPUT = 32_000;
@@ -127,6 +128,8 @@ export interface TranscriptProps {
   focusNonce?: number;
   /** The chat these turns belong to; without it nothing is offered for download. */
   chatId?: string;
+  /** Bumped when the run's stream reports a prompt opened or closed; the prompts themselves come from the server. */
+  promptTick?: number;
   onCancel: () => void;
   onRetry: () => void;
   onReconnect: () => void;
@@ -181,6 +184,7 @@ export function Transcript(props: TranscriptProps) {
           )}
         </article>
       )}
+      {run && !isTerminal(run.phase) && <RunPrompts runId={run.runId} tick={props.promptTick ?? 0} />}
       {run && <RunView run={run} onCancel={props.onCancel} onRetry={props.onRetry} onReconnect={props.onReconnect} />}
     </>
   );
@@ -303,6 +307,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const [chatsCursor, setChatsCursor] = useState("");
   const [loadingChats, setLoadingChats] = useState(false);
   const [run, dispatch] = useReducer(runReducer, null);
+  const [promptTick, setPromptTick] = useState(0);
   const [pending, setPending] = useState<Pending | null>(null);
   const [draft, setDraft] = useState("");
   // Typing writes the draft of the chat on screen. Switching chats loads that chat's draft;
@@ -440,6 +445,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           }
         });
       }
+      for (const name of ["run.prompt", "run.prompt.settled"]) source.addEventListener(name, () => setPromptTick((n) => n + 1));
       source.onerror = () => {
         errors++;
         if (source.readyState === EventSource.CLOSED || errors > RECONNECT_TRIES) {
@@ -766,6 +772,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           turns={turns}
           pending={pending}
           run={run}
+          promptTick={promptTick}
           hasMore={cursor !== ""}
           loadingMore={loadingOlder}
           olderError={olderError}

@@ -44,6 +44,8 @@ var builtProbes = []probe{
 	{"run events (SSE recovery)", "GET /api/runs/{runId}/events"},
 	{"run cancel", "POST /api/runs/{runId}/cancel"},
 	{"steer", "POST /api/runs/{runId}/steer"},
+	{"approve", "POST /api/runs/{runId}/approve"},
+	{"clarify", "POST /api/runs/{runId}/clarify"},
 	{"regenerate", "POST /api/chats/{chatId}/regenerate"},
 	{"edit turn", "POST /api/chats/{chatId}/edit-turn"},
 	{"rewind", "POST /api/chats/{chatId}/rewind"},

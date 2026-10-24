@@ -13,7 +13,9 @@ const (
 	KindDelta
 	KindToolStarted
 	KindToolCompleted
-	KindApproval // Hermes is waiting for a consent this build cannot collect
+	KindApproval      // Hermes is waiting for the user's consent (approval.request)
+	KindClarify       // Hermes is waiting for the user's answer to a question (clarify.request)
+	KindPromptSettled // Hermes closed a pending approval or question (…settled, approval.responded)
 	KindTerminal
 )
 
@@ -29,12 +31,22 @@ type Normalized struct {
 	Output  string // KindTerminal: final text, when Hermes sends it
 	Intr    bool   // KindTerminal: ended by interruption
 	Usage   *Usage // KindTerminal: what Hermes reported, nil when it reported none
+
+	// KindApproval / KindClarify / KindPromptSettled. PromptID is the exact upstream request id (empty
+	// when the frame carried none, which makes the prompt unanswerable); Gen is the execution
+	// generation when Hermes sent one. Text is the redacted command or the question.
+	PromptID string
+	Gen      *int64
+	Detail   string
+	Choices  []string
 }
 
 const (
 	maxDelta   = 64 << 10
 	maxLabel   = 200
 	maxSummary = 2000
+	maxPrompt  = 2000
+	maxChoices = 8
 )
 
 // Normalize maps one frame. The event type is the SSE event name, or the
@@ -70,8 +82,16 @@ func Normalize(ev Event) Normalized {
 		return Normalized{Kind: KindToolStarted, ToolID: toolID(d), Label: clip(firstString(d, "label", "name", "tool"), maxLabel)}
 	case "tool.completed", "tool_call.completed", "hermes.tool.completed":
 		return Normalized{Kind: KindToolCompleted, ToolID: toolID(d), Summary: clip(firstString(d, "summary", "result", "output"), maxSummary)}
-	case "approval.required", "approval.requested", "run.approval_required":
-		return Normalized{Kind: KindApproval}
+	case "approval.request", "approval.required", "approval.requested", "run.approval_required":
+		n := promptFrame(KindApproval, d)
+		n.Text, n.Detail = clip(firstString(d, "command"), maxPrompt), clip(firstString(d, "description"), maxPrompt)
+		return n
+	case "clarify.request":
+		n := promptFrame(KindClarify, d)
+		n.Text = clip(firstString(d, "question"), maxPrompt)
+		return n
+	case "approval.settled", "clarify.settled", "approval.responded":
+		return promptFrame(KindPromptSettled, d)
 	case "run.completed":
 		return Normalized{Kind: KindTerminal, State: StateCompleted, Output: clip(firstString(d, "output", "text"), maxOutput), Usage: usage()}
 	case "run.failed":
@@ -82,6 +102,30 @@ func Normalize(ev Event) Normalized {
 		return Normalized{Kind: KindTerminal, State: StateFailed, Intr: true, Usage: usage()}
 	}
 	return Normalized{Kind: KindIgnore}
+}
+
+// promptFrame reads the fields every approval and clarification frame shares. Hermes' run stream names
+// the id "request_id" or, for the session authority's prompts, "prompt_id".
+func promptFrame(k Kind, d map[string]any) Normalized {
+	n := Normalized{Kind: k}
+	for _, key := range []string{"request_id", "prompt_id"} {
+		if s, ok := d[key].(string); ok && ValidID(s) {
+			n.PromptID = s
+			break
+		}
+	}
+	if g, ok := d["execution_generation"].(float64); ok && g >= 0 && g == float64(int64(g)) {
+		v := int64(g)
+		n.Gen = &v
+	}
+	if raw, ok := d["choices"].([]any); ok {
+		for _, c := range raw {
+			if s, ok := c.(string); ok && len(n.Choices) < maxChoices && s != "" {
+				n.Choices = append(n.Choices, clip(s, maxLabel))
+			}
+		}
+	}
+	return n
 }
 
 func toolID(d map[string]any) string {

@@ -5,7 +5,9 @@
     {"id": "settings", "label": "Change Hermes settings", "status": "unsupported", "reason": "Hermes does not report admin_config_rw as enabled"},
     {"id": "toolsets", "label": "Tools", "status": "unsupported", "reason": "No toolset is enabled and configured"},
     {"id": "skills", "label": "Skills", "status": "unsupported", "reason": "Hermes reports no installed skills"},
-    {"id": "tool_progress", "label": "Live tool progress", "status": "available"}
+    {"id": "tool_progress", "label": "Live tool progress", "status": "available"},
+    {"id": "run_approvals", "label": "Run approvals", "status": "unsupported", "reason": "Hermes does not report run_approval_response and approval_events as enabled"},
+    {"id": "clarification", "label": "Clarification prompts", "status": "unsupported", "reason": "Hermes does not advertise a clarification route"}
   ],
   "toolsets": [],
   "providers": [],
