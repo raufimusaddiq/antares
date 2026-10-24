@@ -1,6 +1,9 @@
-const CACHE = "antares-public-c3bd97da53bc1f7ace4952f90f7b938bf03d3d36cd4564081745a29b5492cb10";
-const PUBLIC = ["/offline.html","/assets/Block-CgiKEEcf.js","/assets/Chart-BfbfRytX.js","/assets/ci-info-Bauk7qhZ.js","/assets/index-BBsAazsY.js","/assets/index-CTswSkzY.css","/assets/offline-52783b55d1fef27e.css","/assets/rolldown-runtime-BWaJ3C7D.js"];
-const allowed = new Set(PUBLIC.map(path => new URL(path, self.location.origin).href));
+const CACHE = "antares-public-018bef3b47ed314ed469e0e5a1c08e9056fbcd94a15c083741768ac18465ba75";
+const PUBLIC = ["/offline.html","/assets/index-CTswSkzY.css","/assets/index-DUHg75bR.js","/assets/offline-52783b55d1fef27e.css","/assets/rolldown-runtime-BWaJ3C7D.js"];
+// On-demand chunks (OpenUI Block, Chart): not fetched at install, cached the first time the page asks for them.
+const OPTIONAL = ["/assets/Block-CtZETi8n.js","/assets/Chart-CHmJRHtQ.js","/assets/ci-info-Bauk7qhZ.js"];
+const optional = new Set(OPTIONAL.map(path => new URL(path, self.location.origin).href));
+const allowed = new Set([...PUBLIC, ...OPTIONAL].map(path => new URL(path, self.location.origin).href));
 
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
@@ -37,7 +40,16 @@ self.addEventListener("fetch", event => {
   } else if (allowed.has(request.url)) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
-      return await cache.match(request) || fetch(request);
+      const hit = await cache.match(request);
+      if (hit) return hit;
+      const response = await fetch(request);
+      if (optional.has(request.url) && response.ok && !response.redirected && !/no-store/i.test(response.headers.get("Cache-Control") || "")) {
+        // A full or failing cache must not cost the page a chunk it already downloaded.
+        try {
+          await cache.put(request, response.clone());
+        } catch {}
+      }
+      return response;
     })());
   }
 });

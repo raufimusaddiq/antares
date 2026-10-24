@@ -3,6 +3,7 @@ package webui
 import (
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -189,6 +190,47 @@ func TestOpenUIChunksAreNotInTheInitialBundle(t *testing.T) {
 		}
 		if b, _ := fs.ReadFile(FS(), files[0]); !strings.Contains(string(b), marker) {
 			t.Errorf("%s does not contain %q: the check above would pass vacuously", files[0], marker)
+		}
+	}
+}
+
+// The service worker precaches what the shell loads, not the on-demand OpenUI
+// chunks: installing the PWA must not download them. They stay in the worker's
+// allowlist so they are cached on first use and work offline afterwards.
+func TestServiceWorkerPrecachesShellNotOptionalChunks(t *testing.T) {
+	b, err := fs.ReadFile(FS(), "sw.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	list := func(name string) []string {
+		m := regexp.MustCompile(`const ` + name + ` = (\[[^\]]*\]);`).FindSubmatch(b)
+		if m == nil {
+			t.Fatalf("sw.js has no %s list", name)
+		}
+		var out []string
+		if err := json.Unmarshal(m[1], &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	precache, optional := strings.Join(list("PUBLIC"), " "), strings.Join(list("OPTIONAL"), " ")
+	html, _ := fs.ReadFile(FS(), "index.html")
+	for _, m := range regexp.MustCompile(`(?:src|href)="(/assets/[^"]+\.(?:js|css))"`).FindAllStringSubmatch(string(html), -1) {
+		if !strings.Contains(precache, m[1]) {
+			t.Errorf("shell asset %s is not precached", m[1])
+		}
+	}
+	for _, want := range []string{"/offline.html", "/assets/rolldown-runtime-", "/assets/offline-"} {
+		if !strings.Contains(precache, want) {
+			t.Errorf("precache lacks %s", want)
+		}
+	}
+	for _, prefix := range []string{"Block-", "Chart-"} {
+		if strings.Contains(precache, "/assets/"+prefix) {
+			t.Errorf("precache downloads the optional %s chunk at install", prefix)
+		}
+		if !strings.Contains(optional, "/assets/"+prefix) {
+			t.Errorf("%s chunk is missing from the on-demand list, so it would not work offline", prefix)
 		}
 	}
 }

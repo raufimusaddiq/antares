@@ -46,7 +46,7 @@ describe("notification settings are read strictly", () => {
   });
 });
 
-const swSource = () => readFileSync(join(__dirname, "..", "public", "sw.js"), "utf8").replace("__VERSION__", "test").replace("__PRECACHE__", "[]");
+const swSource = () => readFileSync(join(__dirname, "..", "public", "sw.js"), "utf8").replace("__VERSION__", "test").replace("__PRECACHE__", "[]").replace("__OPTIONAL__", "[]");
 
 // Run the real worker file against a stub of the worker globals.
 function worker() {

@@ -1,6 +1,9 @@
 const CACHE = "antares-public-__VERSION__";
 const PUBLIC = __PRECACHE__;
-const allowed = new Set(PUBLIC.map(path => new URL(path, self.location.origin).href));
+// On-demand chunks (OpenUI Block, Chart): not fetched at install, cached the first time the page asks for them.
+const OPTIONAL = __OPTIONAL__;
+const optional = new Set(OPTIONAL.map(path => new URL(path, self.location.origin).href));
+const allowed = new Set([...PUBLIC, ...OPTIONAL].map(path => new URL(path, self.location.origin).href));
 
 self.addEventListener("install", event => {
   event.waitUntil((async () => {
@@ -37,7 +40,16 @@ self.addEventListener("fetch", event => {
   } else if (allowed.has(request.url)) {
     event.respondWith((async () => {
       const cache = await caches.open(CACHE);
-      return await cache.match(request) || fetch(request);
+      const hit = await cache.match(request);
+      if (hit) return hit;
+      const response = await fetch(request);
+      if (optional.has(request.url) && response.ok && !response.redirected && !/no-store/i.test(response.headers.get("Cache-Control") || "")) {
+        // A full or failing cache must not cost the page a chunk it already downloaded.
+        try {
+          await cache.put(request, response.clone());
+        } catch {}
+      }
+      return response;
     })());
   }
 });
