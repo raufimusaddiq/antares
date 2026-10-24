@@ -2,7 +2,7 @@
 
 Phase 0 is FAIL (`docs/hermes/PHASE0-FINDINGS.md`). Nothing here is a claim of multi-user readiness.
 
-## What Hermes actually has (probed read-only, Hermes 0.22.5)
+## Published controls (source inspection, Hermes 0.22.5)
 
 Source in the running container, `/opt/hermes/gateway/platforms/api_server*.py`, `gateway/session_pending_controls.py`;
 the recorded `GET /v1/capabilities` fixture. No authenticated call was made (that needs a tenant key).
@@ -14,8 +14,41 @@ the recorded `GET /v1/capabilities` fixture. No authenticated call was made (tha
 | Clarification prompt | SSE event `clarify.request`: `prompt_id`, `execution_generation`, `question`, `choices`, `multi_select`. Emitted **only** by the session authority. | **no** |
 | Clarification answer | `POST /v1/runs/{id}/clarify`, exactly `{request_id, execution_generation, answer}`. Exists **only** in session-authority mode (`respond_run`). | **no** (no `run_clarify` endpoint, no feature flag) |
 
-Not established: whether the deployed Hermes runs in session-authority mode. That needs an authenticated
-`GET /v1/runs/{id}` (look for `pending_controls`) and is the follow-up issue.
+## Authenticated disposable-profile probe (#125, 2026-10-24)
+
+At 17:13-17:15 WIB, a separately provisioned disposable profile advertised
+`features.run_unknown_resolution: true`. Its authenticated `GET /v1/runs/{id}` returned
+`pending_controls: []`, `admission_id` and `execution_generation`. Session-authority mode is
+therefore confirmed for this deployment. The sanitized responses are
+[`t125-capabilities.body.json`](../hermes/fixtures/t125-capabilities.body.json) and
+[`t125-authority-run.body.json`](../hermes/fixtures/t125-authority-run.body.json).
+
+The source-verified `POST /v1/runs/{id}/clarify` was reached with an intentionally nonexistent
+prompt on that same owned run and returned `409 stale_generation`:
+[`t125-stale-clarify.body.json`](../hermes/fixtures/t125-stale-clarify.body.json).
+This negative response proves the handler is reachable; it does not prove a successful answer.
+The live capability document still omits `run_clarify`, so Antares keeps clarification unsupported.
+
+Both attempts to start a clarification-producing turn failed before a tool could ask anything.
+The configured `custom` model provider returned `HTTP 401: invalid key`, also observed by the
+full deployment smoke. The actual terminal SSE is recorded in
+[`t125-failed-run.sse`](../hermes/fixtures/t125-failed-run.sse). No real `approval.request` or
+`clarify.request` frame was observed. Empty `pending_controls` is not evidence of a working prompt.
+The helper policy's effective toolsets did not expose a clarification tool either. No tool policy,
+shared credential or capability gate was changed to manufacture an event.
+
+Remaining upstream work: make the selected model provider usable, advertise `run_clarify` with
+its verified POST path, and expose the clarification tool for the disposable profile. Then capture
+real approval/clarification prompts and exercise exact-generation answers, denial and stale replay.
+This probe does not close #125 or claim multi-user isolation.
+
+Commands used: `docker exec -u hermes hermes` to read the deployed
+`gateway/platforms/api_server*.py` and `gateway/session_pending_controls.py`; the authenticated
+host helper `POST /provision` for one new random slug; scoped `GET /v1/capabilities`,
+`GET /v1/toolsets`, `POST /v1/runs`, `GET /v1/runs/{id}`, `GET /v1/runs/{id}/events`, and the
+negative clarification request above. Credentials stayed in protected host files and headers.
+Raw evidence: `/var/backups/antares/probe-125-20261024T101329Z`. The production image remained
+`458820cee34c1b280e3eb3d5d76fe9241be2f2cf`.
 
 ## What Antares does
 

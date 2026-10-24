@@ -1,0 +1,17 @@
+{
+  "object": "hermes.run",
+  "model": "hermes-agent",
+  "created_at": 1792836928.0116146,
+  "pending_controls": [],
+  "run_id": "run_fixture125",
+  "status": "failed",
+  "session_id": "session_fixture125",
+  "admission_id": "admission_fixture125",
+  "execution_generation": 1,
+  "output": "custom rejected your API key, so the model can't be reached. Update it in Settings \u2192 Providers, or run `hermes setup` in a terminal.\n\nProvider said: HTTP 401: invalid key",
+  "usage": {
+    "input_tokens": 0,
+    "output_tokens": 0,
+    "total_tokens": 0
+  }
+}
