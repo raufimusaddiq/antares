@@ -14,7 +14,8 @@ import (
 // Every write is a compare-and-set on the revision the writer last saw, so two devices
 // cannot silently overwrite each other: the loser gets ErrRevisionConflict together
 // with the winning draft and decides what to do with its own text. Revision 0 means
-// "no draft yet" and is what a first write must present.
+// "no draft yet" and is what a first write must present. Revisions only grow: deleting a draft
+// leaves an empty tombstone at a higher revision, so no revision is ever reused.
 
 // MaxDraftBytes bounds one draft body.
 const MaxDraftBytes = 32 << 10
@@ -125,7 +126,11 @@ func (s draftScope) put(ctx context.Context, db *sql.DB, userID, body string, if
 	return next, tx.Commit()
 }
 
-func (s draftScope) del(ctx context.Context, db *sql.DB, userID string, ifRevision int64) (Draft, error) {
+// del tombstones the draft instead of removing the row: the body is emptied and the revision
+// still advances, so a revision number is never issued twice for a scope. A device holding an
+// older revision therefore keeps getting ErrRevisionConflict after a delete and recreate (no ABA).
+// The tombstone reads back as an empty draft at its revision; the next write must present it.
+func (s draftScope) del(ctx context.Context, db *sql.DB, userID string, ifRevision int64, now time.Time) (Draft, error) {
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return Draft{}, err
@@ -141,14 +146,16 @@ func (s draftScope) del(ctx context.Context, db *sql.DB, userID string, ifRevisi
 	if cur.Revision != ifRevision {
 		return cur, ErrRevisionConflict
 	}
-	if cur.Revision == 0 {
-		return Draft{}, tx.Commit() // nothing to delete: already the state asked for
+	if cur.Revision == 0 || cur.Body == "" {
+		return cur, tx.Commit() // nothing saved, or already a tombstone: the state asked for
 	}
+	next := Draft{Revision: cur.Revision + 1, UpdatedAt: ts(now)}
 	w := s.where()
-	if _, err := tx.ExecContext(ctx, `DELETE FROM `+s.table+` WHERE `+w+` AND revision = ?`, append(s.args(userID), cur.Revision)...); err != nil {
+	if _, err := tx.ExecContext(ctx, `UPDATE `+s.table+` SET body = '', revision = ?, updated_at = ? WHERE `+w+` AND revision = ?`,
+		append([]any{next.Revision, next.UpdatedAt}, append(s.args(userID), cur.Revision)...)...); err != nil {
 		return Draft{}, err
 	}
-	return Draft{}, tx.Commit()
+	return next, tx.Commit()
 }
 
 // GetChatDraft returns the owner's draft for a chat (Revision 0 when none), or ErrNoChat
@@ -163,9 +170,9 @@ func PutChatDraft(ctx context.Context, db *sql.DB, userID, chatID, body string, 
 	return chatScope(chatID).put(ctx, db, userID, body, ifRevision, now)
 }
 
-// DeleteChatDraft removes the draft only if it is still at ifRevision.
-func DeleteChatDraft(ctx context.Context, db *sql.DB, userID, chatID string, ifRevision int64) (Draft, error) {
-	return chatScope(chatID).del(ctx, db, userID, ifRevision)
+// DeleteChatDraft tombstones the draft only if it is still at ifRevision and returns the tombstone.
+func DeleteChatDraft(ctx context.Context, db *sql.DB, userID, chatID string, ifRevision int64, now time.Time) (Draft, error) {
+	return chatScope(chatID).del(ctx, db, userID, ifRevision, now)
 }
 
 // The new-chat draft is the user's composer before any chat exists; it is keyed by user alone.
@@ -177,6 +184,6 @@ func PutNewChatDraft(ctx context.Context, db *sql.DB, userID, body string, ifRev
 	return newChatScope.put(ctx, db, userID, body, ifRevision, now)
 }
 
-func DeleteNewChatDraft(ctx context.Context, db *sql.DB, userID string, ifRevision int64) (Draft, error) {
-	return newChatScope.del(ctx, db, userID, ifRevision)
+func DeleteNewChatDraft(ctx context.Context, db *sql.DB, userID string, ifRevision int64, now time.Time) (Draft, error) {
+	return newChatScope.del(ctx, db, userID, ifRevision, now)
 }

@@ -86,7 +86,7 @@ func (s *Service) chatDraftAPI() draftAPI {
 			return store.PutChatDraft(r.Context(), s.db, uid, r.PathValue("chatId"), body, rev, s.now())
 		},
 		del: func(r *http.Request, uid string, rev int64) (store.Draft, error) {
-			return store.DeleteChatDraft(r.Context(), s.db, uid, r.PathValue("chatId"), rev)
+			return store.DeleteChatDraft(r.Context(), s.db, uid, r.PathValue("chatId"), rev, s.now())
 		},
 	}
 }
@@ -101,7 +101,7 @@ func (s *Service) newChatDraftAPI() draftAPI {
 			return store.PutNewChatDraft(r.Context(), s.db, uid, body, rev, s.now())
 		},
 		del: func(r *http.Request, uid string, rev int64) (store.Draft, error) {
-			return store.DeleteNewChatDraft(r.Context(), s.db, uid, rev)
+			return store.DeleteNewChatDraft(r.Context(), s.db, uid, rev, s.now())
 		},
 	}
 }
@@ -178,8 +178,7 @@ func (a draftAPI) handlers(s *Service) (get, put, del http.HandlerFunc) {
 		case err != nil:
 			fail(w, err)
 		default:
-			w.Header().Set("Cache-Control", "no-store")
-			w.WriteHeader(http.StatusNoContent)
+			writeDraft(w, http.StatusOK, cur) // the tombstone: its revision is what the next write must present
 		}
 	}
 	return

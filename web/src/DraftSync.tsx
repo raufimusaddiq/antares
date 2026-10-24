@@ -14,6 +14,8 @@ interface Slot {
   synced: string; // the text the server holds at `rev`
   latest: string;
   loaded: boolean;
+  loading: boolean;
+  attempted: boolean; // a read has finished, successfully or not
   paused: boolean;
   busy: boolean;
   shared: boolean; // the OS share has been added to this slot's draft
@@ -24,6 +26,8 @@ export interface DraftSyncView {
   conflict: { theirs: string } | null;
   /** The server copy is unreachable: the draft survives in this browser only. */
   offline: boolean;
+  /** Try the server again after a failed read. */
+  retry: () => void;
   keepMine: () => void;
   useTheirs: () => void;
 }
@@ -64,63 +68,79 @@ export function useDraftSync(chatId: string | null, draft: string, setDraft: (v:
     if (s.latest !== s.synced) void flush(s); // typed while the write was in flight
   }, []);
 
-  // Load the server copy when the chat on screen changes; flush the one being left.
-  useEffect(() => {
-    const s: Slot = { chatId, rev: 0, synced: "", latest: draftRef.current, loaded: false, paused: false, busy: false, shared: false };
-    slot.current = s;
-    setConflict(null);
-    setOffline(false);
-    let live = true;
-    void readDraft(chatId).then((r) => {
-      if (!live) return;
+  // Read the server copy and reconcile it with what is in the box. A failed read leaves the slot
+  // unloaded (nothing is written) and is retried on reconnect, on the Retry button and on the
+  // next edit; the local text is kept, and the normal conflict check runs when a read succeeds.
+  const load = useCallback(
+    async (s: Slot): Promise<void> => {
+      if (s.loaded || s.loading) return;
+      s.loading = true;
+      const r = await readDraft(s.chatId);
+      s.loading = false;
+      s.attempted = true;
+      if (slot.current !== s) return;
       if (r.kind !== "ok") {
         setOffline(true);
         return;
       }
+      setOffline(false);
       s.rev = r.revision;
-      const local = draftRef.current;
-      if (r.revision === 0 || local === "" || local === r.body) {
-        s.synced = r.body;
+      const local = s.latest;
+      s.synced = r.body;
+      if (r.body === "" || local === "" || local === r.body) {
+        // No competing text on the server (empty, or a deleted draft's tombstone), or nothing here: no conflict.
         if (local === "" && r.body !== "") setDraftRef.current(r.body);
         s.latest = local === "" ? r.body : local;
       } else {
         // This browser holds text the server does not, and the server holds text this browser has not seen.
-        s.synced = r.body;
-        s.latest = local;
         s.paused = true;
         setConflict({ theirs: r.body });
       }
       s.loaded = true;
       void flush(s);
-    });
+    },
+    [flush],
+  );
+
+  // Switching chats loads that chat's draft; the chat being left is flushed first.
+  useEffect(() => {
+    const s: Slot = { chatId, rev: 0, synced: "", latest: draftRef.current, loaded: false, loading: false, attempted: false, paused: false, busy: false, shared: false };
+    slot.current = s;
+    setConflict(null);
+    setOffline(false);
+    void load(s);
+    const onOnline = () => void load(s);
+    window.addEventListener("online", onOnline);
     return () => {
-      live = false;
+      window.removeEventListener("online", onOnline);
       window.clearTimeout(timer.current);
       void flush(s); // the text typed just before leaving this chat still goes to this chat's draft
     };
-  }, [chatId, flush]);
+  }, [chatId, flush, load]);
 
-  // Debounced write of whatever is in the box.
+  // Debounced write of whatever is in the box (or, if the first read failed, another try at the read).
   useEffect(() => {
     const s = slot.current;
     if (!s || s.chatId !== chatId) return;
     s.latest = draft;
     window.clearTimeout(timer.current);
-    timer.current = window.setTimeout(() => void flush(s), DEBOUNCE_MS);
-  }, [draft, chatId, flush]);
+    timer.current = window.setTimeout(() => void (s.loaded ? flush(s) : load(s)), DEBOUNCE_MS);
+  }, [draft, chatId, flush, load]);
 
-  // Shared text lands in the new-chat draft only, after that draft has loaded, and is not sent.
+  // Shared text lands in the new-chat draft only and is not sent. It is appended to the text in the box
+  // and, when the server disagrees, to the server's candidate too, so either choice keeps it.
   useEffect(() => {
     if (share === null || chatId !== null) return;
     const s = slot.current;
     if (!s) return;
     const id = window.setInterval(() => {
-      if (slot.current !== s || !s.loaded) return;
+      if (slot.current !== s || !s.attempted) return; // wait for the first read to finish, whichever way it went
       window.clearInterval(id);
       if (s.shared) return;
       s.shared = true;
-      const base = s.paused ? s.synced : s.latest;
-      setDraftRef.current(base.trim() === "" ? share : `${base.replace(/\s*$/, "")}\n\n${share}`);
+      const add = (base: string) => (base.trim() === "" ? share : `${base.replace(/\s*$/, "")}\n\n${share}`);
+      setConflict((c) => (c ? { theirs: add(c.theirs) } : c));
+      setDraftRef.current(add(s.latest));
       onShared();
     }, 50);
     return () => window.clearInterval(id);
@@ -129,6 +149,9 @@ export function useDraftSync(chatId: string | null, draft: string, setDraft: (v:
   return {
     conflict,
     offline,
+    retry: () => {
+      if (slot.current) void load(slot.current);
+    },
     keepMine: () => {
       const s = slot.current;
       if (!s) return;
@@ -139,8 +162,7 @@ export function useDraftSync(chatId: string | null, draft: string, setDraft: (v:
     useTheirs: () => {
       const s = slot.current;
       if (!s || !conflict) return;
-      s.synced = conflict.theirs;
-      s.latest = conflict.theirs;
+      s.latest = conflict.theirs; // s.synced stays the server's own text, so a share kept in `theirs` is written
       s.paused = false;
       setDraftRef.current(conflict.theirs);
       setConflict(null);
@@ -165,7 +187,10 @@ export function DraftNotice({ sync }: { sync: DraftSyncView }) {
   if (sync.offline) {
     return (
       <p className="draft-note" role="status">
-        This draft is saved in this browser only.
+        This draft is saved in this browser only.{" "}
+        <button type="button" className="quiet" onClick={sync.retry}>
+          Retry
+        </button>
       </p>
     );
   }

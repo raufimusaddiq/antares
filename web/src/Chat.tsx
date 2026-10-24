@@ -27,6 +27,7 @@ import { ModelPicker } from "./ModelPicker";
 import { mergeNewest, prependOlder, reachOf } from "./history";
 import { SearchPanel } from "./Search";
 import { MessageBody } from "./MessageBody";
+import { MAX_REPLY, ReplyContext } from "./openui/reply";
 import { Artifacts } from "./Artifacts";
 import { ExportChat } from "./ExportChat";
 import { indentInFence, wrapSelection, type Edit } from "./composerEdit";
@@ -312,6 +313,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const onDraft = (v: string) => {
     setDraft(v);
     saveDraft(email, currentRef.current, v);
+  };
+  // A rich block's button/input adds text to the draft of the chat on screen and never sends it.
+  const addToDraft = (t: string) => {
+    onDraft((draft.trim() === "" ? "" : draft.replace(/\s*$/, "\n")) + t.slice(0, MAX_REPLY));
+    document.getElementById("composer-input")?.focus();
   };
   const [banner, setBanner] = useState("");
   const [focus, setFocus] = useState<{ chat: string; seq: number; nonce: number } | null>(null); // a search result being opened at its turn
@@ -764,6 +770,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         {turns.length === 0 && !pending && !run && !turnsError && (current === null || current === blankChat.current) && (
           <p className="label">{current === null ? "Start a conversation below." : "New conversation. Write a message below."}</p>
         )}
+        <ReplyContext.Provider value={addToDraft}>
         <Transcript
           key={current ?? "new"}
           chatId={current ?? undefined}
@@ -790,6 +797,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           }}
           onResend={() => pending && void submit(pending.input, pending.key)}
         />
+        </ReplyContext.Provider>
         {usage && (
           <details className="usage" open={usage.budget.reached}>
             <summary>{usage.budget.reached ? "Token limit reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens` : "Usage unknown"}</summary>

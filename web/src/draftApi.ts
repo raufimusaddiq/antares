@@ -48,7 +48,6 @@ function written(r: { status: number; json: unknown }): DraftWrite {
     const cur = parseDraft(rec(r.json).current);
     return cur ? { kind: "conflict", ...cur } : { kind: "error" };
   }
-  if (r.status === 204) return { kind: "ok", revision: 0 };
   const d = r.status === 200 ? parseDraft(r.json) : null;
   return d ? { kind: "ok", revision: d.revision } : { kind: "error" };
 }

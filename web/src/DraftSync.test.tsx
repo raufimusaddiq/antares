@@ -21,8 +21,9 @@ function fakeServer() {
     const im = Number(new Headers(init?.headers).get("If-Match")?.replaceAll('"', ""));
     if (im !== cur.revision) return reply(409, { error: { code: "REVISION_CONFLICT" }, current: cur });
     if (method === "DELETE") {
-      drafts.delete(path);
-      return reply(204);
+      const tomb = { body: "", revision: cur.revision + 1 }; // a deleted draft keeps its revision
+      drafts.set(path, tomb);
+      return reply(200, tomb);
     }
     const next = { body: JSON.parse(String(init?.body)).body as string, revision: cur.revision + 1 };
     drafts.set(path, next);
@@ -116,7 +117,10 @@ describe("server draft sync", () => {
     await settle();
     await act(async () => api.setDraft(""));
     await settle();
-    expect(srv.drafts.has(P1)).toBe(false);
+    expect(srv.drafts.get(P1)).toEqual({ body: "", revision: 2 });
+    await act(async () => api.setDraft("typed after a send")); // the next write presents the tombstone's revision
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "typed after a send", revision: 3 });
   });
 
   it("an unreachable server is said out loud and the text stays", async () => {
@@ -127,6 +131,45 @@ describe("server draft sync", () => {
   });
 });
 
+describe("failed first read", () => {
+  it("recovers on Retry: keeps local text, then saves", async () => {
+    srv.setDown(true);
+    const r = await mount({ initial: "typed offline" });
+    await act(async () => api.setDraft("typed offline, more"));
+    await settle(); // still down: tried to read again, wrote nothing
+    expect(srv.log.some((l) => l.startsWith("PUT"))).toBe(false);
+    expect(r.container.textContent).toContain("saved in this browser only");
+    srv.setDown(false);
+    await act(async () => api.sync.retry());
+    await settle();
+    expect(api.text()).toBe("typed offline, more");
+    expect(srv.drafts.get(P1)).toEqual({ body: "typed offline, more", revision: 1 });
+    expect(r.container.textContent).toBe("");
+  });
+
+  it("recovers when the browser comes back online, and still runs the conflict check", async () => {
+    srv.setDown(true);
+    await mount({ initial: "mine" });
+    srv.drafts.set(P1, { body: "from the laptop", revision: 5 }); // written while this device was offline
+    srv.setDown(false);
+    await act(async () => void window.dispatchEvent(new Event("online")));
+    await settle();
+    expect(api.sync.conflict).toEqual({ theirs: "from the laptop" });
+    expect(api.text()).toBe("mine");
+    expect(srv.drafts.get(P1)).toEqual({ body: "from the laptop", revision: 5 }); // nothing overwritten
+  });
+
+  it("recovers by itself on the next edit", async () => {
+    srv.setDown(true);
+    await mount();
+    srv.setDown(false);
+    await act(async () => api.setDraft("hello"));
+    await settle(); // the debounce retries the read, then saves
+    await settle();
+    expect(srv.drafts.get(P1)).toEqual({ body: "hello", revision: 1 });
+  });
+});
+
 describe("share to draft", () => {
   it("parses only a share navigation, joins title/text/url, drops duplicates", () => {
     expect(sharedText("")).toBeNull();
@@ -134,6 +177,30 @@ describe("share to draft", () => {
     expect(sharedText("?share=1")).toBeNull();
     expect(sharedText("?share=1&title=T&text=body&url=https%3A%2F%2Fx.test")).toBe("T\nbody\nhttps://x.test");
     expect(sharedText("?share=1&text=same&title=same")).toBe("same");
+  });
+
+  it("with divergent local and server drafts keeps both candidates, each with the share", async () => {
+    const NEW = "/api/me/new-chat-draft";
+    srv.drafts.set(NEW, { body: "server text", revision: 2 });
+    await mount({ chat: null, initial: "local text", share: "X" });
+    await settle();
+    expect(api.text()).toBe("local text\n\nX");
+    expect(api.sync.conflict).toEqual({ theirs: "server text\n\nX" });
+    expect(srv.drafts.get(NEW)).toEqual({ body: "server text", revision: 2 }); // nothing written while undecided
+    await act(async () => api.sync.useTheirs());
+    await settle();
+    expect(api.text()).toBe("server text\n\nX");
+    expect(srv.drafts.get(NEW)).toEqual({ body: "server text\n\nX", revision: 3 });
+  });
+
+  it("with divergent drafts, Keep this text writes the local text plus the share", async () => {
+    const NEW = "/api/me/new-chat-draft";
+    srv.drafts.set(NEW, { body: "server text", revision: 2 });
+    await mount({ chat: null, initial: "local text", share: "X" });
+    await settle();
+    await act(async () => api.sync.keepMine());
+    await settle();
+    expect(srv.drafts.get(NEW)).toEqual({ body: "local text\n\nX", revision: 3 });
   });
 
   it("lands in the new-chat draft, appended, and is never sent", async () => {

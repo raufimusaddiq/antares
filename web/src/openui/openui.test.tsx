@@ -47,6 +47,14 @@ describe("the validator is the allowlist", () => {
   const rejected: Record<string, string> = {
     "unknown component": 'root = Stack([Evil("x")])',
     "button with an action": 'root = Stack([Button("go", @OpenUrl("https://evil.test"))])',
+    "button action instead of reply text": 'root = Stack([Button("go", @OpenUrl("https://evil.test"))])',
+    "button reply that is not text": 'root = Stack([Button("go", 5)])',
+    "chart with a string value": 'root = Stack([Chart("bar", "t", ["a"], ["x"])])',
+    "chart with an unknown kind": 'root = Stack([Chart("radar", "t", ["a"], [1])])',
+    "chart with too many points": `root = Stack([Chart("bar", "t", [${Array.from({ length: 25 }, () => '"a"').join(",")}], [${Array.from({ length: 25 }, () => "1").join(",")}])])`,
+    "choice with one option": 'root = Stack([Choice("pick", ["only"])])',
+    "form": 'root = Stack([Form("x")])',
+    "card inside a card with a button": 'root = Stack([Card("t", [Card("u", [Button("a","b")])])])',
     "iframe": 'root = Stack([IFrame("https://evil.test")])',
     "image": 'root = Stack([Image("https://evil.test/x.png")])',
     "link": 'root = Stack([Link("x", "javascript:alert(1)")])',
@@ -82,8 +90,8 @@ describe("the validator is the allowlist", () => {
     expect(check(`root = Stack([Text("${"x".repeat(5000)}")])`).ok).toBe(false);
   });
 
-  it("the library defines nothing that can act", () => {
-    expect(ALLOWED_COMPONENTS).toEqual(["Stack", "Card", "Text", "Heading", "Badge", "Metric", "BulletList", "Table", "Divider"]);
+  it("the library defines exactly these components, none of which can navigate, fetch or submit", () => {
+    expect(ALLOWED_COMPONENTS).toEqual(["Stack", "Card", "Text", "Heading", "Badge", "Metric", "BulletList", "Table", "Divider", "Chart", "Button", "Input", "Choice"]);
     const names = Object.keys(library.toJSONSchema().$defs ?? {});
     expect(names.sort()).toEqual([...ALLOWED_COMPONENTS].sort());
   });

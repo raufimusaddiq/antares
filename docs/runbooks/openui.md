@@ -10,10 +10,18 @@ Code: `web/src/openui/*`, `web/src/MessageBody.tsx`. Package: `@openuidev/react-
   stays Markdown (shown as inert code).
 - **Lazy runtime**: the renderer, Zod and the component library are one on-demand chunk (`Block-*.js`, ~200 kB,
   ~61 kB gzip). A chat with no rich content never fetches it (checked in `scripts/browser-check.mjs`).
-- **Allowlist** (`library.tsx`): `Stack, Card, Text, Heading, Badge, Metric, BulletList, Table, Divider`. Every value is
-  rendered as React text. There is **no** button, form, link, image, iframe, media or action component, so a block
-  cannot navigate, fetch, submit or mutate anything. `onAction` is a no-op. Adding an interactive component needs the
-  secured Go API route behind it first, and a new row in the tests.
+- **Allowlist** (`library.tsx`): `Stack, Card, Text, Heading, Badge, Metric, BulletList, Table, Divider, Chart, Button, Input, Choice`.
+  Every value is rendered as React text. There is **no** link, form submit, image, iframe, media or URL component, so a
+  block cannot navigate, fetch or mutate anything. `onAction` is a no-op.
+- **Safe actions** (`reply.ts`): `Button`, `Input` and `Choice` do one thing: add text (≤ 500 chars) to the composer draft
+  of the chat on screen through `ReplyContext`, provided by `Chat.tsx`. They never send; the reader reviews and presses
+  Send, so the follow-up is an ordinary authenticated message in the current chat (PRD §7.4). Without a provider the
+  buttons are disabled. No Go route is involved, so there is no new server surface to authorize.
+- **Charts** (`Chart.tsx`): bar, line and pie as plain SVG from `kind`, `title`, `labels`, `values` (1-24 points, finite
+  numbers, labels and values the same length; checked in `validate.ts` because the parser does not enforce schema
+  min/max). The numbers are also shown as a text table. The renderer is its own on-demand chunk (`Chart-*.js`, ~2 kB)
+  behind `React.lazy`; `TestOpenUIChunksAreNotInTheInitialBundle` (`internal/webui`) fails if the shell preloads, or the
+  entry script contains, the `Block` or `Chart` chunk.
 - **Strict gate** (`validate.ts`): the parser is permissive by design (it drops what it cannot place). A block is
   rendered only if it parses with zero errors, is complete, has a `Stack` root, contains only allowlisted components
   in allowed positions (`Card` not in `Card`, no `Stack` inside `Card`), no dynamic props, no `Query`/`Mutation`/`$state`,
@@ -49,6 +57,8 @@ package is installed. `web/.npmrc` therefore sets `ignore-scripts=true`.
 - The versioned OpenUI instruction that tells the model the language (PRD §7.2) is **not** sent. Hermes' per-request
   instruction mechanism has no captured fixture (`docs/hermes/PHASE0-FINDINGS.md` §2), and inventing one is how an
   endpoint's assumed shape becomes a production bug. Until it exists, models only produce OpenUI if a user asks for it.
-- Interactive components, charts, images/media, and follow-up actions (§7.3 beyond display and tables).
-- The §7.5 malicious-action rows that need a backend (`/admin/*` from a block, cross-chat form submit) hold today
-  because no component can issue a request; they need real tests when the first action component is added.
+- Images/video/audio, source lists, approval cards and a sent (not drafted) follow-up (§7.3 beyond the above). Sending
+  from a block would need the secured Go route first.
+- The §7.5 malicious-action rows (`/admin/*` from a block, cross-chat form submit) hold because no component can issue a
+  request: the only action writes to a local draft. `Rich.test.tsx` pins that no `fetch` happens on click.
+- Hermes exposes no OpenUI route (PRD UI-001, `docs/hermes/PHASE0-FINDINGS.md` has none), so the registry stays client-side.

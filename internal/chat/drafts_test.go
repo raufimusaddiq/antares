@@ -107,14 +107,18 @@ func TestStaleDraftWriteNeverOverwritesNewerText(t *testing.T) {
 			if got := u.readDraft(path); got.Body != "laptop v2" {
 				t.Fatalf("stale delete removed the draft: %+v", got)
 			}
-			if w := u.do("DELETE", path, map[string]string{"If-Match": `"2"`}, nil); w.Code != http.StatusNoContent {
-				t.Fatalf("delete at the current revision = %d", w.Code)
+			w := u.do("DELETE", path, map[string]string{"If-Match": `"2"`}, nil)
+			if tomb := decodeBody[draftResp](t, w); w.Code != http.StatusOK || tomb.Revision != 3 || tomb.Body != "" {
+				t.Fatalf("delete at the current revision = %d %s", w.Code, w.Body.String())
 			}
-			if got := u.readDraft(path); got.Revision != 0 || got.Body != "" {
-				t.Fatalf("deleted draft still reads %+v", got)
+			// The tombstone keeps the revision: it reads empty at 3, never back at 0.
+			if got := u.readDraft(path); got.Revision != 3 || got.Body != "" {
+				t.Fatalf("deleted draft reads %+v", got)
 			}
-			// After a delete the next first write starts again from revision 0.
-			if d, code, _ := u.putDraft(path, `"0"`, map[string]string{"body": "again"}); code != 200 || d.Revision != 1 {
+			if _, code, _ := u.putDraft(path, `"0"`, map[string]string{"body": "from a device that never saw the delete"}); code != http.StatusConflict {
+				t.Fatalf("a write from revision 0 over a tombstone = %d", code)
+			}
+			if d, code, _ := u.putDraft(path, `"3"`, map[string]string{"body": "again"}); code != 200 || d.Revision != 4 {
 				t.Fatalf("write after delete: %d %+v", code, d)
 			}
 		})
@@ -343,5 +347,31 @@ func TestTemplateValidationAndBounds(t *testing.T) {
 	}
 	if _, code := u.tpl("POST", "/api/me/templates", map[string]string{"name": "one-more", "body": "x"}); code != 422 {
 		t.Errorf("template over the limit = %d", code)
+	}
+}
+
+// Revision ABA: device A holds revision 1; B deletes and recreates. A's stale PUT and DELETE
+// must still be refused, in both scopes, and B's text must survive.
+func TestDeleteRecreateNeverReusesARevision(t *testing.T) {
+	a := newApp(t)
+	u := a.user("a")
+	for _, path := range []string{"/api/chats/" + u.newChat() + "/draft", "/api/me/new-chat-draft"} {
+		u.putDraft(path, `"0"`, map[string]string{"body": "A's draft"}) // rev 1, A keeps this revision
+		if w := u.do("DELETE", path, map[string]string{"If-Match": `"1"`}, nil); w.Code != 200 {
+			t.Fatalf("%s: B deletes: %d", path, w.Code)
+		}
+		d, code, _ := u.putDraft(path, `"2"`, map[string]string{"body": "B's newer draft"})
+		if code != 200 || d.Revision != 3 {
+			t.Fatalf("%s: B recreates: %d %+v", path, code, d)
+		}
+		if _, code, _ := u.putDraft(path, `"1"`, map[string]string{"body": "A stale"}); code != http.StatusConflict {
+			t.Fatalf("%s: A's stale PUT = %d", path, code)
+		}
+		if w := u.do("DELETE", path, map[string]string{"If-Match": `"1"`}, nil); w.Code != http.StatusConflict {
+			t.Fatalf("%s: A's stale DELETE = %d", path, w.Code)
+		}
+		if got := u.readDraft(path); got.Body != "B's newer draft" || got.Revision != 3 {
+			t.Fatalf("%s: B's text was lost: %+v", path, got)
+		}
 	}
 }
