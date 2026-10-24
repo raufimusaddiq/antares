@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -46,28 +47,77 @@ const (
 	writeSlack  = 30 * time.Second
 )
 
-// envScript sets API_SERVER_KEY in a profile .env. The path is argv[2], the
-// mode argv[1]; the key arrives on stdin. mode "init" refuses to overwrite an
-// existing key (exit 3), "rotate" replaces it (exit 4 when there is none).
+// Bootstrap credentials travel only on stdin; an existing profile's inference settings are never rewritten.
 const envScript = `
-import os, sys
+import json, os, stat, sys, tempfile
+from pathlib import Path
+from agent.secret_scope import load_env_file
 mode, path = sys.argv[1], sys.argv[2]
-key = sys.stdin.read().strip()
-lines = []
-if os.path.exists(path):
-    lines = open(path).read().splitlines()
-has = any(l.startswith("API_SERVER_KEY=") for l in lines)
-if mode == "init" and has:
-    sys.exit(3)
-if mode == "rotate" and not has:
-    sys.exit(4)
-lines = [l for l in lines if not l.startswith("API_SERVER_KEY=")]
-lines.append("API_SERVER_KEY=" + key)
-tmp = path + ".tmp"
-fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
-with os.fdopen(fd, "w") as f:
-    f.write("\n".join(lines) + "\n")
-os.replace(tmp, path)
+try:
+    payload = json.load(sys.stdin)
+    key, bootstrap = payload["key"], payload.get("bootstrap")
+    parent = os.path.dirname(path)
+    if os.path.islink(parent) or (os.path.lexists(path) and not stat.S_ISREG(os.lstat(path).st_mode)):
+        sys.exit(5)
+    lines = open(path).read().splitlines() if os.path.exists(path) else []
+    entries = load_env_file(Path(path))
+    has = "API_SERVER_KEY" in entries
+    if mode == "init" and has:
+        sys.exit(3)
+    if mode == "rotate" and not has:
+        sys.exit(4)
+    if mode == "init":
+        from hermes_cli.config import read_user_config_raw
+        config = read_user_config_raw(Path(parent) / "config.yaml")
+        model = config.get("model", {})
+        if not isinstance(model, dict):
+            sys.exit(5)
+        # Route the way the runtime does: a named provider takes its endpoint and
+        # key variable from its providers.<name> / custom_providers entry, never
+        # from the model block; only openai and an unnamed custom use model.*.
+        provider = str(model.get("provider") or "").strip().lower()
+        route = model
+        if provider != "openai":
+            from hermes_cli.runtime_provider_custom import _get_named_custom_provider
+            route = _get_named_custom_provider(provider, config=config, resolve_credentials=False)
+            if route is None and provider == "custom":
+                route = model
+            elif route is None or route.get("key_cmd"):
+                sys.exit(5)
+        endpoint = str(route.get("base_url") or "").rstrip("/")
+        if endpoint in ("${OPENAI_BASE_URL}", "${env:OPENAI_BASE_URL}"):
+            endpoint = (bootstrap["base_url"] if bootstrap is not None and not entries else entries.get("OPENAI_BASE_URL", "")).rstrip("/")
+        # A profile whose parsed .env holds no variable at all (absent, or only the
+        # comment header profile create seeds) has no inference binding yet: a new
+        # profile, or the retry of a bootstrap that failed after create.
+        if bootstrap is not None and not entries:
+            if not endpoint or endpoint != bootstrap["base_url"].rstrip("/"):
+                sys.exit(5)
+            if route.get("key_env") not in (None, "", "OPENAI_API_KEY") or route.get("api_key_env") not in (None, "", "OPENAI_API_KEY"):
+                sys.exit(5)
+            configured_key = route.get("api_key") or route.get("api")
+            if configured_key and configured_key not in (bootstrap["key"], "${OPENAI_API_KEY}", "${env:OPENAI_API_KEY}"):
+                sys.exit(5)
+            if key == bootstrap["key"]:
+                sys.exit(5)
+            lines += ["OPENAI_API_KEY=" + json.dumps(bootstrap["key"]), "OPENAI_BASE_URL=" + json.dumps(bootstrap["base_url"], ensure_ascii=False)]
+        else:
+            if not entries.get("OPENAI_API_KEY") or not endpoint or endpoint != entries.get("OPENAI_BASE_URL", "").rstrip("/"):
+                sys.exit(5)
+    lines = [line for line in lines if line.removeprefix("export ").split("=", 1)[0].strip() != "API_SERVER_KEY"]
+    lines.append("API_SERVER_KEY=" + key)
+    fd, tmp = tempfile.mkstemp(prefix=".antares-env-", dir=parent)
+    try:
+        with os.fdopen(fd, "w") as f:
+            f.write("\n".join(lines) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        if os.path.exists(tmp):
+            os.unlink(tmp)
+except Exception:
+    sys.exit(5)
 `
 
 var (
@@ -129,9 +179,16 @@ func (h hermes) disableToolsets(ctx context.Context, slug string, disabled []str
 	return nil
 }
 
-func (h hermes) writeKey(ctx context.Context, mode, slug, key string) error {
+func (h hermes) writeKey(ctx context.Context, mode, slug, key string, bootstrap *inferenceBootstrap) error {
 	path := profilesDir + "/" + slug + "/.env"
-	_, _, err := h.r.Run(ctx, key, "python3", "-c", envScript, mode, path)
+	payload, err := json.Marshal(struct {
+		Key       string              `json:"key"`
+		Bootstrap *inferenceBootstrap `json:"bootstrap,omitempty"`
+	}{key, bootstrap})
+	if err != nil {
+		return errInferenceBootstrap
+	}
+	_, _, err = h.r.Run(ctx, string(payload), "python3", "-c", envScript, mode, path)
 	var ee interface{ ExitCode() int } // *exec.ExitError satisfies this
 	if errors.As(err, &ee) {
 		switch ee.ExitCode() {
@@ -139,6 +196,8 @@ func (h hermes) writeKey(ctx context.Context, mode, slug, key string) error {
 			return errKeyExists
 		case 4:
 			return errNoKey
+		case 5:
+			return errInferenceBootstrap
 		}
 	}
 	if err != nil {

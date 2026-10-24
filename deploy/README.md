@@ -56,6 +56,9 @@ stat'ed, never read or printed, and never loosened.
 
 ```
 PROVISIONER_TOKEN=<>=32 random chars; the same value as ANTARES_PROVISIONER_TOKEN>
+# Explicit operator-managed shared launch-provider source; never a user profile .env.
+PROVISIONER_INFERENCE_API_KEY=<shared-inference-provider-key>
+PROVISIONER_INFERENCE_BASE_URL=<exact-shared-inference-endpoint>
 # HERMES_CONTAINER=hermes
 # Must equal ANTARES_TENANT_ALLOWED_TOOLSETS in antares.env (default shown). If the two differ,
 # toolset_policy fails for every tenant, or the provisioner refuses to start on an unknown name.

@@ -224,7 +224,12 @@ A binding record contains:
 - `memory_scope_key` (deterministic internal mapping, e.g. `chatui:user:<uuid>`)
 - `provisioned_at`, `last_health_check`, `verified_at`, `status`
 
-**Never reuse** the same Hermes profile, memory scope, session ID, asset namespace, or bearer key across users. Database unique constraints MUST enforce these relationships.
+**Never reuse** the same Hermes profile, memory scope, session ID, asset namespace, or inbound profile bearer key across users. Database unique constraints MUST enforce these relationships.
+
+**Owner decision, 2026-10-24 (#132):** all accounts may use the operator-managed shared inference
+provider key. This backend-only credential is separate from the unique inbound `API_SERVER_KEY`
+for each Hermes profile; it is not a tenant identity or an authorization boundary. Model choice
+remains independent per account/chat, and no provider key reaches browser APIs or logs.
 
 ### 5.2 Supported Hermes routing options
 
@@ -255,6 +260,15 @@ The Chat UI must not invoke `docker exec`, mount `/var/run/docker.sock`, write H
 6. Only on successful validation does `tenant_status` become `READY` and chat unlock.
 
 **Amended 2026-10-22 (owner decision, issue #18):** automated provisioning is now **in scope**. It is delivered by a separately authenticated, narrowly scoped host-side helper (`tools/hermes-provisioner/`) that drives `hermes profile create/delete/purge-identity` over `docker exec`; Antares calls it over HTTP with a bearer token and never receives Docker access. Hermes itself still exposes no provisioning REST endpoint, and none is to be invented.
+
+**New-profile inference bootstrap (#132):** the host helper receives the explicit operator-managed
+launch-provider credential and matching endpoint through `PROVISIONER_INFERENCE_API_KEY` and
+`PROVISIONER_INFERENCE_BASE_URL`. It installs only this authorized pair in newly created profile
+secret scopes, with exact endpoint binding and a distinct inbound profile key. It never sources
+credentials from another user's profile, changes shared settings, enables ambient-secret fallback
+or backfills existing profiles. Missing/mismatched source fails closed with sanitized errors.
+Per-profile model configuration and existing user/session data remain unchanged. Operator runtime
+configuration and deployment are separately authorized; this contract does not change Phase 0 FAIL.
 
 ### 5.4 Memory contract
 
@@ -381,7 +395,7 @@ These are **Chat UI's normalized event names**, not claims that all Hermes endpo
 - Model overrides are allowed only for admin-approved provider/model choices; user-supplied arbitrary `provider`, `base_url`, or key is blocked.
 - Tool approval requests must identify the real upstream pending approval; only the owning user may approve/deny their own run, using validated exact prompt/generation IDs where required.
 - Revoked accounts may not approve already pending tool actions; try to cancel the upstream run and log failure if cancellation cannot be completed.
-- Support model/provider defaults at tenant/profile level, without changing Hermes global config from chat input.
+- Support model/provider defaults at tenant/profile level, without changing Hermes global config from chat input. Sharing the approved inference credential (#132) does not synchronize model selections or restrict the existing independently validated per-chat choices.
 
 ---
 

@@ -89,6 +89,27 @@ Per-user Hermes profiles are created by `tools/hermes-provisioner/`, a small Go 
   (owner approval applies). A lost `/provision` response is recovered with `/rotate`. Details in the
   helper README.
 
+### New-profile inference source (#132)
+
+The owner authorized the shared launch-provider credential for all accounts, while model choices
+remain per account/chat and inbound profile keys remain unique. The helper EnvironmentFile must
+explicitly set `PROVISIONER_INFERENCE_API_KEY` and `PROVISIONER_INFERENCE_BASE_URL`, sourced from
+the operator-managed launch-provider secret and exact endpoint. Neither is a browser/Antares
+input. No value is read from an owner's private profile. See the helper README for the supported
+OpenAI-compatible endpoint validation and new-profile-only behavior. Do not copy live secrets
+into a checkout, logs or commands. Setting runtime values, restarting/deploying the helper and
+repairing old keyless profiles require separate owner-approved operator actions. Merging #132
+does none of those actions. Phase 0 remains FAIL; trusted-user operation only.
+
+**Launch-profile precondition.** `hermes profile create` seeds a new profile from the launch
+profile's config. Before the helper is used, the launch profile must be pinned to the shared
+endpoint and an accepted provider: `model.provider` of `openai`, `custom`, or the name of a
+`providers.<name>` entry (bare or `custom:<name>`), whose endpoint (`model.base_url` for `openai`
+and unnamed `custom`, `providers.<name>.base_url` for a named provider) equals
+`PROVISIONER_INFERENCE_BASE_URL`, with the key variable unset or `OPENAI_API_KEY`. A default launch
+profile (`provider: auto`, no endpoint), another endpoint, another `key_env` or a `key_cmd` makes
+every `/provision` fail closed with 502 before any key is issued.
+
 ### Deploying the helper (every deploy)
 
 The helper is not in the container image; nothing rebuilds it but the operator. In this order, because
