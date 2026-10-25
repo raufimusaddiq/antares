@@ -21,6 +21,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { measure, verdicts, CURRENT, pointerCheck } from "../web/scripts/mobile-layout.mjs";
+import { knownBlobConsole, unexpectedMessages } from "../web/scripts/known-csp.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = process.env.DIST ? path.resolve(process.env.DIST) : path.join(here, "..", "internal", "webui", "dist");
@@ -750,9 +751,8 @@ async function images(browser) {
     // browser blocks it (the file name and Remove still work). It is the ONLY console/CSP message this flow is allowed to produce, together
     // with the deliberate 415 of the failed-upload step. Anything else fails; the day the policy allows blob: images this check is tightened.
     const csp = await page.evaluate(() => window.__csp);
-    const expected = (m) => /^Loading the image 'blob:.*img-src 'self'/.test(m) || /status of 415/.test(m);
-    const unexpected = [...consoleErrors.filter((m) => !expected(m)), ...csp.filter((m) => !/^img-src blob/.test(m))];
-    const blobBlocked = consoleErrors.filter((m) => /^Loading the image 'blob:/.test(m)).length;
+    const unexpected = unexpectedMessages(consoleErrors, csp, base);
+    const blobBlocked = consoleErrors.filter((m) => knownBlobConsole(m, base)).length;
     check(`images ${label}: no console error or CSP violation other than the known blocked blob: thumbnail (${blobBlocked} blocked) and the deliberate 415`, unexpected.length === 0, JSON.stringify(unexpected.slice(0, 2)));
     await ctx.close();
   }

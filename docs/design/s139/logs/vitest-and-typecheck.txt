@@ -6,11 +6,11 @@
  RUN  v5.0.5 /home/ubuntu/antares-wt/s139-retro-ui/web
 
 
- Test Files  49 passed (49)
-      Tests  521 passed (521)
-   Start at  13:03:56
-   Duration  65.46s (tests 54%, environment 29%, import 15%, transform 1%, worker 1%)
+ Test Files  50 passed (50)
+      Tests  547 passed (547)
+   Start at  13:19:25
+   Duration  61.25s (tests 56%, environment 30%, import 13%, transform 1%, worker 1%)
 
-    Isolate  49 workers spawned · ~499ms startup each (spawn + environment, per file)
-             at least ~23.94s faster with isolate: false — reuses workers across files instead of one per file
+    Isolate  50 workers spawned · ~460ms startup each (spawn + environment, per file)
+             at least ~22.52s faster with isolate: false — reuses workers across files instead of one per file
 
