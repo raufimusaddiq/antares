@@ -1,5 +1,5 @@
 :root { color-scheme: dark; background: #08090b; color: #f4f6f8; font: 100%/1.6 system-ui, sans-serif; }
-body { margin: 0; min-height: 100svh; display: grid; place-items: center; }
+body { margin: 0; min-height: 100svh; display: grid; place-items: center; padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); box-sizing: border-box; }
 main { width: min(30rem, calc(100% - 3rem)); padding: 3rem 0; }
 .brand { font-weight: 600; margin-bottom: 3rem; }
 h1 { font-size: clamp(2rem, 7vw, 3rem); line-height: 1.15; letter-spacing: -0.035em; }

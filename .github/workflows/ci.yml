@@ -160,6 +160,32 @@ jobs:
         run: node scripts/sandbox-probe.mjs
         working-directory: web
 
+  # The phone layout (#138) in a real browser against the mock backend in scripts/browser-check.mjs: no scratch server, no credentials.
+  # 320/375/390/430 portrait and a phone on its side, keyboard closed and open; it fails on overflow, a page that scrolls, a control
+  # under 44px, an unreachable New chat / Search / Options / composer button, or a search that loses its input under the keyboard.
+  mobile-layout:
+    name: mobile layout (real browser)
+    runs-on: ubuntu-latest
+    env:
+      CHROME_VERSION: 138.0.7204.94
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fetch chrome-headless-shell
+        run: |
+          npx --yes @puppeteer/browsers@2.10.5 install "chrome-headless-shell@$CHROME_VERSION" --path "$RUNNER_TEMP/browsers"
+          CHROME="$RUNNER_TEMP/browsers/chrome-headless-shell/linux-$CHROME_VERSION/chrome-headless-shell-linux64/chrome-headless-shell"
+          test -x "$CHROME" || { echo "::error::expected browser at $CHROME"; exit 1; }
+          echo "CHROME=$CHROME" >> "$GITHUB_ENV"
+      - name: Install playwright-core (a tool of the check, not a dependency of web/)
+        run: |
+          npm install --prefix "$RUNNER_TEMP/pw" --no-save --no-package-lock playwright-core@1.54.2
+          echo "PLAYWRIGHT_CORE=$RUNNER_TEMP/pw/node_modules/playwright-core" >> "$GITHUB_ENV"
+      - name: Phone layout
+        run: ONLY=mobile-layout node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
+
   # These two run from the first commit and never skip: they are the rules in
   # AGENTS.md that can be checked mechanically.
   security:

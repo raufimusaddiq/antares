@@ -119,6 +119,7 @@ export function SearchPanel({ current, onOpen }: { current: string | null; onOpe
   const [thisChat, setThisChat] = useState(false);
   const [role, setRole] = useState<"" | "user" | "assistant">("");
   const [state, setState] = useState<SearchState>({ query: "", page: null, error: "", loading: false, params: null });
+  const [open, setOpen] = useState(false); // phone layout only: the box and its results fold into the strip
   const seq = useRef(0); // only the newest request may write: an older answer arriving late is dropped
 
   // A new search reads the box; "More results" (cursor given) repeats the stored params, because the
@@ -157,7 +158,11 @@ export function SearchPanel({ current, onOpen }: { current: string | null; onOpe
   };
 
   return (
-    <section className="search" aria-label="Search conversations">
+    <section className={open ? "search open" : "search"} aria-label="Search conversations">
+      <button type="button" className="quiet search-toggle" aria-expanded={open} aria-controls="search-body" onClick={() => setOpen((o) => !o)}>
+        {open ? "Close search" : "Search"}
+      </button>
+      <div id="search-body" className="search-body">
       <form role="search" onSubmit={onSubmit}>
         <label htmlFor="search-input" className="sr">
           Search conversations
@@ -178,6 +183,7 @@ export function SearchPanel({ current, onOpen }: { current: string | null; onOpe
         </div>
       </form>
       <SearchResults state={state} onOpen={onOpen} onMore={() => run(state.page?.nextCursor)} />
+      </div>
     </section>
   );
 }

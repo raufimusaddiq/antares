@@ -223,7 +223,7 @@ func TestPhase1Gate(t *testing.T) {
 	t.Run("5 the UI shell is built for desktop and mobile", func(t *testing.T) {
 		w := alice.get("/")
 		body := w.Body.String()
-		if w.Code != 200 || !strings.Contains(body, `<meta name="viewport" content="width=device-width,initial-scale=1"`) || !strings.Contains(body, `<div id="root">`) {
+		if w.Code != 200 || !strings.Contains(body, `<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,interactive-widget=resizes-content"`) || !strings.Contains(body, `<div id="root">`) {
 			t.Errorf("shell: %d %.200s", w.Code, body)
 		}
 		evidence(t, "the served shell has the responsive viewport meta tag and mounts the React app. Layout itself (390x844 touch viewport and 1280x800) is checked in a real browser by scripts/browser-check.mjs: see its output in this PR.")

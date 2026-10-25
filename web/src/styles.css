@@ -271,7 +271,7 @@ dd:last-child { margin-bottom: 0; }
   grid-template-rows: auto minmax(0, 1fr);
   gap: var(--gap);
   height: 100vh;
-  padding: var(--gap);
+  padding: max(var(--gap), env(safe-area-inset-top)) max(var(--gap), env(safe-area-inset-right)) max(var(--gap), env(safe-area-inset-bottom)) max(var(--gap), env(safe-area-inset-left));
 }
 .bar { grid-column: 1 / -1; display: flex; align-items: center; gap: 1rem; padding: 0.4rem 0.5rem 0.4rem 1.25rem; border-radius: var(--r-md); }
 .bar .brand { display: inline-flex; align-items: center; gap: 0.5rem; }
@@ -420,15 +420,18 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
 
 /* ---- narrow screens: the sidebar becomes a short strip above the log ----------- */
 @media (max-width: 40rem) {
-  .chat-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); padding: 0.5rem; gap: 0.25rem; }
-  .chat-app .bar { position: relative; flex-wrap: wrap; gap: 0.25rem 0.5rem; }
+  .chat-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); padding: max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left)); gap: 0.25rem; }
+  /* The header's backdrop-filter makes it a stacking context; without its own z-index its menu panel cannot rise above the (later, positioned) log. */
+  .chat-app .bar { position: relative; z-index: 6; flex-wrap: wrap; gap: 0.25rem 0.5rem; }
   .chat-app .who-am-i { flex: 1 1 calc(100% - 9rem); }
   .chat-app .notify { position: static; }
   /* The conversation list is one scrolling line of chips, not a card: it has no surface of its own. */
-  .side { display: flex; align-items: center; gap: 0.4rem; overflow-x: auto; overflow-y: hidden; padding: 0.15rem 0.25rem; background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
-  .side > button, .side button.item { width: auto; flex: none; margin: 0; max-width: 11rem; min-height: 2.25rem; padding: 0.3rem 0.9rem; }
-  .side ul { display: flex; gap: 0.4rem; margin: 0; }
-  .side li { flex: none; }
+  .side { display: flex; align-items: center; gap: 0.4rem; overflow: hidden; padding: 0.15rem 0.25rem; background: none; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+  .side > button, .side button.item { width: auto; flex: none; margin: 0; max-width: min(11rem, 100%); min-height: 2.25rem; padding: 0.3rem 0.9rem; }
+  .side > button, .search-toggle { padding-inline: 0.65rem; }
+  /* New chat and Search stay put (never cut off); only the conversation chips scroll, in their own region. */
+  .side > ul { display: flex; flex: 1 1 0; min-width: 0; gap: 0.4rem; margin: 0; overflow-x: auto; overflow-y: hidden; }
+  .side > ul > li { flex: none; max-width: 100%; min-width: 0; }
   .side .label { flex: none; margin: 0; white-space: nowrap; }
   .log { --log-pad: 2.75rem; }
   .screen { margin: 1.5rem 1rem; }
@@ -563,3 +566,86 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
 .turn-control { display: inline-flex; flex-wrap: wrap; align-items: baseline; gap: 0.35rem; min-width: 0; max-width: 100%; }
 .turn-control button[aria-disabled="true"] { opacity: 0.6; cursor: not-allowed; padding: 0.1rem 0.5rem; }
 .turn-control small { overflow-wrap: anywhere; }
+
+/* ---- phone layout (#138) ---------------------------------------------------------------------------
+   The toggles exist in the markup at every width and are hidden here; the groups they open are inline
+   (display: contents) on wide screens, so the desktop layout is the one above, unchanged. */
+.bar-toggle, .search-toggle, .extras-toggle { display: none; }
+.bar-actions, .extras, .search-body { display: contents; }
+
+@media (max-width: 40rem) {
+  /* Header: one row (mark, address, Menu). The actions open as a panel over the log, not inside the layout. */
+  .chat-app .bar { flex-wrap: nowrap; min-height: 3.25rem; padding: 0.25rem 0.25rem 0.25rem 1rem; }
+  .chat-app .who-am-i { flex: 1 1 0; margin-left: 0; }
+  .bar-toggle { display: inline-flex; flex: none; }
+  .bar-actions { display: none; }
+  .bar-actions.open { display: flex; flex-direction: column; align-items: stretch; gap: 0.25rem; position: absolute; z-index: 6; top: calc(100% + 0.25rem); left: 0; right: 0; max-height: min(70dvh, 28rem); overflow: auto; padding: 0.5rem; border: 1px solid var(--solid-border); border-radius: var(--r-md); background: var(--solid-raised); box-shadow: var(--solid-shadow); }
+  .bar-actions button { width: 100%; justify-content: flex-start; }
+  .bar-actions .export { flex-direction: column; align-items: stretch; }
+  .bar-actions .notify-panel { position: static; width: auto; }
+  /* Strip: New chat, Search and the conversation chips on one scrolling line; an open search takes the strip. */
+  .search-toggle { display: inline-flex; flex: none; }
+  .search { flex: none; width: auto; margin: 0; }
+  .search-body { display: none; }
+  .search.open { width: 100%; }
+  .search.open .search-body { display: block; flex: 1 1 100%; width: 100%; min-width: 0; }
+  .search.open input[type="search"], .search.open .search-results button.hit { max-width: 100%; }
+  .side:has(.search.open) { display: block; max-height: 45dvh; overflow: hidden auto; }
+  .side:has(.search.open) > :not(.search) { display: none; }
+  .search-filters label { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; }
+  .search-filters input[type="checkbox"] { width: 1.4rem; height: 1.4rem; }
+  .chat-app .search input[type="search"] { min-height: 2.75rem; }
+  /* The conversation is the scroll region; what is above and below it stays small. */
+  .pane { gap: 0.25rem; }
+  /* The top note scrolls away with the history instead of pinning over the text being read; it rests in the log's reserved top space. */
+  .vstatus { position: relative; top: calc(0.5rem - var(--log-pad)); margin-top: 0; }
+  .extras-toggle { display: inline-flex; align-self: flex-start; }
+  .extras { display: none; }
+  .extras.open { display: block; max-height: 40dvh; overflow: auto; }
+  /* Composer: the message gets the full row; Attach, Take photo and Send share the row below it. */
+  .composer { gap: 0.4rem; padding: 0.5rem; }
+  .composer textarea { flex: 1 0 100%; padding: 0.4rem 0.5rem; resize: none; max-height: min(7rem, 16dvh); }
+  .composer button { flex: 1 1 auto; padding-inline: 0.6rem; font-size: 0.875rem; gap: 0.25rem; }
+  .composer button[type="submit"] { flex: 1 1 auto; }
+}
+/* Narrower than a phone in portrait: the arrow goes, the word stays, so the three buttons keep one row. */
+@media (max-width: 23.75rem) { .composer button[type="submit"] .icon { display: none; } }
+
+/* A short viewport (the on-screen keyboard is up, or the phone is on its side): everything stays reachable (header, New chat,
+   Search, the conversation chips, Options, the composer with Attach / Take photo / Send); spacing and the log's reserved space
+   shrink and the composer's buttons share one row, so it still fits. Not keyed on orientation: a keyboard can make a portrait
+   viewport wider than it is tall. */
+@media (max-width: 40rem) and (max-height: 32rem) {
+  .chat-app { gap: 0; padding-top: max(0.125rem, env(safe-area-inset-top)); padding-bottom: max(0.125rem, env(safe-area-inset-bottom)); }
+  .chat-app .bar { min-height: 2.75rem; padding-block: 0; }
+  .side { padding-block: 0; }
+  .pane { gap: 0; }
+  .log { --log-pad: 0.25rem; padding-bottom: 0.25rem; }
+  /* The note above the history (and its Retry) and Jump to latest stay reachable: the note is in the flow here, not pinned in the reserved space. */
+  .vstatus { position: static; height: auto; margin: 0; }
+  .composer { padding: 0.25rem; gap: 0.25rem; }
+  .composer textarea { max-height: max(2.75rem, 12dvh); min-height: 2.75rem; padding-block: 0.25rem; }
+  .side:has(.search.open) { max-height: 35dvh; }
+  /* An attached image keeps its name, type, size and Remove, on one compact row that scrolls sideways. */
+  .composer [data-media="strip"] { flex-wrap: nowrap; overflow-x: auto; margin: 0; flex: 1 0 100%; gap: 0.25rem; }
+  .composer [data-media="item"] { flex: none; padding: 0.125rem 0.375rem; }
+  .composer [data-media="thumb"] { width: 2.5rem; height: 2.5rem; }
+  .composer [data-media="meta"] { font-size: 0.75rem; line-height: 1.3; }
+}
+/* On its side (short and wide enough): the message and its buttons share one row. */
+@media (max-width: 40rem) and (min-width: 30rem) and (max-height: 32rem) {
+  .composer textarea { flex: 1 1 8rem; }
+  .composer button, .composer button[type="submit"] { flex: 0 0 auto; }
+}
+/* Search open with the keyboard up: the keyboard belongs to the search box, so the message area steps aside until Close search
+   (the Options toggle stays; the conversation strip is the search panel and Close search is its dismiss control). */
+@media (max-width: 40rem) and (max-height: 36rem) {
+  .chat-app:has(.search.open) .composer { display: none; }
+}
+
+/* Touch targets: 44 CSS px on a phone or any coarse pointer. */
+@media (max-width: 40rem), (pointer: coarse) {
+  .chat-app button, .chat-app a.btn, .chat-app .side button.item, .chat-app .vstatus button, .chat-app .codehead button, .chat-app .composer .templates button { min-height: 2.75rem; min-width: 2.75rem; }
+  .chat-app summary { min-height: 2.75rem; padding-block: 0.65rem; }
+  .chat-app select, .chat-app input:not([type="checkbox"]):not([type="radio"]):not([type="file"]) { min-height: 2.75rem; }
+}
