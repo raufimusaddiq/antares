@@ -229,6 +229,7 @@ const mostRecent = (l: ChatSummary[]): ChatSummary => l.reduce((a, b) => (b.upda
 /** Words for a failed management action. The server's own text is never shown. */
 function describeManage(code: string, what: "change" | "delete"): string {
   if (what === "delete" && code === "RUN_CONFLICT") return "The assistant is still working on a reply in this conversation. Wait for it to finish, then delete.";
+  if (what === "delete" && code === "CHAT_STATE") return "This conversation is already being deleted, here or in another window. It is still here until that finishes; check again in a moment.";
   if (what === "delete" && code === "CAPABILITY_UNAVAILABLE") return "The assistant does not offer deleting conversations, so nothing was deleted.";
   if (what === "delete" && (code === "HERMES_UNAVAILABLE" || code === "UPSTREAM_TIMEOUT")) return "The assistant did not confirm the delete, so the conversation was not deleted. Try again shortly.";
   return describeCode(code);

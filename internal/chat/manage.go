@@ -122,6 +122,10 @@ func (s *Service) patchChat(w http.ResponseWriter, r *http.Request) {
 	s.getChat(w, r)
 }
 
+func deleteInFlight(w http.ResponseWriter) {
+	apiError(w, http.StatusConflict, "CHAT_STATE", "This chat is already being deleted")
+}
+
 // deleteChat deletes the user's own chat, here and upstream. See the file comment for the order.
 func (s *Service) deleteChat(w http.ResponseWriter, r *http.Request) {
 	uid, _ := user(r)
@@ -133,6 +137,12 @@ func (s *Service) deleteChat(w http.ResponseWriter, r *http.Request) {
 	// Ownership first: a foreign or unknown chat is a 404 before anything else is learned.
 	chat, err := store.GetChat(r.Context(), s.db, uid, id)
 	if errors.Is(err, store.ErrNoChat) {
+		// A chat of this owner that another request is deleting is not gone yet (that delete may fail), so it is a
+		// conflict, never a 404 a browser would read as "deleted".
+		if busy, qerr := store.DeleteInFlight(r.Context(), s.db, uid, id); qerr == nil && busy {
+			deleteInFlight(w)
+			return
+		}
 		notFound(w)
 		return
 	} else if err != nil {
@@ -163,6 +173,9 @@ func (s *Service) deleteChat(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, store.ErrNoChat):
 		notFound(w)
+		return
+	case errors.Is(err, store.ErrDeleteInFlight):
+		deleteInFlight(w)
 		return
 	case errors.Is(err, store.ErrRunActive):
 		apiError(w, http.StatusConflict, hermes.CodeRunConflict, "Stop the reply in progress before deleting this chat")

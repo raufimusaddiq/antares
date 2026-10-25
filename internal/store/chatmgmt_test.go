@@ -107,3 +107,33 @@ func TestRecoverRestoresArchivedChatAfterInterruptedDelete(t *testing.T) {
 		t.Errorf("MarkDeleteFailed left status %s", got.Status)
 	}
 }
+
+// Only one request can hold the claim; a failure of the holder is the only way back.
+func TestBeginDeleteChatIsExclusive(t *testing.T) {
+	d, u := setupTwo(t)
+	ctx := context.Background()
+	if err := SetChatArchived(ctx, d.DB, u.a, u.chatA.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BeginDeleteChat(ctx, d.DB, u.a, u.chatA.ID, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BeginDeleteChat(ctx, d.DB, u.a, u.chatA.ID, t0); !errors.Is(err, ErrDeleteInFlight) {
+		t.Fatalf("second claim = %v, want ErrDeleteInFlight", err)
+	}
+	if busy, err := DeleteInFlight(ctx, d.DB, u.a, u.chatA.ID); err != nil || !busy {
+		t.Errorf("owner sees in-flight = %v %v", busy, err)
+	}
+	if busy, _ := DeleteInFlight(ctx, d.DB, u.b, u.chatA.ID); busy {
+		t.Error("another account can see that the chat is being deleted")
+	}
+	if err := MarkDeleteFailed(ctx, d.DB, u.a, u.chatA.ID, t0); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := GetChat(ctx, d.DB, u.a, u.chatA.ID); got.Status != "ARCHIVED" || !got.DeleteFailed {
+		t.Errorf("after the holder failed: %+v", got)
+	}
+	if _, err := BeginDeleteChat(ctx, d.DB, u.a, u.chatA.ID, t0); err != nil {
+		t.Errorf("claim after settlement = %v", err)
+	}
+}

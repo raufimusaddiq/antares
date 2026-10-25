@@ -18,6 +18,9 @@ var (
 	ErrRunActive = errors.New("store: the chat already has an active run")
 	// ErrChatState means the chat exists but its state does not allow the change (pinning an archived chat).
 	ErrChatState = errors.New("store: the chat's state does not allow this")
+	// ErrDeleteInFlight means the owner's chat is being deleted right now by another request. It is not "gone": the
+	// delete may still fail and the chat come back.
+	ErrDeleteInFlight = errors.New("store: a delete of this chat is already in progress")
 	// ErrGate means the account is not (or no longer) eligible for Hermes calls.
 	ErrGate = errors.New("store: account is not eligible for a Hermes request")
 )

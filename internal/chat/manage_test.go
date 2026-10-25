@@ -680,3 +680,74 @@ func TestFailedDeleteKeepsArchivedAndPinnedState(t *testing.T) {
 		t.Error("archive still lists the deleted chat")
 	}
 }
+
+// Two overlapping deletes of one chat: the first claims it and its upstream request is held; the second is refused
+// with a conflict (not a 404 a browser would read as "deleted"), sends nothing upstream, and no run is admitted
+// into the chat until the first settles. When the first fails, the chat comes back as it was.
+func TestOverlappingDeleteCallsHermesOnceAndNeverReportsGone(t *testing.T) {
+	a := newApp(t)
+	deleteAdvertised(t, a)
+	alice, bob := a.user("alice"), a.user("bob")
+	chat := alice.newTitledChat("contested")
+	if alice.patch(chat, map[string]any{"archived": true}) != 200 {
+		t.Fatal("setup")
+	}
+	if code := alice.do("PUT", "/api/chats/"+chat+"/draft", map[string]string{"If-Match": `"0"`}, map[string]string{"body": "keep this"}).Code; code != 200 {
+		t.Fatal(code)
+	}
+	hold := make(chan struct{})
+	a.hx.mu.Lock()
+	a.hx.holdDelete = hold
+	a.hx.failNext["DELETE /api/sessions/"] = 503 // the held upstream delete will fail once released
+	a.hx.mu.Unlock()
+	first := make(chan *httptest.ResponseRecorder, 1)
+	go func() { first <- alice.do("DELETE", "/api/chats/"+chat, nil, nil) }()
+	eventually(t, func() bool { return len(a.upstreamDeletes()) == 1 }, "the first delete to reach Hermes")
+	if a.count(t, `SELECT COUNT(*) FROM chats WHERE id = ? AND status = 'PENDING_DELETE'`, chat) != 1 {
+		t.Fatal("the first delete has not claimed the chat")
+	}
+
+	second := alice.do("DELETE", "/api/chats/"+chat, nil, nil)
+	if second.Code != 409 || errCode(t, second) != "CHAT_STATE" {
+		t.Errorf("overlapping delete = %d %s, want 409 CHAT_STATE", second.Code, second.Body.String())
+	}
+	if n := len(a.upstreamDeletes()); n != 1 {
+		t.Errorf("Hermes was asked to delete %d times", n)
+	}
+	// The pending chat's existence is the owner's alone.
+	if w := bob.do("DELETE", "/api/chats/"+chat, nil, nil); w.Code != 404 {
+		t.Errorf("another account's delete of a pending chat = %d, want 404", w.Code)
+	}
+	// No run joins a chat being deleted, and nothing else about it is changed meanwhile.
+	if w := alice.do("POST", "/api/chats/"+chat+"/messages", map[string]string{"Idempotency-Key": nextIdem()}, map[string]string{"input": "too late"}); w.Code != 404 {
+		t.Errorf("message into a chat being deleted = %d, want 404", w.Code)
+	}
+	if n := a.count(t, `SELECT COUNT(*) FROM runs WHERE chat_id = ?`, chat); n != 0 {
+		t.Errorf("%d run(s) admitted before the delete settled", n)
+	}
+	if w := alice.do("PATCH", "/api/chats/"+chat, nil, map[string]any{"archived": false}); w.Code != 404 {
+		t.Errorf("unarchive of a chat being deleted = %d, want 404", w.Code)
+	}
+
+	close(hold)
+	if w := <-first; w.Code != 503 {
+		t.Fatalf("the first delete = %d %s, want 503", w.Code, w.Body.String())
+	}
+	// Settled: back in the archive, flagged, draft intact, deletable again, with still exactly one upstream call so far.
+	arch := alice.list("?archived=1")
+	if len(arch.Chats) != 1 || arch.Chats[0].ID != chat || !arch.Chats[0].DeleteFailed || len(alice.list("").Chats) != 0 {
+		t.Errorf("after the failure: archive %+v main %+v", arch.Chats, alice.list("").Chats)
+	}
+	if alice.readDraft("/api/chats/"+chat+"/draft").Body != "keep this" {
+		t.Error("the draft did not survive")
+	}
+	if n := len(a.upstreamDeletes()); n != 1 {
+		t.Errorf("upstream deletes = %d", n)
+	}
+	a.hx.mu.Lock()
+	a.hx.holdDelete = nil
+	a.hx.mu.Unlock()
+	if w := alice.do("DELETE", "/api/chats/"+chat, nil, nil); w.Code != 200 {
+		t.Errorf("retry after settlement = %d %s", w.Code, w.Body.String())
+	}
+}

@@ -95,25 +95,30 @@ func missOrState(ctx context.Context, db *sql.DB, userID, chatID string) error {
 // Hermes to delete the session it names. The claim is one statement: the chat moves to
 // PENDING_DELETE only if it has no run that is not terminal, so a run cannot be admitted into a chat
 // that is being deleted (AdmitRun checks the status in its insert) and a delete cannot start under
-// a running turn (ErrRunActive). A chat already PENDING_DELETE, or flagged after a failed delete, can be
-// claimed again: that is the retry.
+// a running turn (ErrRunActive). Only an ACTIVE or ARCHIVED chat can be claimed, by exactly one request:
+// a chat already PENDING_DELETE is ErrDeleteInFlight, so two overlapping deletes never both call Hermes and a failure
+// of one cannot restore a chat the other is still deleting. A chat flagged after a failed delete is ACTIVE or
+// ARCHIVED again, so it can be claimed: that is the retry. A restart settles an interrupted claim (RecoverRuns).
 func BeginDeleteChat(ctx context.Context, db *sql.DB, userID, chatID string, now time.Time) (Chat, error) {
 	// The status it had is remembered, and the pin is left alone, so a failed delete puts the chat back as it was.
 	res, err := db.ExecContext(ctx, `UPDATE chats SET pre_delete_status = CASE WHEN status IN ('ACTIVE','ARCHIVED') THEN status ELSE pre_delete_status END,
 		status = 'PENDING_DELETE', delete_failed_at = NULL
-		WHERE id = ? AND user_id = ? AND status IN ('ACTIVE','ARCHIVED','PENDING_DELETE')
+		WHERE id = ? AND user_id = ? AND status IN ('ACTIVE','ARCHIVED')
 		  AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.chat_id = chats.id AND r.user_id = chats.user_id AND r.status IN `+nonTerminal+`)`,
 		chatID, userID)
 	if err != nil {
 		return Chat{}, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		err := db.QueryRowContext(ctx, `SELECT 1 FROM chats WHERE id = ? AND user_id = ? AND status IN ('ACTIVE','ARCHIVED','PENDING_DELETE')`, chatID, userID).Scan(new(int))
+		var status string
+		err := db.QueryRowContext(ctx, `SELECT status FROM chats WHERE id = ? AND user_id = ? AND status IN ('ACTIVE','ARCHIVED','PENDING_DELETE')`, chatID, userID).Scan(&status)
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			return Chat{}, ErrNoChat
 		case err != nil:
 			return Chat{}, err
+		case status == "PENDING_DELETE":
+			return Chat{}, ErrDeleteInFlight
 		}
 		return Chat{}, ErrRunActive
 	}
@@ -185,4 +190,14 @@ func FinishDeleteChat(ctx context.Context, db *sql.DB, userID, chatID string) (D
 		}
 	}
 	return out, tx.Commit()
+}
+
+// DeleteInFlight reports whether the user's own chat is being deleted right now. A foreign or unknown id is false,
+// so the answer cannot reveal someone else's chat.
+func DeleteInFlight(ctx context.Context, db *sql.DB, userID, chatID string) (bool, error) {
+	err := db.QueryRowContext(ctx, `SELECT 1 FROM chats WHERE id = ? AND user_id = ? AND status = 'PENDING_DELETE'`, chatID, userID).Scan(new(int))
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+	return err == nil, err
 }

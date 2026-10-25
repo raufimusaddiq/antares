@@ -270,6 +270,18 @@ describe("delete", () => {
     expect(api.deleteChat).toHaveBeenCalledTimes(2);
   });
 
+  it("an overlapping delete (409 CHAT_STATE) is not 'gone': the chat and its draft stay and the dialog says why", async () => {
+    await mount([chat("c1", "Contested")]);
+    saveDraft(EMAIL, "c1", "keep this");
+    api.deleteChat.mockResolvedValue(fail("CHAT_STATE"));
+    fireEvent.click(within(openMenu("Contested")).getByRole("menuitem", { name: "Delete…" }));
+    fireEvent.click(screen.getByRole("button", { name: "Delete" }));
+    const alert = await within(screen.getByRole("alertdialog")).findByRole("alert");
+    expect(alert.textContent).toMatch(/already being deleted/);
+    expect(rows()).toEqual(["Contested"]);
+    expect(loadDraft(EMAIL, "c1")).toBe("keep this");
+  });
+
   it("marks a chat whose delete failed, in the list", async () => {
     await mount([chat("c1", "Stuck", { deleteFailed: true })]);
     expect(rows()[0]).toMatch(/Delete failed/);

@@ -70,7 +70,8 @@ type fakeHermes struct {
 	options map[string]string // profile -> raw GET /api/model/options body; defaultOptions if unset
 	canned  map[string]string // GET path -> JSON body, for the discovery routes
 
-	sessions map[string]string // session id -> owning profile, for DELETE /api/sessions/{id}
+	holdDelete chan struct{}     // when set, DELETE /api/sessions/ waits for it to close before answering
+	sessions   map[string]string // session id -> owning profile, for DELETE /api/sessions/{id}
 
 	failNext map[string]int // "METHOD suffix" -> status to return once (sticky when negative)
 	hang     map[string]bool
@@ -156,6 +157,7 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 	f.reqs = append(f.reqs, rec{Method: r.Method, Path: r.URL.Path, Auth: r.Header.Get("Authorization"),
 		SessionKey: r.Header.Get("X-Hermes-Session-Key"), Idem: r.Header.Get("Idempotency-Key"), Body: string(body), Header: r.Header.Clone()})
 	key, known := f.keys[profile]
+	holdDel := f.holdDelete
 	failKey := r.Method + " " + path
 	var forced int
 	for k, st := range f.failNext {
@@ -173,6 +175,9 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f.mu.Unlock()
+	if r.Method == "DELETE" && holdDel != nil {
+		<-holdDel
+	}
 	switch {
 	case !ok || !known:
 		http.Error(w, "Unknown or unconfigured profile", http.StatusNotFound)

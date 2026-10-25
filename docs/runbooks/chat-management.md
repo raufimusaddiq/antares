@@ -38,7 +38,7 @@ It was **not** called on the deployed Hermes. A first real delete is an owner-ap
 
 1. Ownership (`GetChat`), the default-deny gate, and "this chat is on the account's current binding", else no Hermes call.
 2. Capability check (above).
-3. `BeginDeleteChat`: one statement moves the chat to `PENDING_DELETE` only if it has no non-terminal run (`RUN_CONFLICT` otherwise). `AdmitRun`'s insert re-checks the chat status, so no run joins a chat on its way out.
+3. `BeginDeleteChat`: one statement moves the chat to `PENDING_DELETE` only if it has no non-terminal run (`RUN_CONFLICT` otherwise). Only an `ACTIVE`/`ARCHIVED` chat can be claimed, so exactly one request holds the claim: an overlapping delete gets `409 CHAT_STATE` (never a 404, which a browser would read as "deleted"; another account still gets 404), sends nothing upstream, and cannot restore a chat the holder is still deleting. `AdmitRun`'s insert re-checks the chat status, so no run joins a chat on its way out.
 4. Upstream delete. Anything but success/session-gone → the chat goes back to the status it had (active or archived; its pin was never touched) with `delete_failed_at` set: still listed, in the same place, with a visible "Delete failed" flag, readable, retryable; the error code is audited. (`pre_delete_status` remembers ACTIVE/ARCHIVED while `PENDING_DELETE`; the `DELETE_FAILED` status is no longer written.)
 5. `FinishDeleteChat`, one transaction: search rows, draft, run prompts, run images, message metadata, runs, the chat, and staged images that no other chat's run also sent.
    Tokens the runs reported are kept as two per-user numbers (`deleted_chat_usage`) so deleting chats does not reset the token budget or the usage total.
