@@ -82,3 +82,19 @@ capability reason without covering text. It also reports every CSP / console mes
 check was shown to fail before the fix (`Paragraph 4 of answer 49` under the note).
 
 What none of this proves: a real iOS/Android browser, keyboard, safe areas, or a camera; the mock has no model. Say "mock browser", not "device".
+
+### Reproducing a slow runner (`MOCK_DELAY_MS`)
+
+The `images` check reads state the mock holds (uploads registered, deletes received, sends recorded) while the page runs ahead of requests still
+on their way. A slow CI runner exposes any assumption about that ordering, a fast machine hides it (main CI went red on the merge of #141 while
+the identical tree had passed on the PR head). `MOCK_DELAY_MS=<ms>` adds that latency to the mock's upload, delete and send endpoints, and makes
+the first file's upload the slower one so two concurrent uploads register in the opposite order:
+
+```sh
+MOCK_DELAY_MS=150 ONLY=images node scripts/browser-check.mjs --out <dir>   # also try 400
+```
+
+Rules the check follows, so it stays deterministic: files are distinct (the mock identifies an upload by the file name appended after the PNG's
+last byte), the test never assumes which upload registers first, server-side facts are awaited by polling the mock (not read straight after the
+page changes), and each send uses a text no earlier run produced (the mock keeps the turns of the desktop pass, so a fixed text is already on the
+phone page's history). Unset, the delay is 0 and CI is unchanged.

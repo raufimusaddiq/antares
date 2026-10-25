@@ -59,6 +59,10 @@ const DATA = { [PLAIN]: transcript(false), [RICH]: transcript(true) };
 const b64 = (s) => Buffer.from(s).toString("base64url");
 
 const state = { log: [], holdOlder: null, delayMs: 15, email: "reader@example.test", budgetReached: false, emptyList: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map() };
+// A slow runner answers later than a fast one. MOCK_DELAY_MS adds that latency to the image endpoints of the mock (upload, delete, send) so
+// the ordering a slow CI runner produces can be reproduced on demand. Unset (the default) the mock answers at once.
+const MOCK_DELAY = Number(process.env.MOCK_DELAY_MS || 0);
+const later = (ms, fn) => (ms > 0 ? void setTimeout(fn, ms) : fn());
 const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 const hex32 = () => Array.from({ length: 32 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
 
@@ -75,14 +79,19 @@ function api(req, res, url) {
     req.on("data", (d) => chunks.push(d));
     req.on("end", () => {
       if (state.failNextUpload) { state.failNextUpload = false; return send(415, { error: { code: "UNSUPPORTED_MEDIA", message: "x", requestId: "r" } }); }
-      const id = hex32();
-      state.assets.set(id, { type: req.headers["content-type"], size: Buffer.concat(chunks).length });
-      send(201, { id });
+      const body = Buffer.concat(chunks);
+      const name = body.subarray(PNG.length).toString("latin1"); // see png() in images(): the file's name follows the image's last byte
+      // "one" is the first file chosen, and the slower to arrive under MOCK_DELAY_MS: uploads of one message are concurrent and may register in either order.
+      later(MOCK_DELAY * (name === "one" ? 3 : 1), () => {
+        const id = hex32();
+        state.assets.set(id, { type: req.headers["content-type"], size: body.length, name });
+        send(201, { id });
+      });
     });
     return;
   }
   let am = /^\/api\/assets\/([0-9a-f]{32})$/.exec(url.pathname);
-  if (am && req.method === "DELETE") { state.deleted.push(am[1]); state.assets.delete(am[1]); res.writeHead(204); return void res.end(); }
+  if (am && req.method === "DELETE") { later(MOCK_DELAY, () => { state.deleted.push(am[1]); state.assets.delete(am[1]); res.writeHead(204); res.end(); }); return; }
   if (am && req.method === "GET") { res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" }); return void res.end(PNG); }
   am = /^\/api\/chats\/([0-9a-f]{32})\/messages$/.exec(url.pathname);
   if (am && req.method === "POST") {
@@ -93,7 +102,7 @@ function api(req, res, url) {
       const runId = hex32();
       state.sent.push({ chat: am[1], input: b.input, imageAssetIds: b.imageAssetIds ?? [], key: req.headers["idempotency-key"] });
       state.runs.set(runId, { chat: am[1], input: b.input, ids: b.imageAssetIds ?? [] });
-      send(202, { runId });
+      later(MOCK_DELAY, () => send(202, { runId }));
     });
     return;
   }
@@ -688,7 +697,19 @@ async function until(page, fn, ms = 8000) {
 
 // Image attach, remove, retry and send against the mock (the #138 gap). A mock browser: no real camera, no model, no device.
 async function images(browser) {
-  const png = (name) => ({ name, mimeType: "image/png", buffer: PNG });
+  // Two distinct files: the mock can tell which upload was which, so a test never assumes the order two concurrent uploads arrive in.
+  const png = (name) => ({ name, mimeType: "image/png", buffer: Buffer.concat([PNG, Buffer.from(name.replace(/\.png$/, ""), "latin1")]) });
+  const idOf = (name) => [...state.assets].find(([, a]) => a.name === name.replace(/\.png$/, ""))?.[0];
+  // State the MOCK holds is polled on the node side: the page may be ahead of a request still on its way (a slow runner), never the reverse.
+  const settled = async (fn, what, ms = 8000) => {
+    const end = Date.now() + ms;
+    while (Date.now() < end) {
+      if (fn()) return true;
+      await new Promise((r) => setTimeout(r, 25));
+    }
+    console.log(`  (timed out waiting for ${what})`);
+    return false;
+  };
   for (const [label, opts] of [["desktop", { viewport: { width: 1280, height: 800 } }], ["phone", { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }]]) {
     const phone = label === "phone";
     if (phone) CURRENT.w = 390;
@@ -722,17 +743,20 @@ async function images(browser) {
       check(`images ${label}: the desktop layout holds with images attached`, bad.length === 0 && m.overflowX <= 0 && m.dockInView, bad.slice(0, 3).join("; "));
     }
     await page.screenshot({ path: path.join(outDir, `images-${label}-attached.png`) });
-    const firstId = [...state.assets.keys()][0];
+    const removedId = idOf("one.png"), keep = idOf("two.png");
     await page.getByRole("button", { name: "Remove one.png" }).click();
     await until(page, () => document.querySelectorAll('[data-media="item"]').length === 1);
-    check(`images ${label}: Remove deletes the asset on the server and keeps the other`, state.deleted.includes(firstId) && state.assets.size === 1 && (await items()) === 1);
-    const keep = [...state.assets.keys()][0];
-    await page.fill("#composer-input", "what is in this picture?");
+    // The strip drops the item at once; the DELETE reaches the server a moment later. Wait for it, then assert both facts.
+    const gone = await settled(() => state.deleted.includes(removedId), "the DELETE of one.png");
+    check(`images ${label}: Remove deletes the asset on the server and keeps the other`, gone && state.deleted.length === 1 && state.assets.size === 1 && state.assets.has(keep) && (await items()) === 1, `deleted ${JSON.stringify(state.deleted)}, held ${JSON.stringify([...state.assets.keys()])}, removed ${removedId}, kept ${keep}`);
+    // A text no earlier run produced: the mock keeps the turns of the desktop pass, so a fixed text would already be on the page (stale) when the phone pass starts.
+    const text = `what is in this picture? (${label} ${Date.now().toString(36)})`;
+    await page.fill("#composer-input", text);
     await page.getByRole("button", { name: "Send", exact: true }).click();
-    await page.waitForSelector("text=Received 1 image(s) and: what is in this picture?", { timeout: 8000 });
+    await page.waitForSelector(`text=Received 1 image(s) and: ${text}`, { timeout: 8000 });
     const sent = state.sent.at(-1);
-    check(`images ${label}: Send posts the text with exactly the remaining image id (and an idempotency key)`, sent && sent.input === "what is in this picture?" && sent.imageAssetIds.length === 1 && sent.imageAssetIds[0] === keep && /\S{8,}/.test(sent.key ?? ""), JSON.stringify(sent));
-    const after = { strip: await items(), draft: await page.inputValue("#composer-input"), reply: await page.evaluate(() => { const hits = [...document.querySelectorAll(".log *")].filter((e) => e.textContent.includes("Received 1 image(s)")); const el = hits.at(-1); const turn = el?.closest(".turn"); return turn ? turn.className + " | " + turn.innerText.replace(/\s+/g, " ").slice(0, 70) : `no turn around: ${el ? el.tagName + "." + el.className : "no element"}`; }), live: await page.locator(".run-streaming, .run-reconnecting, .partial, .notice[role=alert]").count() };
+    check(`images ${label}: Send posts the text with exactly the remaining image id (and an idempotency key)`, sent && sent.input === text && sent.imageAssetIds.length === 1 && sent.imageAssetIds[0] === keep && /\S{8,}/.test(sent.key ?? ""), JSON.stringify(sent));
+    const after = { strip: await items(), draft: await page.inputValue("#composer-input"), reply: await page.evaluate((want) => { const hits = [...document.querySelectorAll(".log *")].filter((e) => e.textContent.includes("Received 1 image(s) and: " + want)); const el = hits.at(-1); const turn = el?.closest(".turn"); return turn ? turn.className + " | " + turn.innerText.replace(/\s+/g, " ").slice(0, 70) : `no turn around: ${el ? el.tagName + "." + el.className : "no element"}`; }, text), live: await page.locator(".run-streaming, .run-reconnecting, .partial, .notice[role=alert]").count() };
     check(`images ${label}: the composer and the strip are empty after Send, and the reply is shown as completed`, after.strip === 0 && after.draft === "" && after.reply.includes("Received 1 image(s)") && !/partial|failed|cancelled/.test(after.reply.split("|")[0]) && after.live === 0, JSON.stringify(after));
     await page.screenshot({ path: path.join(outDir, `images-${label}-sent.png`) });
     if (phone) {
