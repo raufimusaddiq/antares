@@ -57,6 +57,14 @@ users cannot read each other's chats. A deploy is reported as done only with tha
 other result (`1` failed, `2` incomplete) means "not deployed": do not announce it, and roll back unless the failing
 step is understood and the owner accepts it.
 
+**Smoke fixtures are cleaned by code, not by hand.** A deploy smoke with synthetic accounts runs through
+`scripts/smoke_fixtures.py run` (`docs/runbooks/smoke-test.md`, "Synthetic fixtures with guaranteed cleanup"). It writes a run
+manifest before the first fixture row and removes every fixture it owns on pass, failure, timeout and interruption, then
+verifies it; exit `4` (cleanup failed or residue) is "not deployed" exactly like a failed step. Post-smoke acceptance line:
+zero fixture rows, sessions and profiles for the run's manifest (`run-<id>/result.json`, `cleanup.ok: true`). Its use is the
+operator's step: a coding agent does not run it against production (it writes the production database and deletes Hermes
+profiles).
+
 The provisioning helper is deployed separately from the image (see below). Its `/health` reports the
 `vcs.revision` it was built from, and a deploy is **failed** unless `deploy/verify-helper-revision.sh <deployed sha>`
 passes: a stale helper answers `200` and looks healthy (#50).
