@@ -957,12 +957,20 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   // The model picker is offered only when discovery confirms models (capability "models"); a failed
   // or unreadable discovery offers nothing.
+  // An unreadable discovery is not "unsupported": it says so and can be asked again, so one transient
+  // failure does not take the picker away for the rest of the session.
   const [inventory, setInventory] = useState<Inventory | null>(null);
+  const [inventoryFailed, setInventoryFailed] = useState(false);
+  const [inventoryTick, setInventoryTick] = useState(0);
   useEffect(() => {
     const ctl = new AbortController();
-    void getCapabilities(ctl.signal).then((r) => !ctl.signal.aborted && setInventory(r.ok ? r.value : null));
+    void getCapabilities(ctl.signal).then((r) => {
+      if (ctl.signal.aborted) return;
+      setInventory(r.ok ? r.value : null);
+      setInventoryFailed(!r.ok);
+    });
     return () => ctl.abort();
-  }, []);
+  }, [inventoryTick]);
 
   // Whether the next message may carry images is the server's answer for this chat's model (from the
   // model catalogue), read again when the chat, its model or its run state changes. Unknown is "off".
@@ -1142,6 +1150,12 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             </details>
           )}
           {current && offers(inventory, "models") && <ModelPicker chatId={current} disabled={busy} onChanged={() => setModelTick((n) => n + 1)} />}
+          {current && inventoryFailed && (
+            <p role="status">
+              Could not check which models are available.{" "}
+              <button type="button" onClick={() => setInventoryTick((n) => n + 1)}>Retry model check</button>
+            </p>
+          )}
           <Recorder />
           <Templates own={ownTemplates} onChange={setOwnTemplates} />
         </div>

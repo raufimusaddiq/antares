@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ChatSummary, Inventory } from "./chatApi";
 
 const api = vi.hoisted(() => ({ listChats: vi.fn(), getMessages: vi.fn(), getRun: vi.fn(), getCapabilities: vi.fn(), getUsage: vi.fn() }));
@@ -44,5 +44,24 @@ describe("model picker is gated on discovery", () => {
     await mount();
     await new Promise((r) => setTimeout(r, 50));
     expect(screen.queryByText(/^Model/)).toBeNull();
+  });
+});
+
+describe("an unreadable discovery can be retried (#145)", () => {
+  it("says the check failed, and Retry brings the picker without a page reload", async () => {
+    api.getCapabilities.mockResolvedValueOnce({ ok: false, code: "HERMES_UNAVAILABLE" }).mockResolvedValue(ok(inv(true)));
+    await mount();
+    expect(screen.queryByText(/^Model/)).toBeNull(); // still not offered while unreadable
+    const retry = await screen.findByRole("button", { name: "Retry model check" });
+    fireEvent.click(retry);
+    expect(await screen.findByText(/^Model/)).toBeTruthy();
+    expect(api.getCapabilities).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("button", { name: "Retry model check" })).toBeNull();
+  });
+  it("an unsupported capability is not an error and offers no Retry", async () => {
+    api.getCapabilities.mockResolvedValue(ok(inv(false)));
+    await mount();
+    await new Promise((r) => setTimeout(r, 50));
+    expect(screen.queryByRole("button", { name: "Retry model check" })).toBeNull();
   });
 });

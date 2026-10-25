@@ -154,3 +154,53 @@ func TestRowWithoutModalitiesIsListedButUnknown(t *testing.T) {
 		t.Fatalf("%+v", m)
 	}
 }
+
+// #145: the picker's refresh must reach Kenari, not only Hermes. A forced read bypasses the ten-minute
+// cache, but never faster than refreshEvery, so a client opening the picker in a loop cannot hammer Kenari.
+func TestRefreshReadsKenariAgainButIsThrottled(t *testing.T) {
+	var hits atomic.Int32
+	var fail atomic.Bool
+	c := fixtureServer(t, &hits, &fail)
+	now := time.Now()
+	c.now = func() time.Time { return now }
+	ctx := context.Background()
+	if _, _, _, err := c.Snapshot(ctx, false); err != nil || hits.Load() != 1 {
+		t.Fatalf("first read: err %v hits %d", err, hits.Load())
+	}
+	now = now.Add(time.Second)
+	if _, _, _, err := c.Snapshot(ctx, true); err != nil || hits.Load() != 1 {
+		t.Fatalf("a refresh right after a read must be served from it: err %v hits %d", err, hits.Load())
+	}
+	now = now.Add(refreshEvery)
+	if _, at, _, err := c.Snapshot(ctx, true); err != nil || hits.Load() != 2 || !at.Equal(now) {
+		t.Fatalf("a refresh past the throttle must re-read Kenari: err %v hits %d at %v want %v", err, hits.Load(), at, now)
+	}
+	now = now.Add(refreshEvery)
+	if _, _, _, err := c.Snapshot(ctx, false); err != nil || hits.Load() != 2 {
+		t.Fatalf("a plain read inside the ten minutes must use the cache: err %v hits %d", err, hits.Load())
+	}
+}
+
+// #145: an answer served during an outage says how old it is and that it is stale; a fresh one says neither.
+func TestSnapshotSaysWhenTheAnswerIsStale(t *testing.T) {
+	var hits atomic.Int32
+	var fail atomic.Bool
+	c := fixtureServer(t, &hits, &fail)
+	start := time.Now()
+	now := start
+	c.now = func() time.Time { return now }
+	ctx := context.Background()
+	if _, at, stale, err := c.Snapshot(ctx, false); err != nil || stale || !at.Equal(start) {
+		t.Fatalf("fresh: err %v stale %v at %v", err, stale, at)
+	}
+	fail.Store(true)
+	now = start.Add(freshFor + time.Minute)
+	if _, at, stale, err := c.Snapshot(ctx, false); err != nil || !stale || !at.Equal(start) {
+		t.Fatalf("outage: want the old answer marked stale with its own time, got err %v stale %v at %v", err, stale, at)
+	}
+	// A failed forced refresh keeps the old answer and says so; it does not turn into an error.
+	now = now.Add(refreshEvery)
+	if models, _, stale, err := c.Snapshot(ctx, true); err != nil || !stale || len(models) == 0 {
+		t.Fatalf("failed refresh: err %v stale %v rows %d", err, stale, len(models))
+	}
+}

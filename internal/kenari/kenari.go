@@ -21,10 +21,13 @@ import (
 const DefaultURL = "https://kenari.id/v1/models"
 
 const (
-	freshFor  = 10 * time.Minute
-	staleFor  = time.Hour // a last good answer outlives an outage this long, then the model is unknown
-	maxBody   = 4 << 20
-	fetchTime = 10 * time.Second
+	freshFor = 10 * time.Minute
+	// refreshEvery is the soonest a forced read (the picker's refresh) goes back to Kenari. A refresh
+	// inside it is answered from the last read, so opening the picker in a loop cannot hammer Kenari.
+	refreshEvery = 15 * time.Second
+	staleFor     = time.Hour // a last good answer outlives an outage this long, then the model is unknown
+	maxBody      = 4 << 20
+	fetchTime    = 10 * time.Second
 )
 
 // ErrUnavailable means the catalogue could not be read and no recent answer is held.
@@ -121,28 +124,39 @@ func (c *Catalogue) Get(ctx context.Context, id string) (Model, bool, error) {
 
 // List returns every row in Kenari's order, or ErrUnavailable.
 func (c *Catalogue) List(ctx context.Context) ([]Model, error) {
-	return c.load(ctx)
+	m, _, _, err := c.Snapshot(ctx, false)
+	return m, err
 }
 
-func (c *Catalogue) load(ctx context.Context) ([]Model, error) {
+// Snapshot returns the rows, when Kenari was last read, and whether the rows are older than the
+// freshness window because the latest read failed (stale). refresh asks for a new read now, honoured
+// at most once per refreshEvery; a failed read keeps the last answer for up to staleFor, marked stale.
+func (c *Catalogue) Snapshot(ctx context.Context, refresh bool) (models []Model, fetched time.Time, stale bool, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.models != nil && c.now().Sub(c.fetched) < freshFor {
-		return c.models, nil
+	age := c.now().Sub(c.fetched)
+	if c.models != nil && age < freshFor && (!refresh || age < refreshEvery) {
+		return c.models, c.fetched, false, nil
 	}
-	models, err := c.fetch(ctx)
-	if err != nil {
-		if c.models != nil && c.now().Sub(c.fetched) < staleFor {
-			return c.models, nil
+	rows, ferr := c.fetch(ctx)
+	if ferr != nil {
+		if c.models != nil && age < staleFor {
+			return c.models, c.fetched, true, nil
 		}
-		return nil, ErrUnavailable
+		return nil, time.Time{}, false, ErrUnavailable
 	}
-	c.models, c.fetched = models, c.now()
-	c.byID = make(map[string]Model, len(models))
-	for _, m := range models {
+	c.models, c.fetched = rows, c.now()
+	c.byID = make(map[string]Model, len(rows))
+	for _, m := range rows {
 		c.byID[m.ID] = m
 	}
-	return models, nil
+	return rows, c.fetched, false, nil
+}
+
+// load is the read every other lookup uses: cached inside the freshness window.
+func (c *Catalogue) load(ctx context.Context) ([]Model, error) {
+	m, _, _, err := c.Snapshot(ctx, false)
+	return m, err
 }
 
 func (c *Catalogue) fetch(ctx context.Context) ([]Model, error) {

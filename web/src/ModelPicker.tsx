@@ -14,6 +14,13 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
   const [query, setQuery] = useState("");
   const [msg, setMsg] = useState("");
   const [showHidden, setShowHidden] = useState(false);
+  // A catalogue read that failed (the list on screen, if any, is the earlier one) and a chat setting that could not be read.
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [readFailed, setReadFailed] = useState(false);
+  const [readTick, setReadTick] = useState(0);
+  // Only the newest catalogue request may answer: an older one that lands last must not replace it.
+  const loadSeq = useRef(0);
 
   // Every response is applied only if it belongs to this chat and is the newest request for it. A save
   // that resolves after the chat changed, or after a newer save or read, is dropped: it must never show
@@ -40,6 +47,7 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
     const mine = gen.current;
     want.current = undefined;
     setChoice(undefined);
+    setReadFailed(false);
     setMsg("");
     // The read waits behind this chat's own pending writes, so it reports the choice they leave.
     enqueue(chatId, async () => {
@@ -47,18 +55,30 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
       if (gen.current !== mine || chat.current !== chatId) return;
       want.current = r.ok ? r.value.choice : undefined;
       setChoice(want.current);
+      setReadFailed(!r.ok);
     });
     return () => {
       gen.current += 1; // a read still in flight for the old chat is now stale
     };
-  }, [chatId]);
+  }, [chatId, readTick]);
 
-  const load = (refresh: boolean) =>
+  const load = (refresh: boolean) => {
+    const mine = ++loadSeq.current;
+    setLoading(true);
     void getModels(refresh).then((r) => {
-      if (r.ok && hiddenPending.current === 0) hiddenWant.current = new Set(r.value.providers.flatMap((p) => p.models).filter((m) => m.hidden).map((m) => m.id));
-      setCatalog(r.ok ? (hiddenWant.current && hiddenPending.current > 0 ? withHidden(r.value, hiddenWant.current) : r.value) : null);
-      setMsg(r.ok ? "" : describeCode(r.code));
+      if (mine !== loadSeq.current) return; // a newer request owns the answer
+      setLoading(false);
+      setLoadFailed(!r.ok);
+      if (r.ok) {
+        if (hiddenPending.current === 0) hiddenWant.current = new Set(r.value.providers.flatMap((p) => p.models).filter((m) => m.hidden).map((m) => m.id));
+        setCatalog(hiddenWant.current && hiddenPending.current > 0 ? withHidden(r.value, hiddenWant.current) : r.value);
+        setMsg("");
+      } else {
+        // The list already on screen stays choosable (the server validates every pick); the failure is stated, never hidden.
+        setMsg(describeCode(r.code));
+      }
     });
+  };
 
   /** next = the choice after this change, or null to reset. */
   const change = (next: ModelChoice | null) => {
@@ -140,7 +160,21 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
   return (
     <details className="usage" onToggle={(e) => e.currentTarget.open && load(true)}>
       <summary>{label}</summary>
-      {msg && <p role="alert">{msg}</p>}
+      {readFailed && (
+        <p role="alert">
+          This chat's model could not be read, so the choice shown may not be the saved one.{" "}
+          <button type="button" onClick={() => setReadTick((n) => n + 1)}>Retry</button>
+        </p>
+      )}
+      {msg && (
+        <p role="alert">
+          {msg}
+          {catalog && loadFailed ? " The list below may be out of date." : ""}{" "}
+          {loadFailed && (
+            <button type="button" disabled={loading} onClick={() => load(true)}>Retry</button>
+          )}
+        </p>
+      )}
       {!catalog && !msg && <p>Loading models…</p>}
       {catalog && (
         <>
@@ -151,6 +185,15 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
             <input type="checkbox" checked={showHidden} onChange={(e) => setShowHidden(e.target.checked)} /> Show hidden models
           </label>
           {disabled && <p>A reply is running. The choice applies to your next message.</p>}
+          {catalog.fetchedAt && (
+            <p>
+              <small>
+                Catalogue read from Kenari {catalog.fetchedAt}
+                {catalog.stale ? ". It could not be refreshed, so it may be out of date." : "."}
+              </small>
+            </p>
+          )}
+          {catalog.providers.every((p) => p.models.length === 0) && <p>The catalogue lists no models for this assistant.</p>}
           {shown.map((p) => (
             <fieldset key={p.slug}>
               <legend>
