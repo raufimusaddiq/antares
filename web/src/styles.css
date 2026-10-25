@@ -421,7 +421,8 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
 /* ---- narrow screens: the sidebar becomes a short strip above the log ----------- */
 @media (max-width: 40rem) {
   .chat-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); padding: max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left)); gap: 0.25rem; }
-  .chat-app .bar { position: relative; flex-wrap: wrap; gap: 0.25rem 0.5rem; }
+  /* The header's backdrop-filter makes it a stacking context; without its own z-index its menu panel cannot rise above the (later, positioned) log. */
+  .chat-app .bar { position: relative; z-index: 6; flex-wrap: wrap; gap: 0.25rem 0.5rem; }
   .chat-app .who-am-i { flex: 1 1 calc(100% - 9rem); }
   .chat-app .notify { position: static; }
   /* The conversation list is one scrolling line of chips, not a card: it has no surface of its own. */

@@ -20,7 +20,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { measure, verdicts, CURRENT } from "../web/scripts/mobile-layout.mjs";
+import { measure, verdicts, CURRENT, pointerCheck } from "../web/scripts/mobile-layout.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = path.join(here, "..", "internal", "webui", "dist");
@@ -375,7 +375,18 @@ async function mobileLayout(browser) {
     await page.getByRole("button", { name: "Menu" }).click();
     await verdict("account menu open", { scope: ".bar-actions" });
     check(`mobile layout ${w}px, Sign out is in the menu`, await page.getByRole("button", { name: "Sign out" }).isVisible());
+    const clicks = await pointerCheck(page, ".bar-actions");
+    check(`mobile layout ${w}px, a real pointer click reaches every menu action`, clicks.length === 0, clicks.slice(0, 3).join("; "));
     await page.keyboard.press("Escape");
+    if (keyboardUp) {
+      await page.setViewportSize({ width: w, height: h - KEYBOARD });
+      await page.getByRole("button", { name: "Menu" }).click();
+      await verdict("account menu open, keyboard open", { keyboard: true, scope: ".bar-actions" });
+      const kclicks = await pointerCheck(page, ".bar-actions");
+      check(`mobile layout ${w}px, a real pointer click reaches every menu action, keyboard open`, kclicks.length === 0, kclicks.slice(0, 3).join("; "));
+      await page.keyboard.press("Escape");
+      await page.setViewportSize({ width: w, height: h });
+    }
     if (keyboardUp) {
       await page.setViewportSize({ width: w, height: short });
       await page.locator("#composer-input").focus();

@@ -18,7 +18,7 @@
 
 import { readFileSync, mkdirSync, mkdtempSync } from "node:fs";
 import { createRequire } from "node:module";
-import { measure, verdicts, CURRENT } from "./mobile-layout.mjs";
+import { measure, verdicts, CURRENT, pointerCheck } from "./mobile-layout.mjs";
 
 const BASE = process.env.BASE ?? "http://127.0.0.1:18080";
 const ORIGIN = process.env.ORIGIN ?? "https://antares.scratch.test";
@@ -163,7 +163,15 @@ try {
     await page.getByRole("button", { name: "Menu" }).click();
     await step("menu-open", null, ".bar-actions");
     for (const name of ["Sign out"]) if (!(await page.getByRole("button", { name }).isVisible())) fail(`"${name}" is not reachable in the open menu`);
+    for (const f of await pointerCheck(page, ".bar-actions")) fail(f);
     await page.keyboard.press("Escape");
+    // The same with the keyboard up: the menu must still be on top of the conversation and tappable.
+    await page.setViewportSize({ width: w, height: h - keyboardFor(w, h) });
+    await page.getByRole("button", { name: "Menu" }).click();
+    await step("menu-open-keyboard", null, ".bar-actions");
+    for (const f of await pointerCheck(page, ".bar-actions")) fail(f);
+    await page.keyboard.press("Escape");
+    await page.setViewportSize({ width: w, height: h });
     if (await page.getByRole("button", { name: "Sign out" }).isVisible()) fail("Escape did not close the menu");
     // Search: opens in the strip, finds the seeded text, opens the hit, and closes.
     await page.getByRole("button", { name: "Search", exact: true }).click();

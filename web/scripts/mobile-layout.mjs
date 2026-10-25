@@ -70,6 +70,16 @@ export const measure = async (scope) => {
     const r = el && shown(el);
     reach[name] = Boolean(r && r.bottom <= vh + 0.5 && r.top >= -0.5 && r.left >= -0.5 && (r.right <= vw + 0.5 || el.closest(".side")));
   }
+  // A control another element sits on top of cannot be tapped, whatever its rectangle says: hit-test the centre of what is visible.
+  const occluded = controls.filter((el) => !el.closest(".log") || el.closest(".vjump")).filter((el) => {
+    const r = shown(el);
+    if (!r || r.bottom - r.top < 8 || r.right - r.left < 8) return false; // scrolled out of its scrolling region: reached by scrolling, not covered
+    const x = (r.left + r.right) / 2;
+    const y = (r.top + r.bottom) / 2;
+    if (x < 0 || y < 0 || x > vw || y > vh) return false;
+    const t = document.elementFromPoint(x, y);
+    return !(t && (t === el || el.contains(t)));
+  }).map((el) => label(el));
   // Labels that must be whole on screen: the top row (Menu, New chat, Search / Close search) and the open conversation's chip.
   const cut = [];
   for (const el of [...document.querySelectorAll(".bar button, .side > button, .search-toggle, .side button.item.current")].filter(visible)) {
@@ -108,7 +118,7 @@ export const measure = async (scope) => {
     chromeShare: bar ? +(((bar.getBoundingClientRect().height + (side && getComputedStyle(side).display !== "none" ? side.getBoundingClientRect().height : 0))) / vh).toFixed(2) : 0,
     textareaClipped: ta ? ta.scrollHeight > ta.clientHeight + 1 : null,
     vstatusOverFirstTurn: vstatus && firstTurn ? (() => { const a = vstatus.getBoundingClientRect(); const b = firstTurn.getBoundingClientRect(); return Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2 && Math.min(a.right, b.right) - Math.max(a.left, b.left) > 2; })() : false,
-    small, outside, overlaps, reach, cut, newestInView, scrolledUp, atTop, noteText, noteShown,
+    small, outside, overlaps, occluded, reach, cut, newestInView, scrolledUp, atTop, noteText, noteShown,
   };
 };
 
@@ -120,10 +130,12 @@ export const verdicts = (m, keyboard, scoped, relax = 1, searchOpen = false) => 
     for (const s of m.small) v.push(`target below ${TARGET}px: "${s.el}" ${s.w}x${s.h}`);
     for (const s of m.outside) v.push(`control outside the viewport: "${s.el}"`);
     for (const [a, b] of m.overlaps) v.push(`controls overlap: "${a}" / "${b}"`);
+    for (const n of m.occluded) v.push(`covered by another element, so a tap cannot reach it: "${n}"`);
     if (m.pageOverflowX > 0) v.push(`page overflows horizontally by ${m.pageOverflowX}px`);
     if (m.vw !== CURRENT.w) v.push(`the layout viewport is ${m.vw}px wide, not ${CURRENT.w}px: the page is wider than the screen`);
     return v;
   }
+  for (const n of m.occluded) v.push(`covered by another element, so a tap cannot reach it: "${n}"`);
   if (m.pageOverflowX > 0) v.push(`page overflows horizontally by ${m.pageOverflowX}px`);
   // A page wider than the device is shrunk to fit, which makes every measurement look smaller than it is.
   if (m.vw !== CURRENT.w) v.push(`the layout viewport is ${m.vw}px wide, not ${CURRENT.w}px: the page is wider than the screen`);
@@ -157,3 +169,38 @@ export const verdicts = (m, keyboard, scoped, relax = 1, searchOpen = false) => 
   return v;
 };
 
+
+// Real pointer clicks (the mouse, at the centre of each control) on every button inside `scope`; a capture listener records which control
+// the click reached and stops it, so nothing is executed (Sign out would end the session). Returns the failures.
+export async function pointerCheck(page, scope) {
+  await page.evaluate(() => {
+    window.__hits = [];
+    if (!window.__hitListener) {
+      window.__hitListener = (e) => {
+        if (!window.__armed) return;
+        const b = e.target.closest?.("button, a");
+        window.__hits.push(b ? (b.textContent ?? "").trim().slice(0, 40) : `${e.target.tagName}.${String(e.target.className).slice(0, 30)}`);
+        e.preventDefault();
+        e.stopPropagation();
+      };
+      document.addEventListener("click", window.__hitListener, true);
+    }
+    window.__armed = true;
+  });
+  const failures = [];
+  const buttons = page.locator(`${scope} button`);
+  for (let i = 0, n = await buttons.count(); i < n; i++) {
+    const b = buttons.nth(i);
+    if (!(await b.isVisible())) continue;
+    const name = ((await b.textContent()) ?? "").trim().slice(0, 40);
+    await b.scrollIntoViewIfNeeded();
+    const box = await b.boundingBox();
+    if (!box) continue;
+    await page.evaluate(() => { window.__hits.length = 0; });
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2);
+    const hit = await page.evaluate(() => window.__hits.at(-1) ?? "(nothing)");
+    if (hit !== name) failures.push(`a pointer click on "${name}" reached "${hit}"`);
+  }
+  await page.evaluate(() => { window.__armed = false; });
+  return failures;
+}

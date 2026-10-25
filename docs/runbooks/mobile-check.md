@@ -44,3 +44,9 @@ The keyboard is approximated by a shorter viewport: 45% of the height, 300px at 
 Also required in every state: after scrolling up, `Jump to latest` is on screen (and returns to the newest turn); at the top, the note
 above the history ("Scroll up for older messages", with its Retry on an error) is visible. `ONLY=mobile-budget` serves a reached token
 limit: the Options drawer opens once, says so, and its toggle closes it again so the conversation grows back.
+
+Taps, not just rectangles: every control outside the conversation is hit-tested at the centre of its visible part (something sitting on
+top fails it), and with the account menu open, in both the scratch-server and the CI check, a real mouse click is sent to every menu
+button (Notifications, Export Markdown, Export PDF, Admin, Sign out) with a capture listener that records which control it reached and
+stops it (nothing runs, Sign out included), keyboard closed and open. The header needs its own `z-index` because its backdrop filter
+makes it a stacking context.
