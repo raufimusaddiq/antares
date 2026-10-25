@@ -305,3 +305,26 @@ func TestRequestLimitsConfiguration(t *testing.T) {
 		delete(base, tc.name)
 	}
 }
+
+// #146: the provider key is optional, loaded as a Secret, and rendered by no verb, encoder or logger.
+func TestKenariAPIKeyIsOptionalAndNeverPrints(t *testing.T) {
+	base := map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey}
+	c, err := Load(env(base))
+	if err != nil || len(c.KenariAPIKey) != 0 {
+		t.Fatalf("without the variable: err=%v key=%d bytes", err, len(c.KenariAPIKey))
+	}
+	key := "kn-fabricated-provider-key-0123456789"
+	base["ANTARES_KENARI_API_KEY"] = "  " + key + "\n"
+	c, err = Load(env(base))
+	if err != nil || string(c.KenariAPIKey) != key {
+		t.Fatalf("with the variable: err=%v", err)
+	}
+	b, _ := json.Marshal(c)
+	var out bytes.Buffer
+	slog.New(slog.NewTextHandler(&out, nil)).Info("cfg", "c", c, "k", c.KenariAPIKey)
+	for _, s := range []string{fmt.Sprintf("%v %+v %#v %s %x", c, c, c, c.KenariAPIKey, c.KenariAPIKey), string(b), out.String()} {
+		if strings.Contains(s, key) {
+			t.Fatalf("provider key leaked: %s", s)
+		}
+	}
+}

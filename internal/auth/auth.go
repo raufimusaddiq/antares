@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/raufimusaddiq/antares/internal/kenari"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -50,6 +51,14 @@ type Options struct {
 	Limits *Limits // nil uses DefaultLimits
 	// Push supplies the notification routes (PushRoutes). Without it they are not mounted.
 	Push ChatHandlers
+	// KenariUsage reads the shared provider account's usage. It is mounted on the admin tree only
+	// (GET /api/admin/kenari-usage); nil leaves the route answering "not configured".
+	KenariUsage AccountUsage
+}
+
+// AccountUsage is the provider account reader the admin route calls.
+type AccountUsage interface {
+	Snapshot(ctx context.Context, refresh bool) (kenari.AccountSnapshot, error)
 }
 
 // ChatHandlers is what the chat package gives the identity layer to mount:
@@ -74,6 +83,7 @@ type Auth struct {
 	tenants  Tenants
 	chat     ChatHandlers
 	push     ChatHandlers
+	usage    AccountUsage
 	limits   *requestLimits
 }
 
@@ -96,7 +106,7 @@ func New(o Options) (*Auth, error) {
 		return nil, errors.New("request limits must be positive integers")
 	}
 	a := &Auth{limits: newRequestLimits(limits), db: o.DB, ep: o.Endpoints, clientID: o.ClientID, secret: o.ClientSecret,
-		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat, push: o.Push}
+		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat, push: o.Push, usage: o.KenariUsage}
 	a.ver = &verifier{ep: o.Endpoints, clientID: o.ClientID, client: o.HTTPClient, now: o.Now}
 	return a, nil
 }

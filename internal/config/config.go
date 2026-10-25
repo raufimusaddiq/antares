@@ -62,6 +62,12 @@ type Config struct {
 	VAPIDPrivateKey Secret // raw 32-byte P-256 scalar
 	VAPIDSubject    string // mailto: or https: contact for the push services
 
+	// KenariAPIKey is the provider key Antares reads the shared account's balance, quota and usage with
+	// (internal/kenari/account.go). Optional: without it admin usage reports "not configured". It must be
+	// an unrestricted key of the account; Kenari refuses balance and quota to a restricted or shared key.
+	// It never reaches a browser, a log or a response.
+	KenariAPIKey Secret
+
 	// Admin bootstrap. All three are set, or none (no bootstrap).
 	AdminIssuer string
 	AdminSub    string
@@ -161,6 +167,9 @@ func Load(getenv func(string) string) (Config, error) {
 		problems = append(problems, fmt.Sprintf("ANTARES_PROVISIONER_TOKEN must be at least %d characters", hermes.MinTokenLen))
 	default:
 		c.ProvisionerToken = Secret(tok)
+	}
+	if raw := strings.TrimSpace(getenv("ANTARES_KENARI_API_KEY")); raw != "" {
+		c.KenariAPIKey = Secret(raw)
 	}
 	c.TenantToolsets = hermes.DefaultAllowedToolsets
 	if raw := getenv("ANTARES_TENANT_ALLOWED_TOOLSETS"); raw != "" {

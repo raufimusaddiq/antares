@@ -10,7 +10,7 @@ Per the owner (#115 comment, 2026-10-25): the catalogue and model metadata come 
 | Which models exist, modalities, context window, price, reasoning levels, sunset | Kenari `GET /v1/models` (public) | `kenari.Catalogue.List/Get`, `buildModels` |
 | Which provider slug a run names | Hermes `provider` of the caller's own profile, usable only if `authenticated` | `transport` in `internal/chat/models.go` |
 | What the run receives | `POST /v1/runs` body `provider`, `model`, `model_options.reasoning.effort` | `runBody`, `TestModelChoiceIsPerChatValidatedAndSent` asserts it on the wire |
-| Quota | Hermes `usage.windows` of that provider, when sent | unchanged |
+| Quota | **Not shown to users (#146).** Hermes' `usage.windows` describe the one shared provider account; the picker no longer carries them. The authoritative account figures are the admin-only `GET /api/admin/kenari-usage` | `docs/runbooks/kenari-usage.md` |
 
 A model Hermes' inventory does not list is **not** treated as a model Kenari lacks, and the reverse holds. The
 picker never falls back to Hermes' list: a catalogue that cannot be read is `503 CATALOGUE_UNAVAILABLE`.
@@ -67,7 +67,7 @@ and locks nothing.
 | `CTX-001` context % | **Blocked** | Hermes reports no per-call prompt size or model context length; run `usage` is a per-run sum (`api_server_runs.py:88-92`). Percentage stays omitted (existing #81 behaviour: `carriedTokens` null). |
 | `CTX-002` compaction indicator, manual compact | **Blocked** | No compress/compact route in the route table (`api_server.py:1646-1692`, `api_server_runs.py:243`) and no compaction field on run status or events; compression is visible only as a session-id rotation (`api_server.py:4134-4143`). No command is invented. |
 | `CTX-003` reasoning tokens, cost | **Blocked** | `_USAGE_FIELDS` (`api_server_runs.py:88-92`) has input/output/total/cache read/cache write only. Estimated cost stays #81's. |
-| `CTX-004` quota | **Built, partial** | Shown from `usage.windows`/`limit` when Hermes sends them; otherwise `PROVIDER_USAGE_UNAVAILABLE`. Multi-credential pools report `usage.accounts` (`inventory.py:356`), which is *not* shown: one account's quota is not the user's. |
+| `CTX-004` quota | **Superseded by #146** | Quota is the shared provider account's, so it is no longer shown to every user. Admin-only authoritative read from Kenari: `docs/runbooks/kenari-usage.md`. |
 | `CTX-005` budget vs hard limit | Already built in #93 | unchanged |
 | `LLM-005` hide/show, admin allow/deny policy | **Built in #115** | `model_hidden`, `model_blocked` (migration 0016); see above. |
 | `LLM-008` OpenUI toggle | **Not in this slice** | separate ticket (`docs/runbooks/openui.md`). |

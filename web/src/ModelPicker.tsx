@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { describeCode, describePrice, describeQuota, getChatModel, getModels, getModelVisibility, putChatModel, putModelVisibility, type ModelCatalog, type ModelChoice, type ModelEntry } from "./chatApi";
+import { describeCode, describePrice, getChatModel, getModels, getModelVisibility, putChatModel, putModelVisibility, type ModelCatalog, type ModelChoice, type ModelEntry } from "./chatApi";
 
 /**
  * Model picker for one chat (PRD LLM-001..007, CTX-004, issue #115). The models and their metadata
@@ -220,11 +220,6 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
                   <small>{badges(m)}</small>
                 </div>
               ))}
-              <ul>
-                {describeQuota(p).map((l) => (
-                  <li key={l}>{l}</li>
-                ))}
-              </ul>
             </fieldset>
           ))}
           {choice && current && (

@@ -471,7 +471,10 @@ export function describeTurns(u: ChatUsage): string[] {
   return u.turns.map((t, i) => `Reply ${i + 1}: ${t.tokens ? `${fmt(t.tokens.total)} tokens (${fmt(t.tokens.input)} in, ${fmt(t.tokens.output)} out)` : "— (no usage reported)"}`);
 }
 
-// ---- model picker and provider quotas (LLM-*, CTX-004) -------------------------------
+// ---- model picker (LLM-*) --------------------------------------------------------
+// The provider account is shared by every user, so the picker carries no quota or balance: that
+// is the admin-only authoritative read (docs/runbooks/kenari-usage.md).
+// ---- -------------------------------
 
 export interface ModelChoice {
   provider: string;
@@ -505,21 +508,12 @@ export interface ModelEntry {
   price: ModelPrice | null;
 }
 
-export interface QuotaWindow {
-  label: string;
-  usedPercent: number;
-  resetsAt: string;
-  scope: string;
-}
-
 export interface ProviderEntry {
   slug: string;
   name: string;
   available: boolean;
   reason: string;
   models: ModelEntry[];
-  /** null windows = PROVIDER_USAGE_UNAVAILABLE: shown as unavailable, not as 0%. */
-  quota: QuotaWindow[] | null;
 }
 
 export interface ModelCatalog {
@@ -549,17 +543,11 @@ export function parseModels(v: unknown): ModelCatalog | null {
     providers: arr(o.providers).flatMap((p) => {
       const po = obj(p);
       if (!po || !str(po.slug)) return [];
-      const q = obj(po.quota);
-      const windows = q && q.state === "AVAILABLE" ? arr(q.windows).flatMap((w) => {
-        const wo = obj(w);
-        return wo && typeof wo.usedPercent === "number" ? [{ label: str(wo.label), usedPercent: wo.usedPercent, resetsAt: str(wo.resetsAt), scope: str(wo.scope) }] : [];
-      }) : [];
       return [{
         slug: str(po.slug),
         name: str(po.name) || str(po.slug),
         available: po.available === true,
         reason: str(po.reason),
-        quota: windows.length > 0 ? windows : null,
         models: arr(po.models).flatMap((m) => {
           const mo = obj(m);
           if (!mo || !str(mo.id)) return [];
@@ -625,12 +613,6 @@ export function describePrice(p: ModelPrice | null): string {
   };
   const per = p.currency === "IDR" && p.unit === "micro_idr_per_1m_tokens" ? " per 1M tokens" : ` (${p.unit})`;
   return `Price (Kenari): in ${money(p.input)}, out ${money(p.output)}, cached in ${money(p.cacheRead)}${per}`;
-}
-
-/** Words for a provider's quota windows; absence is stated, never shown as 0%. */
-export function describeQuota(p: ProviderEntry): string[] {
-  if (!p.quota) return ["Provider usage: unavailable (the assistant reported none)"];
-  return p.quota.map((w) => `${w.label || "Window"}${w.scope ? ` (${w.scope})` : ""}: ${Math.round(w.usedPercent * 10) / 10}% used${w.resetsAt ? `, resets ${w.resetsAt}` : ""}`);
 }
 
 // ---- capability discovery -------------------------------------------------------
