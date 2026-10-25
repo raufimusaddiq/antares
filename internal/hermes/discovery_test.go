@@ -141,7 +141,7 @@ func TestDiscoverNeverDefaultsToAvailable(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(inv.Capabilities) != 11 {
+			if len(inv.Capabilities) != 12 {
 				t.Fatalf("want a verdict for every capability, got %d", len(inv.Capabilities))
 			}
 			for _, cp := range inv.Capabilities {

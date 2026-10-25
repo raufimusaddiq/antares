@@ -17,7 +17,7 @@ vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi"
 
 import { Chat } from "./Chat";
 
-const chat = (id: string, extra: Partial<ChatSummary> = {}): ChatSummary => ({ id, title: "", createdAt: "", updatedAt: "", activeRunId: "", ...extra });
+const chat = (id: string, extra: Partial<ChatSummary> = {}): ChatSummary => ({ id, title: "", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false, ...extra });
 const ok = <T,>(value: T) => ({ ok: true as const, value });
 const page = (texts: string[] = []) => ok({ turns: texts.map((text, seq) => ({ seq, role: seq % 2 ? "assistant" : "user", text })), nextCursor: "", total: texts.length });
 
@@ -214,7 +214,7 @@ describe("overlapping sends in different chats", () => {
   const C1 = "/api/chats/c1/draft";
   const C2 = "/api/chats/c2/draft";
   const text = () => (document.getElementById("composer-input") as HTMLTextAreaElement).value;
-  const openSecond = () => fireEvent.click(document.querySelectorAll("nav.side li button")[1]);
+  const openSecond = () => fireEvent.click(document.querySelectorAll("nav.side li button.item")[1]);
 
   const setup = async () => {
     const srv = draftServer();
@@ -259,7 +259,7 @@ describe("overlapping sends in different chats", () => {
       expect(srv.docs.get(C1)).toEqual({ body: "draft one", revision: 1 });
       expect(srv.calls.filter((c) => c.startsWith("DELETE") && c.includes("/c1/")).length).toBe(0);
       // A's hold ended too: go back to c1 and type; it reaches the server.
-      fireEvent.click(document.querySelectorAll("nav.side li button")[0]);
+      fireEvent.click(document.querySelectorAll("nav.side li button.item")[0]);
       await waitFor(() => expect(text()).toBe("draft one"));
       fireEvent.change(document.getElementById("composer-input")!, { target: { value: "back in one" } });
       await waitFor(() => expect(srv.docs.get(C1)).toEqual({ body: "back in one", revision: 2 }), { timeout: 3000 });
@@ -343,11 +343,11 @@ describe("a message is never lost to a failure before admission", () => {
     await waitFor(() => expect(box().value).toBe("typed in one"));
     fireEvent.submit(document.querySelector("form.composer")!);
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
-    fireEvent.click(document.querySelectorAll("nav.side li button")[1]); // away before the answer
+    fireEvent.click(document.querySelectorAll("nav.side li button.item")[1]); // away before the answer
     await waitFor(() => expect(box().value).toBe(""));
     await act(async () => answer(refusedCreate));
     expect(loadDraft("a@example.test", "c1")).toBe("typed in one"); // not lost
-    fireEvent.click(document.querySelectorAll("nav.side li button")[0]);
+    fireEvent.click(document.querySelectorAll("nav.side li button.item")[0]);
     await waitFor(() => expect(box().value).toBe("typed in one"));
   });
 
@@ -361,7 +361,7 @@ describe("a message is never lost to a failure before admission", () => {
     await waitFor(() => expect(box().value).toBe("typed in one"));
     fireEvent.submit(document.querySelector("form.composer")!);
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
-    fireEvent.click(document.querySelectorAll("nav.side li button")[1]);
+    fireEvent.click(document.querySelectorAll("nav.side li button.item")[1]);
     await waitFor(() => expect(box().value).toBe(""));
     saveDraft("a@example.test", "c1", "something newer typed elsewhere");
     await act(async () => answer(refusedCreate));

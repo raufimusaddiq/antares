@@ -35,6 +35,7 @@ const (
 	CapRegenerate   = "regenerate"
 	CapEditTurn     = "edit_turn"
 	CapRewind       = "rewind"
+	CapChatDelete   = "chat_delete"
 )
 
 const (
@@ -98,6 +99,13 @@ func (d discoveryCaps) flag(name string) bool { return string(d.Features[name]) 
 func (d discoveryCaps) hasPost(name string) bool {
 	e, ok := d.Endpoints[name]
 	return ok && e.Method == http.MethodPost && strings.HasPrefix(e.Path, "/v1/runs/{run_id}/") && !strings.Contains(e.Path, "..")
+}
+
+// hasRoute reports whether Hermes lists exactly method and path under name. The path is compared
+// whole, not by prefix: a route that differs by a character is a different route.
+func (d discoveryCaps) hasRoute(name, method, path string) bool {
+	e, ok := d.Endpoints[name]
+	return ok && e.Method == method && e.Path == path
 }
 
 var routeRE = regexp.MustCompile(`^/[A-Za-z0-9_./-]{1,100}$`)
@@ -312,7 +320,17 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 	editTurn := turnCap(CapEditTurn, "Edit an earlier message", "branch a chat at an earlier message")
 	rewind := turnCap(CapRewind, "Rewind the last turn", "remove the last turn")
 
-	inv.Capabilities = []Capability{models, lock, settings, tools, skills, progress, approvals, clarify, regenerate, editTurn, rewind}
+	// Deleting a conversation removes the upstream session too (PRD §9A.2). It is offered only when
+	// Hermes advertises the exact route; renaming, pinning and archiving are Antares' own index and
+	// need nothing from Hermes, so they are not capabilities.
+	chatDelete := unsupported(CapChatDelete, "Delete conversations", "Hermes does not advertise a session delete route")
+	if !capsOK {
+		chatDelete.Reason = why("session_delete")
+	} else if caps.hasRoute("session_delete", http.MethodDelete, "/api/sessions/{session_id}") {
+		chatDelete = available(CapChatDelete, "Delete conversations")
+	}
+
+	inv.Capabilities = []Capability{models, lock, settings, tools, skills, progress, approvals, clarify, regenerate, editTurn, rewind, chatDelete}
 	return inv, nil
 }
 

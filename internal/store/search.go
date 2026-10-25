@@ -73,7 +73,7 @@ func ReplaceChatIndex(ctx context.Context, db *sql.DB, userID, chatID string, do
 	}
 	defer tx.Rollback()
 	var title sql.NullString
-	if err := tx.QueryRowContext(ctx, `SELECT title FROM chats WHERE id = ? AND user_id = ? AND status = 'ACTIVE'`, chatID, userID).Scan(&title); errors.Is(err, sql.ErrNoRows) {
+	if err := tx.QueryRowContext(ctx, `SELECT title FROM chats WHERE id = ? AND user_id = ? AND status IN `+liveChat, chatID, userID).Scan(&title); errors.Is(err, sql.ErrNoRows) {
 		return false, ErrNoChat
 	} else if err != nil {
 		return false, err
@@ -177,7 +177,7 @@ func StaleChats(ctx context.Context, db *sql.DB, userID, onlyChat string, limit 
 		rb = ts(retryBefore)
 	}
 	q := `SELECT ` + chatCols + ` FROM chats c LEFT JOIN search_state s ON s.chat_id = c.id AND s.user_id = c.user_id
-		WHERE c.user_id = ? AND c.status = 'ACTIVE' AND (s.chat_id IS NULL OR s.indexed_at < s.invalidated_at OR s.indexed_at = '')
+		WHERE c.user_id = ? AND c.status IN ` + liveChat + ` AND (s.chat_id IS NULL OR s.indexed_at < s.invalidated_at OR s.indexed_at = '')
 		AND (? = '' OR s.chat_id IS NULL OR s.failed_at = '' OR s.failed_at < ?)`
 	args := []any{userID, rb, rb}
 	if onlyChat != "" {
@@ -221,7 +221,7 @@ func IndexStatus(ctx context.Context, db *sql.DB, userID, onlyChat string) (tota
 		COALESCE(SUM(CASE WHEN ` + stale + ` AND COALESCE(s.failed_at,'') <> '' THEN 1 ELSE 0 END), 0),
 		COALESCE(SUM(CASE WHEN NOT ` + stale + ` AND s.truncated = 1 THEN 1 ELSE 0 END), 0)
 		FROM chats c LEFT JOIN search_state s ON s.chat_id = c.id AND s.user_id = c.user_id
-		WHERE c.user_id = ? AND c.status = 'ACTIVE'`
+		WHERE c.user_id = ? AND c.status IN ` + liveChat + ``
 	args := []any{userID}
 	if onlyChat != "" {
 		q += ` AND c.id = ?`
@@ -276,7 +276,7 @@ func SearchChats(ctx context.Context, db *sql.DB, q SearchQuery) (hits []SearchH
 	}
 	sqlq := `SELECT c.id, COALESCE(c.title,''), c.created_at, d.seq, d.role, d.body, COALESCE(d.created_at,'')
 		FROM chats c CROSS JOIN search_docs d ON d.chat_id = c.id AND d.user_id = c.user_id
-		WHERE c.user_id = ? AND c.status = 'ACTIVE'`
+		WHERE c.user_id = ? AND c.status IN ` + liveChat + ``
 	args := []any{q.UserID}
 	if q.ChatID != "" {
 		sqlq += ` AND c.id = ?`

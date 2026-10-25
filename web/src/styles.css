@@ -244,6 +244,31 @@ dd:last-child { margin-bottom: 0; }
 .side button.item.current::before { background: var(--mark); color: var(--mark-ink); border-color: var(--mark); box-shadow: none; }
 .side .label { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2); margin: 0.3rem 0; }
 
+/* Managing a conversation: a row is the open button and its actions button; the menu and the dialogs are fixed over the page,
+   so the phone strip's clipping never cuts them. */
+.side li { display: flex; align-items: center; gap: 0.1rem; }
+.side li > button.item { flex: 1 1 0; width: auto; min-width: 0; }
+.side button.row-more { flex: none; width: 2.75rem; min-width: 2.75rem; min-height: 2.75rem; margin: 0; padding: 0; justify-content: center; border-color: transparent; font-size: 1.2rem; line-height: 1; }
+.side .tag { margin-left: 0.4rem; font-family: var(--font-mono); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
+.side .tag.warn { text-decoration: underline wavy; text-underline-offset: 3px; }
+.side .archive { margin-top: 0.4rem; }
+.side li.archive-toggle button, .side .archive > button { min-height: 2.75rem; }
+.side .archive ul::before { content: "Archived"; }
+.row-menu { position: fixed; z-index: 25; width: 14rem; padding: 0.35rem; background: var(--card); color: var(--ink); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
+.row-menu [role="menuitem"] { display: flex; width: 100%; min-height: 2.75rem; margin: 0; padding: 0 0.8rem; justify-content: flex-start; font-weight: 500; border-color: transparent; background: transparent; border-radius: var(--r-md); }
+.row-menu [role="menuitem"][aria-disabled="true"] { color: var(--ink-2); cursor: not-allowed; }
+.row-menu [role="menuitem"][aria-disabled="true"]:hover { background: transparent; color: var(--ink-2); }
+.row-menu .label { margin: 0.2rem 0.4rem 0.3rem; }
+.scrim { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 1rem; background: color-mix(in srgb, var(--ink) 45%, transparent); }
+.dialog { width: min(26rem, 100%); max-height: 100%; overflow: auto; padding: 1.1rem 1.2rem; background: var(--card); color: var(--ink); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: 5px 5px 0 var(--ink); }
+.dialog h2 { margin: 0 0 0.6rem; font-size: 1.1rem; overflow-wrap: anywhere; }
+.dialog p { margin: 0 0 0.8rem; overflow-wrap: anywhere; }
+.dialog form { display: grid; gap: 0.5rem; }
+.dialog input { width: 100%; box-sizing: border-box; min-height: 2.75rem; font: inherit; }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 0.4rem; }
+.dialog-actions button { min-height: 2.75rem; }
+button.danger { background: var(--blush); color: var(--ink); font-weight: 700; }
+
 .pane { grid-area: pane; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; padding: 0 2rem; }
 .log { --log-pad: 0.5rem; flex: 1; min-height: 0; overflow: auto; padding: var(--log-pad) 0.25rem 0; position: relative; overflow-anchor: none; overscroll-behavior: contain; }
 
@@ -541,6 +566,20 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   .side button.item::before { display: none; }
   .side button.item.current { box-shadow: none; }
   .side .label { flex: 1 1 0; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* The strip is one line: only the open conversation's actions button is in it; any other row's actions are in the menu of the
+     row once it is open, and in the archive list, where every row has one. */
+  .side > ul > li { gap: 0; }
+  .side > ul > li > button.item { flex: 0 1 auto; }
+  .side > ul > li:has(button.item.current) { max-width: none; } /* the open chip keeps room for its actions button, even where the strip is a few chips wide */
+  .side > ul > li:not(:has(button.item.current)) button.row-more { display: none; }
+  .side button.row-more { border: 0; background-clip: padding-box; }
+  /* An open archive takes the strip, like an open search: the toggle and the archived list, one under the other. */
+  .side:has(.archive) { display: block; max-height: 45dvh; overflow: hidden auto; }
+  .side:has(.archive) > :not(.archive):not(.sr):not(.row-menu):not(.scrim) { display: none; }
+  .side li.archive-toggle button { white-space: nowrap; }
+  .side .archive ul { display: grid; gap: 0.3rem; margin: 0; overflow: visible; }
+  .side .archive ul::before { display: block; }
+  .side .archive li { flex: none; max-width: 100%; }
   .search-toggle { display: inline-flex; }
   .search { flex: none; width: auto; margin: 0; }
   .search-body { display: none; }

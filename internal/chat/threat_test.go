@@ -33,6 +33,8 @@ type probe struct {
 
 var builtProbes = []probe{
 	{"chat read", "GET /api/chats/{chatId}"},
+	{"chat rename/pin/archive", "PATCH /api/chats/{chatId}"},
+	{"chat delete", "DELETE /api/chats/{chatId}"},
 	{"history/messages read", "GET /api/chats/{chatId}/messages"},
 	{"send message (run admission)", "POST /api/chats/{chatId}/messages"},
 	{"artifact download", "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}"},
@@ -239,8 +241,11 @@ func fill(key, chatID, runID string) (method, path string) {
 }
 
 func requestBody(method string) any {
-	if method == "POST" {
+	switch method {
+	case "POST":
 		return map[string]string{"input": "probe"}
+	case "PATCH":
+		return map[string]any{"pinned": true}
 	}
 	return nil
 }
@@ -325,7 +330,7 @@ func TestCrossUserThreatBuiltSurfaces(t *testing.T) {
 			t.Errorf("owner's global search does not find her own chat: %d %s", w.Code, w.Body.String())
 		}
 		for _, p := range builtProbes {
-			if p.key == "GET /api/runs/{runId}/events" || strings.HasPrefix(p.key, "POST") || strings.HasPrefix(p.key, "PUT") || strings.HasPrefix(p.key, "DELETE") { // the owner's own delete is proven in assets_test.go, her own model choice in models_test.go
+			if p.key == "GET /api/runs/{runId}/events" || strings.HasPrefix(p.key, "POST") || strings.HasPrefix(p.key, "PUT") || strings.HasPrefix(p.key, "PATCH") || strings.HasPrefix(p.key, "DELETE") { // the owner's own delete is proven in assets_test.go and manage_test.go, her own model choice in models_test.go
 				continue
 			}
 			mtd, path := v.fill(p.key, v.chatID, v.runID)

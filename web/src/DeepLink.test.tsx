@@ -16,7 +16,7 @@ import { Chat } from "./Chat";
 
 const MINE = "11111111111111111111111111111111";
 const THEIRS = "22222222222222222222222222222222";
-const chat = (id: string): ChatSummary => ({ id, title: "", createdAt: "", updatedAt: "", activeRunId: "" });
+const chat = (id: string): ChatSummary => ({ id, title: "", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false });
 const ok = <T,>(value: T) => ({ ok: true as const, value });
 
 beforeEach(() => {

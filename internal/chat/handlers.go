@@ -48,6 +48,8 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"GET /api/chats":                                               http.HandlerFunc(s.listChats),
 		"POST /api/chats":                                              http.HandlerFunc(s.createChat),
 		"GET /api/chats/{chatId}":                                      http.HandlerFunc(s.getChat),
+		"PATCH /api/chats/{chatId}":                                    http.HandlerFunc(s.patchChat),
+		"DELETE /api/chats/{chatId}":                                   http.HandlerFunc(s.deleteChat),
 		"GET /api/chats/{chatId}/messages":                             http.HandlerFunc(s.getMessages),
 		"GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}":         http.HandlerFunc(s.downloadArtifact),
 		"GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview": http.HandlerFunc(s.previewArtifact),
@@ -142,10 +144,15 @@ type chatView struct {
 	CreatedAt   string           `json:"createdAt"`
 	UpdatedAt   string           `json:"updatedAt"`
 	ActiveRunID string           `json:"activeRunId,omitempty"`
+	Pinned      bool             `json:"pinned"`
+	Archived    bool             `json:"archived"`
+	// DeleteFailed marks a chat whose delete did not complete; it still exists and can be retried.
+	DeleteFailed bool `json:"deleteFailed,omitempty"`
 }
 
 func viewChat(c store.Chat) chatView {
-	return chatView{ID: c.ID, Title: c.Title, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt, ActiveRunID: c.ActiveRunID}
+	return chatView{ID: c.ID, Title: c.Title, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt, ActiveRunID: c.ActiveRunID,
+		Pinned: c.PinnedAt != "", Archived: c.Status == "ARCHIVED", DeleteFailed: c.Status == "DELETE_FAILED"}
 }
 
 type runView struct {
@@ -229,7 +236,7 @@ func (s *Service) listChats(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	chats, more, err := store.ListChats(r.Context(), s.db, uid, limit, after)
+	chats, more, err := store.ListChats(r.Context(), s.db, uid, limit, after, q.Get("archived") == "1")
 	if err != nil {
 		internalError(w, "list chats", err)
 		return
@@ -241,7 +248,7 @@ func (s *Service) listChats(w http.ResponseWriter, r *http.Request) {
 	next := ""
 	if more && len(chats) > 0 {
 		last := chats[len(chats)-1]
-		next = encodeChatCursor(store.ChatCursor{UpdatedAt: last.UpdatedAt, ID: last.ID})
+		next = encodeChatCursor(store.ChatCursor{Pinned: last.PinnedAt != "", UpdatedAt: last.UpdatedAt, ID: last.ID})
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"chats": out, "nextCursor": next})
 }

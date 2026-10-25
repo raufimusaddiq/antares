@@ -14,7 +14,7 @@ import { parseHistory, stripImageMarkers } from "./chatApi";
 import { planRetry } from "./retry";
 
 const ID = "ab".repeat(16);
-const chat = (id: string): ChatSummary => ({ id, title: "", createdAt: "", updatedAt: "", activeRunId: "" });
+const chat = (id: string): ChatSummary => ({ id, title: "", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false });
 const ok = <T,>(value: T) => ({ ok: true as const, value });
 const verdict = (available: boolean, reason: string | null = null) => ok({ available, reason, model: "deepseek-v4-1-flash" });
 const png = () => new File([new Uint8Array(64)], "shot.png", { type: "image/png" });
