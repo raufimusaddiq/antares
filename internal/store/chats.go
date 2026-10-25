@@ -47,8 +47,9 @@ const nonTerminal = `('PENDING','RUNNING','DISCONNECTED')`
 
 // liveChat is the SQL spelling of the statuses a chat can be read and used in. PENDING_DELETE is
 // excluded: a chat being deleted is gone to its owner, and no new run may start in it.
-// DELETE_FAILED stays: the chat still exists upstream, and the owner needs to see it to retry.
-const liveChat = `('ACTIVE','ARCHIVED','DELETE_FAILED')`
+// A chat whose delete failed keeps its ACTIVE or ARCHIVED status and is flagged (delete_failed_at), so it stays
+// where the owner put it and can be retried.
+const liveChat = `('ACTIVE','ARCHIVED')`
 
 // ActiveBinding is the database half of the default-deny gate
 // (docs/runbooks/security-invariants.md §1, after the session check): the
@@ -80,14 +81,15 @@ type Chat struct {
 	UpdatedAt       string
 	ActiveRunID     string // the chat's non-terminal run, if any
 	PinnedAt        string // empty when not pinned
+	DeleteFailed    bool   // the last delete of this chat did not finish; it can be retried
 }
 
 const chatCols = `c.id, c.user_id, c.hermes_binding_id, c.hermes_session_id, COALESCE(c.title,''), c.status, c.created_at, c.updated_at,
-	COALESCE((SELECT r.id FROM runs r WHERE r.chat_id = c.id AND r.user_id = c.user_id AND r.status IN ` + nonTerminal + ` LIMIT 1),''), COALESCE(c.pinned_at,'')`
+	COALESCE((SELECT r.id FROM runs r WHERE r.chat_id = c.id AND r.user_id = c.user_id AND r.status IN ` + nonTerminal + ` LIMIT 1),''), COALESCE(c.pinned_at,''), c.delete_failed_at IS NOT NULL`
 
 func scanChat(row interface{ Scan(...any) error }) (Chat, error) {
 	var c Chat
-	err := row.Scan(&c.ID, &c.UserID, &c.BindingID, &c.HermesSessionID, &c.Title, &c.Status, &c.CreatedAt, &c.UpdatedAt, &c.ActiveRunID, &c.PinnedAt)
+	err := row.Scan(&c.ID, &c.UserID, &c.BindingID, &c.HermesSessionID, &c.Title, &c.Status, &c.CreatedAt, &c.UpdatedAt, &c.ActiveRunID, &c.PinnedAt, &c.DeleteFailed)
 	return c, err
 }
 
@@ -142,7 +144,7 @@ type ChatCursor struct {
 // so a page boundary is a position, not a count: a chat created meanwhile cannot shift later pages
 // the way an offset would.
 func ListChats(ctx context.Context, db *sql.DB, userID string, limit int, after *ChatCursor, archived bool) (page []Chat, more bool, err error) {
-	q := `SELECT ` + chatCols + ` FROM chats c WHERE c.user_id = ? AND c.status IN ('ACTIVE','DELETE_FAILED')`
+	q := `SELECT ` + chatCols + ` FROM chats c WHERE c.user_id = ? AND c.status = 'ACTIVE'`
 	if archived {
 		q = `SELECT ` + chatCols + ` FROM chats c WHERE c.user_id = ? AND c.status = 'ARCHIVED'`
 	}
@@ -330,8 +332,9 @@ func RecoverRuns(ctx context.Context, db *sql.DB, now time.Time) (disconnected, 
 	}
 	failed, _ = res.RowsAffected()
 	// A delete that was on its way when the process died did not finish: the chat may still exist
-	// upstream, so it is a failed delete the owner can see and retry, not a silent disappearance.
-	if _, err = db.ExecContext(ctx, `UPDATE chats SET status = 'DELETE_FAILED' WHERE status = 'PENDING_DELETE'`); err != nil {
+	// upstream, so it goes back to where it was, flagged, for the owner to see and retry, not a silent disappearance.
+	if _, err = db.ExecContext(ctx, `UPDATE chats SET status = COALESCE(pre_delete_status, 'ACTIVE'), pre_delete_status = NULL, delete_failed_at = ?
+		WHERE status = 'PENDING_DELETE'`, t); err != nil {
 		return 0, 0, err
 	}
 	// An answer that was on its way when the process died may or may not have reached Hermes: the

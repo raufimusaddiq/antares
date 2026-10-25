@@ -39,10 +39,10 @@ It was **not** called on the deployed Hermes. A first real delete is an owner-ap
 1. Ownership (`GetChat`), the default-deny gate, and "this chat is on the account's current binding", else no Hermes call.
 2. Capability check (above).
 3. `BeginDeleteChat`: one statement moves the chat to `PENDING_DELETE` only if it has no non-terminal run (`RUN_CONFLICT` otherwise). `AdmitRun`'s insert re-checks the chat status, so no run joins a chat on its way out.
-4. Upstream delete. Anything but success/session-gone → the chat becomes `DELETE_FAILED`: still listed with a visible flag, still readable, retryable; the error code is audited.
+4. Upstream delete. Anything but success/session-gone → the chat goes back to the status it had (active or archived; its pin was never touched) with `delete_failed_at` set: still listed, in the same place, with a visible "Delete failed" flag, readable, retryable; the error code is audited. (`pre_delete_status` remembers ACTIVE/ARCHIVED while `PENDING_DELETE`; the `DELETE_FAILED` status is no longer written.)
 5. `FinishDeleteChat`, one transaction: search rows, draft, run prompts, run images, message metadata, runs, the chat, and staged images that no other chat's run also sent.
    Tokens the runs reported are kept as two per-user numbers (`deleted_chat_usage`) so deleting chats does not reset the token budget or the usage total.
-6. A restart turns any `PENDING_DELETE` into `DELETE_FAILED` (`RecoverRuns`), so a delete cut short is visible, not silent.
+6. A restart returns any `PENDING_DELETE` chat to its previous status, flagged (`RecoverRuns`), so a delete cut short is visible, not silent.
 
 The local steps run on a context that survives the browser disconnecting, so a delete Hermes completed is not stranded.
 
@@ -55,7 +55,7 @@ No title, session id, profile or text is recorded.
 
 Each sidebar row has an actions button (`Actions for <title>`, `aria-haspopup=menu`): Rename…, Pin to top, Archive, Delete…. Arrow keys/Home/End move,
 Escape closes and returns focus. Rename and delete are modal dialogs (focus trapped, Escape cancels; delete starts on Cancel and says what goes with the chat).
-A change shows only after the server confirms it. `Show archived` lists the archive. On a phone the strip carries the actions button of the open chat only; the archive replaces the strip like an open search.
+A change shows only after the server confirms it. `Show archived` lists the archive. On a phone the strip stays a line of chips (the open one whole; `mobile layout` CI enforces it) and the open chat's actions are under Options → Conversation actions; the archive replaces the strip like an open search, and its rows keep their buttons.
 After a delete the browser also forgets that chat's local draft, resets the search panel, and opens the next chat (or the empty state).
 
 ## Browser check

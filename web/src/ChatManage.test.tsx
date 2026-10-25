@@ -99,6 +99,18 @@ describe("the actions menu", () => {
     expect(api.deleteChat).not.toHaveBeenCalled();
   });
 
+  it("is also under Conversation actions for the open chat (the phone's home for it, in the Options panel)", async () => {
+    await mount([chat("c1", "Talk")]);
+    await waitFor(() => expect(document.querySelector("nav.side button.item.current")).not.toBeNull());
+    const slot = document.querySelector("#chat-extras .chat-actions-slot")!;
+    const btn = within(slot as HTMLElement).getByRole("button", { name: "Conversation actions" });
+    fireEvent.click(btn);
+    const menu = screen.getByRole("menu", { name: "Actions for Talk" });
+    expect(within(menu).getAllByRole("menuitem")).toHaveLength(4);
+    fireEvent.keyDown(menu, { key: "Escape" });
+    expect(document.activeElement).toBe(btn);
+  });
+
   it("offers an archived chat restore, not pin", async () => {
     await mount([chat("c1", "Talk", { archived: true })]);
     const menu = openMenu("Talk");

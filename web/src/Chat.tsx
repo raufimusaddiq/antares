@@ -536,6 +536,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const [olderError, setOlderError] = useState("");
   const [chatsCursor, setChatsCursor] = useState("");
   const [loadingChats, setLoadingChats] = useState(false);
+  const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null); // the phone's home for the open chat's actions
   const [archiveTick, setArchiveTick] = useState(0); // the archive is read again after a change that touches it
   const [searchEpoch, setSearchEpoch] = useState(0); // a rename or delete makes an open search's titles and hits stale
   const openTitle = useRef(""); // title of the open chat, kept when it leaves the list (archived)
@@ -1164,6 +1165,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           deleteBlocked={deleteBlocked}
           listArchive={listArchive}
           archiveTick={archiveTick}
+          slot={actionsSlot}
           more={
             chatsCursor && (
               <button type="button" className="quiet" disabled={loadingChats} onClick={() => void moreChats()}>
@@ -1234,6 +1236,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           {budgetReached && !moreOpen ? "Options · token limit reached" : "Options"}
         </button>
         <div id="chat-extras" className={moreOpen ? "extras open" : "extras"}>
+          <div className="chat-actions-slot" ref={setActionsSlot} />
           {usage && (
             <details className="usage" open={usage.budget.reached}>
               <summary>{usage.budget.reached ? "Token limit reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens` : "Usage unknown"}</summary>

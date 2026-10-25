@@ -43,7 +43,7 @@ OWNED = {
     "tenant_bindings": _own(), "app_sessions": _own(), "chats": _own(), "runs": _own(), "messages": _own(),
     "assets": _own(), "run_prompts": _own(), "run_images": _own(), "search_docs": _own(), "search_state": _own(),
     "user_preferences": _own(), "push_subscriptions": _own(), "push_delivery_events": _own(),
-    "chat_drafts": _own(), "new_chat_drafts": _own(), "prompt_templates": _own(), "model_hidden": _own(),
+    "chat_drafts": _own(), "new_chat_drafts": _own(), "deleted_chat_usage": _own(), "prompt_templates": _own(), "model_hidden": _own(),
     "approvals": f"target_user_id IN {FX} OR actor_user_id IN {FX}",
     # Kept: audit evidence. Only the actor is nulled, so the hash excludes exactly the rows touched (fxa).
     "audit_log": "id IN (SELECT id FROM fxa)",
@@ -52,7 +52,7 @@ OWNED = {
 }
 DELETE_ORDER = ["push_delivery_events", "push_subscriptions", "run_images", "run_prompts", "messages",
                 "search_docs", "search_state", "chat_drafts", "runs", "chats", "assets", "prompt_templates",
-                "model_hidden", "new_chat_drafts", "user_preferences", "app_sessions", "approvals",
+                "model_hidden", "new_chat_drafts", "deleted_chat_usage", "user_preferences", "app_sessions", "approvals",
                 "tenant_bindings", "users"]
 SHARED_REFS = [  # (table, predicate that must find no row): evidence or shared state a fixture must not own
     ("admin_bootstrap", f"user_id IN {FX}"),

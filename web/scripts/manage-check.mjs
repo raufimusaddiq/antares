@@ -112,14 +112,18 @@ async function run(label, viewport, mobile, tag) {
   };
   const titles = async () => (await (await api(A, "GET", "/api/chats?limit=50")).json()).chats.map((c) => c.title);
   const row = (title) => page.locator("nav.side li", { has: page.locator("button.item", { hasText: title }) }).first();
-  // On a phone only the open conversation has its actions button in the strip: open it first.
+  // On a phone the strip carries chips only: the open conversation's actions are under Options -> Conversation actions.
   const actions = async (title) => {
     await page.locator("nav.side button.item", { hasText: title }).first().click();
     await page.waitForTimeout(200);
-    const btn = page.getByRole("button", { name: `Actions for ${title}` });
-    await btn.click();
+    if (mobile) {
+      const opts = page.getByRole("button", { name: /^Options/ });
+      if ((await opts.getAttribute("aria-expanded")) !== "true") await opts.click();
+      await page.getByRole("button", { name: "Conversation actions" }).click();
+    } else {
+      await page.getByRole("button", { name: `Actions for ${title}` }).click();
+    }
     await page.getByRole("menu").waitFor();
-    return btn;
   };
 
   await page.goto(BASE + "/", { waitUntil: "networkidle" });
@@ -128,7 +132,7 @@ async function run(label, viewport, mobile, tag) {
   await shot("list", "nav.side");
 
   // ---- menu: keyboard ----
-  const beta0 = await actions(beta.title);
+  await actions(beta.title);
   await shot("menu-open", ".row-menu");
   const names = await page.getByRole("menuitem").allTextContents();
   if (names.join("|") !== "Rename…|Pin to top|Archive|Delete…") fail(`menu items: ${names.join("|")}`);
@@ -137,8 +141,7 @@ async function run(label, viewport, mobile, tag) {
   if (!(await page.evaluate(() => document.activeElement?.textContent === "Pin to top"))) fail("ArrowDown does not move to the next item");
   await page.keyboard.press("Escape");
   if (await page.getByRole("menu").count()) fail("Escape did not close the menu");
-  if (!(await page.evaluate(() => document.activeElement?.getAttribute("aria-label")?.startsWith("Actions for ")))) fail("focus did not return to the actions button");
-  void beta0;
+  if (!(await page.evaluate(() => /^(Actions for |Conversation actions)/.test(document.activeElement?.getAttribute("aria-label") ?? document.activeElement?.textContent ?? "")))) fail("focus did not return to the actions button");
 
   // ---- rename (keyboard only from the actions button) ----
   await page.keyboard.press("Enter");

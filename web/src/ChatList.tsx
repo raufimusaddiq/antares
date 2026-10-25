@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { describeCode, type ApiResult, type ChatList as ChatPage, type ChatSummary } from "./chatApi";
 
@@ -35,8 +36,10 @@ export function ChatList(props: {
   archiveTick?: number;
   /** Shown right under the list: "Show more" for the next page of chats. */
   more?: ReactNode;
+  /** Where the open conversation's own actions button goes on a phone (the Options panel); the strip has no room for it. */
+  slot?: HTMLElement | null;
 }) {
-  const { chats, current, onOpen, actions, deleteBlocked, listArchive, archiveTick = 0, more } = props;
+  const { chats, current, onOpen, actions, deleteBlocked, listArchive, archiveTick = 0, more, slot = null } = props;
   const [menu, setMenu] = useState<{ chat: ChatSummary; x: number; y: number } | null>(null);
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [status, setStatus] = useState("");
@@ -118,8 +121,17 @@ export function ChatList(props: {
     </button>
   );
 
+  const open = [...chats, ...archive.chats].find((c) => c.id === current);
   return (
     <>
+      {slot &&
+        open &&
+        createPortal(
+          <button type="button" className="quiet row-more" aria-haspopup="menu" aria-expanded={menu?.chat.id === open.id} onClick={(e) => (menu?.chat.id === open.id ? closeMenu(true) : openMenu(open, e.currentTarget))}>
+            Conversation actions
+          </button>,
+          slot,
+        )}
       <ul>
         {chats.map(row)}
         {!showArchive && <li className="archive-toggle">{toggle}</li>}

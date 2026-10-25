@@ -636,10 +636,47 @@ func TestStoreDeleteLifecycle(t *testing.T) {
 	if _, _, err := store.RecoverRuns(ctx, a.db, now); err != nil {
 		t.Fatal(err)
 	}
-	if a.count(t, `SELECT COUNT(*) FROM chats WHERE id = ? AND status = 'DELETE_FAILED'`, chat) != 1 {
+	if a.count(t, `SELECT COUNT(*) FROM chats WHERE id = ? AND delete_failed_at IS NOT NULL`, chat) != 1 {
 		t.Error("a delete interrupted by a restart is not shown as failed")
 	}
 	if _, err := store.BeginDeleteChat(ctx, a.db, alice.id, chat, now); err != nil {
 		t.Errorf("retry of a failed delete: %v", err)
+	}
+}
+
+// A failed delete puts the chat back exactly as it was: an archived chat stays in the archive and a pinned
+// one stays pinned, both flagged; the next successful delete still works from there.
+func TestFailedDeleteKeepsArchivedAndPinnedState(t *testing.T) {
+	a := newApp(t)
+	deleteAdvertised(t, a)
+	u := a.user("alice")
+	archived, pinned, plain := u.newTitledChat("old stuff"), u.newTitledChat("favourite"), u.newTitledChat("plain")
+	if u.patch(archived, map[string]any{"archived": true}) != 200 || u.patch(pinned, map[string]any{"pinned": true}) != 200 {
+		t.Fatal("setup")
+	}
+	for _, id := range []string{archived, pinned, plain} {
+		a.hx.mu.Lock()
+		a.hx.failNext["DELETE /api/sessions/"] = 503
+		a.hx.mu.Unlock()
+		if w := u.do("DELETE", "/api/chats/"+id, nil, nil); w.Code != 503 {
+			t.Fatalf("delete %s = %d", id, w.Code)
+		}
+	}
+	main, arch := u.list(""), u.list("?archived=1")
+	if got := ids(main); len(got) != 2 || got[0] != pinned || got[1] != plain {
+		t.Errorf("main list = %v, want pinned then plain", got)
+	}
+	if !main.Chats[0].Pinned || !main.Chats[0].DeleteFailed || !main.Chats[1].DeleteFailed || main.Chats[0].Archived {
+		t.Errorf("main flags = %+v", main.Chats)
+	}
+	if len(arch.Chats) != 1 || arch.Chats[0].ID != archived || !arch.Chats[0].Archived || !arch.Chats[0].DeleteFailed {
+		t.Errorf("archive = %+v", arch.Chats)
+	}
+	// Retrying the archived one deletes it, from the archive.
+	if w := u.do("DELETE", "/api/chats/"+archived, nil, nil); w.Code != 200 {
+		t.Fatalf("retry = %d %s", w.Code, w.Body.String())
+	}
+	if len(u.list("?archived=1").Chats) != 0 {
+		t.Error("archive still lists the deleted chat")
 	}
 }

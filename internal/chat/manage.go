@@ -22,7 +22,7 @@ import (
 // one operation that also changes Hermes, and it is ordered so that no step can report a success
 // that did not happen: claim the chat (PENDING_DELETE), delete the session upstream, and only a
 // confirmed upstream deletion (or Hermes' own "no such session") lets Antares remove its records.
-// Any other answer leaves the chat in place as DELETE_FAILED, visible and retryable.
+// Any other answer puts the chat back as it was (active or archived, pinned or not), flagged and retryable.
 
 const (
 	actRename    = "chat.rename"
@@ -176,7 +176,7 @@ func (s *Service) deleteChat(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), settleTimeout)
 	defer cancel()
 	if err != nil && !errors.Is(err, hermes.ErrSessionGone) {
-		if merr := store.MarkDeleteFailed(ctx, s.db, uid, id); merr != nil {
+		if merr := store.MarkDeleteFailed(ctx, s.db, uid, id, s.now()); merr != nil {
 			log.Printf("chat: mark delete failed: %v", merr)
 		}
 		s.audit(ctx, uid, actDelete, id, "failed:"+hermes.CodeOf(err))
@@ -186,8 +186,8 @@ func (s *Service) deleteChat(w http.ResponseWriter, r *http.Request) {
 	_, err = store.FinishDeleteChat(ctx, s.db, uid, id)
 	if err != nil {
 		// Hermes no longer has the session but the local records are still here. The chat stays
-		// DELETE_FAILED, so a retry (Hermes answers "not found", which finishes the job) can complete it.
-		if merr := store.MarkDeleteFailed(ctx, s.db, uid, id); merr != nil {
+		// flagged, so a retry (Hermes answers "not found", which finishes the job) can complete it.
+		if merr := store.MarkDeleteFailed(ctx, s.db, uid, id, s.now()); merr != nil {
 			log.Printf("chat: mark delete failed: %v", merr)
 		}
 		s.audit(ctx, uid, actDelete, id, "failed:LOCAL_CLEANUP")

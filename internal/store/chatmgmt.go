@@ -42,7 +42,7 @@ func SetChatPinned(ctx context.Context, db *sql.DB, userID, chatID string, pinne
 	var err error
 	if pinned {
 		res, err = db.ExecContext(ctx, `UPDATE chats SET pinned_at = COALESCE(pinned_at, ?)
-			WHERE id = ? AND user_id = ? AND status IN ('ACTIVE','DELETE_FAILED')`, ts(now), chatID, userID)
+			WHERE id = ? AND user_id = ? AND status = 'ACTIVE'`, ts(now), chatID, userID)
 	} else {
 		res, err = db.ExecContext(ctx, `UPDATE chats SET pinned_at = NULL WHERE id = ? AND user_id = ? AND status IN `+liveChat, chatID, userID)
 	}
@@ -95,18 +95,20 @@ func missOrState(ctx context.Context, db *sql.DB, userID, chatID string) error {
 // Hermes to delete the session it names. The claim is one statement: the chat moves to
 // PENDING_DELETE only if it has no run that is not terminal, so a run cannot be admitted into a chat
 // that is being deleted (AdmitRun checks the status in its insert) and a delete cannot start under
-// a running turn (ErrRunActive). A chat already PENDING_DELETE or DELETE_FAILED can be claimed
-// again: that is the retry.
+// a running turn (ErrRunActive). A chat already PENDING_DELETE, or flagged after a failed delete, can be
+// claimed again: that is the retry.
 func BeginDeleteChat(ctx context.Context, db *sql.DB, userID, chatID string, now time.Time) (Chat, error) {
-	res, err := db.ExecContext(ctx, `UPDATE chats SET status = 'PENDING_DELETE', pinned_at = NULL, updated_at = ?
-		WHERE id = ? AND user_id = ? AND status IN ('ACTIVE','ARCHIVED','DELETE_FAILED','PENDING_DELETE')
+	// The status it had is remembered, and the pin is left alone, so a failed delete puts the chat back as it was.
+	res, err := db.ExecContext(ctx, `UPDATE chats SET pre_delete_status = CASE WHEN status IN ('ACTIVE','ARCHIVED') THEN status ELSE pre_delete_status END,
+		status = 'PENDING_DELETE', delete_failed_at = NULL
+		WHERE id = ? AND user_id = ? AND status IN ('ACTIVE','ARCHIVED','PENDING_DELETE')
 		  AND NOT EXISTS (SELECT 1 FROM runs r WHERE r.chat_id = chats.id AND r.user_id = chats.user_id AND r.status IN `+nonTerminal+`)`,
-		ts(now), chatID, userID)
+		chatID, userID)
 	if err != nil {
 		return Chat{}, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		err := db.QueryRowContext(ctx, `SELECT 1 FROM chats WHERE id = ? AND user_id = ? AND status IN ('ACTIVE','ARCHIVED','DELETE_FAILED','PENDING_DELETE')`, chatID, userID).Scan(new(int))
+		err := db.QueryRowContext(ctx, `SELECT 1 FROM chats WHERE id = ? AND user_id = ? AND status IN ('ACTIVE','ARCHIVED','PENDING_DELETE')`, chatID, userID).Scan(new(int))
 		switch {
 		case errors.Is(err, sql.ErrNoRows):
 			return Chat{}, ErrNoChat
@@ -118,10 +120,12 @@ func BeginDeleteChat(ctx context.Context, db *sql.DB, userID, chatID string, now
 	return scanChat(db.QueryRowContext(ctx, `SELECT `+chatCols+` FROM chats c WHERE c.id = ? AND c.user_id = ?`, chatID, userID))
 }
 
-// MarkDeleteFailed records that the upstream delete did not happen: the chat stays, flagged, and the
-// owner can retry. It only moves a chat that is PENDING_DELETE.
-func MarkDeleteFailed(ctx context.Context, db *sql.DB, userID, chatID string) error {
-	_, err := db.ExecContext(ctx, `UPDATE chats SET status = 'DELETE_FAILED' WHERE id = ? AND user_id = ? AND status = 'PENDING_DELETE'`, chatID, userID)
+// MarkDeleteFailed records that the upstream delete did not happen: the chat goes back to the status it had
+// (active or archived; its pin was never touched), flagged, and the owner can retry. It only moves a chat
+// that is PENDING_DELETE.
+func MarkDeleteFailed(ctx context.Context, db *sql.DB, userID, chatID string, now time.Time) error {
+	_, err := db.ExecContext(ctx, `UPDATE chats SET status = COALESCE(pre_delete_status, 'ACTIVE'), pre_delete_status = NULL, delete_failed_at = ?
+		WHERE id = ? AND user_id = ? AND status = 'PENDING_DELETE'`, ts(now), chatID, userID)
 	return err
 }
 

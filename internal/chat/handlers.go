@@ -152,7 +152,7 @@ type chatView struct {
 
 func viewChat(c store.Chat) chatView {
 	return chatView{ID: c.ID, Title: c.Title, CreatedAt: c.CreatedAt, UpdatedAt: c.UpdatedAt, ActiveRunID: c.ActiveRunID,
-		Pinned: c.PinnedAt != "", Archived: c.Status == "ARCHIVED", DeleteFailed: c.Status == "DELETE_FAILED"}
+		Pinned: c.PinnedAt != "", Archived: c.Status == "ARCHIVED", DeleteFailed: c.DeleteFailed}
 }
 
 type runView struct {

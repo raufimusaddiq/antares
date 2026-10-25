@@ -44,7 +44,7 @@ func TestChatManagementIsOwnerScoped(t *testing.T) {
 	if _, err := BeginDeleteChat(ctx, db, u.a, u.chatA.ID, t0); err != nil {
 		t.Fatal(err)
 	}
-	if err := MarkDeleteFailed(ctx, db, u.b, u.chatA.ID); err != nil {
+	if err := MarkDeleteFailed(ctx, db, u.b, u.chatA.ID, t0); err != nil {
 		t.Fatal(err)
 	}
 	var st string
@@ -76,5 +76,34 @@ func TestBeginDeleteChatWaitsForTheRun(t *testing.T) {
 	}
 	if _, err := BeginDeleteChat(ctx, d.DB, u.a, u.chatA.ID, t0); err != nil {
 		t.Fatalf("delete after the run = %v", err)
+	}
+}
+
+// A restart in the middle of a delete returns the chat to the status it had, flagged.
+func TestRecoverRestoresArchivedChatAfterInterruptedDelete(t *testing.T) {
+	d, u := setupTwo(t)
+	ctx := context.Background()
+	if err := SetChatArchived(ctx, d.DB, u.a, u.chatA.ID, true); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := BeginDeleteChat(ctx, d.DB, u.a, u.chatA.ID, t0); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := RecoverRuns(ctx, d.DB, t0); err != nil {
+		t.Fatal(err)
+	}
+	got, err := GetChat(ctx, d.DB, u.a, u.chatA.ID)
+	if err != nil || got.Status != "ARCHIVED" || !got.DeleteFailed {
+		t.Errorf("after recovery: %+v %v", got, err)
+	}
+	// A claim that is then abandoned by an error path restores the same way.
+	if _, err := BeginDeleteChat(ctx, d.DB, u.a, u.chatA.ID, t0); err != nil {
+		t.Fatal(err)
+	}
+	if err := MarkDeleteFailed(ctx, d.DB, u.a, u.chatA.ID, t0); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := GetChat(ctx, d.DB, u.a, u.chatA.ID); got.Status != "ARCHIVED" {
+		t.Errorf("MarkDeleteFailed left status %s", got.Status)
 	}
 }
