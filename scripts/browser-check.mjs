@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 import { measure, verdicts, CURRENT, pointerCheck } from "../web/scripts/mobile-layout.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const dist = path.join(here, "..", "internal", "webui", "dist");
+const dist = process.env.DIST ? path.resolve(process.env.DIST) : path.join(here, "..", "internal", "webui", "dist");
 const outDir = process.argv.includes("--out") ? process.argv[process.argv.indexOf("--out") + 1] : fs.mkdtempSync("/tmp/antares-browser-");
 fs.mkdirSync(outDir, { recursive: true });
 const require = createRequire(import.meta.url);
@@ -57,7 +57,9 @@ function transcript(rich) {
 const DATA = { [PLAIN]: transcript(false), [RICH]: transcript(true) };
 const b64 = (s) => Buffer.from(s).toString("base64url");
 
-const state = { log: [], holdOlder: null, delayMs: 15, email: "reader@example.test", budgetReached: false };
+const state = { log: [], holdOlder: null, delayMs: 15, email: "reader@example.test", budgetReached: false, emptyList: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map() };
+const PNG = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
+const hex32 = () => Array.from({ length: 32 }, () => "0123456789abcdef"[Math.floor(Math.random() * 16)]).join("");
 
 function api(req, res, url) {
   const send = (status, body) => {
@@ -66,7 +68,55 @@ function api(req, res, url) {
   };
   state.log.push(`${req.method} ${url.pathname}${url.search}`);
   if (url.pathname === "/api/me") return send(200, { email: state.email, displayName: "Reader", requestedAt: "", state: "ACTIVE" });
+  // Image upload, removal and send (the #138 gap): the same shapes the Go server documents, no model behind them.
+  if (url.pathname === "/api/assets" && req.method === "POST") {
+    const chunks = [];
+    req.on("data", (d) => chunks.push(d));
+    req.on("end", () => {
+      if (state.failNextUpload) { state.failNextUpload = false; return send(415, { error: { code: "UNSUPPORTED_MEDIA", message: "x", requestId: "r" } }); }
+      const id = hex32();
+      state.assets.set(id, { type: req.headers["content-type"], size: Buffer.concat(chunks).length });
+      send(201, { id });
+    });
+    return;
+  }
+  let am = /^\/api\/assets\/([0-9a-f]{32})$/.exec(url.pathname);
+  if (am && req.method === "DELETE") { state.deleted.push(am[1]); state.assets.delete(am[1]); res.writeHead(204); return void res.end(); }
+  if (am && req.method === "GET") { res.writeHead(200, { "content-type": "image/png", "cache-control": "no-store" }); return void res.end(PNG); }
+  am = /^\/api\/chats\/([0-9a-f]{32})\/messages$/.exec(url.pathname);
+  if (am && req.method === "POST") {
+    let body = "";
+    req.on("data", (d) => (body += d));
+    req.on("end", () => {
+      const b = JSON.parse(body || "{}");
+      const runId = hex32();
+      state.sent.push({ chat: am[1], input: b.input, imageAssetIds: b.imageAssetIds ?? [], key: req.headers["idempotency-key"] });
+      state.runs.set(runId, { chat: am[1], input: b.input, ids: b.imageAssetIds ?? [] });
+      send(202, { runId });
+    });
+    return;
+  }
+  am = /^\/api\/runs\/([0-9a-f]{32})\/events$/.exec(url.pathname);
+  if (am && state.runs.has(am[1])) {
+    const r = state.runs.get(am[1]);
+    res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-store" });
+    const ev = (n, d) => res.write(`event: ${n}\ndata: ${JSON.stringify(d)}\n\n`);
+    if (!r.recorded) {
+      // What the server would now hold for this chat, so the refetch after completion shows the same turns.
+      r.recorded = true;
+      const all = DATA[r.chat];
+      all.push({ seq: all.length, role: "user", text: r.input, ...(r.ids.length ? { attachments: r.ids.map((assetId) => ({ assetId, mediaType: "image/png", available: true })) } : {}) });
+      all.push({ seq: all.length, role: "assistant", text: `Received ${r.ids.length} image(s) and: ${r.input}` });
+    }
+    ev("run.started", {});
+    ev("assistant.delta", { text: `Received ${r.ids.length} image(s) and: ${r.input}` });
+    ev("run.completed", { status: "COMPLETED", output: `Received ${r.ids.length} image(s) and: ${r.input}` });
+    return void res.end();
+  }
+  am = /^\/api\/runs\/([0-9a-f]{32})$/.exec(url.pathname);
+  if (am) return state.runs.has(am[1]) ? send(200, { runId: am[1], status: "COMPLETED" }) : send(404, { error: { code: "NOT_FOUND", message: "x", requestId: "r" } });
   if (url.pathname === "/api/chats") {
+    if (state.emptyList) return send(200, { chats: [], nextCursor: "" });
     const c = (id, title) => ({ id, title, createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", activeRunId: "" });
     return send(200, { chats: [c(PLAIN, "Plain conversation"), c(RICH, "Rich conversation")], nextCursor: "" });
   }
@@ -449,6 +499,265 @@ async function mobileBudget(browser) {
   }
 }
 
+
+// ---- desktop layout (#139): the rail, the dock, the popover and the note above the history, measured in a real browser ----------
+// What this proves that jsdom cannot: nothing the user can press is covered by anything, no target is smaller than WCAG 2.2's 24px,
+// the brand / conversation list / account do not overlap, the Menu popover opens and every action in it is reachable, and the
+// "Start of the conversation" note (and a shown capability reason) never sits on top of message text, at any scroll position.
+// There is no exemption list: every text node in the log is tested against the note.
+const desktopMeasure = () => {
+  const vw = innerWidth, vh = innerHeight;
+  const label = (el) => (el.getAttribute("aria-label") || el.textContent || el.id || el.tagName).trim().replace(/\s+/g, " ").slice(0, 28);
+  const box = (el) => el.getBoundingClientRect();
+  const shown = (el) => {
+    let r = box(el);
+    const s = getComputedStyle(el);
+    if (r.width < 1 || r.height < 1 || s.visibility === "hidden" || s.display === "none") return null;
+    // The content of a closed <details> is not rendered (only its summary is), whatever its rectangle says.
+    const closed = el.closest("details:not([open])");
+    if (closed && !(el.matches("summary") && el.parentElement === closed)) return null;
+    for (let a = el.parentElement; a && a !== document.body; a = a.parentElement) {
+      const cs = getComputedStyle(a);
+      if (cs.overflowY === "visible" && cs.overflowX === "visible") continue;
+      const c = box(a);
+      r = { left: Math.max(r.left, c.left), top: Math.max(r.top, c.top), right: Math.min(r.right, c.right), bottom: Math.min(r.bottom, c.bottom) };
+    }
+    return r.right > r.left && r.bottom > r.top ? r : null;
+  };
+  const controls = [...document.querySelectorAll("button, a[href], input:not([type=hidden]):not([type=file]), select, textarea, summary")].filter((el) => shown(el));
+  const outside = controls.filter((el) => !el.closest(".log") || el.closest(".vjump"));
+  const small = outside.filter((el) => { const r = box(el); return r.width < 24 || r.height < 24; }).map(label);
+  const covered = controls.filter((el) => {
+    const r = shown(el);
+    const x = (r.left + r.right) / 2, y = (r.top + r.bottom) / 2;
+    if (x < 0 || y < 0 || x > vw || y > vh) return false;
+    const t = document.elementFromPoint(x, y);
+    return !(t && (t === el || el.contains(t)));
+  }).map(label);
+  const overlaps = [];
+  for (let i = 0; i < outside.length; i++) for (let j = i + 1; j < outside.length; j++) {
+    const a = box(outside[i]), b = box(outside[j]);
+    if (outside[i].contains(outside[j]) || outside[j].contains(outside[i])) continue;
+    if (Math.min(a.right, b.right) - Math.max(a.left, b.left) > 2 && Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2) overlaps.push(`${label(outside[i])} / ${label(outside[j])}`);
+  }
+  const rect = (q) => { const e = document.querySelector(q); return e ? box(e) : null; };
+  const brand = rect(".brand"), list = rect(".side"), account = rect(".account"), pane = rect(".pane"), dock = rect(".composer");
+  const rail = brand && list && account ? { brandOverList: brand.bottom > list.top + 1, listOverAccount: list.bottom > account.top + 1, paneBesideRail: pane.left >= list.right - 1 } : null;
+  const reach = {};
+  for (const name of ["New chat", "Menu", "Send"]) {
+    const el = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === name && shown(b));
+    reach[name] = Boolean(el);
+  }
+  const attach = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === "Attach image");
+  reach["Attach image"] = Boolean(attach && shown(attach));
+  // Text under the note: every text node in the log, tested against the note's rectangle. Nothing is skipped.
+  const noteEl = document.querySelector(".vstatus span");
+  const note = noteEl && shown(noteEl) ? box(noteEl) : null;
+  const log = document.querySelector(".log") ? box(document.querySelector(".log")) : null;
+  const under = [];
+  if (note && log) {
+    const walker = document.createTreeWalker(document.querySelector(".log"), NodeFilter.SHOW_TEXT);
+    for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+      if (!n.textContent.trim() || noteEl.contains(n) || n.parentElement.closest(".vjump")) continue;
+      const range = document.createRange();
+      range.selectNodeContents(n);
+      for (const r of range.getClientRects()) {
+        if (r.width < 1 || r.height < 1 || r.bottom < log.top || r.top > log.bottom) continue;
+        if (Math.min(r.right, note.right) - Math.max(r.left, note.left) > 2 && Math.min(r.bottom, note.bottom) - Math.max(r.top, note.top) > 2) under.push(n.textContent.trim().slice(0, 24));
+      }
+    }
+  }
+  return {
+    vw, vh, overflowX: document.documentElement.scrollWidth - vw, pageScrolls: document.documentElement.scrollHeight > vh + 1,
+    small, covered, overlaps, rail, reach, dockInView: Boolean(dock && dock.bottom <= vh + 0.5 && dock.top >= 0 && dock.width > 160),
+    noteVisible: Boolean(note), noteUnderText: under, notePosition: noteEl ? getComputedStyle(noteEl.parentElement).position : "",
+  };
+};
+// The text rectangles a shown reason must not cover: all log text except the reason itself and its own button.
+const reasonOverlap = (controlSel) => {
+  const btn = document.querySelector(controlSel);
+  const small = btn.closest(".turn-control").querySelector("small");
+  const r0 = small.getBoundingClientRect();
+  const hits = [];
+  const walker = document.createTreeWalker(document.querySelector(".log"), NodeFilter.SHOW_TEXT);
+  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+    if (!n.textContent.trim() || small.contains(n)) continue;
+    const range = document.createRange();
+    range.selectNodeContents(n);
+    for (const r of range.getClientRects()) if (r.width > 0 && Math.min(r.right, r0.right) - Math.max(r.left, r0.left) > 2 && Math.min(r.bottom, r0.bottom) - Math.max(r.top, r0.top) > 2) hits.push(n.textContent.trim().slice(0, 24));
+  }
+  return { size: [Math.round(r0.width), Math.round(r0.height)], hits };
+};
+
+async function desktopLayout(browser) {
+  for (const { w, h } of [{ w: 1280, h: 800 }, { w: 1024, h: 700 }, { w: 700, h: 700 }, { w: 641, h: 800 }]) {
+    const { ctx, page, consoleErrors } = await openPage(browser, { viewport: { width: w, height: h } });
+    await page.goto(base + "/");
+    await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
+    await page.waitForTimeout(300);
+    const name = `desktop layout ${w}x${h}`;
+    const verdict = async (step) => {
+      const m = await page.evaluate(desktopMeasure);
+      const bad = [];
+      if (m.overflowX > 0) bad.push(`page overflows horizontally by ${m.overflowX}px`);
+      if (m.pageScrolls) bad.push("the page itself scrolls");
+      if (m.small.length) bad.push(`target below 24px: ${m.small.join(", ")}`);
+      if (m.covered.length) bad.push(`covered by another element: ${m.covered.join(", ")}`);
+      if (m.overlaps.length) bad.push(`overlapping controls: ${m.overlaps.slice(0, 3).join("; ")}`);
+      if (!m.rail || m.rail.brandOverList || m.rail.listOverAccount || !m.rail.paneBesideRail) bad.push(`rail regions overlap: ${JSON.stringify(m.rail)}`);
+      for (const [k, ok] of Object.entries(m.reach)) if (!ok) bad.push(`${k} is not reachable on screen`);
+      if (!m.dockInView) bad.push("the composer dock is outside the viewport or too narrow");
+      if (m.noteUnderText.length) bad.push(`the note above the history sits on message text: ${[...new Set(m.noteUnderText)].slice(0, 3).join(" | ")}`);
+      if (m.notePosition === "sticky" || m.notePosition === "fixed" || m.notePosition === "absolute") bad.push(`the note above the history is ${m.notePosition}: it must be in the flow`);
+      check(`${name}, ${step}`, bad.length === 0, bad.slice(0, 4).join("; "));
+    };
+    await verdict("newest turn");
+    // The note must not sit on text wherever the reader is, including the top of the loaded history.
+    for (const [step, frac] of [["a third of the way up", 0.66], ["mid history", 0.4], ["near the top", 0.02]]) {
+      await page.evaluate((f) => { const l = document.querySelector(".log"); l.scrollTop = l.scrollHeight * f - l.clientHeight * f; }, frac);
+      await page.waitForTimeout(350);
+      await verdict(step);
+    }
+    await page.evaluate(() => { document.querySelector(".log").scrollTop = 0; });
+    await page.waitForTimeout(400);
+    await verdict("top of the loaded history");
+    const jump = page.getByRole("button", { name: "Jump to latest" });
+    check(`${name}, Jump to latest is on screen when away from the newest turn`, await jump.isVisible());
+    await jump.click();
+    await page.waitForTimeout(350);
+    check(`${name}, Jump to latest returns to the newest turn`, await page.evaluate(() => { const l = document.querySelector(".log"); return l.scrollTop + l.clientHeight >= l.scrollHeight - 2; }));
+    // The account popover: opens from the rail, every action is reachable, Escape closes it.
+    const menu = page.getByRole("button", { name: "Menu" });
+    await menu.click();
+    const items = await page.evaluate(() => [...document.querySelectorAll(".bar-actions button")].map((b) => { const r = b.getBoundingClientRect(); const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return [b.textContent.trim(), (t === b || b.contains(t)) && r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth]; }));
+    check(`${name}, the Menu popover opens and each action (${items.map((i) => i[0]).join(", ")}) is reachable`, items.length >= 4 && items.every((i) => i[1]), JSON.stringify(items.filter((i) => !i[1])));
+    await page.screenshot({ path: path.join(outDir, `desktop-layout-${w}-menu.png`) });
+    await page.keyboard.press("Escape");
+    check(`${name}, Escape closes the Menu popover`, (await menu.getAttribute("aria-expanded")) === "false");
+    // A capability reason is shown by a press (mouse here, touch in the phone check) and is in the flow: it covers no text.
+    const regen = '[data-control="regenerate"]';
+    await page.locator(regen).scrollIntoViewIfNeeded();
+    await page.locator(regen).click({ force: true }); // aria-disabled: Playwright treats it as disabled, but a real pointer press must still reach it
+    const shownReason = await page.evaluate((sel) => document.querySelector(sel).closest(".turn-control").getAttribute("data-reason"), regen);
+    const ro = await page.evaluate(reasonOverlap, regen);
+    check(`${name}, a press shows the capability reason, and it covers no text`, shownReason === "shown" && ro.size[0] > 20 && ro.hits.length === 0, `reason ${ro.size.join("x")}px, covers ${JSON.stringify(ro.hits)}`);
+    await page.keyboard.press("Escape");
+    check(`${name}, Escape puts the reason away`, (await page.evaluate((sel) => document.querySelector(sel).closest(".turn-control").getAttribute("data-reason"), regen)) === null);
+    check(`${name}, no console error, CSP violation or off-origin request`, consoleErrors.length === 0 && (await page.evaluate(() => window.__csp.length)) === 0, JSON.stringify(consoleErrors.slice(0, 2)));
+    await ctx.close();
+  }
+}
+
+// The starting card: real markup, centred in the conversation area, covering nothing, on a phone and a wide screen.
+async function startingCard(browser) {
+  state.emptyList = true;
+  try {
+    for (const [label, opts] of [["desktop", { viewport: { width: 1280, height: 800 } }], ["phone", { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }]]) {
+      const { ctx, page } = await openPage(browser, opts);
+      await page.goto(base + "/");
+      await page.waitForSelector(".hero");
+      await page.waitForTimeout(200);
+      const m = await page.evaluate(() => {
+        const r = (q) => { const e = document.querySelector(q); return e ? e.getBoundingClientRect() : null; };
+        const hero = r(".hero"), pane = r(".pane"), dock = r(".composer"), side = r(".side");
+        const tag = document.querySelector(".hero-tag");
+        const text = document.querySelector(".hero-text");
+        const clash = [dock, side].some((o) => o && Math.min(hero.right, o.right) - Math.max(hero.left, o.left) > 2 && Math.min(hero.bottom, o.bottom) - Math.max(hero.top, o.top) > 2);
+        const t = text.getBoundingClientRect();
+        return { inPane: hero.left >= pane.left - 1 && hero.right <= pane.right + 1 && hero.top >= pane.top - 20 && hero.bottom <= dock.top + 1, clash, tagHidden: tag.getAttribute("aria-hidden") === "true", textInside: t.left >= hero.left && t.right <= hero.right && t.bottom <= hero.bottom, overflowX: document.documentElement.scrollWidth - innerWidth };
+      });
+      await page.screenshot({ path: path.join(outDir, `starting-card-${label}.png`) });
+      check(`starting card, ${label}: inside the conversation area, covers nothing, its tag is decorative`, m.inPane && !m.clash && m.tagHidden && m.textInside && m.overflowX <= 0, JSON.stringify(m));
+      await ctx.close();
+    }
+  } finally {
+    state.emptyList = false;
+  }
+}
+
+// Polls a condition in the page with page.evaluate (waitForFunction compiles a string, which the page's CSP refuses).
+async function until(page, fn, ms = 8000) {
+  const end = Date.now() + ms;
+  while (Date.now() < end) {
+    if (await page.evaluate(fn)) return;
+    await page.waitForTimeout(50);
+  }
+  throw new Error("condition not met within " + ms + "ms: " + fn);
+}
+
+// Image attach, remove, retry and send against the mock (the #138 gap). A mock browser: no real camera, no model, no device.
+async function images(browser) {
+  const png = (name) => ({ name, mimeType: "image/png", buffer: PNG });
+  for (const [label, opts] of [["desktop", { viewport: { width: 1280, height: 800 } }], ["phone", { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true }]]) {
+    const phone = label === "phone";
+    if (phone) CURRENT.w = 390;
+    state.sent.length = 0; state.deleted.length = 0; state.assets.clear();
+    const { ctx, page, consoleErrors } = await openPage(browser, opts);
+    await page.goto(base + "/");
+    await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
+    await page.waitForSelector('button:has-text("Attach image")');
+    const input = page.locator('input[type=file][aria-label="Choose images"]');
+    const items = () => page.locator('[data-media="item"]').count();
+    // A failed upload blocks the send and offers Retry and Remove.
+    state.failNextUpload = true;
+    await input.setInputFiles(png("bad.png"));
+    await page.waitForSelector('[data-media="item"][data-status="failed"]');
+    await page.fill("#composer-input", "with a failed image");
+    const blocked = await page.getByRole("button", { name: "Send", exact: true }).isDisabled();
+    check(`images ${label}: a failed upload shows Retry and Remove, and blocks Send`, blocked && (await page.getByRole("button", { name: "Remove bad.png" }).count()) === 1);
+    await page.getByRole("button", { name: "Remove bad.png" }).click();
+    check(`images ${label}: removing the failed image clears the block`, (await items()) === 0 && !(await page.getByRole("button", { name: "Send", exact: true }).isDisabled()));
+    // Attach two, remove one: the server is told, the other stays.
+    await input.setInputFiles([png("one.png"), png("two.png")]);
+    await until(page, () => document.querySelectorAll('[data-media="item"][data-status="ready"]').length === 2);
+    check(`images ${label}: two images attach and become ready`, state.assets.size === 2);
+    if (phone) {
+      const m = await page.evaluate(measure);
+      const v = verdicts(m, false, false, 0.7, false);
+      check(`images ${label}: the phone layout holds with images attached (targets, overlaps, hit-tests, overflow)`, v.length === 0, v.slice(0, 3).join("; "));
+    } else {
+      const m = await page.evaluate(desktopMeasure);
+      const bad = [...m.small.map((x) => `small: ${x}`), ...m.covered.map((x) => `covered: ${x}`), ...m.overlaps.map((x) => `overlap: ${x}`)];
+      check(`images ${label}: the desktop layout holds with images attached`, bad.length === 0 && m.overflowX <= 0 && m.dockInView, bad.slice(0, 3).join("; "));
+    }
+    await page.screenshot({ path: path.join(outDir, `images-${label}-attached.png`) });
+    const firstId = [...state.assets.keys()][0];
+    await page.getByRole("button", { name: "Remove one.png" }).click();
+    await until(page, () => document.querySelectorAll('[data-media="item"]').length === 1);
+    check(`images ${label}: Remove deletes the asset on the server and keeps the other`, state.deleted.includes(firstId) && state.assets.size === 1 && (await items()) === 1);
+    const keep = [...state.assets.keys()][0];
+    await page.fill("#composer-input", "what is in this picture?");
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    await page.waitForSelector("text=Received 1 image(s) and: what is in this picture?", { timeout: 8000 });
+    const sent = state.sent.at(-1);
+    check(`images ${label}: Send posts the text with exactly the remaining image id (and an idempotency key)`, sent && sent.input === "what is in this picture?" && sent.imageAssetIds.length === 1 && sent.imageAssetIds[0] === keep && /\S{8,}/.test(sent.key ?? ""), JSON.stringify(sent));
+    const after = { strip: await items(), draft: await page.inputValue("#composer-input"), reply: await page.evaluate(() => { const hits = [...document.querySelectorAll(".log *")].filter((e) => e.textContent.includes("Received 1 image(s)")); const el = hits.at(-1); const turn = el?.closest(".turn"); return turn ? turn.className + " | " + turn.innerText.replace(/\s+/g, " ").slice(0, 70) : `no turn around: ${el ? el.tagName + "." + el.className : "no element"}`; }), live: await page.locator(".run-streaming, .run-reconnecting, .partial, .notice[role=alert]").count() };
+    check(`images ${label}: the composer and the strip are empty after Send, and the reply is shown as completed`, after.strip === 0 && after.draft === "" && after.reply.includes("Received 1 image(s)") && !/partial|failed|cancelled/.test(after.reply.split("|")[0]) && after.live === 0, JSON.stringify(after));
+    await page.screenshot({ path: path.join(outDir, `images-${label}-sent.png`) });
+    if (phone) {
+      // iOS Safari does not focus a tapped button and has no hover: a TAP must show the capability reason.
+      const regen = page.locator('[data-control="regenerate"]');
+      await regen.scrollIntoViewIfNeeded();
+      const box = await regen.boundingBox();
+      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
+      await page.waitForTimeout(150);
+      const reason = await page.evaluate(() => document.querySelector('[data-control="regenerate"]').closest(".turn-control").getAttribute("data-reason"));
+      const ro = await page.evaluate(reasonOverlap, '[data-control="regenerate"]');
+      check(`images ${label}: a TAP (no hover, no focus) shows the capability reason, and it covers no text`, reason === "shown" && ro.size[0] > 20 && ro.hits.length === 0, `reason ${ro.size.join("x")} covers ${JSON.stringify(ro.hits)}`);
+      await page.screenshot({ path: path.join(outDir, `phone-reason-tapped.png`) });
+    }
+    // KNOWN, pre-existing, not caused by #139: the attached-image thumbnail is a blob: URL and the page's CSP is img-src 'self', so the
+    // browser blocks it (the file name and Remove still work). It is the ONLY console/CSP message this flow is allowed to produce, together
+    // with the deliberate 415 of the failed-upload step. Anything else fails; the day the policy allows blob: images this check is tightened.
+    const csp = await page.evaluate(() => window.__csp);
+    const expected = (m) => /^Loading the image 'blob:.*img-src 'self'/.test(m) || /status of 415/.test(m);
+    const unexpected = [...consoleErrors.filter((m) => !expected(m)), ...csp.filter((m) => !/^img-src blob/.test(m))];
+    const blobBlocked = consoleErrors.filter((m) => /^Loading the image 'blob:/.test(m)).length;
+    check(`images ${label}: no console error or CSP violation other than the known blocked blob: thumbnail (${blobBlocked} blocked) and the deliberate 415`, unexpected.length === 0, JSON.stringify(unexpected.slice(0, 2)));
+    await ctx.close();
+  }
+}
+
 async function mobile(browser) {
   const { ctx, page, consoleErrors } = await openPage(browser, { viewport: { width: Number(process.env.MOBILE_WIDTH || 390), height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true });
   await page.goto(base + "/");
@@ -504,6 +813,9 @@ try {
   if (!only || only === "drafts") await drafts(browser);
   if (!only || only === "mobile") await mobile(browser);
   if (!only || only === "mobile" || only === "mobile-layout") await mobileLayout(browser);
+  if (!only || only === "desktop-layout") await desktopLayout(browser);
+  if (!only || only === "starting-card") await startingCard(browser);
+  if (!only || only === "images") await images(browser);
   if (!only || only === "mobile" || only === "mobile-layout" || only === "mobile-budget") await mobileBudget(browser); // no timing in it: this is the one CI runs
 } finally {
   await browser.close();

@@ -61,7 +61,7 @@ export function Templates({ own, onChange }: { own: OwnTemplate[]; onChange: (l:
   };
   return (
     <details className="template-manager">
-      <summary>My templates{own.length > 0 ? ` (${own.length})` : ""}</summary>
+      <summary data-icon="bookmark">My templates{own.length > 0 ? ` (${own.length})` : ""}</summary>
       <p className="label">Type / in the message box to insert one. Nothing is run when you pick it.</p>
       <ul>
         {own.map((t) => (

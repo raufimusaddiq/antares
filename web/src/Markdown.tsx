@@ -146,7 +146,7 @@ function CodeBlock({ text, lang }: { text: string; lang: string }) {
     <div className="codeblock">
       <div className="codehead">
         <span className="label">{lang || "text"}</span>
-        <button type="button" className="quiet" onClick={copy}>
+        <button type="button" className="quiet" data-icon="copy" onClick={copy}>
           {state === "copied" ? "Copied" : state === "failed" ? "Copy failed" : "Copy"}
         </button>
       </div>

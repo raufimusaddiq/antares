@@ -1,0 +1,12 @@
+ok  	github.com/raufimusaddiq/antares/internal/hermes	1.774s
+ok  	github.com/raufimusaddiq/antares/internal/kenari	0.097s
+ok  	github.com/raufimusaddiq/antares/internal/push	0.107s
+?   	github.com/raufimusaddiq/antares/internal/push/pushtest	[no test files]
+?   	github.com/raufimusaddiq/antares/internal/quota	[no test files]
+ok  	github.com/raufimusaddiq/antares/internal/secrets	0.020s
+ok  	github.com/raufimusaddiq/antares/internal/server	(cached)
+ok  	github.com/raufimusaddiq/antares/internal/smoke	13.895s
+ok  	github.com/raufimusaddiq/antares/internal/store	16.122s
+ok  	github.com/raufimusaddiq/antares/internal/tenant	3.618s
+ok  	github.com/raufimusaddiq/antares/internal/webui	0.769s
+exit 0

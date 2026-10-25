@@ -160,7 +160,8 @@ jobs:
         run: node scripts/sandbox-probe.mjs
         working-directory: web
 
-  # The phone layout (#138) in a real browser against the mock backend in scripts/browser-check.mjs: no scratch server, no credentials.
+  # The phone layout (#138) and the desktop layout, starting card and image flow (#139) in a real browser against the mock backend in
+  # scripts/browser-check.mjs: no scratch server, no credentials.
   # 320/375/390/430 portrait and a phone on its side, keyboard closed and open; it fails on overflow, a page that scrolls, a control
   # under 44px, an unreachable New chat / Search / Options / composer button, or a search that loses its input under the keyboard.
   mobile-layout:
@@ -185,6 +186,14 @@ jobs:
           echo "PLAYWRIGHT_CORE=$RUNNER_TEMP/pw/node_modules/playwright-core" >> "$GITHUB_ENV"
       - name: Phone layout
         run: ONLY=mobile-layout node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
+      # #139: the wide-screen rail, hit-tests and overlaps, the account popover, the note above the history and a shown
+      # capability reason against every text node in the log, the starting card, and image attach / retry / remove / send.
+      - name: Desktop layout (rail, popover, no element on message text)
+        run: ONLY=desktop-layout node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
+      - name: Starting card
+        run: ONLY=starting-card node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
+      - name: Image attach, retry, remove, send and a touch tap on a capability reason
+        run: ONLY=images node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
 
   # These two run from the first commit and never skip: they are the rules in
   # AGENTS.md that can be checked mechanically.

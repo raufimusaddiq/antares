@@ -105,7 +105,7 @@ export function Recorder() {
           </button>
         </>
       ) : (
-        <button type="button" disabled={starting} onClick={() => void start()}>
+        <button type="button" data-icon="mic" disabled={starting} onClick={() => void start()}>
           {phase.name === "ready" ? "Record again" : "Record"}
         </button>
       )}

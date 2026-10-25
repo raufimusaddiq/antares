@@ -46,10 +46,10 @@ export function ExportChat({ chatId, title }: { chatId: string; title: string })
   const busy = state !== null && "busy" in state;
   return (
     <div className="export">
-      <button type="button" className="quiet" disabled={busy} onClick={() => void run("md")}>
+      <button type="button" className="quiet" data-icon="download" disabled={busy} onClick={() => void run("md")}>
         Export Markdown
       </button>
-      <button type="button" className="quiet" disabled={busy} onClick={() => void run("pdf")}>
+      <button type="button" className="quiet" data-icon="download" disabled={busy} onClick={() => void run("pdf")}>
         Export PDF
       </button>
       {state && (

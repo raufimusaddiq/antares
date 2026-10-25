@@ -129,7 +129,10 @@ const turnKey = (t: Turn) => String(t.seq);
 /**
  * Regenerate, edit and rewind (PRD §21.5, UXP-ACC-012). The assistant backend has no route for any of them, so each
  * is a button that cannot be activated and says why, in text, from the server's capability answer.
- * There is deliberately no handler: when a verified route lands, this is where it is wired.
+ * There is deliberately no action handler: when a verified route lands, this is where it is wired. A press only
+ * shows or hides the reason next to the button, so it is reachable by tap (iOS Safari does not focus a tapped
+ * button, so :hover and :focus alone would leave a phone user without it). The reason is always in the document
+ * and always the button's description, whether or not it is currently shown.
  */
 const TURN_CONTROLS = {
   regenerate: { id: "regenerate", label: "Regenerate" },
@@ -144,14 +147,29 @@ export function turnControlReason(inv: Inventory | null, id: string): string {
 }
 
 export function TurnControls({ inv, kinds, seq }: { inv: Inventory | null; kinds: readonly (keyof typeof TURN_CONTROLS)[]; seq: number }) {
+  const [shown, setShown] = useState<string | null>(null);
+  const ref = useRef<HTMLDivElement | null>(null);
+  useEffect(() => {
+    if (shown === null) return;
+    // A press anywhere else, or Escape, puts the reason away again.
+    const away = (e: Event) => {
+      if (e.type === "keydown" ? (e as globalThis.KeyboardEvent).key === "Escape" : !ref.current?.contains(e.target as Node)) setShown(null);
+    };
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", away);
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", away);
+    };
+  }, [shown]);
   return (
-    <div className="turn-controls" role="group" aria-label="Turn controls">
+    <div className="turn-controls" role="group" aria-label="Turn controls" ref={ref}>
       {kinds.map((k) => {
         const c = TURN_CONTROLS[k];
         const rid = `tc-${k}-${seq}`;
         return (
-          <span key={k} className="turn-control">
-            <button type="button" className="quiet" aria-disabled="true" aria-describedby={rid} data-control={k}>
+          <span key={k} className="turn-control" data-reason={shown === k ? "shown" : undefined}>
+            <button type="button" className="quiet" aria-disabled="true" aria-describedby={rid} data-control={k} data-icon={k} onClick={() => setShown(shown === k ? null : k)}>
               {c.label}
             </button>
             <small id={rid} className="label">
@@ -452,8 +470,8 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
               e.target.value = "";
             }}
           />
-          <button type="button" className="quiet" onClick={() => picker.current?.click()}>
-            Attach image
+          <button type="button" className="quiet" data-icon="clip" onClick={() => picker.current?.click()}>
+            <span className="btn-label">Attach image</span>
           </button>
           {coarse && (
             <>
@@ -469,8 +487,8 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
                   e.target.value = "";
                 }}
               />
-              <button type="button" className="quiet" onClick={() => camera.current?.click()}>
-                Take photo
+              <button type="button" className="quiet" data-icon="camera" onClick={() => camera.current?.click()}>
+                <span className="btn-label">Take photo</span>
               </button>
             </>
           )}
@@ -482,7 +500,7 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
         </span>
       )}
       <button type="submit" disabled={empty || props.busy || blocked}>
-        Send
+        <span className="btn-label">Send</span>
         <svg className="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
           <path d="M5 12h14M13 6l6 6-6 6" />
         </svg>
@@ -526,7 +544,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   useEffect(() => {
     document.querySelector<HTMLElement>(".side button.item.current")?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
   }, [current, chats]);
-  // Phone layout only (CSS shows the toggles under 40rem): the account actions and the per-chat options stay one tap away.
+  // The account actions live behind the Menu toggle at every width (rail footer on a wide screen, header on a phone); the
+  // per-chat options are behind their toggle on a phone only. Both stay one tap away.
   const [menuOpen, setMenuOpen] = useState(false);
   const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => {
@@ -982,6 +1001,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     });
   };
 
+  // Nothing to read yet: the conversation area shows the starting card instead of an empty list.
+  const empty = turns.length === 0 && !pending && !run && !turnsError && (current === null || current === blankChat.current);
   return (
     <div className="chat-app">
       <header
@@ -994,25 +1015,27 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           <AntaresMark size={20} />
           Antares
         </strong>
-        <span className="who-am-i">{email}</span>
-        <button type="button" className="quiet bar-toggle" aria-expanded={menuOpen} aria-controls="bar-actions" onClick={() => setMenuOpen((o) => !o)}>
-          Menu
-        </button>
-        <div id="bar-actions" className={menuOpen ? "bar-actions open" : "bar-actions"}>
-          <Notifications />
-          {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? ""} />}
-          {canAdmin && onAdmin && (
-            <button type="button" className="quiet" onClick={onAdmin}>
-              Admin
-            </button>
-          )}
-          <button type="button" className="quiet" onClick={onSignOut}>
-            Sign out
+        <div className="account">
+          <span className="who-am-i">{email}</span>
+          <button type="button" className="quiet bar-toggle" data-icon="chevron" aria-expanded={menuOpen} aria-controls="bar-actions" onClick={() => setMenuOpen((o) => !o)}>
+            Menu
           </button>
+          <div id="bar-actions" className={menuOpen ? "bar-actions open" : "bar-actions"}>
+            <Notifications />
+            {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? ""} />}
+            {canAdmin && onAdmin && (
+              <button type="button" className="quiet" data-icon="shield" onClick={onAdmin}>
+                Admin
+              </button>
+            )}
+            <button type="button" className="quiet" data-icon="logout" onClick={onSignOut}>
+              Sign out
+            </button>
+          </div>
         </div>
       </header>
       <nav className="side" aria-label="Conversations">
-        <button type="button" onClick={() => void startChat()}>
+        <button type="button" data-icon="plus" onClick={() => void startChat()}>
           New chat
         </button>
         <SearchPanel current={current} onOpen={(r) => void openResult(r)} />
@@ -1033,7 +1056,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           </button>
         )}
       </nav>
-      <main className="pane">
+      <main className={empty ? "pane empty" : "pane"}>
         {banner && (
           <p className="notice" role="alert">
             {banner}
@@ -1044,8 +1067,13 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             History unavailable: {turnsError}
           </p>
         )}
-        {turns.length === 0 && !pending && !run && !turnsError && (current === null || current === blankChat.current) && (
-          <p className="label">{current === null ? "Start a conversation below." : "New conversation. Write a message below."}</p>
+        {empty && (
+          <div className="hero">
+            <span className="hero-tag" aria-hidden="true">
+              New chat
+            </span>
+            <p className="hero-text">{current === null ? "Start a conversation below." : "New conversation. Write a message below."}</p>
+          </div>
         )}
         <ReplyContext.Provider value={addToDraft}>
         <Transcript
@@ -1085,7 +1113,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           }}
         />
         </ReplyContext.Provider>
-        <button type="button" className="quiet extras-toggle" aria-expanded={moreOpen} aria-controls="chat-extras" onClick={() => setMoreOpen((o) => !o)}>
+        <button type="button" className="quiet extras-toggle" data-icon="chevron" aria-expanded={moreOpen} aria-controls="chat-extras" onClick={() => setMoreOpen((o) => !o)}>
           {budgetReached && !moreOpen ? "Options · token limit reached" : "Options"}
         </button>
         <div id="chat-extras" className={moreOpen ? "extras open" : "extras"}>

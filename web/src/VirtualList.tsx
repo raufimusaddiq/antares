@@ -176,7 +176,7 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
       </div>
       {!following && (
         <div className="vjump">
-          <button type="button" onClick={jumpToLatest}>
+          <button type="button" data-icon="arrow-down" onClick={jumpToLatest}>
             Jump to latest
           </button>
         </div>
