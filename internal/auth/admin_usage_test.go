@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/raufimusaddiq/antares/internal/config"
 	"github.com/raufimusaddiq/antares/internal/kenari"
 )
 
@@ -38,7 +39,7 @@ func TestKenariUsageIsAdminOnlyAndNeverCarriesTheKey(t *testing.T) {
 	h := newHarness(t)
 	var hits atomic.Int32
 	srv := fakeProvider(t, &hits)
-	h.a.usage = kenari.NewAccount(srv.URL, []byte(usageTestKey), nil)
+	h.a.usage = kenari.NewAccount(srv.URL, config.Secret(usageTestKey), nil)
 	admin := h.userIn("adm", "APPROVED", "READY", "ADMIN", true)
 	user := h.userIn("usr", "APPROVED", "READY", "USER", true)
 
@@ -92,7 +93,7 @@ func TestKenariUsageOutageIsUnavailableNotZero(t *testing.T) {
 	h := newHarness(t)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { http.Error(w, "down", 502) }))
 	defer srv.Close()
-	h.a.usage = kenari.NewAccount(srv.URL, []byte(usageTestKey), nil)
+	h.a.usage = kenari.NewAccount(srv.URL, config.Secret(usageTestKey), nil)
 	admin := h.userIn("adm", "APPROVED", "READY", "ADMIN", true)
 	w := admin.get("/api/admin/kenari-usage")
 	if w.Code != 200 || !has(w.Body.String(), `"state":"UNAVAILABLE"`) || has(w.Body.String(), `"balance"`) || has(w.Body.String(), "microIdr") {
