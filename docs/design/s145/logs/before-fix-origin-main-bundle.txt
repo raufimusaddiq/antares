@@ -1,0 +1,13 @@
+desktop A capsFail: picker: 0 retry button: 0
+node:internal/modules/run_main:122
+    triggerUncaughtException(
+    ^
+
+locator.click: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for getByRole('button', { name: 'Retry model check' })[22m
+
+  name: 'TimeoutError'
+}
+
+Node.js v22.14.0

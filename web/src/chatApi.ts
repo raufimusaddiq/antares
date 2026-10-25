@@ -523,7 +523,10 @@ export interface ProviderEntry {
 }
 
 export interface ModelCatalog {
+  /** When Kenari was last read. */
   fetchedAt: string;
+  /** True when that read is older than the freshness window because the latest read failed. */
+  stale: boolean;
   default: { provider: string; model: string } | null;
   providers: ProviderEntry[];
   /** Controls that are not offered, with the reason (e.g. serviceTier). */
@@ -540,6 +543,7 @@ export function parseModels(v: unknown): ModelCatalog | null {
   const d = obj(o.default);
   return {
     fetchedAt: str(o.fetchedAt),
+    stale: o.stale === true,
     default: d && str(d.model) ? { provider: str(d.provider), model: str(d.model) } : null,
     unsupported: Object.fromEntries(Object.entries(obj(o.unsupported) ?? {}).filter(([, r]) => typeof r === "string")) as Record<string, string>,
     providers: arr(o.providers).flatMap((p) => {

@@ -29,8 +29,10 @@ const catalogueSource = "kenari"
 const tierUnsupported = "Kenari does not publish a service tier for any model, so none can be selected"
 
 type modelsView struct {
-	Source    string         `json:"source"` // where the models and their metadata come from
-	FetchedAt string         `json:"fetchedAt"`
+	Source    string `json:"source"`    // where the models and their metadata come from
+	FetchedAt string `json:"fetchedAt"` // when Kenari was last read
+	// Stale is true when that read is older than the freshness window because the latest read failed.
+	Stale     bool           `json:"stale"`
 	Default   *defaultView   `json:"default"`
 	Providers []providerView `json:"providers"`
 	// Unsupported names each control that is not offered, with the reason.
@@ -134,8 +136,8 @@ func efforts(m kenari.Model) []string {
 	return out
 }
 
-func buildModels(inv hermes.ModelCatalog, cat []kenari.Model, hidden, blocked []string, now time.Time) modelsView {
-	v := modelsView{Source: catalogueSource, FetchedAt: now.UTC().Format(time.RFC3339), Providers: []providerView{},
+func buildModels(inv hermes.ModelCatalog, cat []kenari.Model, fetched time.Time, stale bool, hidden, blocked []string, now time.Time) modelsView {
+	v := modelsView{Source: catalogueSource, FetchedAt: fetched.UTC().Format(time.RFC3339), Stale: stale, Providers: []providerView{},
 		Unsupported: map[string]string{"serviceTier": tierUnsupported}}
 	if inv.Model != "" {
 		v.Default = &defaultView{Provider: inv.Provider, Model: inv.Model}
@@ -197,7 +199,11 @@ func (s *Service) listModels(w http.ResponseWriter, r *http.Request) {
 		s.gateError(w, err)
 		return
 	}
-	cat, err := s.catalogue(r.Context())
+	if s.kenari == nil {
+		catalogueDown(w)
+		return
+	}
+	cat, fetched, stale, err := s.kenari.Snapshot(r.Context(), r.URL.Query().Get("refresh") == "1")
 	if err != nil {
 		catalogueDown(w)
 		return
@@ -212,7 +218,7 @@ func (s *Service) listModels(w http.ResponseWriter, r *http.Request) {
 		internalError(w, "blocked models", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, buildModels(inv, cat, hidden, blocked, s.now()))
+	writeJSON(w, http.StatusOK, buildModels(inv, cat, fetched, stale, hidden, blocked, s.now()))
 }
 
 func (s *Service) inventory(r *http.Request, uid string, refresh bool) (hermes.ModelCatalog, error) {

@@ -71,7 +71,7 @@ describe("ModelPicker", () => {
     const el = document.createElement("div");
     document.body.append(el);
     await act(async () => createRoot(el).render(<ModelPicker chatId="c1" disabled={false} />));
-    await act(async () => { el.querySelector("details")!.open = true; el.querySelector("details")!.dispatchEvent(new Event("toggle")); });
+    await act(async () => { el.querySelector("details")!.open = true; await new Promise((r) => setTimeout(r)); });
     const radios = [...el.querySelectorAll<HTMLInputElement>("input[type=radio]")];
     expect(radios.map((r) => [r.disabled, r.checked])).toEqual([[false, false], [false, true], [false, false], [true, false]]);
     expect(el.textContent).toContain("Context window: unknown"); // never inferred
@@ -124,8 +124,7 @@ const mB = { provider: "custom", model: "m-plain" };
 
 async function open(d: ReturnType<typeof deferred>) {
   const details = document.querySelector("details")!;
-  details.open = true;
-  fireEvent(details, new Event("toggle"));
+  details.open = true; // jsdom fires the toggle event itself, once
   await waitFor(() => expect(d.find("GET", "/api/models").length).toBeGreaterThan(0));
   await act(async () => d.find("GET", "/api/models").at(-1)!.resolve(200, catalog));
 }
@@ -290,8 +289,7 @@ describe("ModelPicker settings", () => {
     render(<ModelPicker chatId="A" disabled={false} />);
     await answerGet(d, "/api/chats/A", 0, chatOf("A", null));
     const details = document.querySelector("details")!;
-    details.open = true;
-    fireEvent(details, new Event("toggle"));
+    details.open = true; // jsdom fires the toggle event itself, once
     await waitFor(() => expect(d.find("GET", "/api/models").length).toBeGreaterThan(0));
     await act(async () => d.find("GET", "/api/models")[0].resolve(503, { error: { code: "CATALOGUE_UNAVAILABLE" } }));
     expect(screen.getByRole("alert").textContent).toContain("model list could not be read");
@@ -342,8 +340,7 @@ describe("ModelPicker keeps one chat's writes ordered across chat switches", () 
     const { rerender } = render(<ModelPicker chatId="A" disabled={false} />);
     await f.next("GET", "A");
     const details = document.querySelector("details")!;
-    details.open = true;
-    fireEvent(details, new Event("toggle"));
+    details.open = true; // jsdom fires the toggle event itself, once
     await f.next("GET", ""); // /api/models
 
     fireEvent.click(screen.getByLabelText("m-reason")); // A1: sent, answer withheld
@@ -367,5 +364,98 @@ describe("ModelPicker keeps one chat's writes ordered across chat switches", () 
     expect(f.server.B).toEqual(mB); // B untouched
     expect(f.arrivals.filter((a) => a.chat === "B")).toEqual([]);
     expect(checkedModel()).toEqual(["m-reason"]);
+  });
+});
+
+// ---- #145: the picker is reliable on demand -----------------------------------------------
+
+describe("ModelPicker on demand (#145)", () => {
+  afterEach(() => {
+    cleanup();
+    vi.unstubAllGlobals();
+  });
+
+  // jsdom fires the toggle event itself (a second, manual one would be a second request); let it run before the next step.
+  const toggle = async (open: boolean) => {
+    document.querySelector("details")!.open = open;
+    await act(async () => new Promise((r) => setTimeout(r)));
+  };
+  const answerModels = async (d: ReturnType<typeof deferred>, n: number, status: number, body: unknown) => {
+    await waitFor(() => expect(d.find("GET", "/api/models").length).toBeGreaterThan(n));
+    await act(async () => d.find("GET", "/api/models")[n].resolve(status, body));
+  };
+
+  it("a failed read offers Retry, and Retry loads the catalogue without closing the panel", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", null));
+    await toggle(true);
+    await answerModels(d, 0, 503, { error: { code: "HERMES_UNAVAILABLE" } });
+    expect(screen.getByRole("alert")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await answerModels(d, 1, 200, catalog);
+    expect(screen.getAllByRole("radio").length).toBeGreaterThan(0);
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+  });
+
+  it("a failed refresh keeps the list already on screen and says it may be out of date", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", null));
+    await toggle(true);
+    await answerModels(d, 0, 200, catalog);
+    await toggle(false);
+    await toggle(true);
+    await answerModels(d, 1, 503, { error: { code: "HERMES_UNAVAILABLE" } });
+    expect(screen.getAllByRole("radio").length).toBeGreaterThan(0); // the earlier list is still choosable
+    expect(screen.getByRole("alert").textContent).toMatch(/may be out of date/i);
+    expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+  });
+
+  it("an older answer that arrives last never replaces a newer one", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", null));
+    await toggle(true);
+    await toggle(false);
+    await toggle(true);
+    await waitFor(() => expect(d.find("GET", "/api/models")).toHaveLength(2));
+    const newer = { ...catalog, providers: [{ ...catalog.providers[0], models: [model("m-new")] }] };
+    await act(async () => d.find("GET", "/api/models")[1].resolve(200, newer));
+    await act(async () => d.find("GET", "/api/models")[0].resolve(200, catalog)); // the first request, answered last
+    expect(screen.getByLabelText("m-new")).toBeTruthy();
+    expect(screen.queryByLabelText("m-reason")).toBeNull();
+  });
+
+  it("an unreadable chat setting is stated and can be retried, not shown as a bare 'Model'", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await waitFor(() => expect(d.find("GET", "/api/chats/A")).toHaveLength(1));
+    await act(async () => d.find("GET", "/api/chats/A")[0].resolve(500, { error: { code: "INTERNAL" } }));
+    expect(screen.getByRole("alert").textContent).toMatch(/this chat's model could not be read/i);
+    fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    await answerGet(d, "/api/chats/A", 1, chatOf("A", mA));
+    await waitFor(() => expect(document.querySelector("summary")!.textContent).toBe("Model: m-reason"));
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
+  it("states an empty catalogue instead of showing nothing", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", null));
+    await toggle(true);
+    await answerModels(d, 0, 200, { ...catalog, providers: [] });
+    expect(document.body.textContent).toMatch(/lists no models/i);
+  });
+
+  it("says when the catalogue is stale and when Kenari was last read", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", null));
+    await toggle(true);
+    await answerModels(d, 0, 200, { ...catalog, fetchedAt: "2026-10-25T10:00:00Z", stale: true });
+    expect(document.body.textContent).toMatch(/could not be refreshed/i);
+    expect(document.body.textContent).toContain("2026-10-25T10:00:00Z");
   });
 });

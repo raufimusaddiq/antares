@@ -480,3 +480,43 @@ func TestBlockedDefaultModelIsNotExempt(t *testing.T) {
 		t.Fatalf("run named %v, want the checked default", got)
 	}
 }
+
+// #145: fetchedAt is when Kenari was read, not when the picker asked; an answer kept through a Kenari
+// outage is labelled stale; ?refresh=1 is accepted and does not break the answer.
+func TestModelsSayHowOldTheCatalogueIs(t *testing.T) {
+	a := mediaApp(t, visionModel)
+	u := a.user("a")
+	var down bool
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if down {
+			http.Error(w, "boom", http.StatusBadGateway)
+			return
+		}
+		w.Write([]byte(`{"data":[{"id":"` + visionModel + `","endpoints":["chat"]}]}`))
+	}))
+	t.Cleanup(srv.Close)
+	a.svc.kenari = kenari.New(srv.URL, nil)
+	read := time.Now()
+	later := read.Add(3 * time.Hour)
+	a.svc.now = func() time.Time { return later }
+	type view struct {
+		FetchedAt string
+		Stale     bool
+	}
+	get := func(path string) view {
+		w := u.get(path)
+		if w.Code != 200 {
+			t.Fatalf("%s: %d %s", path, w.Code, w.Body.String())
+		}
+		return decodeBody[view](t, w)
+	}
+	first := get("/api/models")
+	got, err := time.Parse(time.RFC3339, first.FetchedAt)
+	if err != nil || got.Before(read.Add(-time.Minute)) || got.After(read.Add(time.Minute)) || first.Stale {
+		t.Fatalf("fetchedAt must be the Kenari read (%v), not the request clock (%v): %+v", read, later, first)
+	}
+	down = true
+	if v := get("/api/models?refresh=1"); v.Stale || v.FetchedAt != first.FetchedAt {
+		t.Fatalf("a refresh inside the throttle is served from the last read, not stale: %+v", v)
+	}
+}

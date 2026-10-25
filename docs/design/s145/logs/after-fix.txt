@@ -1,0 +1,20 @@
+desktop A capsFail: picker: 0 retry button: 1
+desktop A after Retry: picker: 1 caps calls: 2
+desktop B first open: alert: ["The assistant is unavailable. Try again shortly. Retry"] retry button: 1 radios: 0
+desktop B after Retry radios: 3 alerts: 0
+desktop B select -> {"provider":"p","model":"m-alt","reasoningEffort":"","serviceTier":""} label: Model: m-alt
+desktop C refresh fails after loaded: radios: 3 alert: ["The assistant is unavailable. Try again shortly. The list below may be out of date. Retry"]
+desktop reload -> label: Model: m-alt
+desktop new chat button visible true
+desktop D new chat: picker 1
+desktop D new-chat model: {"provider":"p","model":"m-third","reasoningEffort":"","serviceTier":""} other chat model: {"provider":"p","model":"m-alt","reasoningEffort":"","serviceTier":""} label Model: m-third
+mobile A capsFail: picker: 0 retry button: 1
+mobile A after Retry: picker: 1 caps calls: 2
+mobile B first open: alert: ["The assistant is unavailable. Try again shortly. Retry"] retry button: 1 radios: 0
+mobile B after Retry radios: 3 alerts: 0
+mobile B select -> {"provider":"p","model":"m-alt","reasoningEffort":"","serviceTier":""} label: Model: m-alt
+mobile C refresh fails after loaded: radios: 3 alert: ["The assistant is unavailable. Try again shortly. The list below may be out of date. Retry"]
+mobile reload -> label: Model: m-alt
+mobile new chat button visible true
+mobile D new chat: picker 1
+mobile D new-chat model: {"provider":"p","model":"m-third","reasoningEffort":"","serviceTier":""} other chat model: {"provider":"p","model":"m-alt","reasoningEffort":"","serviceTier":""} label Model: m-third
