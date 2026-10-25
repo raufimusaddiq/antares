@@ -44,7 +44,7 @@ try {
     let { ctx, page } = await mk(); await page.goto(base + "/"); await page.waitForTimeout(800);
     await page.getByText("Chat", { exact: true }).first().click(); await page.waitForTimeout(1500); await openOpts(page);
     console.log(name, "A capsFail: picker:", await page.locator("summary", { hasText: /^Model/ }).count(), "retry button:", await page.getByRole("button", { name: "Retry model check" }).count());
-    await page.screenshot({ path: `${name}-A-fixed.png` });
+    await page.screenshot({ path: (process.env.OUT || "shots") + `/${name}-A-fixed.png` });
     await page.getByRole("button", { name: "Retry model check" }).click(); await page.waitForTimeout(800);
     console.log(name, "A after Retry: picker:", await page.locator("summary", { hasText: /^Model/ }).count(), "caps calls:", st.log.filter(l=>/capabilities/.test(l)).length);
     await ctx.close();
@@ -55,8 +55,8 @@ try {
     const sum = page.locator("summary", { hasText: /^Model/ });
     await sum.click(); await page.waitForTimeout(600);
     console.log(name, "B first open: alert:", JSON.stringify(await page.locator('details.usage [role=alert]').allInnerTexts()), "retry button:", await page.getByRole("button", { name: /retry|try again/i }).count(), "radios:", await page.locator("input[name=model]").count());
-    await page.screenshot({ path: `${name}-B.png` });
-    await page.screenshot({ path: `${name}-B-fixed.png` });
+    await page.screenshot({ path: (process.env.OUT || "shots") + `/${name}-B.png` });
+    await page.screenshot({ path: (process.env.OUT || "shots") + `/${name}-B-fixed.png` });
     await page.getByRole("button", { name: "Retry" }).click(); await page.waitForTimeout(600);
     console.log(name, "B after Retry radios:", await page.locator("input[name=model]").count(), "alerts:", await page.locator('details.usage [role=alert]').count());
     // select, persist
@@ -65,7 +65,7 @@ try {
     // C: loaded, then refresh fails on reopen -> stale catalog wiped?
     st.modelsFail = 1; await sum.click(); await page.waitForTimeout(200); await sum.click(); await page.waitForTimeout(600);
     console.log(name, "C refresh fails after loaded: radios:", await page.locator("input[name=model]").count(), "alert:", JSON.stringify(await page.locator('details.usage [role=alert]').allInnerTexts()));
-    await page.screenshot({ path: `${name}-C-fixed.png` });
+    await page.screenshot({ path: (process.env.OUT || "shots") + `/${name}-C-fixed.png` });
     await page.reload(); await page.waitForTimeout(900); await openOpts(page);
     console.log(name, "reload -> label:", await page.locator("summary", { hasText: /^Model/ }).first().innerText());
     await ctx.close();
@@ -78,7 +78,7 @@ try {
     await s2.first().click(); await page.waitForTimeout(500);
     await page.getByRole("radio", { name: /m-third/ }).click(); await page.waitForTimeout(400);
     console.log(name, "D new-chat model:", JSON.stringify(models_by[NEW]), "other chat model:", JSON.stringify(models_by[CHAT]), "label", await s2.first().innerText());
-    await page.screenshot({ path: `${name}-D-fixed.png` });
+    await page.screenshot({ path: (process.env.OUT || "shots") + `/${name}-D-fixed.png` });
     await ctx.close(); models_by[NEW] = null;
   }
 } finally { await browser.close(); server.close(); }

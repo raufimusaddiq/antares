@@ -4,7 +4,7 @@ Reproduction and fix evidence. Browser: Chromium 1223 via playwright-core, again
 mock backend (`model-picker-repro.mjs`) serving the built bundle with the server's CSP; synthetic account,
 no Hermes, no Kenari, no credentials, nothing production. It is evidence, not a CI check.
 
-Run: `cd web && npm ci && npm run build && cd .. && CHROME=... PLAYWRIGHT_CORE=... node docs/design/s145/model-picker-repro.mjs`
+Run: `cd web && npm ci && npm run build && cd .. && OUT=docs/design/s145/shots CHROME=... PLAYWRIGHT_CORE=... node docs/design/s145/model-picker-repro.mjs`
 
 ## Reproduced on `origin/main` (b364e99) bundle, desktop 1280x800 and phone 390x780
 
