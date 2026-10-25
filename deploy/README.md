@@ -159,6 +159,10 @@ Exit `0` is the only result that means deployed. `1` (a step failed; the output 
 run) mean it is not: roll back or fix, then run again. Where the four sessions come from, every step, and what it does
 not cover: `docs/runbooks/smoke-test.md`.
 
+With synthetic accounts instead of real sessions, run the same command through the fixture wrapper so that every fixture is
+removed afterwards, on failure too (`python3 -I scripts/smoke_fixtures.py run --db … --workdir … -- <antares-smoke …>`). Only its
+exit `0` counts: `4` means cleanup left residue. Usage and guarantees: `docs/runbooks/smoke-test.md`.
+
 ## 5. Caddy (documented, not applied)
 
 Add to the existing site, then `caddy reload` (the owner's step):

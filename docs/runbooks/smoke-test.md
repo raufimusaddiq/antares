@@ -114,6 +114,60 @@ headlessly) and no reason to hold four test accounts' bearer credentials. Run it
 runner that holds the four sessions as secrets and is allowed to reach the deployment; the exit code and JSON are built
 for that.
 
+## Synthetic fixtures with guaranteed cleanup (`scripts/smoke_fixtures.py`, #144)
+
+A smoke that mints accounts must remove them, every time. The owner's rule: **no manual post-smoke steps**. When the four
+sessions are synthetic accounts (not real Google sign-ins), run the smoke through the checked-in wrapper, on the Antares
+host, as the user that may write the database and `docker exec -u hermes` into Hermes (python3 stdlib only):
+
+```
+python3 -I scripts/smoke_fixtures.py run --db /path/to/antares.sqlite --workdir /var/backups/antares/smoke-fixtures \
+  --timeout 1500 -- ./antares-smoke --url https://antares.example.com --json smoke-result.json
+```
+
+`--workdir` must be a private directory (the script creates it `0700`). The Hermes CLI is reached with
+`--hermes-cmd` (default `docker exec -u hermes hermes hermes`: the `hermes` user, never root; the same
+`profile list|delete|purge-identity` the provisioner's `/deprovision` runs). The smoke command gets
+`ANTARES_SMOKE_COOKIE_ADMIN|A|B|PENDING` in its environment only.
+
+**Only exit `0` means "smoke passed and nothing was left behind".** `1` smoke failed or timed out (cleanup was clean),
+`3` usage, `4` cleanup failed or left residue (never a pass, whatever the smoke said), `5` refused (below).
+`<workdir>/run-<id>/result.json` records the smoke exit, the verdict and a `cleanup` report.
+
+What it guarantees, and how:
+
+1. **Manifest first.** `run-<id>/manifest.json` (`0600`, atomic write, fsync) lists the run id and the four fixture ids and
+   subs *before* the first row is written. It holds no credential. It is the only authority for deletion.
+2. **Identity is the manifest, never a name.** A row is removed only if its id is in the manifest, its issuer is exactly
+   `https://synthetic-test.invalid/antares` and its `google_sub` is the one the manifest recorded for that id. Anything else
+   (a real account, a look-alike by name or email, another run's synthetic account) is left alone, and a manifest that names
+   one makes the whole cleanup **refuse** (exit `5`) with nothing changed. So does a manifest naming a profile that a
+   non-fixture account owns, a fixture that is the `admin_bootstrap` latch or a `model_blocked` author, a non-fixture
+   `approved_by` or approvals row that depends on a fixture, and any table the script has not classified (a new migration
+   must be added to `OWNED` first; a test fails until it is).
+3. **Cleanup runs on every exit the process can see:** pass, failure, `--timeout` (the smoke's process group is killed),
+   SIGINT, SIGTERM, SIGHUP and an error while minting. It is not signal-proof: after SIGKILL or a power loss the manifest
+   stays `planned`/`minted`, the **next `run` cleans it first and refuses to start if it cannot**, and
+   `scripts/smoke_fixtures.py cleanup --db DB --manifest FILE` does the same by hand.
+4. **Procedure** (the operator DML cleanup proven on 2026-10-25, now code): integrity and foreign-key check; consistent backup
+   `pre-cleanup.sqlite` beside the manifest; freeze (sessions revoked, bindings disabled, accounts suspended, so the sweep
+   claims nothing new); the fixtures' profile slugs are written to the manifest; **one `BEGIN IMMEDIATE` transaction, foreign
+   keys on**, with every statement's row count asserted equal to its pre-count, the `audit_log` actor of fixture rows set to
+   `NULL` (rows kept, count asserted equal) and a hash of every row it must not touch compared before and after inside the same
+   transaction (the owner and admin rows, real users, shared tables); `hermes profile delete` then `purge-identity` per slug;
+   a bounded re-check window (`--recheck`, default 30 s, three sweep ticks) that deletes a profile that reappears from a
+   provision already in flight; then integrity and foreign-key checks again. Idempotent: a second run changes nothing, and a
+   partial one (say, Hermes refused a delete) is finished by running it again.
+5. **Residue is a failure.** Any fixture row, session, binding or profile left, a failing integrity check, or an unclean
+   transaction makes the exit `4` and prints counts and short ids only, plus the command to retry. Reports never contain
+   cookies, emails, profile names or user content.
+
+Not covered, honestly: the tests drive a fake `hermes` CLI and a fake smoke against a database built from the real
+migrations; the real `hermes profile list` output is parsed the way the provisioner parses it, but this wrapper has not been
+run against the production Hermes or database. It does not delete the Hermes `.deleted` tombstone files (Hermes-managed;
+owner decision). Accounts created by real Google sign-ins are never touched. Phase 0 is still FAIL: this is cleanup
+tooling for a trusted-user deployment, not a claim of multi-user isolation.
+
 ## Test-identity login (not implemented, and why)
 
 A headless run would need Antares to accept a login that is not Google's. Antares' identity provider is deliberately not
@@ -139,8 +193,9 @@ in-process tests do complete a full OIDC Authorization Code + PKCE flow against 
   `TestPhase1Gate/4` with a fake Hermes.
 - **Browsers and the UI**, load, backups, Caddy buffering of SSE beyond "events arrived through the edge you pointed
   it at", and anything behind `501 CAPABILITY_UNAVAILABLE` (assets, jobs, models, skills, toolsets routes are not built).
-- **Cleanup of Hermes profiles.** Approved test accounts keep their tenant profiles. Antares cannot delete them (admin is
-  blind to profile names by design, and `AGENTS.md` limits who may delete a profile); remove them through the helper
-  when the owner says to.
+- **Cleanup of Hermes profiles for real-session runs.** `antares-smoke` itself creates and removes nothing. Approved
+  accounts keep their tenant profiles (Antares cannot delete them; admin is blind to profile names by design, and `AGENTS.md`
+  limits who may delete a profile). Synthetic fixtures are cleaned by `scripts/smoke_fixtures.py` (above); real accounts are
+  removed only through the helper when the owner says to.
 - **Production data.** It creates chats on the target. Point it at production only with the owner's say-so
   (`docs/runbooks/deployment.md`).
