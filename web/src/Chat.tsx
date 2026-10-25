@@ -921,8 +921,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   // Usage is read from the server whenever the chat changes or a reply ends. A failed read shows nothing, never a number.
   const [usage, setUsage] = useState<ChatUsage | null>(null);
-  // A reached token limit keeps the options open (the notice is in them); the toggle reports what is actually shown.
-  const extrasOpen = moreOpen || usage?.budget.reached === true;
+  // A reached token limit opens the options once (the notice is in them); after that the toggle owns the state, so they can be closed.
+  const budgetReached = usage?.budget.reached === true;
+  useEffect(() => {
+    if (budgetReached) setMoreOpen(true);
+  }, [budgetReached]);
   useEffect(() => {
     setUsage(null);
     if (!current || busy) return;
@@ -1082,10 +1085,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           }}
         />
         </ReplyContext.Provider>
-        <button type="button" className="quiet extras-toggle" aria-expanded={extrasOpen} aria-controls="chat-extras" onClick={() => setMoreOpen((o) => !o)}>
-          Options
+        <button type="button" className="quiet extras-toggle" aria-expanded={moreOpen} aria-controls="chat-extras" onClick={() => setMoreOpen((o) => !o)}>
+          {budgetReached && !moreOpen ? "Options · token limit reached" : "Options"}
         </button>
-        <div id="chat-extras" className={extrasOpen ? "extras open" : "extras"}>
+        <div id="chat-extras" className={moreOpen ? "extras open" : "extras"}>
           {usage && (
             <details className="usage" open={usage.budget.reached}>
               <summary>{usage.budget.reached ? "Token limit reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens` : "Usage unknown"}</summary>

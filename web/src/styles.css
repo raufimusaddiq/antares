@@ -620,7 +620,8 @@ button.quiet.on { --fill: var(--raised-fill); --edge: var(--text); font-weight: 
   .side { padding-block: 0; }
   .pane { gap: 0; }
   .log { --log-pad: 0.25rem; padding-bottom: 0.25rem; }
-  .vstatus, .vjump { display: none; }
+  /* The note above the history (and its Retry) and Jump to latest stay reachable: the note is in the flow here, not pinned in the reserved space. */
+  .vstatus { position: static; height: auto; margin: 0; }
   .composer { padding: 0.25rem; gap: 0.25rem; }
   .composer textarea { max-height: max(2.75rem, 12dvh); min-height: 2.75rem; padding-block: 0.25rem; }
   .side:has(.search.open) { max-height: 35dvh; }

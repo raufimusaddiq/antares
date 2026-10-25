@@ -57,7 +57,7 @@ function transcript(rich) {
 const DATA = { [PLAIN]: transcript(false), [RICH]: transcript(true) };
 const b64 = (s) => Buffer.from(s).toString("base64url");
 
-const state = { log: [], holdOlder: null, delayMs: 15, email: "reader@example.test" };
+const state = { log: [], holdOlder: null, delayMs: 15, email: "reader@example.test", budgetReached: false };
 
 function api(req, res, url) {
   const send = (status, body) => {
@@ -89,7 +89,7 @@ function api(req, res, url) {
     if (req.method === "DELETE") { res.writeHead(204); return void res.end(); }
     return send(200, { body: "", revision: 0 });
   }
-  if (/^\/api\/chats\/[0-9a-f]{32}\/usage$/.test(url.pathname)) return send(200, { runs: { finished: 0, reported: 0 }, cost: { amount: null }, context: { windowTokens: null }, budget: { limitTokens: null, usedTokens: null, enforced: false, reached: false, basis: "" }, tokens: null, turns: [], turnsTruncated: false });
+  if (/^\/api\/chats\/[0-9a-f]{32}\/usage$/.test(url.pathname)) return send(200, { runs: { finished: 0, reported: 0 }, cost: { amount: null }, context: { windowTokens: null }, budget: state.budgetReached ? { limitTokens: 10000, usedTokens: 20000, enforced: true, reached: true, basis: "" } : { limitTokens: null, usedTokens: null, enforced: false, reached: false, basis: "" }, tokens: state.budgetReached ? { input: 1, output: 1, total: 2 } : null, turns: [], turnsTruncated: false });
   // Images on, as on the owner's account, so the composer is laid out with Attach image and Take photo.
   if (/^\/api\/chats\/[0-9a-f]{32}\/input$/.test(url.pathname)) return send(200, { image: { available: true, reason: null, model: "mock-vision", maxImages: 4, maxTotalBytes: 6291456 } });
   return send(404, { error: { code: "NOT_FOUND", message: "x", requestId: "r" } });
@@ -364,6 +364,14 @@ async function mobileLayout(browser) {
     };
     const short = h - KEYBOARD;
     await verdict("keyboard closed");
+    // Scrolled up: the way back to the newest turn and the note above the history must be on screen and work.
+    await page.evaluate(() => { document.querySelector(".log").scrollTop = 0; });
+    await page.waitForTimeout(300);
+    await verdict("scrolled to the top");
+    const jump = page.getByRole("button", { name: "Jump to latest" });
+    await jump.click();
+    await page.waitForTimeout(300);
+    check(`mobile layout ${w}px, Jump to latest returns to the newest turn`, await page.evaluate(() => { const l = document.querySelector(".log"); return l.scrollTop + l.clientHeight >= l.scrollHeight - 2; }));
     await page.getByRole("button", { name: "Menu" }).click();
     await verdict("account menu open", { scope: ".bar-actions" });
     check(`mobile layout ${w}px, Sign out is in the menu`, await page.getByRole("button", { name: "Sign out" }).isVisible());
@@ -374,6 +382,9 @@ async function mobileLayout(browser) {
       await page.keyboard.type("a draft");
       await page.waitForTimeout(150);
       await verdict("keyboard open, typing", { keyboard: true });
+      await page.evaluate(() => { document.querySelector(".log").scrollTop = 0; });
+      await page.waitForTimeout(300);
+      await verdict("keyboard open, scrolled to the top", { keyboard: true });
       await page.setViewportSize({ width: w, height: h });
     }
     await page.getByRole("button", { name: "Search", exact: true }).click();
@@ -390,6 +401,40 @@ async function mobileLayout(browser) {
     await page.waitForTimeout(150);
     await verdict("keyboard closed again");
     await ctx.close();
+  }
+}
+
+// A reached token limit opens the Options drawer, and the toggle must still close it so the conversation grows back.
+async function mobileBudget(browser) {
+  state.budgetReached = true;
+  try {
+    for (const { w, h } of [{ w: 320, h: 568 }, { w: 375, h: 667 }, { w: 390, h: 844 }, { w: 430, h: 932 }]) {
+      CURRENT.w = w;
+      const { ctx, page } = await openPage(browser, { viewport: { width: w, height: h }, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+      await page.goto(base + "/");
+      await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
+      await page.waitForSelector("#chat-extras.open", { timeout: 8000 });
+      const toggle = page.locator(".extras-toggle");
+      const logH = () => page.evaluate(() => document.querySelector(".log").getBoundingClientRect().height);
+      const openH = await logH();
+      await page.screenshot({ path: path.join(outDir, `budget-${w}-open.png`) });
+      check(`mobile budget ${w}px, a reached limit opens the options and says so`, (await toggle.getAttribute("aria-expanded")) === "true" && (await page.locator("#chat-extras").innerText()).includes("Token limit reached"));
+      await toggle.click();
+      await page.waitForTimeout(200);
+      const closedH = await logH();
+      await page.screenshot({ path: path.join(outDir, `budget-${w}-after-toggle.png`) });
+      check(`mobile budget ${w}px, the toggle closes the options and the conversation grows back`, (await toggle.getAttribute("aria-expanded")) === "false" && !(await page.evaluate(() => document.querySelector("#chat-extras").classList.contains("open"))) && closedH > openH + 20, `log ${Math.round(openH)} -> ${Math.round(closedH)}px`);
+      check(`mobile budget ${w}px, the closed toggle still reports the limit`, (await toggle.innerText()).includes("token limit reached"));
+      const m = await page.evaluate(measure);
+      const v = verdicts(m, false, false, 1, false);
+      check(`mobile budget ${w}px, layout with the options closed`, v.length === 0, v.slice(0, 3).join("; "));
+      await toggle.click();
+      await page.waitForTimeout(200);
+      check(`mobile budget ${w}px, the toggle opens them again`, (await toggle.getAttribute("aria-expanded")) === "true");
+      await ctx.close();
+    }
+  } finally {
+    state.budgetReached = false;
   }
 }
 
@@ -447,7 +492,8 @@ try {
   if (!only || only === "rich") await rich(browser);
   if (!only || only === "drafts") await drafts(browser);
   if (!only || only === "mobile") await mobile(browser);
-  if (!only || only === "mobile" || only === "mobile-layout") await mobileLayout(browser); // no timing in it: this is the one CI runs
+  if (!only || only === "mobile" || only === "mobile-layout") await mobileLayout(browser);
+  if (!only || only === "mobile" || only === "mobile-layout" || only === "mobile-budget") await mobileBudget(browser); // no timing in it: this is the one CI runs
 } finally {
   await browser.close();
   server.close();

@@ -76,14 +76,22 @@ describe("phone layout toggles", () => {
     expect(drawer?.classList.contains("open")).toBe(true);
   });
 
-  it("reports the options as expanded while a reached token limit holds them open", async () => {
+  it("opens the options once when the token limit is reached, and the toggle can close and reopen them", async () => {
     const usage = { tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, total: 2 }, finishedRuns: 1, reportedRuns: 1, costIDR: null, unpricedRuns: 0, unknownModelRuns: 0, turns: [], turnsTruncated: false, priceListDate: "", windowTokens: null, budget: { limit: 10000, used: 20000, enforced: true, reached: true, basis: "" } };
     api.listChats.mockResolvedValue(ok({ chats: [{ id: "c1", title: "Talk", createdAt: "", updatedAt: "", activeRunId: "" }], nextCursor: "" }));
     api.getUsage.mockResolvedValue(ok(usage));
     await mount();
     fireEvent.click(await screen.findByRole("button", { name: "Talk" }));
-    const toggle = screen.getByRole("button", { name: "Options" });
-    await waitFor(() => expect(document.getElementById("chat-extras")?.classList.contains("open")).toBe(true));
+    const drawer = () => document.getElementById("chat-extras");
+    await waitFor(() => expect(drawer()?.classList.contains("open")).toBe(true));
+    const toggle = screen.getByRole("button", { name: /^Options/ });
     expect(toggle.getAttribute("aria-expanded")).toBe("true"); // what is shown and what is announced agree
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(drawer()?.classList.contains("open")).toBe(false); // the log can grow back
+    expect(toggle.textContent).toContain("token limit reached"); // the closed toggle still says why
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(drawer()?.classList.contains("open")).toBe(true);
   });
 });

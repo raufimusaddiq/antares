@@ -56,9 +56,17 @@ export const measure = async (scope) => {
       if (ox > 2 && oy > 2) overlaps.push([label(fixedish[i]), label(fixedish[j])]);
     }
   // Controls the user must always be able to reach: found by label, visible, and inside the screen (a strip that scrolls sideways counts).
+  // The way back to the newest turn and the note above the history (with its Retry) must stay reachable wherever the log is scrolled.
+  const lgEl = document.querySelector(".log");
+  const scrolledUp = lgEl ? lgEl.scrollTop + lgEl.clientHeight < lgEl.scrollHeight - 80 : false;
+  const atTop = lgEl ? lgEl.scrollTop < 2 : false;
+  const noteEl = document.querySelector(".vstatus span");
+  const noteText = noteEl ? (noteEl.textContent ?? "").trim() : "";
+  const noteShown = noteEl ? Boolean(shown(noteEl) && noteEl.getBoundingClientRect().height > 8) : false;
   const reach = {};
-  for (const name of ["Menu", "New chat", "Search", "Close search", "Options", "Attach image", "Take photo", "Send"]) {
-    const el = [...document.querySelectorAll("button")].find((b) => b.textContent.trim() === name && visible(b));
+  for (const name of ["Menu", "New chat", "Search", "Close search", "Options", "Attach image", "Take photo", "Send", "Jump to latest"]) {
+    // The Options toggle also says when a token limit is reached ("Options · token limit reached").
+    const el = [...document.querySelectorAll("button")].find((b) => (name === "Options" ? b.textContent.trim().startsWith("Options") : b.textContent.trim() === name) && visible(b));
     const r = el && shown(el);
     reach[name] = Boolean(r && r.bottom <= vh + 0.5 && r.top >= -0.5 && r.left >= -0.5 && (r.right <= vw + 0.5 || el.closest(".side")));
   }
@@ -100,7 +108,7 @@ export const measure = async (scope) => {
     chromeShare: bar ? +(((bar.getBoundingClientRect().height + (side && getComputedStyle(side).display !== "none" ? side.getBoundingClientRect().height : 0))) / vh).toFixed(2) : 0,
     textareaClipped: ta ? ta.scrollHeight > ta.clientHeight + 1 : null,
     vstatusOverFirstTurn: vstatus && firstTurn ? (() => { const a = vstatus.getBoundingClientRect(); const b = firstTurn.getBoundingClientRect(); return Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top) > 2 && Math.min(a.right, b.right) - Math.max(a.left, b.left) > 2; })() : false,
-    small, outside, overlaps, reach, cut, newestInView,
+    small, outside, overlaps, reach, cut, newestInView, scrolledUp, atTop, noteText, noteShown,
   };
 };
 
@@ -125,6 +133,8 @@ export const verdicts = (m, keyboard, scoped, relax = 1, searchOpen = false) => 
   // viewport of 512px or less: a phone on its side, or a small phone with the keyboard up), and is readable to its end.
   const floor = (m.vh > 512 ? (keyboard ? 0.35 : 0.4) : Math.max(0.2, 72 / m.vh)) * relax;
   if (!searchOpen && m.log.h < floor * m.vh - 1) v.push(`the log gets ${m.log.h}px, ${Math.round(m.logShare * 100)}% of the viewport (<${Math.round(floor * 100)}%)`);
+  if (!searchOpen && m.scrolledUp && !m.reach["Jump to latest"]) v.push('"Jump to latest" is not reachable after scrolling up');
+  if (!searchOpen && m.atTop && m.noteText && !m.noteShown) v.push(`the note above the history ("${m.noteText.slice(0, 40)}") is not visible at the top`);
   if (!searchOpen && m.newestInView === false) v.push("scrolled to its end, the newest message is clipped by the log");
   for (const name of m.cut) v.push(`cut off at the edge of its row: "${name}"`);
   // With a search open the strip is the working area (input, filters, results), so the chrome-share rule does not apply to that step.

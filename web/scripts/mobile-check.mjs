@@ -112,6 +112,7 @@ try {
       const moved = await page.evaluate(() => { const l = document.querySelector(".log"); const before = l.scrollTop; l.scrollTop = 0; return { scrollable: l.scrollHeight > l.clientHeight, before, after: l.scrollTop }; });
       if (!moved.scrollable) { result.violations++; result.cases.at(-1).violations.push("the log has nothing to scroll: history does not overflow its region"); }
     });
+    await page.waitForTimeout(300); // the scroll event, and with it the Jump to latest button, follow the scroll
     await step("history-top");
     // Multiline typing, keyboard open (viewport shrunk), then send.
     await page.setViewportSize({ width: w, height: h - keyboardFor(w, h) });

@@ -40,3 +40,7 @@ one row, an attached image becomes one compact row, and with a search open the m
 
 The keyboard is approximated by a shorter viewport: 45% of the height, 300px at most (375x667 becomes 375x367). A phone on its side
 (568x320) is checked with the keyboard closed only.
+
+Also required in every state: after scrolling up, `Jump to latest` is on screen (and returns to the newest turn); at the top, the note
+above the history ("Scroll up for older messages", with its Retry on an error) is visible. `ONLY=mobile-budget` serves a reached token
+limit: the Options drawer opens once, says so, and its toggle closes it again so the conversation grows back.
