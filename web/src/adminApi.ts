@@ -176,3 +176,94 @@ export function describeAdminCode(code: string, status: number): string {
 
 /** On a screen load, 403 is its own state, not an error banner: signed in, but not allowed to administer. */
 export const isForbidden = (r: { status: number }): boolean => r.status === 403;
+
+// ---- shared provider account usage (#146) -----------------------------------------
+// The admin-only read of the provider account. It is shared by every user: these are the provider's own
+// figures for it, never one user's. A section the provider refused or could not answer has no numbers,
+// and a number the server did not send is never drawn as 0.
+
+export interface UsageSection<T> {
+  state: "OK" | "REFUSED" | "UNAVAILABLE";
+  code: string;
+  data: T | null;
+}
+export interface KenariBalance { balanceMicroIdr: number; reservedMicroIdr: number; availableMicroIdr: number }
+export interface KenariWindow { key: string; budgetRp: number; usedRp: number; remainingRp: number; usedFrac: number; resetsAt: string }
+export interface KenariQuota {
+  plan: { name: string; windows: KenariWindow[] } | null;
+  coupon: { name: string; usedRp: number; remainingRp: number | null; expiresAt: string } | null;
+  alertPct: number;
+}
+export interface KenariUsageRow { model: string; billingKind: string; requests: number; promptTokens: number; completionTokens: number; costMicroIdr: number; catalogMicroIdr: number }
+export interface KenariUsage { start: number; end: number; rows: KenariUsageRow[]; total: KenariUsageRow }
+export interface KenariUsageView {
+  state: "OK" | "NOT_CONFIGURED" | "UNAVAILABLE";
+  source: string;
+  fetchedAt: string;
+  stale: boolean;
+  balance: UsageSection<KenariBalance> | null;
+  quota: UsageSection<KenariQuota> | null;
+  usage: UsageSection<KenariUsage> | null;
+}
+
+const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
+
+function section<T>(v: unknown, parse: (d: Record<string, unknown>) => T | null): UsageSection<T> | null {
+  const o = obj(v);
+  if (!o) return null;
+  const state = o.state === "OK" || o.state === "REFUSED" ? o.state : "UNAVAILABLE";
+  const d = state === "OK" ? obj(o.data) : null;
+  const data = d ? parse(d) : null;
+  // an OK section whose numbers cannot be read is unavailable, not zero
+  return { state: state === "OK" && data === null ? "UNAVAILABLE" : state, code: str(o.code), data };
+}
+
+function usageRow(v: unknown): KenariUsageRow | null {
+  const o = obj(v);
+  const r = o && [num(o.requests), num(o.promptTokens), num(o.completionTokens), num(o.costMicroIdr), num(o.catalogMicroIdr)];
+  if (!o || !r || r.some((x) => x === null)) return null;
+  return { model: str(o.model), billingKind: str(o.billingKind), requests: r[0]!, promptTokens: r[1]!, completionTokens: r[2]!, costMicroIdr: r[3]!, catalogMicroIdr: r[4]! };
+}
+
+export function parseKenariUsage(v: unknown): KenariUsageView | null {
+  const o = obj(v);
+  if (!o || (o.state !== "OK" && o.state !== "NOT_CONFIGURED" && o.state !== "UNAVAILABLE")) return null;
+  if (o.state !== "OK") return { state: o.state, source: str(o.source), fetchedAt: "", stale: false, balance: null, quota: null, usage: null };
+  return {
+    state: "OK",
+    source: str(o.source),
+    fetchedAt: str(o.fetchedAt),
+    stale: o.stale === true,
+    balance: section(o.balance, (d) => {
+      const b = [num(d.balanceMicroIdr), num(d.reservedMicroIdr), num(d.availableMicroIdr)];
+      return b.some((x) => x === null) || d.currency !== "IDR" ? null : { balanceMicroIdr: b[0]!, reservedMicroIdr: b[1]!, availableMicroIdr: b[2]! };
+    }),
+    quota: section(o.quota, (d) => {
+      const alert = num(d.alertPct);
+      const p = obj(d.plan);
+      const c = obj(d.coupon);
+      if (alert === null) return null;
+      const windows: KenariWindow[] = [];
+      for (const w of Array.isArray(p?.windows) ? p.windows : []) {
+        const wo = obj(w);
+        const n = wo && [num(wo.budgetRp), num(wo.usedRp), num(wo.remainingRp), num(wo.usedFrac)];
+        if (!wo || !n || n.some((x) => x === null)) return null;
+        windows.push({ key: str(wo.key), budgetRp: n[0]!, usedRp: n[1]!, remainingRp: n[2]!, usedFrac: n[3]!, resetsAt: str(wo.resetsAt) });
+      }
+      const used = c ? num(c.usedRp) : null;
+      if (c && used === null) return null;
+      return { alertPct: alert, plan: p ? { name: str(p.name), windows } : null, coupon: c ? { name: str(c.name), usedRp: used!, remainingRp: num(c.remainingRp), expiresAt: str(c.expiresAt) } : null };
+    }),
+    usage: section(o.usage, (d) => {
+      const start = num(d.start);
+      const end = num(d.end);
+      const total = usageRow(d.total);
+      const rows = (Array.isArray(d.rows) ? d.rows : []).map(usageRow);
+      return start === null || end === null || !total || rows.some((r) => r === null) ? null : { start, end, total, rows: rows as KenariUsageRow[] };
+    }),
+  };
+}
+
+export function getKenariUsage(refresh: boolean, signal?: AbortSignal) {
+  return call("GET", `/api/admin/kenari-usage${refresh ? "?refresh=1" : ""}`, parseKenariUsage, undefined, signal);
+}

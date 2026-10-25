@@ -154,6 +154,7 @@ func run() error {
 		Tenants:      tenants,
 		Chat:         chats,
 		Push:         pusher,
+		KenariUsage:  kenari.NewAccount(kenari.DefaultAccountBase, cfg.KenariAPIKey, nil),
 		Limits:       &cfg.Limits,
 	})
 	if err != nil {

@@ -102,6 +102,7 @@ func (a *Auth) registerAdmin(mux *http.ServeMux) {
 	mux.Handle("GET /api/admin/audit", a.adminRoute(false, a.adminAudit))
 	mux.Handle("GET /api/admin/model-policy", a.adminRoute(false, a.adminModelPolicy))
 	mux.Handle("PUT /api/admin/model-policy", a.adminRoute(true, a.adminSetModelPolicy))
+	mux.Handle("GET /api/admin/kenari-usage", a.adminRoute(false, a.adminKenariUsage))
 }
 
 func targetID(w http.ResponseWriter, r *http.Request, a *Auth) (string, bool) {

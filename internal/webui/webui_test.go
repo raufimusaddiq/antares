@@ -88,6 +88,8 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		// and its action POSTs, and the audit feed. /api/admin/system is not here because
 		// the route no longer exists.
 		"/api/admin/users": true, "/api/admin/users/": true, "/api/admin/audit": true,
+		// #146 the shared provider account's balance, quota and usage: one admin-only read, no body, no key.
+		"/api/admin/kenari-usage": true,
 		// #59 adds the opt-in notification routes, listed one by one: the VAPID public key,
 		// device (un)registration (/api/push/subscriptions/{id} is the revoke), and the
 		// per-account mode. None of them returns or accepts conversation content.

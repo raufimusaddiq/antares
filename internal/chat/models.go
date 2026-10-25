@@ -52,7 +52,6 @@ type providerView struct {
 	Available bool        `json:"available"`
 	Reason    string      `json:"reason,omitempty"`
 	Models    []modelView `json:"models"`
-	Quota     quotaView   `json:"quota"`
 }
 
 type modelView struct {
@@ -84,20 +83,6 @@ type priceView struct {
 	Input     *float64 `json:"input"`
 	Output    *float64 `json:"output"`
 	CacheRead *float64 `json:"cacheRead"`
-}
-
-// quotaView: State is "AVAILABLE" with windows, or "PROVIDER_USAGE_UNAVAILABLE" (CTX-004).
-type quotaView struct {
-	State     string       `json:"state"`
-	Windows   []windowView `json:"windows,omitempty"`
-	LimitedAt string       `json:"limitedUntil,omitempty"`
-}
-
-type windowView struct {
-	Label       string  `json:"label"`
-	UsedPercent float64 `json:"usedPercent"`
-	ResetsAt    string  `json:"resetsAt,omitempty"`
-	Scope       string  `json:"scope,omitempty"`
 }
 
 // transport is what Hermes contributes to a Kenari model: the provider the profile runs
@@ -166,13 +151,6 @@ func buildModels(inv hermes.ModelCatalog, cat []kenari.Model, fetched time.Time,
 			mv.Price = &priceView{Source: catalogueSource, Currency: pr.Currency, Unit: pr.Unit, Free: pr.Free, Input: pr.Input, Output: pr.Output, CacheRead: pr.CacheRead}
 		}
 		pv.Models = append(pv.Models, mv)
-	}
-	pv.Quota = quotaView{State: "PROVIDER_USAGE_UNAVAILABLE", LimitedAt: p.LimitResetsAt}
-	if len(p.Quota) > 0 {
-		pv.Quota.State = "AVAILABLE"
-		for _, w := range p.Quota {
-			pv.Quota.Windows = append(pv.Quota.Windows, windowView{Label: w.Label, UsedPercent: w.UsedPercent, ResetsAt: w.ResetsAt, Scope: w.Scope})
-		}
 	}
 	v.Providers = append(v.Providers, pv)
 	return v

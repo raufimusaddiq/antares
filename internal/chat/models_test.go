@@ -33,13 +33,6 @@ type modelsBody struct {
 		Available bool
 		Reason    string
 		Models    []modelRow
-		Quota     struct {
-			State   string
-			Windows []struct {
-				Label       string
-				UsedPercent float64
-			}
-		}
 	}
 }
 
@@ -518,5 +511,27 @@ func TestModelsSayHowOldTheCatalogueIs(t *testing.T) {
 	down = true
 	if v := get("/api/models?refresh=1"); v.Stale || v.FetchedAt != first.FetchedAt {
 		t.Fatalf("a refresh inside the throttle is served from the last read, not stale: %+v", v)
+	}
+}
+
+// #146: the provider account is shared by every user. Hermes reports its quota windows (scope
+// "account") in the inventory, and the picker used to pass them to any signed-in user. It carries
+// none now: the only reader of account usage is the admin route (internal/auth/admin_usage.go).
+func TestModelsNeverCarryTheSharedAccountQuota(t *testing.T) {
+	a := mediaApp(t, visionModel)
+	a.hx.mu.Lock()
+	a.hx.canned["/api/model/options"] = `{"model":"` + visionModel + `","provider":"custom","providers":[{"slug":"custom","name":"Custom","is_current":true,
+	  "models":["` + visionModel + `"],"capabilities":{"` + visionModel + `":{"fast":false,"reasoning":false}},
+	  "limit":{"resets_at":"2026-10-24T10:00:00+00:00"},
+	  "usage":{"windows":[{"label":"5h","used_percent":42.5,"resets_at":"2026-10-24T10:00:00+00:00","scope":"account"}]}}]}`
+	a.hx.mu.Unlock()
+	w := a.user("a").get("/api/models")
+	if w.Code != 200 {
+		t.Fatalf("models: %d %s", w.Code, w.Body.String())
+	}
+	for _, leak := range []string{"quota", "42.5", "usedPercent", "limitedUntil", "resetsAt", "2026-10-24T10:00"} {
+		if strings.Contains(w.Body.String(), leak) {
+			t.Errorf("GET /api/models carries %q of the shared provider account: %s", leak, w.Body.String())
+		}
 	}
 }

@@ -3,6 +3,7 @@ import {
   USERS_PAGE,
   decide,
   describeAdminCode,
+  getKenariUsage,
   getUser,
   isForbidden,
   listAudit,
@@ -12,6 +13,9 @@ import {
   type AdminUser,
   type AuditEntry,
   type Decision,
+  type KenariUsage,
+  type KenariUsageView,
+  type UsageSection,
   type Requeue,
 } from "./adminApi";
 import { getCapabilities, type Inventory } from "./chatApi";
@@ -119,6 +123,7 @@ export function AdminShell({ email, route, onNavigate, onSignOut, children }: { 
         <nav className="admin-nav" aria-label="Admin">
           {link("/admin/users", "Users", route.kind === "users" || route.kind === "user")}
           {link("/admin/capabilities", "Capabilities", route.kind === "capabilities")}
+          {link("/admin/usage", "Provider usage", route.kind === "usage")}
           {link("/admin/audit", "Audit log", route.kind === "audit")}
           {link("/", "Back to chat", false)}
         </nav>
@@ -608,6 +613,175 @@ export function CapabilitiesScreen() {
   return <CapabilitiesTable inv={state.value} />;
 }
 
+// ---- provider account usage (#146) ---------------------------------------------
+
+const rupiah = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 });
+const rupiahCents = new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0, maximumFractionDigits: 2 });
+/** Kenari reports balance and spend in micro-Rupiah (Rp 1 = 1,000,000); a request costs fractions of a Rupiah, so two decimals are kept. */
+export const microRp = (n: number): string => rupiahCents.format(n / 1_000_000);
+export const wholeRp = (n: number): string => rupiah.format(n);
+const WINDOW_LABELS: Record<string, string> = { five_hour: "5 hours", week: "Week", month: "Month" };
+const day = (s: number) => new Date(s * 1000).toISOString().slice(0, 10);
+
+function SectionNote({ s, what }: { s: UsageSection<unknown> | null; what: string }) {
+  if (!s) return <p className="label">{what}: not reported.</p>;
+  if (s.state === "REFUSED")
+    return (
+      <p className="label" role="status">
+        {what}: Kenari refused this key{s.code ? ` (${s.code})` : ""}. Balance and quota need an unrestricted key of the account. No figure is shown.
+      </p>
+    );
+  return (
+    <p className="label" role="status">
+      {what}: Kenari did not answer. No figure is shown.
+    </p>
+  );
+}
+
+function UsageTotals({ u }: { u: KenariUsage }) {
+  return (
+    <div className="table-wrap">
+      <table className="admin-table">
+        <caption className="label">
+          Whole provider account, {day(u.start)} to {day(u.end)} (UTC)
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col">Model</th>
+            <th scope="col">Billing</th>
+            <th scope="col">Requests</th>
+            <th scope="col">Input tokens</th>
+            <th scope="col">Output tokens</th>
+            <th scope="col">Charged to balance</th>
+          </tr>
+        </thead>
+        <tbody>
+          {u.rows.map((r) => (
+            <tr key={`${r.model}/${r.billingKind}`}>
+              <th scope="row">{r.model}</th>
+              <td>{r.billingKind}</td>
+              <td>{r.requests}</td>
+              <td>{r.promptTokens}</td>
+              <td>{r.completionTokens}</td>
+              <td>{microRp(r.costMicroIdr)}</td>
+            </tr>
+          ))}
+          <tr>
+            <th scope="row">Total</th>
+            <td />
+            <td>{u.total.requests}</td>
+            <td>{u.total.promptTokens}</td>
+            <td>{u.total.completionTokens}</td>
+            <td>{microRp(u.total.costMicroIdr)}</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+export function UsagePanel({ v, onRefresh, busy }: { v: KenariUsageView; onRefresh: () => void; busy: boolean }) {
+  const refresh = (
+    <button type="button" className="quiet" onClick={onRefresh} disabled={busy}>
+      {busy ? "Refreshing…" : "Refresh"}
+    </button>
+  );
+  return (
+    <section aria-labelledby="usage-h">
+      <h1 id="usage-h">Provider usage</h1>
+      <p className="label">
+        Shared provider account (kenari.id), read with the server's own key. One account serves every Antares user, so none of this is a
+        per-user or per-chat figure. Token counts shown in chats are local estimates from the assistant and are a different number.
+      </p>
+      {v.state === "NOT_CONFIGURED" && <p role="status">Not configured: the operator has not configured a provider key for Antares. No figure is shown.</p>}
+      {v.state === "UNAVAILABLE" && (
+        <p role="alert">
+          Kenari could not be read and no recent answer is held. No figure is shown. {refresh}
+        </p>
+      )}
+      {v.state === "OK" && (
+        <>
+          <p className="label">
+            Read from Kenari {v.fetchedAt ? when(v.fetchedAt) : ""}. {refresh}
+          </p>
+          {v.stale && (
+            <p role="alert">Stale: the latest attempt to read Kenari failed, so these are the last figures it gave. Refresh to try again.</p>
+          )}
+          <h2>Balance</h2>
+          {v.balance?.state === "OK" && v.balance.data ? (
+            <dl>
+              <dt>Available to spend</dt>
+              <dd>{microRp(v.balance.data.availableMicroIdr)}</dd>
+              <dt>Balance</dt>
+              <dd>{microRp(v.balance.data.balanceMicroIdr)}</dd>
+              <dt>Held by running requests</dt>
+              <dd>{microRp(v.balance.data.reservedMicroIdr)}</dd>
+            </dl>
+          ) : (
+            <SectionNote s={v.balance} what="Balance" />
+          )}
+          <h2>Plan quota</h2>
+          {v.quota?.state === "OK" && v.quota.data ? (
+            <>
+              {v.quota.data.plan ? (
+                <div className="table-wrap">
+                  <table className="admin-table">
+                    <caption className="label">Plan {v.quota.data.plan.name}</caption>
+                    <thead>
+                      <tr>
+                        <th scope="col">Window</th>
+                        <th scope="col">Used</th>
+                        <th scope="col">Remaining</th>
+                        <th scope="col">Resets</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {v.quota.data.plan.windows.map((w) => (
+                        <tr key={w.key}>
+                          <th scope="row">{WINDOW_LABELS[w.key] ?? w.key}</th>
+                          <td>
+                            {Math.round(w.usedFrac * 1000) / 10}% ({wholeRp(w.usedRp)} of {wholeRp(w.budgetRp)})
+                          </td>
+                          <td>{wholeRp(w.remainingRp)}</td>
+                          <td>{when(w.resetsAt)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="label">The account has no active plan.</p>
+              )}
+              {v.quota.data.coupon && (
+                <p>
+                  Coupon {v.quota.data.coupon.name}: used {wholeRp(v.quota.data.coupon.usedRp)},{" "}
+                  {v.quota.data.coupon.remainingRp === null ? "no spending limit" : `${wholeRp(v.quota.data.coupon.remainingRp)} left`}, expires {when(v.quota.data.coupon.expiresAt)}.
+                </p>
+              )}
+            </>
+          ) : (
+            <SectionNote s={v.quota} what="Quota" />
+          )}
+          <h2>Usage, last 30 days</h2>
+          {v.usage?.state === "OK" && v.usage.data ? <UsageTotals u={v.usage.data} /> : <SectionNote s={v.usage} what="Usage" />}
+        </>
+      )}
+    </section>
+  );
+}
+
+export function UsageScreen() {
+  const [refreshes, setRefreshes] = useState(0);
+  const [state, reload] = useLoad((s) => getKenariUsage(refreshes > 0, s), `usage-${refreshes}`);
+  const last = useRef<KenariUsageView | null>(null);
+  if (state.kind === "ready") last.current = state.value;
+  if (state.kind === "loading" && !last.current) return <Loading what="Provider usage" />;
+  if (state.kind === "forbidden") return <Forbidden />;
+  if (state.kind === "error") return <Problem message={state.message} onRetry={reload} />;
+  const v = state.kind === "ready" ? state.value : last.current!;
+  return <UsagePanel v={v} busy={state.kind === "loading"} onRefresh={() => setRefreshes((n) => n + 1)} />;
+}
+
 // ---- router ---------------------------------------------------------------------
 
 export function NotFound() {
@@ -629,6 +803,8 @@ export function AdminScreens({ route, onNavigate }: { route: AdminRoute; onNavig
       return <AuditScreen />;
     case "capabilities":
       return <CapabilitiesScreen />;
+    case "usage":
+      return <UsageScreen />;
     case "unknown":
       return <NotFound />;
   }

@@ -2,7 +2,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { describePrice, describeQuota, parseModels } from "./chatApi";
+import { describePrice, parseModels } from "./chatApi";
 import { ModelPicker } from "./ModelPicker";
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
@@ -22,9 +22,8 @@ const catalog = {
         model("m-plain", { reasoning: false }),
         model("m-quiet", { reasoning: true }),
       ],
-      quota: { state: "AVAILABLE", windows: [{ label: "5h", usedPercent: 0, resetsAt: "", scope: "account" }] },
     },
-    { slug: "beta", name: "Beta", available: false, reason: "paste KEY", models: [model("b1", { available: false })], quota: { state: "PROVIDER_USAGE_UNAVAILABLE" } },
+    { slug: "beta", name: "Beta", available: false, reason: "paste KEY", models: [model("b1", { available: false })] },
   ],
 };
 
@@ -33,17 +32,11 @@ describe("parseModels", () => {
     const c = parseModels(catalog)!;
     expect(c.providers[1].models[0]).toMatchObject({ available: false, reasoning: null, modalities: null, contextWindow: null, price: null });
     expect(c.providers[0].models[0].price).toMatchObject({ currency: "IDR", input: 2750000000, cacheRead: null });
-    expect(c.providers[1].quota).toBeNull();
     expect(c.unsupported.serviceTier).toContain("Kenari");
   });
   it("rejects what is not a catalog", () => {
     expect(parseModels({})).toBeNull();
     expect(parseModels(null)).toBeNull();
-  });
-  it("states missing provider usage and shows a real 0% as 0%", () => {
-    const c = parseModels(catalog)!;
-    expect(describeQuota(c.providers[1])[0]).toContain("unavailable");
-    expect(describeQuota(c.providers[0])[0]).toContain("0% used");
   });
   it("prints a price with its provenance and a missing number as unknown, never 0", () => {
     const c = parseModels(catalog)!;
@@ -80,7 +73,7 @@ describe("ModelPicker", () => {
     expect(el.querySelector("select")).toBeNull(); // m-plain publishes no reasoning levels
     expect(el.textContent).toContain("Service tier: not offered"); // with the reason, never a toggle
     expect(el.textContent).toContain("Kenari does not publish a service tier");
-    expect(el.textContent).toContain("Provider usage: unavailable");
+    expect(el.textContent).not.toMatch(/usage|quota|% used/i); // the shared account figure is admin-only (#146)
   });
 });
 
