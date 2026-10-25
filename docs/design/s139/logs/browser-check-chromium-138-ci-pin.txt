@@ -1,0 +1,162 @@
+### ONLY=mobile-layout
+# 138.0.7204.94 (Chromium), bundle Block-ghVPMZVq.js, Chart-Bal8YJ_G.js, ci-info-Bauk7qhZ.js, index-BJf6Wwq-.js, rolldown-runtime-BWaJ3C7D.js
+PASS  mobile layout 320px, keyboard closed
+PASS  mobile layout 320px, scrolled to the top
+PASS  mobile layout 320px, Jump to latest returns to the newest turn
+PASS  mobile layout 320px, account menu open
+PASS  mobile layout 320px, Sign out is in the menu
+PASS  mobile layout 320px, a real pointer click reaches every menu action
+PASS  mobile layout 320px, account menu open, keyboard open
+PASS  mobile layout 320px, a real pointer click reaches every menu action, keyboard open
+PASS  mobile layout 320px, keyboard open, typing
+PASS  mobile layout 320px, keyboard open, scrolled to the top
+PASS  mobile layout 320px, search focused, keyboard open
+PASS  mobile layout 320px, search input stays focused with Close search
+PASS  mobile layout 320px, keyboard closed again
+PASS  mobile layout 375px, keyboard closed
+PASS  mobile layout 375px, scrolled to the top
+PASS  mobile layout 375px, Jump to latest returns to the newest turn
+PASS  mobile layout 375px, account menu open
+PASS  mobile layout 375px, Sign out is in the menu
+PASS  mobile layout 375px, a real pointer click reaches every menu action
+PASS  mobile layout 375px, account menu open, keyboard open
+PASS  mobile layout 375px, a real pointer click reaches every menu action, keyboard open
+PASS  mobile layout 375px, keyboard open, typing
+PASS  mobile layout 375px, keyboard open, scrolled to the top
+PASS  mobile layout 375px, search focused, keyboard open
+PASS  mobile layout 375px, search input stays focused with Close search
+PASS  mobile layout 375px, keyboard closed again
+PASS  mobile layout 390px, keyboard closed
+PASS  mobile layout 390px, scrolled to the top
+PASS  mobile layout 390px, Jump to latest returns to the newest turn
+PASS  mobile layout 390px, account menu open
+PASS  mobile layout 390px, Sign out is in the menu
+PASS  mobile layout 390px, a real pointer click reaches every menu action
+PASS  mobile layout 390px, account menu open, keyboard open
+PASS  mobile layout 390px, a real pointer click reaches every menu action, keyboard open
+PASS  mobile layout 390px, keyboard open, typing
+PASS  mobile layout 390px, keyboard open, scrolled to the top
+PASS  mobile layout 390px, search focused, keyboard open
+PASS  mobile layout 390px, search input stays focused with Close search
+PASS  mobile layout 390px, keyboard closed again
+PASS  mobile layout 430px, keyboard closed
+PASS  mobile layout 430px, scrolled to the top
+PASS  mobile layout 430px, Jump to latest returns to the newest turn
+PASS  mobile layout 430px, account menu open
+PASS  mobile layout 430px, Sign out is in the menu
+PASS  mobile layout 430px, a real pointer click reaches every menu action
+PASS  mobile layout 430px, account menu open, keyboard open
+PASS  mobile layout 430px, a real pointer click reaches every menu action, keyboard open
+PASS  mobile layout 430px, keyboard open, typing
+PASS  mobile layout 430px, keyboard open, scrolled to the top
+PASS  mobile layout 430px, search focused, keyboard open
+PASS  mobile layout 430px, search input stays focused with Close search
+PASS  mobile layout 430px, keyboard closed again
+PASS  mobile layout 568px, keyboard closed
+PASS  mobile layout 568px, scrolled to the top
+PASS  mobile layout 568px, Jump to latest returns to the newest turn
+PASS  mobile layout 568px, account menu open
+PASS  mobile layout 568px, Sign out is in the menu
+PASS  mobile layout 568px, a real pointer click reaches every menu action
+PASS  mobile layout 568px, keyboard closed again
+PASS  mobile budget 320px, a reached limit opens the options and says so
+PASS  mobile budget 320px, the toggle closes the options and the conversation grows back  — log 96 -> 339px
+PASS  mobile budget 320px, the closed toggle still reports the limit
+PASS  mobile budget 320px, layout with the options closed
+PASS  mobile budget 320px, the toggle opens them again
+PASS  mobile budget 375px, a reached limit opens the options and says so
+PASS  mobile budget 375px, the toggle closes the options and the conversation grows back  — log 155 -> 438px
+PASS  mobile budget 375px, the closed toggle still reports the limit
+PASS  mobile budget 375px, layout with the options closed
+PASS  mobile budget 375px, the toggle opens them again
+PASS  mobile budget 390px, a reached limit opens the options and says so
+PASS  mobile budget 390px, the toggle closes the options and the conversation grows back  — log 261 -> 615px
+PASS  mobile budget 390px, the closed toggle still reports the limit
+PASS  mobile budget 390px, layout with the options closed
+PASS  mobile budget 390px, the toggle opens them again
+PASS  mobile budget 430px, a reached limit opens the options and says so
+PASS  mobile budget 430px, the toggle closes the options and the conversation grows back  — log 314 -> 703px
+PASS  mobile budget 430px, the closed toggle still reports the limit
+PASS  mobile budget 430px, layout with the options closed
+PASS  mobile budget 430px, the toggle opens them again
+
+79/79 checks passed; screenshots in <scratch>/ci138/mobile-layout
+### ONLY=desktop-layout
+# 138.0.7204.94 (Chromium), bundle Block-ghVPMZVq.js, Chart-Bal8YJ_G.js, ci-info-Bauk7qhZ.js, index-BJf6Wwq-.js, rolldown-runtime-BWaJ3C7D.js
+PASS  desktop layout 1280x800, newest turn
+PASS  desktop layout 1280x800, a third of the way up
+PASS  desktop layout 1280x800, mid history
+PASS  desktop layout 1280x800, near the top
+PASS  desktop layout 1280x800, top of the loaded history
+PASS  desktop layout 1280x800, Jump to latest is on screen when away from the newest turn
+PASS  desktop layout 1280x800, Jump to latest returns to the newest turn
+PASS  desktop layout 1280x800, the Menu popover opens and each action (Notifications, Export Markdown, Export PDF, Sign out) is reachable  — []
+PASS  desktop layout 1280x800, Escape closes the Menu popover
+PASS  desktop layout 1280x800, a press shows the capability reason, and it covers no text  — reason 268x27px, covers []
+PASS  desktop layout 1280x800, Escape puts the reason away
+PASS  desktop layout 1280x800, no console error, CSP violation or off-origin request  — []
+PASS  desktop layout 1024x700, newest turn
+PASS  desktop layout 1024x700, a third of the way up
+PASS  desktop layout 1024x700, mid history
+PASS  desktop layout 1024x700, near the top
+PASS  desktop layout 1024x700, top of the loaded history
+PASS  desktop layout 1024x700, Jump to latest is on screen when away from the newest turn
+PASS  desktop layout 1024x700, Jump to latest returns to the newest turn
+PASS  desktop layout 1024x700, the Menu popover opens and each action (Notifications, Export Markdown, Export PDF, Sign out) is reachable  — []
+PASS  desktop layout 1024x700, Escape closes the Menu popover
+PASS  desktop layout 1024x700, a press shows the capability reason, and it covers no text  — reason 268x27px, covers []
+PASS  desktop layout 1024x700, Escape puts the reason away
+PASS  desktop layout 1024x700, no console error, CSP violation or off-origin request  — []
+PASS  desktop layout 700x700, newest turn
+PASS  desktop layout 700x700, a third of the way up
+PASS  desktop layout 700x700, mid history
+PASS  desktop layout 700x700, near the top
+PASS  desktop layout 700x700, top of the loaded history
+PASS  desktop layout 700x700, Jump to latest is on screen when away from the newest turn
+PASS  desktop layout 700x700, Jump to latest returns to the newest turn
+PASS  desktop layout 700x700, the Menu popover opens and each action (Notifications, Export Markdown, Export PDF, Sign out) is reachable  — []
+PASS  desktop layout 700x700, Escape closes the Menu popover
+PASS  desktop layout 700x700, a press shows the capability reason, and it covers no text  — reason 268x27px, covers []
+PASS  desktop layout 700x700, Escape puts the reason away
+PASS  desktop layout 700x700, no console error, CSP violation or off-origin request  — []
+PASS  desktop layout 641x800, newest turn
+PASS  desktop layout 641x800, a third of the way up
+PASS  desktop layout 641x800, mid history
+PASS  desktop layout 641x800, near the top
+PASS  desktop layout 641x800, top of the loaded history
+PASS  desktop layout 641x800, Jump to latest is on screen when away from the newest turn
+PASS  desktop layout 641x800, Jump to latest returns to the newest turn
+PASS  desktop layout 641x800, the Menu popover opens and each action (Notifications, Export Markdown, Export PDF, Sign out) is reachable  — []
+PASS  desktop layout 641x800, Escape closes the Menu popover
+PASS  desktop layout 641x800, a press shows the capability reason, and it covers no text  — reason 268x27px, covers []
+PASS  desktop layout 641x800, Escape puts the reason away
+PASS  desktop layout 641x800, no console error, CSP violation or off-origin request  — []
+
+48/48 checks passed; screenshots in <scratch>/ci138/desktop-layout
+### ONLY=starting-card
+# 138.0.7204.94 (Chromium), bundle Block-ghVPMZVq.js, Chart-Bal8YJ_G.js, ci-info-Bauk7qhZ.js, index-BJf6Wwq-.js, rolldown-runtime-BWaJ3C7D.js
+PASS  starting card, desktop: inside the conversation area, covers nothing, its tag is decorative  — {"inPane":true,"clash":false,"tagHidden":true,"textInside":true,"overflowX":0}
+PASS  starting card, phone: inside the conversation area, covers nothing, its tag is decorative  — {"inPane":true,"clash":false,"tagHidden":true,"textInside":true,"overflowX":0}
+
+2/2 checks passed; screenshots in <scratch>/ci138/starting-card
+### ONLY=images
+# 138.0.7204.94 (Chromium), bundle Block-ghVPMZVq.js, Chart-Bal8YJ_G.js, ci-info-Bauk7qhZ.js, index-BJf6Wwq-.js, rolldown-runtime-BWaJ3C7D.js
+PASS  images desktop: a failed upload shows Retry and Remove, and blocks Send
+PASS  images desktop: removing the failed image clears the block
+PASS  images desktop: two images attach and become ready
+PASS  images desktop: the desktop layout holds with images attached
+PASS  images desktop: Remove deletes the asset on the server and keeps the other
+PASS  images desktop: Send posts the text with exactly the remaining image id (and an idempotency key)  — {"chat":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","input":"what is in this picture?","imageAssetIds":["6def60706985b8ce1c9f3c731473e6cd"],"key":"web-48adba34-1ae4-439c-b206-53406e51aec5"}
+PASS  images desktop: the composer and the strip are empty after Send, and the reply is shown as completed  — {"strip":0,"draft":"","reply":"turn assistant | ASSISTANT Received 1 image(s) and: what is in this picture? Regenerate","live":0}
+PASS  images desktop: no console error or CSP violation other than the known blocked blob: thumbnail (3 blocked) and the deliberate 415  — []
+PASS  images phone: a failed upload shows Retry and Remove, and blocks Send
+PASS  images phone: removing the failed image clears the block
+PASS  images phone: two images attach and become ready
+PASS  images phone: the phone layout holds with images attached (targets, overlaps, hit-tests, overflow)
+PASS  images phone: Remove deletes the asset on the server and keeps the other
+PASS  images phone: Send posts the text with exactly the remaining image id (and an idempotency key)  — {"chat":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","input":"what is in this picture?","imageAssetIds":["7cae02e1813e03dc0a1b021ec8bb503f"],"key":"web-af5316ba-11bf-4ff4-9772-3bbf271cbb21"}
+PASS  images phone: the composer and the strip are empty after Send, and the reply is shown as completed  — {"strip":0,"draft":"","reply":"turn assistant | ASSISTANT Received 1 image(s) and: what is in this picture? Regenerate","live":0}
+PASS  images phone: a TAP (no hover, no focus) shows the capability reason, and it covers no text  — reason 281x27 covers []
+PASS  images phone: no console error or CSP violation other than the known blocked blob: thumbnail (3 blocked) and the deliberate 415  — []
+
+17/17 checks passed; screenshots in <scratch>/ci138/images

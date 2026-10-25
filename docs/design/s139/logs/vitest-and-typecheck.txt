@@ -1,0 +1,16 @@
+
+> antares-web@0.0.0 typecheck
+> tsc --noEmit
+
+
+ RUN  v5.0.5 /home/ubuntu/antares-wt/s139-retro-ui/web
+
+
+ Test Files  50 passed (50)
+      Tests  547 passed (547)
+   Start at  13:19:25
+   Duration  61.25s (tests 56%, environment 30%, import 13%, transform 1%, worker 1%)
+
+    Isolate  50 workers spawned · ~460ms startup each (spawn + environment, per file)
+             at least ~22.52s faster with isolate: false — reuses workers across files instead of one per file
+

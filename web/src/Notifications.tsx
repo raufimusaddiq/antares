@@ -55,7 +55,7 @@ export function Notifications() {
 
   return (
     <div className="notify">
-      <button type="button" className="quiet" aria-expanded={open} onClick={() => setOpen(!open)}>
+      <button type="button" className="quiet" data-icon="bell" aria-expanded={open} onClick={() => setOpen(!open)}>
         Notifications
       </button>
       {open && (

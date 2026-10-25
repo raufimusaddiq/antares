@@ -30,63 +30,76 @@ CSP retains `default-src 'none'`, with exactly `worker-src 'self'` and `manifest
 `internal/server/server_test.go` pins the complete policy, including the offline document. The worker and
 manifest revalidate; the app document and API responses retain `no-store`.
 
-## Liquid Glass styling
+## Visual contract (#139)
 
-All styling lives in `src/styles.css`. The material is CSS only (`backdrop-filter` blur + saturate,
-translucent fills, a 1px specular top edge, layered shadows). It is not refraction; CSS cannot do that.
-It is also not one pane of glass: there are four tiers, each with its own fill, edge, specular
-highlight, blur and shadow tokens.
+All styling lives in `src/styles.css` (plus `src/media.css` for image attachments, restyled in a later stage of #139). The look is
+flat and retro: tinted paper, one saturated action colour, one highlighter colour, a few meaningful pastels, hard offset shadows,
+crisp ink outlines **only where a box means something**. It is not glass: there is no blur, no translucent tier, no ambient layer,
+no gradient surface. `src/cssContract.test.ts` pins this (see "What is tested").
 
-| Tier | Tokens | Used for | Why |
-| --- | --- | --- | --- |
-| chrome | `--chrome-*` | top bar, sidebar (a chip strip on narrow screens) | Thinnest and most transparent; it frames the page and should recede. Almost no shadow. |
-| raised | `--raised-*`, `--control-shadow` | composer, user turns, buttons, account card | Medium fill, strongest specular edge, contact + mid + wide shadow and an outer rim: these are the things that hover. |
-| rest | `--rest-*` | assistant turns | A resting surface the text sits on: lighter and less opaque than raised, one contact shadow, no lift. Its text column is capped at 68ch. Contrast is measured against the real backdrop (the ambient fields and rings) rather than assumed; if a change breaks AA, opacity goes back here. |
-| solid | `--solid-*` | code blocks, generated-UI cards | Near-opaque on purpose: dense or structured content never depends on what is behind it. |
+**Composition.**
 
-The specular edge is a 1px `linear-gradient` background layer on the top edge that fades out towards the
-corners. Elevation is physical: a tight contact shadow, a mid shadow and a wide soft one. Only the
-composer carries the full stack, because it is the one pane that sits above the transcript.
+- *Wide screen:* a left rail beside the conversation. Brand on top, the conversation list in the middle (numbered tiles, three
+  pastels in turn; the open one is a filled pill), the account (address, Menu) at the bottom. The Menu opens an actions popover
+  upward. There is no top bar. The header element is `display: contents` here, so its two children, `.brand` and `.account`, are
+  grid items of `.chat-app` (areas `brand` / `side` / `account` / `pane`); the rail's tinted dotted backdrop is `.chat-app::before`.
+- *Phone (max 40rem):* one slim header row (mark, address, Menu), a one-line conversation strip (chips are a 32px pill inside a
+  44px hit area), the conversation, an `Options` toggle, a one-row dock (attach, camera, message, send). Options opens a
+  periwinkle panel. The header is a flex row here and the account actions open as a panel over the log.
+- *Reading:* the assistant's answer is open text on the page (tag: mono caps and a small star tile). The user's message is the
+  headline: large, tight, with a marker stroke behind its first line, no box. Code is an ink block, tables are two ink rules, a
+  badge is a tilted sticker.
+- *Boxed, on purpose:* the composer dock (2px outline, hard shadow), generated-UI (OpenUI) cards, notices (status marigold, alert
+  blush), popovers and panels, the starting card (`.hero`, the empty conversation) and the status-screen account card.
+- *Note above the history* ("Start of the conversation", "Scroll up for older messages") is the first row of the log, **in the flow**
+  (never sticky, fixed or absolute), so it cannot cover text. `scripts/browser-check.mjs` (`ONLY=desktop-layout`) tests every text
+  node in the log against it at every scroll position, with no exemption.
 
-**Ambient layer, both themes.** Glass needs something behind it to refract: a translucent surface over a
-uniform background is indistinguishable from an opaque one. `body::before` holds four large, low-alpha neutral
-fields (`--amb-hi|side|lo|mid`) and `body::after` two soft rings. They are fixed, inert and static. Each field is
-an eased multi-stop falloff sized in `vmax`, so its edge always lies beyond the viewport.
+**Tokens** (`:root`, redefined under `prefers-color-scheme: dark` with the same names): `--canvas` `--rail` `--card` `--ink`
+`--ink-2` `--hair`; `--cobalt` / `--cobalt-ink` (send, sign-in, the live-run bar); `--mark` / `--mark-ink` (the highlighter,
+stickers, hover, status notices); `--peri` `--mint` `--blush` (panels and tiles, by meaning); `--code`; `--focus` / `--focus-halo`;
+`--r-sm|md|lg|pill`; `--hard` / `--hard-sm` (the offset shadow). Light: canvas `#f0f2f7`, ink `#11142b`, cobalt `#2b50ff`,
+marigold `#ffc93c`. Dark: canvas `#0d1024`, ink `#eef0ff`, cobalt `#7c93ff`. Every text pair is at least 4.5:1 in both themes
+(`cssContract.test.ts` computes them). Type: `--font-ui` and `--font-display` are Space Grotesk Variable (self-hosted); `--font-mono`
+is the system monospace (tags, labels, table heads, code). No new font file was added. In dark, the marker is a translucent block
+behind light text (`--marker-ink`), because dark text above a stripe would vanish on the dark page.
 
-- Dark: `--bg-base: #08090b` (near-black, cool cast) lit by grey and blue-grey fields.
-- Light: `--bg-base: #eceff3` (off-white) with soft blue-grey fields and one white highlight, low in contrast so it
-  reads as paper with depth. Light glass fills are real translucency (0.3 chrome, 0.46 raised, 0.4 rest), not
-  near-opaque, so the blur does visible work.
+**Icons.** 16 small stroke icons, painted with a CSS mask in `currentColor` from `public/icons/*.svg`, switched on by a
+`data-icon` attribute on the button (`[data-icon="plus"]` and so on). They are decorative: the accessible name is always the
+button's own text. On a phone and in a narrow window the attach and camera labels are visually hidden (`.btn-label`) and stay the
+names. **The CSP is `img-src 'self'`, so every `url()` in the stylesheet is a same-origin file under `/icons` or `/fonts`; a
+`data:` URI is blocked in production and the contract test rejects one.** (A mask of an SVG that works in a CSP-less preview
+does not work in the shipped page.)
 
-The palette is monochrome after `target-mindful.png`. The one accent is the reference's play-button white
-(near-black in light) on the send action, the sign-in action and the live-run bar. Notices are inverted
-(light on dark, dark on light) instead of coloured.
+**Capability reasons** (Regenerate / Edit / Rewind, which the backend cannot do) are mono text with a dotted underline. The reason
+is always in the document and is the button's `aria-describedby`; a **press** (tap or click) shows it in the flow under the controls
+(and keyboard focus or a mouse hover does too), and Escape or a press elsewhere puts it away. A press never performs an action: the
+button stays `aria-disabled`. iOS Safari does not focus a tapped button and has no hover, which is why a press, not `:focus` or
+`:hover`, is the contract.
 
-Other tokens, under `:root` and redefined for `prefers-color-scheme: light` with the same names:
-`--text`, `--text-2`, `--accent` (send action and live-run bar only), `--primary` (sign-in action),
-`--focus`, `--focus-halo`, `--warn-*`, `--r-sm|md|lg|pill`, `--gap`.
+Accessibility fallbacks reassign tokens at the end of the file; the selectors do not change:
 
-Accessibility fallbacks reassign tokens at the end of the file, the selectors do not change:
-
-- `prefers-reduced-transparency: reduce`: every tier becomes a solid surface, no blur or sheen.
-- `prefers-contrast: more`: solid surfaces, 2px full-contrast borders, no shadows, no ambient colour, secondary text promoted to primary.
+- `prefers-contrast: more`: `--hair` and `--ink-2` become `--ink`, thicker underlines.
 - `prefers-reduced-motion: reduce`: transitions and the streaming bar animation stop.
-- `@supports not (backdrop-filter)`: solid surfaces.
+- Focus is a two-tone ring (`--focus` outline, `--focus-halo` outer ring) on every surface. The CSP forbids inline `style`
+  attributes, so state is expressed with classes and `data-*`.
 
-Focus uses a two-tone ring (`--focus` outline, `--focus-halo` outer ring) so it shows on every tier and
-on the accent button. Icons are inline SVG with `currentColor` strokes. The CSP forbids inline `style`
-attributes, so state is expressed with classes.
+**What is tested.** `src/cssContract.test.ts` (flat surfaces, CSP-safe assets, tokens in both themes, contrast),
+`src/TurnControls.test.tsx` (tap shows the reason), `src/ShellMarkup.test.tsx` (the markup the grid relies on), and in a real browser
+`scripts/browser-check.mjs`: `ONLY=mobile-layout` (phone), `ONLY=desktop-layout` (rail, hit-tests, overlaps, popover, the note and a
+shown reason against every text node), `ONLY=starting-card`, `ONLY=images` (attach, retry, remove, send, and a touch tap on a
+reason). `docs/runbooks/mobile-check.md` has the details and the limits.
 
 ## Brand, type and social card
 
 - **Mark:** `src/brand/AntaresMark.tsx` (B · Rival), generated from `docs/design/logo/b-rival.svg`, `currentColor`, `size` prop.
-  The top bar lifts it 1.2px so its centre matches the wordmark's cap-centre (measured at 3x).
+  It sits on a marigold tile in the brand row.
 - **Assets:** `public/` holds the favicon set, `og.png` (1200x630) and the fonts. Regenerate the icons and card with
   `python3 docs/design/logo/assets.py` (one-shot, needs the Python `playwright` package; not an app dependency).
-- **Type:** `--font-ui` is Inter Variable, `--font-display` is Space Grotesk Variable (status headline and empty-state note
-  only), `--font-mono` is the system monospace. Both faces are self-hosted latin subsets under `public/fonts/` (OFL texts
-  alongside), `font-display: swap`, each with an Arial-matched fallback face (`size-adjust` and ascent/descent overrides
-  measured from the font files). There is no remote font host.
+- **Type:** `--font-ui` and `--font-display` are Space Grotesk Variable, `--font-mono` is the system monospace. The face is a
+  self-hosted latin subset under `public/fonts/` (OFL text alongside), `font-display: swap`, with an Arial-matched fallback face
+  (`size-adjust` and ascent/descent overrides measured from the font files). There is no remote font host. The Inter file in
+  `public/fonts/` is no longer referenced by the stylesheet or the preload; it is removed with the PWA/brand stage of #139.
 - **CSP:** the shell's Content-Security-Policy carries `font-src 'self'` and `media-src blob:` (the latter lets the recorder preview play; `default-src` stays `'none'`) (`internal/server/server.go`, pinned in
   `server_test.go`), so the two woff2 files and the preload are allowed and nothing is fetched from another origin.
 - **Bundle guard:** `scripts/stamp.mjs` hashes `src/` and `public/` (and `internal/webui/webui_test.go` mirrors both), so

@@ -159,7 +159,7 @@ export function SearchPanel({ current, onOpen }: { current: string | null; onOpe
 
   return (
     <section className={open ? "search open" : "search"} aria-label="Search conversations">
-      <button type="button" className="quiet search-toggle" aria-expanded={open} aria-controls="search-body" onClick={() => setOpen((o) => !o)}>
+      <button type="button" className="quiet search-toggle" data-icon="search" aria-expanded={open} aria-controls="search-body" onClick={() => setOpen((o) => !o)}>
         {open ? "Close search" : "Search"}
       </button>
       <div id="search-body" className="search-body">

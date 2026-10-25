@@ -134,12 +134,12 @@ export function Screen({ view, onRefresh, onSignOut, signOutFailed }: Props) {
         </>
       )}
       {c.refresh && (
-        <button type="button" className="quiet" onClick={onRefresh}>
+        <button type="button" className="quiet" data-icon="regenerate" onClick={onRefresh}>
           Refresh
         </button>
       )}
       {account && (
-        <button type="button" className="quiet" onClick={onSignOut}>
+        <button type="button" className="quiet" data-icon="logout" onClick={onSignOut}>
           Sign out
         </button>
       )}

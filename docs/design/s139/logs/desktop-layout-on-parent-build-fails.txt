@@ -1,0 +1,22 @@
+# 148.0.7778.96 (Chromium), bundle Block-ClWmf5OS.js, Chart-BNvztZxQ.js, ci-info-Bauk7qhZ.js, index-NuNmCdFC.js, rolldown-runtime-BWaJ3C7D.js
+FAIL  desktop layout 1280x800, newest turn  — target below 24px: EveryoneYouAssistant, INPUT, Usage unknown, My templates; rail regions overlap: null; Menu is not reachable on screen; the note above the history sits on message text: Paragraph 4 of answer 49
+FAIL  desktop layout 1280x800, a third of the way up  — target below 24px: EveryoneYouAssistant, INPUT, Usage unknown, My templates; rail regions overlap: null; Menu is not reachable on screen; the note above the history sits on message text: Paragraph 4 of answer 49
+FAIL  desktop layout 1280x800, mid history  — target below 24px: EveryoneYouAssistant, INPUT, Usage unknown, My templates; rail regions overlap: null; Menu is not reachable on screen; the note above the history is sticky: it must be in the flow
+FAIL  desktop layout 1280x800, near the top  — target below 24px: EveryoneYouAssistant, INPUT, Usage unknown, My templates; rail regions overlap: null; Menu is not reachable on screen; the note above the history sits on message text: Paragraph 2 of answer 47
+FAIL  desktop layout 1280x800, top of the loaded history  — target below 24px: EveryoneYouAssistant, INPUT, Usage unknown, My templates; rail regions overlap: null; Menu is not reachable on screen; the note above the history sits on message text: Paragraph 1 of answer 44
+PASS  desktop layout 1280x800, Jump to latest is on screen when away from the newest turn
+PASS  desktop layout 1280x800, Jump to latest returns to the newest turn
+node:internal/modules/run_main:122
+    triggerUncaughtException(
+    ^
+
+locator.click: Timeout 30000ms exceeded.
+Call log:
+[2m  - waiting for getByRole('button', { name: 'Menu' })[22m
+
+    at desktopLayout (/home/ubuntu/antares-wt/s139-retro-ui/scripts/browser-check.mjs:631:16)
+    at /home/ubuntu/antares-wt/s139-retro-ui/async file:/home/ubuntu/antares-wt/s139-retro-ui/scripts/browser-check.mjs:816:43 {
+  name: 'TimeoutError'
+}
+
+Node.js v22.14.0

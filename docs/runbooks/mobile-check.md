@@ -50,3 +50,35 @@ top fails it), and with the account menu open, in both the scratch-server and th
 button (Notifications, Export Markdown, Export PDF, Admin, Sign out) with a capture listener that records which control it reached and
 stops it (nothing runs, Sign out included), keyboard closed and open. The header needs its own `z-index` because its backdrop filter
 makes it a stacking context.
+
+## Desktop layout, the note above the history, capability reasons and images (#139)
+
+All four run in CI against the mock backend in `scripts/browser-check.mjs` (same `CHROME`, `PLAYWRIGHT_CORE`), in the job
+`mobile layout (real browser)`:
+
+```sh
+ONLY=desktop-layout node scripts/browser-check.mjs --out <dir>   # 1280x800, 1024x700, 700x700, 641x800
+ONLY=starting-card  node scripts/browser-check.mjs --out <dir>   # the empty-conversation card, desktop and phone
+ONLY=images         node scripts/browser-check.mjs --out <dir>   # attach / retry / remove / send, desktop and phone, plus a touch tap
+```
+
+`desktop-layout` fails on: horizontal overflow or a scrolling page; a control under 24px (WCAG 2.2 target size; closed `<details>`
+content is not rendered, so it is not counted); a control covered by another element (hit-test of its centre); overlapping
+controls; the brand / conversation list / account overlapping, or the pane not beside the rail; New chat, Menu, Attach image or
+Send not on screen; a composer dock outside the viewport; **the note above the history sitting on message text or being
+`sticky`/`fixed`/`absolute`** (every text node in the log is tested against the note at the newest turn, a third of the way up, mid
+history, near the top and at the top of the loaded history: there is no exemption list); the Menu popover not opening, an action in it
+not reachable, or Escape not closing it; a pressed capability reason not showing, covering any text, or Escape not putting it away.
+
+`images` drives the real attach input with synthetic files against a mock that implements `POST /api/assets`, `DELETE /api/assets/{id}`,
+`POST /api/chats/{id}/messages` (recording the body and `Idempotency-Key`) and a completing run stream. It proves: a failed upload shows
+Retry and Remove and blocks Send; removing it clears the block; two images become ready; Remove tells the server and keeps the other;
+Send posts the text with exactly the remaining asset id; the composer and strip empty and the reply shows as completed (not partial, failed
+or cancelled); the phone layout verdicts hold with images attached; and on the phone a **touch tap** (no hover, no focus) shows the
+capability reason without covering text. It also reports every CSP / console message: the only ones allowed are the deliberate 415 and the
+**known, pre-existing** `img-src 'self'` block of the attached-image `blob:` thumbnail (see the PR for #139); anything else fails.
+
+`DIST=<dir>` runs the same checks against another build, e.g. the parent commit's `internal/webui/dist`, which is how the note-on-text
+check was shown to fail before the fix (`Paragraph 4 of answer 49` under the note).
+
+What none of this proves: a real iOS/Android browser, keyboard, safe areas, or a camera; the mock has no model. Say "mock browser", not "device".
