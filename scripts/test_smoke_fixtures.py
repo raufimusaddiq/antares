@@ -43,6 +43,11 @@ FAKE_SMOKE = textwrap.dedent('''
         h = hashlib.sha256(os.environ["ANTARES_SMOKE_COOKIE_" + name].encode()).hexdigest()
         return conn.execute("SELECT user_id FROM app_sessions WHERE token_hash=?", (h,)).fetchone()[0]
     st = json.load(open(state))
+    if mode.startswith("orphan"):  # a child in the same group that ignores SIGTERM
+        import subprocess
+        subprocess.Popen([sys.executable, "-c", "import os,signal,time,sys;signal.signal(signal.SIGTERM,signal.SIG_IGN);"
+                          "open(sys.argv[1],'w').write(str(os.getpid()));time.sleep(60)", state + ".child"])
+        while not os.path.exists(state + ".child") or not open(state + ".child").read(): time.sleep(0.05)
     for name in ("ADMIN", "A", "B"):
         u, slug, i = uid(name), "u_" + uuid.uuid4().hex[:12], uuid.uuid4().hex
         t = "2026-10-25T00:00:00.000000000Z"
@@ -59,6 +64,8 @@ FAKE_SMOKE = textwrap.dedent('''
     conn.execute("INSERT INTO approvals (id,target_user_id,actor_user_id,action,created_at) VALUES (?,?,?, 'approve',?)",
                  (uuid.uuid4().hex, uid("A"), admin, "2026-10-25T00:00:00.000000000Z"))
     json.dump(st, open(state, "w"))
+    if mode == "orphan-sleep":
+        open(state + ".started", "w").close(); time.sleep(120)
     if mode == "sleep":
         open(state + ".started", "w").close(); time.sleep(120)
     sys.exit({"pass": 0, "fail": 1}.get(mode, 0))
@@ -178,6 +185,25 @@ class Run(Env):
         self.assertEqual(code, 1, out)
         self.assertOnlySeedLeft()
         self.assertEqual(json.loads((self.manifest()[0].parent / "result.json").read_text())["smoke"], "timeout")
+
+    def alive(self):
+        try:
+            os.kill(int(Path(self.state + ".child").read_text()), 0)
+            return True
+        except ProcessLookupError:
+            return False
+
+    def test_a_child_outliving_the_wrapper_is_stopped_before_cleanup(self):
+        code, out = self.run_smoke("orphan")  # the wrapper exits 0 at once; its child ignores SIGTERM
+        self.assertEqual(code, 0, out)
+        self.assertFalse(self.alive(), "a smoke descendant survived the cleanup")
+        self.assertOnlySeedLeft()
+
+    def test_a_child_that_ignores_sigterm_does_not_survive_a_timeout(self):
+        code, out = self.run_smoke("orphan-sleep", "--timeout", "3")  # the wrapper dies on SIGTERM, the child does not
+        self.assertEqual(code, 1, out)
+        self.assertFalse(self.alive(), "a smoke descendant survived the cleanup")
+        self.assertOnlySeedLeft()
 
     def test_manifest_exists_before_the_first_fixture_row(self):
         seen = {}

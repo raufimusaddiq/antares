@@ -434,6 +434,28 @@ def _raise_interrupted(signum, _frame):
     raise Interrupted(signal.Signals(signum).name)
 
 
+def stop_group(proc):
+    """End every process of the smoke's group, whether or not its leader is still alive: a wrapper that exited
+    or died on SIGTERM can leave children that keep provisioning after the cleanup."""
+    def members():
+        proc.poll()  # reap the leader, or a zombie keeps the group looking alive
+        try:
+            os.killpg(proc.pid, 0)
+            return True
+        except ProcessLookupError:
+            return False
+    for sig, grace in ((signal.SIGTERM, 10.0), (signal.SIGKILL, 10.0)):
+        if not members():
+            return
+        try:
+            os.killpg(proc.pid, sig)
+        except ProcessLookupError:
+            return
+        end = time.monotonic() + grace
+        while members() and time.monotonic() < end:
+            time.sleep(0.05)
+
+
 def leftover_manifests(workdir):
     for p in sorted(Path(workdir).glob("run-*/manifest.json")):
         try:
@@ -476,17 +498,8 @@ def run(args, smoke_argv):
     finally:
         for s in old:  # cleanup must not be cut short by a second signal
             signal.signal(s, signal.SIG_IGN)
-        if proc is not None and proc.poll() is None:
-            for sig in (signal.SIGTERM, signal.SIGKILL):
-                try:
-                    os.killpg(proc.pid, sig)
-                except ProcessLookupError:
-                    break
-                try:
-                    proc.wait(timeout=10)
-                    break
-                except subprocess.TimeoutExpired:
-                    continue
+        if proc is not None:
+            stop_group(proc)
         code, rep = cleanup(args.db, path, hermes, args.recheck, args.recheck_interval)
         result["cleanup"] = rep
         for s, h in old.items():
