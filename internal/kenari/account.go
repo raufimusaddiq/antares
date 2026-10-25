@@ -14,11 +14,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"sync"
 	"time"
+
+	"github.com/raufimusaddiq/antares/internal/config"
 )
 
 // DefaultAccountBase is the origin the account endpoints are read from.
@@ -121,7 +125,7 @@ type AccountSnapshot struct {
 // Account is the cached reader. Zero value is not usable: use NewAccount.
 type Account struct {
 	base string
-	key  string
+	key  config.Secret // redacts under every verb, encoder and logger; read only for the header
 	hc   *http.Client
 	now  func() time.Time
 
@@ -134,17 +138,29 @@ type Account struct {
 // NewAccount returns a reader of base using key. An empty key gives a reader whose Snapshot is
 // ErrNotConfigured and which never makes a request. Redirects are refused so the Authorization
 // header cannot follow one elsewhere.
-func NewAccount(base string, key []byte, hc *http.Client) *Account {
+func NewAccount(base string, key config.Secret, hc *http.Client) *Account {
 	if hc == nil {
 		hc = &http.Client{Timeout: fetchTime}
 	}
 	cp := *hc
 	cp.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
-	return &Account{base: base, key: string(key), hc: &cp, now: time.Now}
+	return &Account{base: base, key: key, hc: &cp, now: time.Now}
 }
 
+// fmt reaches an unexported field by reflection and never calls its Format method, so a
+// config.Secret field alone still prints its bytes in a struct dump. These make the Account itself
+// render without the key under every verb, encoder and logger.
+const redacted = "kenari.Account{[redacted]}"
+
+func (*Account) String() string               { return redacted }
+func (*Account) GoString() string             { return redacted }
+func (*Account) Format(f fmt.State, _ rune)   { _, _ = io.WriteString(f, redacted) }
+func (*Account) MarshalJSON() ([]byte, error) { return []byte(`"` + redacted + `"`), nil }
+func (*Account) MarshalText() ([]byte, error) { return []byte(redacted), nil }
+func (*Account) LogValue() slog.Value         { return slog.StringValue(redacted) }
+
 // Configured reports whether a key is held.
-func (a *Account) Configured() bool { return a != nil && a.key != "" }
+func (a *Account) Configured() bool { return a != nil && len(a.key) > 0 }
 
 // Snapshot returns the account figures. A read is made when none is held, the held one is older than
 // a minute, or refresh asks; attempts are spaced 15 seconds apart whatever the caller does. When a
@@ -202,7 +218,7 @@ func fetchSection[T any](ctx context.Context, a *Account, path string, decode fu
 		return Section[T]{State: StateUnavailable}
 	}
 	req.Header.Set("Accept", "application/json")
-	req.Header.Set("Authorization", "Bearer "+a.key)
+	req.Header.Set("Authorization", "Bearer "+string(a.key))
 	resp, err := a.hc.Do(req)
 	if err != nil {
 		return Section[T]{State: StateUnavailable}

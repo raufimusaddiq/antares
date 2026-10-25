@@ -3,8 +3,11 @@ package kenari
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -12,6 +15,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/raufimusaddiq/antares/internal/config"
 )
 
 // testdata/account/*.json carry the response shapes Kenari documents (https://kenari.id/docs/account-balance,
@@ -56,7 +61,7 @@ func newFake(t *testing.T) (*fakeKenari, *Account) {
 		w.Write(b)
 	}))
 	t.Cleanup(srv.Close)
-	a := NewAccount(srv.URL, []byte(fakeKey), nil)
+	a := NewAccount(srv.URL, config.Secret(fakeKey), nil)
 	return f, a
 }
 
@@ -217,7 +222,7 @@ func TestAccountRefusesRedirectsSoTheKeyStaysPut(t *testing.T) {
 		http.Redirect(w, r, target.URL+r.URL.Path, http.StatusFound)
 	}))
 	defer srv.Close()
-	a := NewAccount(srv.URL, []byte(fakeKey), nil)
+	a := NewAccount(srv.URL, config.Secret(fakeKey), nil)
 	_, err := a.Snapshot(context.Background(), false)
 	if other != 0 || !errors.Is(err, ErrUnavailable) {
 		t.Errorf("redirect target hit %d times, err %v", other, err)
@@ -236,5 +241,31 @@ func TestAccountKeyNeverAppearsInViewsOrFormatting(t *testing.T) {
 	}
 	if s.Usage.Code != "shared_key_not_allowed" {
 		t.Errorf("usage code = %q", s.Usage.Code)
+	}
+}
+
+// #157: the held key is a config.Secret, so no rendering of the Account itself (verbs, encoders, slog,
+// error wrapping, a struct dump) can carry it, whatever a future caller does with the value.
+func TestAccountValueNeverRendersTheKey(t *testing.T) {
+	_, a := newFake(t)
+	if _, err := a.Snapshot(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	for _, v := range []any{a, &a} {
+		for _, verb := range []string{"%v", "%+v", "%#v", "%s", "%q", "%x", "%X", "%d"} {
+			fmt.Fprintf(&out, verb+"\n", v)
+		}
+		fmt.Fprintln(&out, v)
+		fmt.Fprint(&out, v)
+	}
+	out.WriteString(fmt.Errorf("wrapped: %w (%v)", errors.New("x"), a).Error())
+	slog.New(slog.NewJSONHandler(&out, nil)).Info("dump", "account", a)
+	slog.New(slog.NewTextHandler(&out, nil)).Info("dump", "account", a)
+	if j, err := json.Marshal(a); err == nil {
+		out.Write(j)
+	}
+	if strings.Contains(out.String(), fakeKey) || strings.Contains(out.String(), hex.EncodeToString([]byte(fakeKey))) {
+		t.Fatalf("the key is renderable from the Account value:\n%s", out.String())
 	}
 }
