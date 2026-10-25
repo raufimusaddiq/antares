@@ -83,10 +83,12 @@ type Catalogue struct {
 	hc  *http.Client
 	now func() time.Time
 
-	mu      sync.Mutex
-	models  []Model
-	byID    map[string]Model
-	fetched time.Time
+	mu        sync.Mutex
+	models    []Model
+	byID      map[string]Model
+	fetched   time.Time
+	attempted time.Time // last read attempt, successful or not
+	failing   bool      // the latest attempt failed; cleared by a successful read
 }
 
 // New returns a catalogue reading url. A nil client gets a bounded default; redirects are
@@ -128,29 +130,34 @@ func (c *Catalogue) List(ctx context.Context) ([]Model, error) {
 	return m, err
 }
 
-// Snapshot returns the rows, when Kenari was last read, and whether the rows are older than the
-// freshness window because the latest read failed (stale). refresh asks for a new read now, honoured
-// at most once per refreshEvery; a failed read keeps the last answer for up to staleFor, marked stale.
+// Snapshot returns the rows, when Kenari was last read successfully, and whether the rows are stale:
+// older than the freshness window, or the latest attempt to read failed. The stale state holds until a
+// read succeeds. refresh asks for a new read now. Every attempt, failed or not, is spaced refreshEvery
+// apart, so an outage cannot make each caller hit Kenari while holding the catalogue lock. A failed
+// attempt keeps the last answer for up to staleFor, marked stale.
 func (c *Catalogue) Snapshot(ctx context.Context, refresh bool) (models []Model, fetched time.Time, stale bool, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	age := c.now().Sub(c.fetched)
-	if c.models != nil && age < freshFor && (!refresh || age < refreshEvery) {
-		return c.models, c.fetched, false, nil
-	}
-	rows, ferr := c.fetch(ctx)
-	if ferr != nil {
-		if c.models != nil && age < staleFor {
-			return c.models, c.fetched, true, nil
+	now := c.now()
+	age := now.Sub(c.fetched)
+	due := c.models == nil || age >= freshFor || refresh
+	if due && (c.attempted.IsZero() || now.Sub(c.attempted) >= refreshEvery) {
+		c.attempted = now
+		rows, ferr := c.fetch(ctx)
+		if ferr == nil {
+			c.models, c.fetched, c.failing = rows, c.now(), false
+			c.byID = make(map[string]Model, len(rows))
+			for _, m := range rows {
+				c.byID[m.ID] = m
+			}
+			return rows, c.fetched, false, nil
 		}
+		c.failing = true
+	}
+	if c.models == nil || age >= staleFor {
 		return nil, time.Time{}, false, ErrUnavailable
 	}
-	c.models, c.fetched = rows, c.now()
-	c.byID = make(map[string]Model, len(rows))
-	for _, m := range rows {
-		c.byID[m.ID] = m
-	}
-	return rows, c.fetched, false, nil
+	return c.models, c.fetched, c.failing || age >= freshFor, nil
 }
 
 // load is the read every other lookup uses: cached inside the freshness window.

@@ -204,3 +204,35 @@ func TestSnapshotSaysWhenTheAnswerIsStale(t *testing.T) {
 		t.Fatalf("failed refresh: err %v stale %v rows %d", err, stale, len(models))
 	}
 }
+
+// #145 review: failed attempts are throttled too, and the failed state outlives the attempt.
+func TestOutageRefreshesAreThrottledAndStaleSticks(t *testing.T) {
+	var hits atomic.Int32
+	var fail atomic.Bool
+	c := fixtureServer(t, &hits, &fail)
+	now := time.Now()
+	c.now = func() time.Time { return now }
+	ctx := context.Background()
+	if _, _, _, err := c.Snapshot(ctx, false); err != nil || hits.Load() != 1 {
+		t.Fatalf("first read: %v %d", err, hits.Load())
+	}
+	fail.Store(true)
+	now = now.Add(refreshEvery + time.Second)
+	if _, _, stale, err := c.Snapshot(ctx, true); err != nil || !stale || hits.Load() != 2 {
+		t.Fatalf("failed refresh: err %v stale %v hits %d", err, stale, hits.Load())
+	}
+	for _, refresh := range []bool{true, false, true} {
+		if _, _, stale, err := c.Snapshot(ctx, refresh); err != nil || !stale || hits.Load() != 2 {
+			t.Fatalf("immediately after a failure (refresh=%v): err %v stale %v hits %d, want stale and no new upstream hit", refresh, err, stale, hits.Load())
+		}
+	}
+	now = now.Add(refreshEvery)
+	if _, _, stale, _ := c.Snapshot(ctx, true); !stale || hits.Load() != 3 {
+		t.Fatalf("after the throttle: stale %v hits %d", stale, hits.Load())
+	}
+	fail.Store(false)
+	now = now.Add(refreshEvery)
+	if _, _, stale, err := c.Snapshot(ctx, true); err != nil || stale || hits.Load() != 4 {
+		t.Fatalf("recovery: err %v stale %v hits %d", err, stale, hits.Load())
+	}
+}
