@@ -538,8 +538,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const [chatsCursor, setChatsCursor] = useState("");
   const [loadingChats, setLoadingChats] = useState(false);
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null); // the phone's home for the open chat's actions
+  const [relist, setRelist] = useState(0); // bumped to read the chat list again (a chat came back from the archive)
   const [archiveTick, setArchiveTick] = useState(0); // the archive is read again after a change that touches it
   const [searchEpoch, setSearchEpoch] = useState(0); // a rename or delete makes an open search's titles and hits stale
+  const chatsRef = useRef<ChatSummary[]>([]);
+  chatsRef.current = chats;
   const openTitle = useRef(""); // title of the open chat, kept when it leaves the list (archived)
   const [run, dispatch] = useReducer(runReducer, null);
   const [promptTick, setPromptTick] = useState(0);
@@ -946,6 +949,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         if (images.length > 0) releaseImages(); // admitted: the strip is done, the staged assets stay for the history thumbnails
         setPending(null);
         setChats((l) => l.map((x) => (x.id === chat ? { ...x, activeRunId: r.value.runId } : x)));
+        // A message into an archived chat makes it active on the server; it is not in this list yet, so read the list again.
+        if (!chatsRef.current.some((x) => x.id === chat)) {
+          setRelist((n) => n + 1);
+          setArchiveTick((n) => n + 1);
+        }
         setTurns((t) => [...t, { seq: t.length > 0 ? t[t.length - 1].seq + 1 : 0, role: "user", text: input, ...(images.length > 0 ? { attachments: images } : {}) }]);
         attach(r.value.runId, chat);
       } finally {
@@ -999,6 +1007,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     setChats(r.value.chats);
     setChatsCursor(r.value.nextCursor);
   }, []);
+
+  useEffect(() => {
+    if (relist > 0) void reloadChats();
+  }, [relist, reloadChats]);
 
   // Leave the open chat without opening another (it was deleted and nothing else is listed).
   const leaveChat = useCallback(() => {

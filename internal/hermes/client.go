@@ -173,7 +173,8 @@ func (c *Client) do(ctx context.Context, b Binding, method, path string, hdr map
 
 // send is do without the status mapping: it returns whatever Hermes answered, so a caller that
 // must tell two failures with the same status apart (a delete's 404) can read the body. The caller
-// closes the body. A redirect and a transport failure are still errors here.
+// closes the body. A transport failure is an error; a redirect is not followed (noRedirect) and arrives as an
+// ordinary 3xx response, which a caller maps like any other unexpected status (DeleteSession: HERMES_UNAVAILABLE).
 func (c *Client) send(ctx context.Context, b Binding, method, path string, hdr map[string]string, body any) (*http.Response, error) {
 	if !ValidSlug(b.Profile) || b.Key == "" {
 		return nil, fail(CodeTenantNotReady)

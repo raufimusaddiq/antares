@@ -193,6 +193,12 @@ func decodeChatCursor(s string) (*store.ChatCursor, bool) {
 		return nil, false
 	}
 	parts := strings.Split(string(raw), "\x00")
+	// A v1 cursor (before pinning existed) was issued from a list that had no pinned chats: its position is in the
+	// unpinned part, which is exactly what Pinned=false names. Accepting it keeps a cursor held across the deploy
+	// working; new cursors are always v2.
+	if len(parts) == 3 && parts[0] == "v1" && parts[1] != "" && idRE.MatchString(parts[2]) {
+		return &store.ChatCursor{UpdatedAt: parts[1], ID: parts[2]}, true
+	}
 	if len(parts) != 4 || parts[0] != "v2" || (parts[1] != "0" && parts[1] != "1") || parts[2] == "" || !idRE.MatchString(parts[3]) {
 		return nil, false
 	}

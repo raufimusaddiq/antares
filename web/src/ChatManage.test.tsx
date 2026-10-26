@@ -14,6 +14,7 @@ const api = vi.hoisted(() => ({
   getChat: vi.fn(),
   getMessages: vi.fn(),
   getRun: vi.fn(),
+  sendMessage: vi.fn(),
   getCapabilities: vi.fn(),
 }));
 
@@ -319,5 +320,30 @@ describe("delete", () => {
     fireEvent.click(within(openMenu("Gone")).getByRole("menuitem", { name: "Delete…" }));
     fireEvent.click(screen.getByRole("button", { name: "Delete" }));
     await waitFor(() => expect(rows()).toEqual(["Here"]));
+  });
+});
+
+describe("a message into an archived chat", () => {
+  it("brings the chat back into the list without a reload", async () => {
+    api.getCapabilities.mockResolvedValue(ok(inventory(true)));
+    const archivedChat = chat("c2", "Old talk", { archived: true });
+    let back = false;
+    api.listChats.mockImplementation((_c?: string, archived?: boolean) =>
+      Promise.resolve(ok({ chats: archived ? (back ? [] : [archivedChat]) : back ? [chat("c2", "Old talk"), chat("c1", "Live")] : [chat("c1", "Live")], nextCursor: "" })),
+    );
+    api.sendMessage.mockImplementation(() => {
+      back = true; // the server made it active when it admitted the message
+      return Promise.resolve(ok({ runId: "r1", status: "PENDING" }));
+    });
+    render(<Chat email={EMAIL} onSignOut={() => {}} />);
+    await waitFor(() => expect(rows()).toEqual(["Live"]));
+    fireEvent.click(screen.getByRole("button", { name: "Show archived" }));
+    const archive = await screen.findByRole("region", { name: "Archived conversations" });
+    fireEvent.click(await within(archive).findByText("Old talk"));
+    fireEvent.change(document.getElementById("composer-input")!, { target: { value: "hello again" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Send/ }));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+    await waitFor(() => expect(rows()).toEqual(["Old talk", "Live"]));
+    await waitFor(() => expect(within(screen.getByRole("region", { name: "Archived conversations" })).queryByText("Old talk")).toBeNull());
   });
 });

@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"encoding/base64"
 	"net/http/httptest"
 	"strings"
 	"testing"
@@ -725,8 +726,19 @@ func TestOverlappingDeleteCallsHermesOnceAndNeverReportsGone(t *testing.T) {
 	if n := a.count(t, `SELECT COUNT(*) FROM runs WHERE chat_id = ?`, chat); n != 0 {
 		t.Errorf("%d run(s) admitted before the delete settled", n)
 	}
-	if w := alice.do("PATCH", "/api/chats/"+chat, nil, map[string]any{"archived": false}); w.Code != 404 {
-		t.Errorf("unarchive of a chat being deleted = %d, want 404", w.Code)
+	// Every other change answers exactly as the delete does: the chat exists until the delete settles, so never a 404
+	// (which a browser reads as "deleted"), and nothing about it changes.
+	for name, body := range map[string]map[string]any{"unarchive": {"archived": false}, "rename": {"title": "new name"}, "pin": {"pinned": true}, "unpin": {"pinned": false}} {
+		w := alice.do("PATCH", "/api/chats/"+chat, nil, body)
+		if w.Code != 409 || errCode(t, w) != "CHAT_STATE" {
+			t.Errorf("%s of a chat being deleted = %d %s, want 409 CHAT_STATE", name, w.Code, w.Body.String())
+		}
+	}
+	if w := bob.do("PATCH", "/api/chats/"+chat, nil, map[string]any{"title": "x"}); w.Code != 404 {
+		t.Errorf("another account's rename of a pending chat = %d, want 404", w.Code)
+	}
+	if a.count(t, `SELECT COUNT(*) FROM chats WHERE id = ? AND title = 'contested'`, chat) != 1 {
+		t.Error("a refused rename changed the title")
 	}
 
 	close(hold)
@@ -749,5 +761,38 @@ func TestOverlappingDeleteCallsHermesOnceAndNeverReportsGone(t *testing.T) {
 	a.hx.mu.Unlock()
 	if w := alice.do("DELETE", "/api/chats/"+chat, nil, nil); w.Code != 200 {
 		t.Errorf("retry after settlement = %d %s", w.Code, w.Body.String())
+	}
+}
+
+// A chat list cursor issued before pinning existed (v1) still works after the deploy: it names a position in the
+// unpinned part of the list. New cursors are v2.
+func TestChatListCursorV1StillAccepted(t *testing.T) {
+	a := newApp(t)
+	u := a.user("alice")
+	var made []string
+	for i := 0; i < 3; i++ {
+		made = append(made, u.newTitledChat("c"+strings.Repeat("x", i+1)))
+		time.Sleep(2 * time.Millisecond)
+	}
+	first := u.list("?limit=1")
+	if first.NextCursor == "" {
+		t.Fatal("no cursor")
+	}
+	if c, ok := decodeChatCursor(first.NextCursor); !ok || c.Pinned {
+		t.Fatalf("v2 cursor round trip: %+v %v", c, ok)
+	}
+	var updated string
+	if err := a.db.QueryRow(`SELECT updated_at FROM chats WHERE id = ?`, made[2]).Scan(&updated); err != nil {
+		t.Fatal(err)
+	}
+	v1 := base64.RawURLEncoding.EncodeToString([]byte("v1\x00" + updated + "\x00" + made[2]))
+	got := u.list("?limit=5&cursor=" + v1)
+	if len(got.Chats) != 2 || got.Chats[0].ID != made[1] || got.Chats[1].ID != made[0] {
+		t.Errorf("after a v1 cursor on the newest chat: %v, want the other two in order", ids(got))
+	}
+	for _, bad := range []string{"v1\x00\x00" + made[0], "v1\x00" + updated + "\x00nothex", "v3\x00" + updated + "\x00" + made[0], "v1\x00" + updated} {
+		if w := u.get("/api/chats?cursor=" + base64.RawURLEncoding.EncodeToString([]byte(bad))); w.Code != 400 {
+			t.Errorf("malformed cursor %q = %d, want 400", bad, w.Code)
+		}
 	}
 }

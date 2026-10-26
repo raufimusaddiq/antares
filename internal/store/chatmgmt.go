@@ -26,7 +26,7 @@ func RenameChat(ctx context.Context, db *sql.DB, userID, chatID, title string) e
 		return err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		return ErrNoChat
+		return missOrState(ctx, tx, userID, chatID)
 	}
 	if err := setTitleDoc(ctx, tx, userID, chatID, title); err != nil {
 		return err
@@ -77,16 +77,21 @@ func SetChatArchived(ctx context.Context, db *sql.DB, userID, chatID string, arc
 	return missOrState(ctx, db, userID, chatID)
 }
 
-// missOrState explains an update that matched nothing: no such chat for this owner, or a chat whose
-// state refuses the change.
-func missOrState(ctx context.Context, db *sql.DB, userID, chatID string) error {
-	var one int
-	err := db.QueryRowContext(ctx, `SELECT 1 FROM chats WHERE id = ? AND user_id = ? AND status IN `+liveChat, chatID, userID).Scan(&one)
-	if errors.Is(err, sql.ErrNoRows) {
+// missOrState explains an update that matched nothing: no such chat for this owner (ErrNoChat), a chat
+// that is being deleted right now (ErrDeleteInFlight: not gone, the delete may still fail, so a 404 would
+// be a lie, exactly as for the delete route itself), or a chat in use whose state refuses the change.
+func missOrState(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, userID, chatID string) error {
+	var status string
+	err := q.QueryRowContext(ctx, `SELECT status FROM chats WHERE id = ? AND user_id = ? AND status IN ('ACTIVE','ARCHIVED','PENDING_DELETE')`, chatID, userID).Scan(&status)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
 		return ErrNoChat
-	}
-	if err != nil {
+	case err != nil:
 		return err
+	case status == "PENDING_DELETE":
+		return ErrDeleteInFlight
 	}
 	return ErrChatState
 }
@@ -162,8 +167,11 @@ func FinishDeleteChat(ctx context.Context, db *sql.DB, userID, chatID string) (D
 		args []any
 		into *int64
 	}{
+		// Only runs that reported tokens count, and a chat that reported none writes no row: "usage unknown" must not
+		// turn into "0 tokens" because a chat was deleted.
 		{`INSERT INTO deleted_chat_usage (user_id, input_tokens, output_tokens)
-			SELECT ?, COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0) FROM runs WHERE chat_id = ? AND user_id = ?
+			SELECT ?, COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0) FROM runs
+			WHERE chat_id = ? AND user_id = ? AND input_tokens IS NOT NULL HAVING COUNT(*) > 0
 			ON CONFLICT(user_id) DO UPDATE SET input_tokens = input_tokens + excluded.input_tokens, output_tokens = output_tokens + excluded.output_tokens`,
 			[]any{userID, chatID, userID}, nil},
 		// A staged image is the owner's; it goes only when no other chat's run sent it too.

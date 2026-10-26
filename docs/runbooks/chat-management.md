@@ -17,6 +17,8 @@ about upstream state for them. Hermes' own `PATCH` accepts `title`, `pinned`, `a
 possible later; it was not done because upstream title rules were not probed.
 
 `PATCH` takes exactly one of `title`, `pinned`, `archived`; any other field is a 400 (a profile, session id or owner is refused, not ignored).
+A chat whose delete is in flight answers `PATCH` exactly as it answers `DELETE`: `409 CHAT_STATE` for its owner (it exists until that delete settles, and a 404 is what a browser reads as "deleted"), `404` for anyone else.
+The chat list cursor is `v2` (pinned flag, `updated_at`, id). A `v1` cursor (issued before pinning existed) is still accepted and means a position in the unpinned part of the list, so a cursor held across a deploy keeps working; a malformed or unknown-version cursor is a 400.
 
 ## The Hermes delete contract (read from source, not production)
 
@@ -41,7 +43,7 @@ It was **not** called on the deployed Hermes. A first real delete is an owner-ap
 3. `BeginDeleteChat`: one statement moves the chat to `PENDING_DELETE` only if it has no non-terminal run (`RUN_CONFLICT` otherwise). Only an `ACTIVE`/`ARCHIVED` chat can be claimed, so exactly one request holds the claim: an overlapping delete gets `409 CHAT_STATE` (never a 404, which a browser would read as "deleted"; another account still gets 404), sends nothing upstream, and cannot restore a chat the holder is still deleting. `AdmitRun`'s insert re-checks the chat status, so no run joins a chat on its way out.
 4. Upstream delete. Anything but success/session-gone → the chat goes back to the status it had (active or archived; its pin was never touched) with `delete_failed_at` set: still listed, in the same place, with a visible "Delete failed" flag, readable, retryable; the error code is audited. (`pre_delete_status` remembers ACTIVE/ARCHIVED while `PENDING_DELETE`; the `DELETE_FAILED` status is no longer written.)
 5. `FinishDeleteChat`, one transaction: search rows, draft, run prompts, run images, message metadata, runs, the chat, and staged images that no other chat's run also sent.
-   Tokens the runs reported are kept as two per-user numbers (`deleted_chat_usage`) so deleting chats does not reset the token budget or the usage total.
+   Tokens the runs reported are kept as two per-user numbers (`deleted_chat_usage`) so deleting chats does not reset the token budget or the usage total. A chat whose runs reported nothing writes no row, so "usage unknown" does not become "0 tokens".
 6. A restart returns any `PENDING_DELETE` chat to its previous status, flagged (`RecoverRuns`), so a delete cut short is visible, not silent.
 
 The local steps run on a context that survives the browser disconnecting, so a delete Hermes completed is not stranded.
@@ -55,7 +57,7 @@ No title, session id, profile or text is recorded.
 
 Each sidebar row has an actions button (`Actions for <title>`, `aria-haspopup=menu`): Rename…, Pin to top, Archive, Delete…. Arrow keys/Home/End move,
 Escape closes and returns focus. Rename and delete are modal dialogs (focus trapped, Escape cancels; delete starts on Cancel and says what goes with the chat).
-A change shows only after the server confirms it. `Show archived` lists the archive. On a phone the strip stays a line of chips (the open one whole; `mobile layout` CI enforces it) and the open chat's actions are under Options → Conversation actions; the archive replaces the strip like an open search, and its rows keep their buttons.
+A change shows only after the server confirms it. `Show archived` lists the archive. On a phone the strip stays a line of chips (the open one whole; `mobile layout` CI enforces it) and the open chat's actions are under Options → Conversation actions; the archive replaces the strip like an open search, and its rows keep their buttons. A message sent into an archived chat makes it active on the server; the list is read again so it reappears at once.
 After a delete the browser also forgets that chat's local draft, resets the search panel, and opens the next chat (or the empty state).
 
 ## Browser check

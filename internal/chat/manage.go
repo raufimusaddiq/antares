@@ -107,6 +107,11 @@ func (s *Service) patchChat(w http.ResponseWriter, r *http.Request) {
 	case errors.Is(err, store.ErrNoChat):
 		notFound(w)
 		return
+	case errors.Is(err, store.ErrDeleteInFlight):
+		// Same answer as the delete route: the chat exists until that delete settles.
+		s.audit(r.Context(), uid, action, id, "refused:CHAT_STATE")
+		deleteInFlight(w)
+		return
 	case errors.Is(err, store.ErrChatState):
 		s.audit(r.Context(), uid, action, id, "refused:CHAT_STATE")
 		apiError(w, http.StatusConflict, "CHAT_STATE", "This chat can't be changed that way right now")
