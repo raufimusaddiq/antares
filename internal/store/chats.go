@@ -16,6 +16,11 @@ var (
 	ErrNoChat = errors.New("store: no such chat or run")
 	// ErrRunActive means the chat already has a run that is not terminal.
 	ErrRunActive = errors.New("store: the chat already has an active run")
+	// ErrChatState means the chat exists but its state does not allow the change (pinning an archived chat).
+	ErrChatState = errors.New("store: the chat's state does not allow this")
+	// ErrDeleteInFlight means the owner's chat is being deleted right now by another request. It is not "gone": the
+	// delete may still fail and the chat come back.
+	ErrDeleteInFlight = errors.New("store: a delete of this chat is already in progress")
 	// ErrGate means the account is not (or no longer) eligible for Hermes calls.
 	ErrGate = errors.New("store: account is not eligible for a Hermes request")
 )
@@ -42,6 +47,12 @@ func RunTerminal(s string) bool {
 
 // nonTerminal is the SQL spelling of "not RunTerminal"; keep the two in step.
 const nonTerminal = `('PENDING','RUNNING','DISCONNECTED')`
+
+// liveChat is the SQL spelling of the statuses a chat can be read and used in. PENDING_DELETE is
+// excluded: a chat being deleted is gone to its owner, and no new run may start in it.
+// A chat whose delete failed keeps its ACTIVE or ARCHIVED status and is flagged (delete_failed_at), so it stays
+// where the owner put it and can be retried.
+const liveChat = `('ACTIVE','ARCHIVED')`
 
 // ActiveBinding is the database half of the default-deny gate
 // (docs/runbooks/security-invariants.md §1, after the session check): the
@@ -72,14 +83,16 @@ type Chat struct {
 	CreatedAt       string
 	UpdatedAt       string
 	ActiveRunID     string // the chat's non-terminal run, if any
+	PinnedAt        string // empty when not pinned
+	DeleteFailed    bool   // the last delete of this chat did not finish; it can be retried
 }
 
 const chatCols = `c.id, c.user_id, c.hermes_binding_id, c.hermes_session_id, COALESCE(c.title,''), c.status, c.created_at, c.updated_at,
-	COALESCE((SELECT r.id FROM runs r WHERE r.chat_id = c.id AND r.user_id = c.user_id AND r.status IN ` + nonTerminal + ` LIMIT 1),'')`
+	COALESCE((SELECT r.id FROM runs r WHERE r.chat_id = c.id AND r.user_id = c.user_id AND r.status IN ` + nonTerminal + ` LIMIT 1),''), COALESCE(c.pinned_at,''), c.delete_failed_at IS NOT NULL`
 
 func scanChat(row interface{ Scan(...any) error }) (Chat, error) {
 	var c Chat
-	err := row.Scan(&c.ID, &c.UserID, &c.BindingID, &c.HermesSessionID, &c.Title, &c.Status, &c.CreatedAt, &c.UpdatedAt, &c.ActiveRunID)
+	err := row.Scan(&c.ID, &c.UserID, &c.BindingID, &c.HermesSessionID, &c.Title, &c.Status, &c.CreatedAt, &c.UpdatedAt, &c.ActiveRunID, &c.PinnedAt, &c.DeleteFailed)
 	return c, err
 }
 
@@ -112,7 +125,7 @@ func CreateChat(ctx context.Context, db *sql.DB, userID, bindingID, hermesSessio
 // clause, and the chat must sit on the user's current binding.
 func GetChat(ctx context.Context, db *sql.DB, userID, chatID string) (Chat, error) {
 	c, err := scanChat(db.QueryRowContext(ctx, `SELECT `+chatCols+` FROM chats c
-		WHERE c.id = ? AND c.user_id = ? AND c.status = 'ACTIVE'
+		WHERE c.id = ? AND c.user_id = ? AND c.status IN `+liveChat+`
 		  AND EXISTS (SELECT 1 FROM tenant_bindings b WHERE b.id = c.hermes_binding_id AND b.user_id = c.user_id)`, chatID, userID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return Chat{}, ErrNoChat
@@ -120,23 +133,31 @@ func GetChat(ctx context.Context, db *sql.DB, userID, chatID string) (Chat, erro
 	return c, err
 }
 
-// ChatCursor is the keyset position after the last chat of a page.
-type ChatCursor struct{ UpdatedAt, ID string }
+// ChatCursor is the keyset position after the last chat of a page. Pinned chats sort first, so
+// whether the last chat was pinned is part of the position.
+type ChatCursor struct {
+	Pinned        bool
+	UpdatedAt, ID string
+}
 
-// ListChats returns up to limit of the user's chats, newest activity first,
-// starting after the cursor (nil = the first page). It asks for one extra row
-// so the caller knows whether another page exists; that row is returned last
-// and is not part of the page. Ordering is (updated_at DESC, id), so a page
-// boundary is a position, not a count: a chat created meanwhile cannot shift
-// later pages the way an offset would.
-func ListChats(ctx context.Context, db *sql.DB, userID string, limit int, after *ChatCursor) (page []Chat, more bool, err error) {
+// ListChats returns up to limit of the user's chats, starting after the cursor (nil = the first
+// page). archived selects the archive; otherwise it lists the chats in use, pinned first and then
+// newest activity first. It asks for one extra row so the caller knows whether another page exists;
+// that row is returned last and is not part of the page. Ordering is (pinned, updated_at DESC, id),
+// so a page boundary is a position, not a count: a chat created meanwhile cannot shift later pages
+// the way an offset would.
+func ListChats(ctx context.Context, db *sql.DB, userID string, limit int, after *ChatCursor, archived bool) (page []Chat, more bool, err error) {
 	q := `SELECT ` + chatCols + ` FROM chats c WHERE c.user_id = ? AND c.status = 'ACTIVE'`
+	if archived {
+		q = `SELECT ` + chatCols + ` FROM chats c WHERE c.user_id = ? AND c.status = 'ARCHIVED'`
+	}
 	args := []any{userID}
 	if after != nil {
-		q += ` AND (c.updated_at < ? OR (c.updated_at = ? AND c.id > ?))`
-		args = append(args, after.UpdatedAt, after.UpdatedAt, after.ID)
+		p := boolInt(after.Pinned)
+		q += ` AND ((c.pinned_at IS NOT NULL) < ? OR ((c.pinned_at IS NOT NULL) = ? AND (c.updated_at < ? OR (c.updated_at = ? AND c.id > ?))))`
+		args = append(args, p, p, after.UpdatedAt, after.UpdatedAt, after.ID)
 	}
-	q += ` ORDER BY c.updated_at DESC, c.id LIMIT ?`
+	q += ` ORDER BY (c.pinned_at IS NOT NULL) DESC, c.updated_at DESC, c.id LIMIT ?`
 	args = append(args, limit+1)
 	rows, err := db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -231,14 +252,27 @@ func AdmitRunWithin(ctx context.Context, db *sql.DB, userID, chatID, idemKey str
 			WHERE user_id = ?`, userID).Scan(&used); err != nil {
 			return Run{}, false, err
 		}
+		var gone int64
+		if err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM deleted_chat_usage WHERE user_id = ?`, userID).Scan(&gone); err != nil {
+			return Run{}, false, err
+		}
+		used += gone
 		if used >= maxTokens {
 			return Run{}, false, ErrBudget
 		}
 	}
 	id := NewID()
 	t := ts(now)
-	_, err = db.ExecContext(ctx, `INSERT INTO runs (id, user_id, chat_id, idempotency_key, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, 'PENDING', ?, ?)`, id, userID, chatID, idemKey, t, t)
+	// The chat must still be usable at the moment of the insert: a delete that started after the
+	// check above has already moved it to PENDING_DELETE, and no run may join a chat on its way out.
+	res, err := db.ExecContext(ctx, `INSERT INTO runs (id, user_id, chat_id, idempotency_key, status, created_at, updated_at)
+		SELECT ?, ?, ?, ?, 'PENDING', ?, ? WHERE EXISTS (SELECT 1 FROM chats WHERE id = ? AND user_id = ? AND status IN `+liveChat+`)`,
+		id, userID, chatID, idemKey, t, t, chatID, userID)
+	if err == nil {
+		if n, _ := res.RowsAffected(); n == 0 {
+			return Run{}, false, ErrNoChat
+		}
+	}
 	if err != nil {
 		switch {
 		case strings.Contains(err.Error(), "runs.idempotency_key"): // lost a race with the same key
@@ -251,7 +285,9 @@ func AdmitRunWithin(ctx context.Context, db *sql.DB, userID, chatID, idemKey str
 		}
 		return Run{}, false, err
 	}
-	if _, err := db.ExecContext(ctx, `UPDATE chats SET updated_at = ? WHERE id = ? AND user_id = ?`, t, chatID, userID); err != nil {
+	// A message into the archive brings the chat back: archived means out of the way, not closed.
+	if _, err := db.ExecContext(ctx, `UPDATE chats SET updated_at = ?, status = CASE WHEN status = 'ARCHIVED' THEN 'ACTIVE' ELSE status END
+		WHERE id = ? AND user_id = ?`, t, chatID, userID); err != nil {
 		return Run{}, false, err
 	}
 	r, err := GetRun(ctx, db, userID, id)
@@ -298,6 +334,12 @@ func RecoverRuns(ctx context.Context, db *sql.DB, now time.Time) (disconnected, 
 		return 0, 0, err
 	}
 	failed, _ = res.RowsAffected()
+	// A delete that was on its way when the process died did not finish: the chat may still exist
+	// upstream, so it goes back to where it was, flagged, for the owner to see and retry, not a silent disappearance.
+	if _, err = db.ExecContext(ctx, `UPDATE chats SET status = COALESCE(pre_delete_status, 'ACTIVE'), pre_delete_status = NULL, delete_failed_at = ?
+		WHERE status = 'PENDING_DELETE'`, t); err != nil {
+		return 0, 0, err
+	}
 	// An answer that was on its way when the process died may or may not have reached Hermes: the
 	// prompt is open again, and a retry that Hermes no longer recognises settles it (service.Respond).
 	if _, err = db.ExecContext(ctx, `UPDATE run_prompts SET status = 'PENDING' WHERE status = 'SENDING'`); err != nil {
@@ -323,7 +365,7 @@ type ChatModel struct {
 func GetChatModel(ctx context.Context, db *sql.DB, userID, chatID string) (ChatModel, error) {
 	var m ChatModel
 	err := db.QueryRowContext(ctx, `SELECT COALESCE(model_provider,''), COALESCE(model_id,''), COALESCE(reasoning_effort,''), COALESCE(service_tier,'')
-		FROM chats WHERE id = ? AND user_id = ? AND status = 'ACTIVE'`, chatID, userID).
+		FROM chats WHERE id = ? AND user_id = ? AND status IN `+liveChat, chatID, userID).
 		Scan(&m.Provider, &m.Model, &m.Reasoning, &m.ServiceTier)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ChatModel{}, ErrNoChat
@@ -340,7 +382,7 @@ func SetChatModel(ctx context.Context, db *sql.DB, userID, chatID string, m Chat
 		return s
 	}
 	res, err := db.ExecContext(ctx, `UPDATE chats SET model_provider = ?, model_id = ?, reasoning_effort = ?, service_tier = ?
-		WHERE id = ? AND user_id = ? AND status = 'ACTIVE'`, nz(m.Provider), nz(m.Model), nz(m.Reasoning), nz(m.ServiceTier), chatID, userID)
+		WHERE id = ? AND user_id = ? AND status IN `+liveChat, nz(m.Provider), nz(m.Model), nz(m.Reasoning), nz(m.ServiceTier), chatID, userID)
 	if err != nil {
 		return err
 	}

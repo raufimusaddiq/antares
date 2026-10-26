@@ -70,12 +70,15 @@ type fakeHermes struct {
 	options map[string]string // profile -> raw GET /api/model/options body; defaultOptions if unset
 	canned  map[string]string // GET path -> JSON body, for the discovery routes
 
+	holdDelete chan struct{}     // when set, DELETE /api/sessions/ waits for it to close before answering
+	sessions   map[string]string // session id -> owning profile, for DELETE /api/sessions/{id}
+
 	failNext map[string]int // "METHOD suffix" -> status to return once (sticky when negative)
 	hang     map[string]bool
 }
 
 func newFakeHermes(t testing.TB) *fakeHermes {
-	f := &fakeHermes{t: t, keys: map[string]string{}, runs: map[string]*fakeRun{}, msgs: map[string][]map[string]any{}, mem: map[string]string{},
+	f := &fakeHermes{t: t, keys: map[string]string{}, runs: map[string]*fakeRun{}, msgs: map[string][]map[string]any{}, mem: map[string]string{}, sessions: map[string]string{},
 		failNext: map[string]int{}, hang: map[string]bool{}, canned: map[string]string{}}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
 	t.Cleanup(f.srv.Close)
@@ -154,6 +157,7 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 	f.reqs = append(f.reqs, rec{Method: r.Method, Path: r.URL.Path, Auth: r.Header.Get("Authorization"),
 		SessionKey: r.Header.Get("X-Hermes-Session-Key"), Idem: r.Header.Get("Idempotency-Key"), Body: string(body), Header: r.Header.Clone()})
 	key, known := f.keys[profile]
+	holdDel := f.holdDelete
 	failKey := r.Method + " " + path
 	var forced int
 	for k, st := range f.failNext {
@@ -171,6 +175,9 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f.mu.Unlock()
+	if r.Method == "DELETE" && holdDel != nil {
+		<-holdDel
+	}
 	switch {
 	case !ok || !known:
 		http.Error(w, "Unknown or unconfigured profile", http.StatusNotFound)
@@ -203,8 +210,25 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.n++
 		id := fmt.Sprintf("sess_%s_%d", profile, f.n)
+		f.sessions[id] = profile
 		f.mu.Unlock()
 		fmt.Fprintf(w, `{"id":%q}`, id)
+	case r.Method == "DELETE" && strings.HasPrefix(path, "/api/sessions/"):
+		// gateway/platforms/api_server.py _handle_delete_session: 404 session_not_found for an id
+		// this profile does not hold, else 200 hermes.session.deleted.
+		sid := strings.TrimPrefix(path, "/api/sessions/")
+		f.mu.Lock()
+		owner, held := f.sessions[sid]
+		if held && owner == profile {
+			delete(f.sessions, sid)
+		}
+		f.mu.Unlock()
+		if !held || owner != profile {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, `{"error":{"message":"Session not found","type":"invalid_request_error","param":null,"code":"session_not_found"}}`)
+			return
+		}
+		fmt.Fprintf(w, `{"object":"hermes.session.deleted","id":%q,"deleted":true}`, sid)
 	case r.Method == "POST" && path == "/v1/runs":
 		var in struct{ SessionID, Input string }
 		var raw map[string]any

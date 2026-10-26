@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"time"
 )
 
@@ -49,7 +50,16 @@ func UserReportedTokens(ctx context.Context, db *sql.DB, userID string) (used in
 	var n sql.NullInt64
 	err = db.QueryRowContext(ctx, `SELECT SUM(input_tokens + output_tokens) FROM runs
 		WHERE user_id = ? AND input_tokens IS NOT NULL`, userID).Scan(&n)
-	return n.Int64, n.Valid, err
+	if err != nil {
+		return 0, false, err
+	}
+	// Tokens of chats the user deleted still count: deleting a chat does not reset the budget.
+	var gone sql.NullInt64
+	err = db.QueryRowContext(ctx, `SELECT input_tokens + output_tokens FROM deleted_chat_usage WHERE user_id = ?`, userID).Scan(&gone)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return 0, false, err
+	}
+	return n.Int64 + gone.Int64, n.Valid || gone.Valid, nil
 }
 
 // RecordRunUsage stores what Hermes reported for the user's own run.

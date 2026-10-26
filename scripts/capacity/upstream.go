@@ -178,7 +178,7 @@ func (u *up) hermes(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	switch {
 	case path == "/v1/capabilities":
-		io.WriteString(w, `{"object":"hermes.api_server.capabilities","auth":{"required":true},"features":{"memory_write_api":false,"admin_config_rw":false}}`)
+		io.WriteString(w, `{"object":"hermes.api_server.capabilities","auth":{"required":true},"features":{"memory_write_api":false,"admin_config_rw":false},"endpoints":{"session_delete":{"method":"DELETE","path":"/api/sessions/{session_id}"}}}`)
 	case path == "/v1/models":
 		io.WriteString(w, `{"object":"list","data":[]}`)
 	case path == "/v1/toolsets":
@@ -196,6 +196,22 @@ func (u *up) hermes(w http.ResponseWriter, r *http.Request) {
 		u.sessions[id] = profile
 		u.mu.Unlock()
 		fmt.Fprintf(w, `{"id":%q}`, id)
+	case r.Method == "DELETE" && strings.HasPrefix(path, "/api/sessions/"):
+		// _handle_delete_session: 404 session_not_found for an id this profile does not hold, else 200.
+		sid := strings.TrimPrefix(path, "/api/sessions/")
+		u.mu.Lock()
+		owner, held := u.sessions[sid]
+		if held && owner == profile {
+			delete(u.sessions, sid)
+			delete(u.msgs, sid)
+		}
+		u.mu.Unlock()
+		if !held || owner != profile {
+			w.WriteHeader(http.StatusNotFound)
+			io.WriteString(w, `{"error":{"message":"Session not found","type":"invalid_request_error","param":null,"code":"session_not_found"}}`)
+			return
+		}
+		fmt.Fprintf(w, `{"object":"hermes.session.deleted","id":%q,"deleted":true}`, sid)
 	case r.Method == "GET" && strings.HasPrefix(path, "/api/sessions/") && strings.HasSuffix(path, "/messages"):
 		sid := strings.TrimSuffix(strings.TrimPrefix(path, "/api/sessions/"), "/messages")
 		u.mu.Lock()

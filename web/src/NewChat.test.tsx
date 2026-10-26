@@ -16,7 +16,7 @@ vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi"
 
 import { Chat } from "./Chat";
 
-const chat = (id: string, extra: Partial<ChatSummary> = {}): ChatSummary => ({ id, title: "", createdAt: "", updatedAt: "", activeRunId: "", ...extra });
+const chat = (id: string, extra: Partial<ChatSummary> = {}): ChatSummary => ({ id, title: "", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false, ...extra });
 const ok = <T,>(value: T) => ({ ok: true as const, value });
 const page = (texts: string[] = []) => ok({ turns: texts.map((text, seq) => ({ seq, role: seq % 2 ? "assistant" : "user", text })), nextCursor: "", total: texts.length });
 
@@ -43,7 +43,7 @@ const mount = async (chats: ChatSummary[]) => {
   await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
 };
 const newChatButton = () => screen.getAllByRole("button", { name: "New chat" })[0];
-const sidebarItems = () => Array.from(document.querySelectorAll("nav.side li button")).map((b) => b.getAttribute("aria-current") ?? "-");
+const sidebarItems = () => Array.from(document.querySelectorAll("nav.side li button.item")).map((b) => b.getAttribute("aria-current") ?? "-");
 
 beforeEach(() => {
   vi.stubGlobal("EventSource", FakeSource);

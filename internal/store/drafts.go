@@ -80,7 +80,7 @@ func (s draftScope) requireChat(ctx context.Context, q interface {
 		return nil
 	}
 	var one int
-	err := q.QueryRowContext(ctx, `SELECT 1 FROM chats WHERE id = ? AND user_id = ? AND status = 'ACTIVE'`, s.chatID, userID).Scan(&one)
+	err := q.QueryRowContext(ctx, `SELECT 1 FROM chats WHERE id = ? AND user_id = ? AND status IN `+liveChat, s.chatID, userID).Scan(&one)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrNoChat
 	}

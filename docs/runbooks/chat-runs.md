@@ -86,8 +86,7 @@ Steer is built; regenerate, edit and rewind have no Hermes route: `docs/runbooks
 
 ## Not in this slice
 
-Rename/delete chat, model picker, assets, jobs (still `CAPABILITY_UNAVAILABLE`
-behind the guard). Attaching the versioned OpenUI instruction to a run (PRD §7.2): the renderer is here, the
+Jobs (still `CAPABILITY_UNAVAILABLE` behind the guard). Rename, pin, archive and delete chat are built: `docs/runbooks/chat-management.md`. Attaching the versioned OpenUI instruction to a run (PRD §7.2): the renderer is here, the
 per-request instruction mechanism has no verified Hermes shape, so nothing is sent (`docs/runbooks/openui.md`).
 Journals are in memory: after a restart the text streamed so far is rebuilt from Hermes' transcript when the
 run completes.

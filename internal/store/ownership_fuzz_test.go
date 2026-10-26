@@ -144,7 +144,7 @@ func runOwnershipProgram(t testing.TB, db *sql.DB, prog []byte, maxSteps int) {
 				m.runStatus[id] = to
 			}
 		case 7: // list: exactly the caller's chats
-			page, more, err := ListChats(ctx, db, actor, 1000, nil)
+			page, more, err := ListChats(ctx, db, actor, 1000, nil, false)
 			if err != nil || more {
 				t.Fatalf("step %d: list: more=%v %v", i, more, err)
 			}

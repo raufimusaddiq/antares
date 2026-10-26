@@ -11,6 +11,12 @@ export interface ChatSummary {
   createdAt: string;
   updatedAt: string;
   activeRunId: string;
+  /** The owner's pin: pinned chats list first. */
+  pinned: boolean;
+  /** Out of the main list; still readable, searchable and usable. */
+  archived: boolean;
+  /** A delete that did not complete: the chat still exists and the delete can be retried. */
+  deleteFailed: boolean;
 }
 
 export interface Turn {
@@ -47,6 +53,7 @@ const CODES = [
   "MODEL_TRANSPORT_UNAVAILABLE",
   "OPTION_UNSUPPORTED",
   "CATALOGUE_UNAVAILABLE",
+  "CHAT_STATE",
 ] as const;
 
 /** Words shown for a code. The server's own message is never displayed. */
@@ -89,6 +96,8 @@ export function describeCode(code: string): string {
       return "That setting is not supported for this model. Nothing was changed.";
     case "CATALOGUE_UNAVAILABLE":
       return "The model list could not be read. Try again shortly.";
+    case "CHAT_STATE":
+      return "This conversation can't be changed that way right now.";
     case "NETWORK":
       return "Could not reach Antares. Check your connection.";
     default:
@@ -139,7 +148,16 @@ const obj = (v: unknown): Record<string, unknown> | null => (typeof v === "objec
 export function parseChat(v: unknown): ChatSummary | null {
   const o = obj(v);
   if (!o || !str(o.id)) return null;
-  return { id: str(o.id), title: str(o.title), createdAt: str(o.createdAt), updatedAt: str(o.updatedAt), activeRunId: str(o.activeRunId) };
+  return {
+    id: str(o.id),
+    title: str(o.title),
+    createdAt: str(o.createdAt),
+    updatedAt: str(o.updatedAt),
+    activeRunId: str(o.activeRunId),
+    pinned: o.pinned === true,
+    archived: o.archived === true,
+    deleteFailed: o.deleteFailed === true,
+  };
 }
 
 export interface HistoryPage {
@@ -198,14 +216,24 @@ const q = (cursor?: string, limit?: number) => {
   return p.length ? `?${p.join("&")}` : "";
 };
 
-export const listChats = (cursor?: string) =>
-  call("GET", `/api/chats${q(cursor)}`, (b): ChatList | null => {
+/** The chats in use (pinned first), or with `archived` the archive. */
+export const listChats = (cursor?: string, archived = false) =>
+  call("GET", `/api/chats${q(cursor)}${archived ? (cursor ? "&" : "?") + "archived=1" : ""}`, (b): ChatList | null => {
     const o = obj(b);
     if (!o || !Array.isArray(o.chats)) return null;
     return { chats: o.chats.map(parseChat).filter((c): c is ChatSummary => c !== null), nextCursor: str(o.nextCursor) };
   });
 
 export const getChat = (chatId: string) => call("GET", `/api/chats/${encodeURIComponent(chatId)}`, parseChat);
+
+/** Exactly one change per call, as the server requires; it answers with the chat as it now is. */
+export type ChatChange = { title: string } | { pinned: boolean } | { archived: boolean };
+
+export const changeChat = (chatId: string, change: ChatChange) => call("PATCH", `/api/chats/${encodeURIComponent(chatId)}`, parseChat, change);
+
+/** Succeeds only when the server confirms the chat is gone, here and in the assistant. */
+export const deleteChat = (chatId: string) =>
+  call("DELETE", `/api/chats/${encodeURIComponent(chatId)}`, (b): { deleted: true } | null => (obj(b)?.deleted === true ? { deleted: true } : null));
 
 export const createChat = () => call("POST", "/api/chats", parseChat, {});
 

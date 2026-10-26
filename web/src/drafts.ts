@@ -72,6 +72,15 @@ export function saveCleared(email: string, chatId: string | null, cleared: boole
   }
 }
 
+/** A deleted chat leaves no unsent text, synced revision or cleared marker behind in this browser. */
+export function forgetChatDrafts(email: string, chatId: string): void {
+  try {
+    for (const k of [keyOf(email, chatId), baseKey(email, chatId), clearedKey(email, chatId)]) localStorage.removeItem(k);
+  } catch {
+    // Storage unavailable: there is nothing stored here to forget.
+  }
+}
+
 /** Sign-out, an expired session and suspension: the next person on this browser inherits nothing. */
 export function purgeDrafts(): void {
   try {

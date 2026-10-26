@@ -159,6 +159,23 @@ func NewClient(baseURL string, o ClientOptions) (*Client, error) {
 // unexpected status is mapped to an error code; the response body is only read
 // by the caller on success.
 func (c *Client) do(ctx context.Context, b Binding, method, path string, hdr map[string]string, body any) (*http.Response, error) {
+	resp, err := c.send(ctx, b, method, path, hdr, body)
+	if err != nil {
+		return nil, err
+	}
+	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
+		return resp, nil
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	resp.Body.Close()
+	return nil, statusError(resp.StatusCode)
+}
+
+// send is do without the status mapping: it returns whatever Hermes answered, so a caller that
+// must tell two failures with the same status apart (a delete's 404) can read the body. The caller
+// closes the body. A transport failure is an error; a redirect is not followed (noRedirect) and arrives as an
+// ordinary 3xx response, which a caller maps like any other unexpected status (DeleteSession: HERMES_UNAVAILABLE).
+func (c *Client) send(ctx context.Context, b Binding, method, path string, hdr map[string]string, body any) (*http.Response, error) {
 	if !ValidSlug(b.Profile) || b.Key == "" {
 		return nil, fail(CodeTenantNotReady)
 	}
@@ -185,12 +202,7 @@ func (c *Client) do(ctx context.Context, b Binding, method, path string, hdr map
 	if err != nil {
 		return nil, transportError(ctx, err)
 	}
-	if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-		return resp, nil
-	}
-	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
-	resp.Body.Close()
-	return nil, statusError(resp.StatusCode)
+	return resp, nil
 }
 
 // transportError classifies a failed round trip without ever formatting err:
@@ -271,6 +283,63 @@ func (c *Client) CreateSession(ctx context.Context, b Binding) (string, error) {
 		}
 	}
 	return "", fail(CodeHermesUnavailable)
+}
+
+// ErrSessionGone is a session delete that Hermes answers with its own session_not_found: the
+// session does not exist upstream (already deleted). It is not a missing route or a bad binding.
+var ErrSessionGone = errors.New("hermes: session not found upstream")
+
+// SessionDeleteAdvertised reports whether this Hermes lists DELETE /api/sessions/{session_id} as
+// "session_delete" in /v1/capabilities. Anything unclear is false, and so is "no": an upstream
+// delete is only ever sent to a route Hermes itself advertised.
+func (c *Client) SessionDeleteAdvertised(ctx context.Context, b Binding) (bool, error) {
+	caps, ok, tenant := c.discoveryDoc(ctx, b)
+	if tenant {
+		return false, fail(CodeTenantNotReady)
+	}
+	return ok && caps.hasRoute("session_delete", http.MethodDelete, "/api/sessions/{session_id}"), nil
+}
+
+// DeleteSession deletes the session upstream (DELETE /api/sessions/{id}; gateway/platforms/api_server.py
+// _handle_delete_session). Hermes answers 200 {"object":"hermes.session.deleted","deleted":bool},
+// 404 session_not_found for an id it does not hold, 409 session_active_turn while a turn is writing
+// to it, and 503 when its session database is unavailable. Success is only a 200 that says
+// deleted:true. A 404 with Hermes' session_not_found code is ErrSessionGone; any other 404 (an
+// unknown profile route, say) is not evidence the session is gone and is CAPABILITY_UNAVAILABLE.
+// A 409 is RUN_CONFLICT. A 200 that does not say deleted:true is HERMES_UNAVAILABLE, never success.
+func (c *Client) DeleteSession(ctx context.Context, b Binding, sessionID string) error {
+	if !ValidID(sessionID) {
+		return fail(CodeHermesUnavailable)
+	}
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	resp, err := c.send(ctx, b, http.MethodDelete, "/api/sessions/"+url.PathEscape(sessionID), nil, nil)
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		var d struct {
+			Error struct {
+				Code string `json:"code"`
+			} `json:"error"`
+		}
+		if readJSON(resp, &d, 4096) == nil && d.Error.Code == "session_not_found" {
+			return ErrSessionGone
+		}
+		return fail(CodeCapabilityNA)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+		resp.Body.Close()
+		return statusError(resp.StatusCode)
+	}
+	var d struct {
+		Deleted bool `json:"deleted"`
+	}
+	if err := readJSON(resp, &d, 4096); err != nil || !d.Deleted {
+		return fail(CodeHermesUnavailable)
+	}
+	return nil
 }
 
 // RunRequest is the server-built body of POST /v1/runs. SessionKey is derived

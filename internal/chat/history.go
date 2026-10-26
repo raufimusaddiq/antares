@@ -180,7 +180,11 @@ func (s *Service) getMessages(w http.ResponseWriter, r *http.Request) {
 // The chat list pages by keyset (store.ListChats); its cursor is opaque too.
 // A forged one can only name a position inside the caller's own list.
 func encodeChatCursor(c store.ChatCursor) string {
-	return base64.RawURLEncoding.EncodeToString([]byte("v1\x00" + c.UpdatedAt + "\x00" + c.ID))
+	pin := "0"
+	if c.Pinned {
+		pin = "1"
+	}
+	return base64.RawURLEncoding.EncodeToString([]byte("v2\x00" + pin + "\x00" + c.UpdatedAt + "\x00" + c.ID))
 }
 
 func decodeChatCursor(s string) (*store.ChatCursor, bool) {
@@ -189,8 +193,14 @@ func decodeChatCursor(s string) (*store.ChatCursor, bool) {
 		return nil, false
 	}
 	parts := strings.Split(string(raw), "\x00")
-	if len(parts) != 3 || parts[0] != "v1" || parts[1] == "" || !idRE.MatchString(parts[2]) {
+	// A v1 cursor (before pinning existed) was issued from a list that had no pinned chats: its position is in the
+	// unpinned part, which is exactly what Pinned=false names. Accepting it keeps a cursor held across the deploy
+	// working; new cursors are always v2.
+	if len(parts) == 3 && parts[0] == "v1" && parts[1] != "" && idRE.MatchString(parts[2]) {
+		return &store.ChatCursor{UpdatedAt: parts[1], ID: parts[2]}, true
+	}
+	if len(parts) != 4 || parts[0] != "v2" || (parts[1] != "0" && parts[1] != "1") || parts[2] == "" || !idRE.MatchString(parts[3]) {
 		return nil, false
 	}
-	return &store.ChatCursor{UpdatedAt: parts[1], ID: parts[2]}, true
+	return &store.ChatCursor{Pinned: parts[1] == "1", UpdatedAt: parts[2], ID: parts[3]}, true
 }

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useLayoutEffect, useReducer, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type FormEvent, type KeyboardEvent } from "react";
 import {
   cancelRun,
+  changeChat,
   createChat,
+  deleteChat,
   describeCode,
   describeTurns,
   describeUsage,
@@ -26,6 +28,7 @@ import {
 import { ModelPicker } from "./ModelPicker";
 import { mergeNewest, prependOlder, reachOf } from "./history";
 import { SearchPanel } from "./Search";
+import { ChatList, type ChatActions } from "./ChatList";
 import { MessageBody } from "./MessageBody";
 import { Markdown } from "./Markdown";
 import { MAX_REPLY, ReplyContext } from "./openui/reply";
@@ -44,7 +47,7 @@ import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
 import type { AttachmentRef } from "./MediaPreview";
 import { RunPrompts } from "./RunPrompts";
-import { loadDraft, matchTemplates, mergeTemplates, saveDraft, type Template } from "./drafts";
+import { forgetChatDrafts, loadDraft, matchTemplates, mergeTemplates, saveDraft, type Template } from "./drafts";
 import { DraftNotice, sharedTextApplied, takeSharedText, useDraftSync, NO_HOLD, type SendHold } from "./DraftSync";
 import { listOwnTemplates, type OwnTemplate } from "./draftApi";
 import { Templates } from "./Templates";
@@ -219,6 +222,18 @@ export interface TranscriptProps {
 }
 
 const never = () => {};
+
+/** The chat with the latest activity: the list puts pinned chats first, but a person lands where they last were. */
+const mostRecent = (l: ChatSummary[]): ChatSummary => l.reduce((a, b) => (b.updatedAt > a.updatedAt ? b : a));
+
+/** Words for a failed management action. The server's own text is never shown. */
+function describeManage(code: string, what: "change" | "delete"): string {
+  if (what === "delete" && code === "RUN_CONFLICT") return "The assistant is still working on a reply in this conversation. Wait for it to finish, then delete.";
+  if (what === "delete" && code === "CHAT_STATE") return "This conversation is already being deleted, here or in another window. It is still here until that finishes; check again in a moment.";
+  if (what === "delete" && code === "CAPABILITY_UNAVAILABLE") return "The assistant does not offer deleting conversations, so nothing was deleted.";
+  if (what === "delete" && (code === "HERMES_UNAVAILABLE" || code === "UPSTREAM_TIMEOUT")) return "The assistant did not confirm the delete, so the conversation was not deleted. Try again shortly.";
+  return describeCode(code);
+}
 
 export function Transcript(props: TranscriptProps) {
   const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0, chatId, inventory = null } = props;
@@ -522,6 +537,13 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const [olderError, setOlderError] = useState("");
   const [chatsCursor, setChatsCursor] = useState("");
   const [loadingChats, setLoadingChats] = useState(false);
+  const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null); // the phone's home for the open chat's actions
+  const [relist, setRelist] = useState(0); // bumped to read the chat list again (a chat came back from the archive)
+  const [archiveTick, setArchiveTick] = useState(0); // the archive is read again after a change that touches it
+  const [searchEpoch, setSearchEpoch] = useState(0); // a rename or delete makes an open search's titles and hits stale
+  const chatsRef = useRef<ChatSummary[]>([]);
+  chatsRef.current = chats;
+  const openTitle = useRef(""); // title of the open chat, kept when it leaves the list (archived)
   const [run, dispatch] = useReducer(runReducer, null);
   const [promptTick, setPromptTick] = useState(0);
   const [pending, setPending] = useState<Pending | null>(null);
@@ -719,6 +741,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const open = useCallback(
     (c: ChatSummary) => {
       nav.current++;
+      openTitle.current = c.title;
       discardImages(); // staged images belong to the message being written in the chat being left
       detach();
       attempts.current = 0;
@@ -801,7 +824,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             setChats((l) => (l.some((x) => x.id === c.value.id) ? l : [c.value, ...l]));
             open(c.value);
           } else {
-            if (r.value.chats.length > 0) open(r.value.chats[0]); // open() clears the banner, so say it after
+            if (r.value.chats.length > 0) open(mostRecent(r.value.chats)); // open() clears the banner, so say it after
             setBanner("That conversation is not available to this account.");
           }
           window.history.replaceState(null, "", "/");
@@ -809,7 +832,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         return;
       }
       if (share !== null) return; // a share lands in the new-chat draft; opening the latest chat would hide it
-      if (r.value.chats.length > 0) open(r.value.chats[0]);
+      if (r.value.chats.length > 0) open(mostRecent(r.value.chats));
     });
     return () => {
       live = false;
@@ -926,6 +949,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         if (images.length > 0) releaseImages(); // admitted: the strip is done, the staged assets stay for the history thumbnails
         setPending(null);
         setChats((l) => l.map((x) => (x.id === chat ? { ...x, activeRunId: r.value.runId } : x)));
+        // A message into an archived chat makes it active on the server; it is not in this list yet, so read the list again.
+        if (!chatsRef.current.some((x) => x.id === chat)) {
+          setRelist((n) => n + 1);
+          setArchiveTick((n) => n + 1);
+        }
         setTurns((t) => [...t, { seq: t.length > 0 ? t[t.length - 1].seq + 1 : 0, role: "user", text: input, ...(images.length > 0 ? { attachments: images } : {}) }]);
         attach(r.value.runId, chat);
       } finally {
@@ -962,6 +990,99 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const [inventory, setInventory] = useState<Inventory | null>(null);
   const [inventoryFailed, setInventoryFailed] = useState(false);
   const [inventoryTick, setInventoryTick] = useState(0);
+  // Deleting a conversation removes the assistant's session too, so it is offered only when the assistant says it can.
+  const deleteBlocked = offers(inventory, "chat_delete")
+    ? ""
+    : inventory
+      ? inventory.capabilities.find((c) => c.id === "chat_delete")?.reason || "The assistant does not offer deleting conversations."
+      : inventoryFailed
+        ? "What the assistant supports could not be read, so deleting is off."
+        : "Checking what the assistant supports…";
+  const listArchive = useCallback((cursor?: string) => listChats(cursor, true), []);
+
+  // A chat that was deleted or archived somewhere else is gone from the server's list: read it again.
+  const reloadChats = useCallback(async () => {
+    const r = await listChats();
+    if (!r.ok) return;
+    setChats(r.value.chats);
+    setChatsCursor(r.value.nextCursor);
+  }, []);
+
+  useEffect(() => {
+    if (relist > 0) void reloadChats();
+  }, [relist, reloadChats]);
+
+  // Leave the open chat without opening another (it was deleted and nothing else is listed).
+  const leaveChat = useCallback(() => {
+    nav.current++;
+    discardImages();
+    detach();
+    attempts.current = 0;
+    blankChat.current = "";
+    setCurrent(null);
+    currentRef.current = null;
+    setTurns([]);
+    setCursor("");
+    setLoadingOlder(false);
+    setOlderError("");
+    olderInflight.current = "";
+    setTurnsError("");
+    setPending(null);
+    setFocus(null);
+    dispatch({ k: "clear" });
+  }, [detach, discardImages]);
+
+  const chatActions: ChatActions = useMemo(() => {
+    const failed = async (code: string, what: "change" | "delete") => {
+      if (code === "NOT_FOUND") void reloadChats(); // already gone elsewhere: the list should say so
+      return describeManage(code, what);
+    };
+    return {
+      rename: async (c, title) => {
+        const r = await changeChat(c.id, { title });
+        if (!r.ok) return failed(r.code, "change");
+        setChats((l) => l.map((x) => (x.id === c.id ? { ...x, title: r.value.title } : x)));
+        if (currentRef.current === c.id) openTitle.current = r.value.title;
+        setSearchEpoch((n) => n + 1);
+        setArchiveTick((n) => n + 1);
+        return "";
+      },
+      pin: async (c, pinned) => {
+        const r = await changeChat(c.id, { pinned });
+        if (!r.ok) return failed(r.code, "change");
+        await reloadChats(); // the server decides the order
+        return "";
+      },
+      archive: async (c, archived) => {
+        const r = await changeChat(c.id, { archived });
+        if (!r.ok) return failed(r.code, "change");
+        if (archived) setChats((l) => l.filter((x) => x.id !== c.id));
+        else await reloadChats();
+        setArchiveTick((n) => n + 1);
+        return "";
+      },
+      remove: async (c) => {
+        const r = await deleteChat(c.id);
+        // Only the server's word removes anything here. NOT_FOUND is the same word: it is already gone.
+        if (!r.ok && r.code !== "NOT_FOUND") {
+          void reloadChats(); // a failed delete leaves the chat flagged, and the list shows it
+          setArchiveTick((n) => n + 1);
+          return describeManage(r.code, "delete");
+        }
+        forgetChatDrafts(email, c.id);
+        const rest = chats.filter((x) => x.id !== c.id);
+        setChats(rest);
+        setSearchEpoch((n) => n + 1);
+        setArchiveTick((n) => n + 1);
+        if (currentRef.current === c.id) {
+          const next = rest.length > 0 ? mostRecent(rest) : null;
+          if (next) open(next);
+          else leaveChat();
+        }
+        return "";
+      },
+    };
+  }, [chats, email, leaveChat, open, reloadChats]);
   useEffect(() => {
     const ctl = new AbortController();
     void getCapabilities(ctl.signal).then((r) => {
@@ -1030,7 +1151,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           </button>
           <div id="bar-actions" className={menuOpen ? "bar-actions open" : "bar-actions"}>
             <Notifications />
-            {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? ""} />}
+            {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? openTitle.current} />}
             {canAdmin && onAdmin && (
               <button type="button" className="quiet" data-icon="shield" onClick={onAdmin}>
                 Admin
@@ -1046,23 +1167,26 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         <button type="button" data-icon="plus" onClick={() => void startChat()}>
           New chat
         </button>
-        <SearchPanel current={current} onOpen={(r) => void openResult(r)} />
+        <SearchPanel key={searchEpoch} current={current} onOpen={(r) => void openResult(r)} />
         {listState === "loading" && <p className="label">Loading…</p>}
         {listState === "ready" && chats.length === 0 && <p className="label">No conversations yet.</p>}
-        <ul>
-          {chats.map((c) => (
-            <li key={c.id}>
-              <button type="button" className={c.id === current ? "item current" : "item"} aria-current={c.id === current ? "true" : undefined} onClick={() => open(c)}>
-                {c.title || "New chat"}
+        <ChatList
+          chats={chats}
+          current={current}
+          onOpen={open}
+          actions={chatActions}
+          deleteBlocked={deleteBlocked}
+          listArchive={listArchive}
+          archiveTick={archiveTick}
+          slot={actionsSlot}
+          more={
+            chatsCursor && (
+              <button type="button" className="quiet" disabled={loadingChats} onClick={() => void moreChats()}>
+                {loadingChats ? "Loading…" : "Show more"}
               </button>
-            </li>
-          ))}
-        </ul>
-        {chatsCursor && (
-          <button type="button" className="quiet" disabled={loadingChats} onClick={() => void moreChats()}>
-            {loadingChats ? "Loading…" : "Show more"}
-          </button>
-        )}
+            )
+          }
+        />
       </nav>
       <main className={empty ? "pane empty" : "pane"}>
         {banner && (
@@ -1125,6 +1249,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           {budgetReached && !moreOpen ? "Options · token limit reached" : "Options"}
         </button>
         <div id="chat-extras" className={moreOpen ? "extras open" : "extras"}>
+          <div className="chat-actions-slot" ref={setActionsSlot} />
           {usage && (
             <details className="usage" open={usage.budget.reached}>
               <summary>{usage.budget.reached ? "Token limit reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens` : "Usage unknown"}</summary>

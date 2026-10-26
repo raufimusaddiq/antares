@@ -65,11 +65,11 @@ func TestChatAndRunQueriesAreOwnerScoped(t *testing.T) {
 	if got, _ := GetRun(ctx, db, u.a, run.ID); got.Status != RunPending {
 		t.Errorf("A's run changed to %s", got.Status)
 	}
-	if list, more, err := ListChats(ctx, db, u.b, 50, nil); err != nil || more || len(list) != 1 || list[0].ID != u.chatB.ID {
+	if list, more, err := ListChats(ctx, db, u.b, 50, nil, false); err != nil || more || len(list) != 1 || list[0].ID != u.chatB.ID {
 		t.Errorf("B's list: %+v more=%v %v", list, more, err)
 	}
 	// A cursor taken from A's list cannot make B's list show A's chats.
-	if list, _, err := ListChats(ctx, db, u.b, 50, &ChatCursor{UpdatedAt: "0000", ID: u.chatA.ID}); err != nil {
+	if list, _, err := ListChats(ctx, db, u.b, 50, &ChatCursor{UpdatedAt: "0000", ID: u.chatA.ID}, false); err != nil {
 		t.Fatal(err)
 	} else {
 		for _, c := range list {
@@ -264,7 +264,7 @@ func TestListChatsKeysetPagesAreStableWhileChatsAreCreated(t *testing.T) {
 	var got []string
 	var cur *ChatCursor
 	for pages := 0; ; pages++ {
-		page, more, err := ListChats(ctx, d.DB, u.a, 3, cur)
+		page, more, err := ListChats(ctx, d.DB, u.a, 3, cur, false)
 		if err != nil {
 			t.Fatal(err)
 		}
