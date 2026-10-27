@@ -4,6 +4,7 @@ package parity
 
 import (
 	"encoding/json"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -36,7 +37,8 @@ func section(prd, n string) string {
 	return rest
 }
 
-var idRE = regexp.MustCompile("`((?:UXP-ACC|UXP|LLM-ACC|LLM|CTX|MEDIA-EXT|QUEUE|KNOW|IMPORT)-[0-9]{3})`")
+// Any requirement id family: a definition row in a covered section counts, whatever its prefix.
+var idRE = regexp.MustCompile("`([A-Z]+(?:-[A-Z]+)*-[0-9]{3})`")
 
 // required lists the row ids the PRD defines in the covered sections.
 // required lists the requirement rows the PRD defines in the covered sections, with the priority the PRD gives each
@@ -178,8 +180,15 @@ func TestTableIsComplete(t *testing.T) {
 	got := map[string]int{}
 	for _, r := range rows(t) {
 		got[r.id]++
-		if p, ok := pri[r.id]; ok && p != "" && !strings.HasPrefix(r.pri, p) {
-			t.Errorf("%s has priority %q in the table, %s in the PRD", r.id, r.pri, p)
+		// The PRD's priority where it states one, "—" where it states none: no unsourced priority.
+		if p, ok := pri[r.id]; ok {
+			want := p
+			if want == "" {
+				want = "—"
+			}
+			if r.pri != want {
+				t.Errorf("%s has priority %q in the table, the PRD gives %q", r.id, r.pri, want)
+			}
 		}
 	}
 	for _, id := range want {
@@ -200,6 +209,15 @@ func TestTableIsComplete(t *testing.T) {
 
 func TestEveryRowHasItsEvidence(t *testing.T) {
 	gotests, webtests := existing(t)
+	prd := read(t, "docs/PRD.md")
+	probeRoutes := map[string]bool{}
+	var probe struct{ Routes []struct{ Path string } }
+	if err := json.Unmarshal([]byte(read(t, "docs/hermes/fixtures/hermes-route-probe.json")), &probe); err != nil {
+		t.Fatal(err)
+	}
+	for _, r := range probe.Routes {
+		probeRoutes[r.Path] = true
+	}
 	for _, r := range rows(t) {
 		var named int
 		for _, m := range goRef.FindAllStringSubmatch(r.evidence, -1) {
@@ -225,13 +243,28 @@ func TestEveryRowHasItsEvidence(t *testing.T) {
 				t.Errorf("%s is %s but names no test", r.id, r.status)
 			}
 		case "UPSTREAM_BLOCKED":
+			concrete := false
+			for _, m := range regexp.MustCompile("`(/[a-z0-9_/{}.-]+)`").FindAllStringSubmatch(r.evidence, -1) {
+				if probeRoutes[m[1]] {
+					concrete = true
+				}
+			}
+			if !concrete {
+				t.Errorf("%s is UPSTREAM_BLOCKED but names no concrete route from the committed probe (the endpoint that was checked)", r.id)
+			}
 			if !strings.Contains(r.evidence, "`/") || !strings.Contains(r.evidence, "hermes-route-probe.json") {
 				t.Errorf("%s is UPSTREAM_BLOCKED but does not name the probed endpoint and cite the route probe", r.id)
 			}
 		case "OWNER_ACCEPTED_EXCEPTION":
 			// An exception is an owner decision or a divergence the PRD itself states; an upstream gap is not one.
-			if !regexp.MustCompile(`[Oo]wner decision|PRD §`).MatchString(r.evidence) {
-				t.Errorf("%s is an owner exception but cites no owner decision or PRD divergence", r.id)
+			cites := regexp.MustCompile(`PRD §([0-9]+(?:\.[0-9]+)?)`).FindAllStringSubmatch(r.evidence, -1)
+			if len(cites) == 0 && !regexp.MustCompile(`[Oo]wner decision \d{4}-\d{2}-\d{2}`).MatchString(r.evidence) {
+				t.Errorf("%s is an owner exception but cites neither a PRD section nor a dated owner decision", r.id)
+			}
+			for _, c := range cites {
+				if !regexp.MustCompile(`(?m)^#{2,3} ` + regexp.QuoteMeta(c[1]) + `[. ]`).MatchString(prd) {
+					t.Errorf("%s cites PRD §%s, which docs/PRD.md does not have", r.id, c[1])
+				}
 			}
 		default:
 			t.Errorf("%s has status %q, not one of TESTED, IMPLEMENTED, UPSTREAM_BLOCKED, OWNER_ACCEPTED_EXCEPTION", r.id, r.status)
@@ -310,3 +343,25 @@ func TestImageHasNoForbiddenUpstreamAccess(t *testing.T) {
 		}
 	}
 }
+
+// The totals are pinned so the table cannot grow, shrink or change status without this line (and the PR that changes
+// it) saying so.
+func TestTableTotals(t *testing.T) {
+	counts := map[string]int{}
+	all := rows(t)
+	for _, r := range all {
+		counts[r.status]++
+	}
+	want := map[string]int{"TESTED": wantTested, "IMPLEMENTED": wantImplemented, "UPSTREAM_BLOCKED": wantBlocked, "OWNER_ACCEPTED_EXCEPTION": wantException}
+	if len(all) != wantRows || fmt.Sprint(counts) != fmt.Sprint(want) {
+		t.Errorf("table has %d rows %v; pinned %d rows %v", len(all), counts, wantRows, want)
+	}
+}
+
+const (
+	wantRows        = 121
+	wantTested      = 95
+	wantImplemented = 7
+	wantBlocked     = 18
+	wantException   = 1
+)
