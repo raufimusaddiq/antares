@@ -23,29 +23,30 @@ export function loadDraft(email: string, chatId: string | null): string {
 export const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const stampKey = (email: string, chatId: string | null) => `${PREFIX}at:${keyOf(email, chatId).slice(PREFIX.length)}`;
 
-// After a purge (sign-out, an ended or suspended session) this device writes no draft until a session loads for an
-// account again: text typed into a composer still on screen after a 401 must not recreate what was just removed. The
-// seal is stored beside the drafts, so every open tab obeys it, not only the one that saw the 401.
-const SEAL = "antares:drafts-sealed";
-const sealed = (): boolean => {
+// The account whose session is live on this device, stored beside the drafts so every open tab reads it. A session
+// load sets it; a purge (sign-out, an ended or suspended session) empties it. A draft is written only for that account:
+// after a 401 no tab can recreate what was purged, and after another account signs in the first account's tabs cannot
+// write their text back. No key at all is a first run, before any session was seen.
+const OWNER = "antares:drafts-owner";
+const mayWrite = (email: string): boolean => {
   try {
-    return localStorage.getItem(SEAL) === "1";
+    const owner = localStorage.getItem(OWNER);
+    return owner === null || owner === encodeURIComponent(email);
   } catch {
     return false; // no storage, so no draft can be written anyway
   }
 };
-const seal = (on: boolean) => {
+const setOwner = (email: string) => {
   try {
-    if (on) localStorage.setItem(SEAL, "1");
-    else localStorage.removeItem(SEAL);
+    localStorage.setItem(OWNER, encodeURIComponent(email));
   } catch {
-    // Storage unavailable: nothing is written to seal.
+    // Storage unavailable: nothing is written to guard.
   }
 };
 
 /** Empty text removes the entry rather than storing "". */
 export function saveDraft(email: string, chatId: string | null, text: string, now = Date.now()): void {
-  if (text !== "" && sealed()) return;
+  if (text !== "" && !mayWrite(email)) return;
   try {
     if (text === "") {
       localStorage.removeItem(keyOf(email, chatId));
@@ -119,7 +120,7 @@ export function forgetChatDrafts(email: string, chatId: string): void {
  * shared browser, and nothing outlives a week on the device.
  */
 export function purgeStaleDrafts(email: string, now = Date.now()): void {
-  seal(false); // a session is live for this account: its drafts may be kept again
+  setOwner(email); // a session is live for this account: only its drafts may be kept
   const own = `${encodeURIComponent(email)}:`;
   try {
     const doomed: string[] = [];
@@ -143,7 +144,7 @@ export function purgeStaleDrafts(email: string, now = Date.now()): void {
 
 /** Sign-out, an expired session and suspension: the next person on this browser inherits nothing. */
 export function purgeDrafts(): void {
-  seal(true);
+  setOwner(""); // no account: no tab writes a draft until a session loads again
   try {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);

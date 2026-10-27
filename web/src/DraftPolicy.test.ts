@@ -62,6 +62,20 @@ describe("local drafts follow the session (#172)", () => {
     expect(drafts()).toEqual([]);
   });
 
+  it("after A signs out and B signs in, A's still-open tab cannot write A's text back", async () => {
+    seed();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
+    await signOut(); // A, tab 1
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "ACTIVE", email: B })));
+    await loadSession(false); // B signs in, tab 1
+    vi.resetModules();
+    const tabOfA = await import("./drafts"); // A's tab, still open
+    tabOfA.saveDraft(A, "c1", "A's text from the old tab");
+    expect(drafts()).toEqual([]);
+    saveDraft(B, "c1", "B's own");
+    expect(loadDraft(B, "c1")).toBe("B's own");
+  });
+
   it("another account signing in on the same browser finds nothing of the first", async () => {
     seed();
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "ACTIVE", email: B })));
