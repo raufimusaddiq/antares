@@ -616,6 +616,11 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   .turn.assistant h2:not(.who) { font-size: 1.3rem; }
   .extras-toggle { display: inline-flex; align-self: flex-start; justify-content: flex-start; margin: 0; padding: 0 0.4rem; background: transparent; border-color: transparent; font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; color: var(--ink); }
   .extras { display: none; }
+  /* The chip row stays one short line on a phone, scrolling sideways inside itself, so the conversation keeps its height. */
+  .composer-chips { flex-wrap: nowrap; overflow-x: auto; gap: 0.6rem; margin: 0; scrollbar-width: none; }
+  .composer-chips > * { flex: none; white-space: nowrap; }
+  .composer-chips summary, .composer-chips button { min-height: 1.6rem; font-size: 0.72rem; }
+  .composer-chips details[open] { white-space: normal; flex: 1 0 100%; }
   .extras.open { display: block; max-height: 40dvh; overflow: auto; margin: 0.25rem 0 0.5rem; padding: 0.5rem 0.75rem 0.75rem; background-color: var(--peri); background-image: var(--dots); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: 3px 3px 0 var(--ink); }
   /* Composer: one row — attach, camera, the message, send. The words stay in the DOM as the accessible names. */
   .composer { gap: 0.1rem; padding: 0.2rem 0.25rem; margin-bottom: 0.6rem; border-radius: 26px; box-shadow: 3px 3px 0 var(--ink); }
