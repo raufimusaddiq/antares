@@ -461,6 +461,9 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 @media (max-width: 760px) { .search { flex: none; width: min(22rem, 80vw); margin: 0; } }
 
 /* ---- the options under the conversation: Record, templates, model, usage ------------------ */
+/* The chat's model and usage beside the input (#164): one compact, wrapping row above the composer. */
+.composer-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.9rem; width: 100%; max-width: 44rem; margin: 0 auto 0.3rem; }
+.composer-chips summary, .composer-chips button { font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; color: var(--ink); cursor: pointer; min-height: 2rem; }
 .extras { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.9rem; width: 100%; max-width: 44rem; margin: 0 auto 0.45rem; }
 .extras summary { font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; color: var(--ink); cursor: pointer; min-height: 2rem; }
 .extras summary[data-icon]::before { width: 1.05em; height: 1.05em; }

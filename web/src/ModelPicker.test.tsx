@@ -452,3 +452,23 @@ describe("ModelPicker on demand (#145)", () => {
     expect(document.body.textContent).toContain("2026-10-25T10:00:00Z");
   });
 });
+
+describe("the model chip beside the composer (#164)", () => {
+  const summary = () => document.querySelector("summary")!.textContent;
+
+  it("names the saved model and its effort", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", { ...mA, reasoningEffort: "high" }));
+    await waitFor(() => expect(summary()).toBe("Model: m-reason · high effort"));
+  });
+
+  it("calls no saved choice the assistant default, and names it once the catalogue is read", async () => {
+    const d = deferred();
+    render(<ModelPicker chatId="A" disabled={false} />);
+    await answerGet(d, "/api/chats/A", 0, chatOf("A", null));
+    await waitFor(() => expect(summary()).toBe("Model: assistant default"));
+    await open(d);
+    expect(summary()).toBe("Model: assistant default (m-plain)");
+  });
+});

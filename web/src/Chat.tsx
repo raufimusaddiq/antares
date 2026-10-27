@@ -7,6 +7,7 @@ import {
   describeCode,
   describeTurns,
   describeUsage,
+  describeGlance,
   parseLimitInput,
   getChat,
   getMessages,
@@ -1456,19 +1457,28 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
               />
             </details>
           )}
-          {current && offers(inventory, "models") && <ModelPicker chatId={current} disabled={busy} onChanged={() => setModelTick((n) => n + 1)} />}
-          {current && inventoryFailed && (
-            <p role="status">
-              Could not check which models are available.{" "}
-              <button type="button" onClick={() => setInventoryTick((n) => n + 1)}>Retry model check</button>
-            </p>
-          )}
           <Recorder />
           <Templates own={ownTemplates} onChange={setOwnTemplates} />
         </div>
         {current && current !== blankChat.current && (
           <QueuePanel chatId={current} busy={busy} tick={queueTick} onSent={onQueueSent} onQueue={(q) => (queueRef.current = q)} />
         )}
+        {/* Beside the input (#164): the chat's model and effort, one open away from changing, and usage at a glance. */}
+        <div className="composer-chips">
+          {current && offers(inventory, "models") && <ModelPicker chatId={current} disabled={busy} onChanged={() => setModelTick((n) => n + 1)} />}
+          {!current && offers(inventory, "models") && <span className="label">Model: assistant default (choose one once the chat exists)</span>}
+          {current && inventoryFailed && (
+            <p role="status">
+              Could not check which models are available.{" "}
+              <button type="button" onClick={() => setInventoryTick((n) => n + 1)}>Retry model check</button>
+            </p>
+          )}
+          {usage && (
+            <button type="button" className="quiet" data-chip="usage" aria-controls="chat-extras" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}>
+              {describeGlance(usage)}
+            </button>
+          )}
+        </div>
         <DraftNotice sync={sync} />
         <Composer
           value={draft}

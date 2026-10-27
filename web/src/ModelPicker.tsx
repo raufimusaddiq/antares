@@ -154,7 +154,15 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
     return (catalog?.providers ?? []).map((p) => ({ ...p, models: p.models.filter((m) => (showHidden || !m.hidden || m.id === choice?.model) && (!q || `${p.name} ${m.id}`.toLowerCase().includes(q))) }));
   }, [catalog, query, showHidden, choice?.model]);
 
-  const label = choice === undefined ? "Model" : choice ? `Model: ${choice.model}` : catalog?.default ? `Model: ${catalog.default.model} (default)` : "Model: default";
+  // The chip beside the composer (#164): the saved model and effort, or the assistant's default named as such.
+  const label =
+    choice === undefined
+      ? "Model"
+      : choice
+        ? `Model: ${choice.model}${choice.reasoningEffort ? ` · ${choice.reasoningEffort} effort` : ""}`
+        : catalog?.default
+          ? `Model: assistant default (${catalog.default.model})`
+          : "Model: assistant default";
   const current = catalog?.providers.flatMap((p) => p.models).find((m) => m.id === choice?.model);
 
   return (

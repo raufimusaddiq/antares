@@ -516,6 +516,14 @@ export function describeUsage(u: ChatUsage): string[] {
   return lines;
 }
 
+/** The usage chip beside the composer (#164): lifetime use and context occupancy at a glance. Unknown stays unknown. */
+export function describeGlance(u: ChatUsage): string {
+  if (u.budget.reached) return "Token limit reached";
+  const used = u.tokens ? `${fmt(u.tokens.total)} tokens used` : "Usage unknown";
+  const ctx = u.carriedTokens !== null && u.windowTokens ? `context ${Math.min(100, Math.round((u.carriedTokens / u.windowTokens) * 100))}% full` : "context in use unknown";
+  return `${used} · ${ctx}`;
+}
+
 const BASIS = "counts input + output tokens reported across all your chats, and input includes cache reads";
 
 /** What the budget line says. No limit is the default; an unknown usage is never printed as zero. */
