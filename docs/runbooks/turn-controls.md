@@ -18,7 +18,15 @@ Image id at the time of reading: `sha256:9c5561579f3ffdf333401797094ac3a743738d6
 ## What the user sees instead
 
 - Regenerate / edit / rewind answer `501 CAPABILITY_UNAVAILABLE` ("Hermes has no way to … a turn; start a
-  new chat instead"). The UI must show them disabled with that reason, never as a working button.
+  new chat instead"). The UI shows them disabled with that reason, never as a working button.
+- Beside them is a working alternative that composes a **new** turn (issue #166): **Edit as new message** on the
+  newest user turn and **Ask again** on the newest answer write that turn's text (for Ask again, the question the
+  answer replied to) into the composer, after anything already typed there. Nothing is sent, rewound or edited:
+  the user reads it, changes it if they like, and sends it as a normal message. The disabled Edit and Regenerate
+  name the alternative in their reason; Rewind has none beyond starting a new chat, which its reason says
+  (`web/src/TurnReuse.test.tsx`, `TurnControls.test.tsx`).
+- No fork is offered: Hermes' `/fork` ends the source session (`branched`) and cannot branch at a turn, so it is not
+  a rewind and its side effect needs its own ticket and owner decision.
 - Antares does **not** emulate them: no row deletion, no direct `state.db` or transcript write, no second
   `POST /v1/runs` dressed up as a retry, no Python on the Hermes side. Copying a prompt into a new chat is the
   user's own action and needs no API.

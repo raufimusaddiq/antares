@@ -172,7 +172,16 @@ export function turnControlReason(inv: Inventory | null, id: string): string {
   return row.available ? "Not available in this app yet" : row.reason || "Not supported by the assistant backend";
 }
 
-export function TurnControls({ inv, kinds, seq }: { inv: Inventory | null; kinds: readonly (keyof typeof TURN_CONTROLS)[]; seq: number }) {
+/**
+ * The working alternative beside the turn controls the assistant cannot honour (#166): it writes the earlier text into
+ * the composer as a new message. Nothing is rewound, edited or sent; the user sends it, or not.
+ */
+export interface TurnReuse {
+  label: string;
+  onClick: () => void;
+}
+
+export function TurnControls({ inv, kinds, seq, reuse }: { inv: Inventory | null; kinds: readonly (keyof typeof TURN_CONTROLS)[]; seq: number; reuse?: TurnReuse }) {
   const [shown, setShown] = useState<string | null>(null);
   const ref = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -200,10 +209,16 @@ export function TurnControls({ inv, kinds, seq }: { inv: Inventory | null; kinds
             </button>
             <small id={rid} className="label">
               {turnControlReason(inv, c.id)}
+              {reuse && k !== "rewind" && !offers(inv, c.id) ? ` Instead, use “${reuse.label}”: it writes a new message for you to send.` : ""}
             </small>
           </span>
         );
       })}
+      {reuse && (
+        <button type="button" className="quiet" data-control="reuse" onClick={reuse.onClick}>
+          {reuse.label}
+        </button>
+      )}
     </div>
   );
 }
@@ -238,6 +253,8 @@ export interface TranscriptProps {
   inventory?: Inventory | null;
   /** Bumped when the run's stream reports a prompt opened or closed; the prompts themselves come from the server. */
   promptTick?: number;
+  /** Puts an earlier message's text into the composer as a new message (the alternative to edit and regenerate). */
+  onReuse?: (text: string) => void;
   onCancel: () => void;
   onRetry: () => void;
   onReconnect: () => void;
@@ -259,10 +276,12 @@ function describeManage(code: string, what: "change" | "delete"): string {
 }
 
 export function Transcript(props: TranscriptProps) {
-  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0, chatId, inventory = null } = props;
+  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0, chatId, inventory = null, onReuse } = props;
   // Compact: the controls sit on the newest turn of each role only, not on every message.
   const lastUser = turns.reduce((n, t) => (t.role === "user" ? t.seq : n), -1);
   const lastAssistant = turns.reduce((n, t) => (t.role === "assistant" ? t.seq : n), -1);
+  // "Ask again" reuses the question the newest answer replied to: the newest user turn before it.
+  const askedText = turns.reduce((q, t) => (t.role === "user" && t.seq < lastAssistant ? t.text : q), "");
   const renderTurn = useCallback(
     (t: Turn) => (
       <article className={`turn ${t.role}`} data-found={t.seq === focusSeq ? "true" : undefined} aria-current={t.seq === focusSeq ? "location" : undefined}>
@@ -270,11 +289,15 @@ export function Transcript(props: TranscriptProps) {
         {t.role === "user" ? <Markdown text={t.text} /> : <MessageBody text={t.role === "assistant" ? hideMediaPaths(t.text).text : t.text} streaming={false} />}
         {t.role === "user" && t.attachments && <SentImages refs={t.attachments} />}
         {t.role === "assistant" && chatId && t.ref && <Artifacts chatId={chatId} seq={t.seq} turnRef={t.ref} text={t.text} />}
-        {chatId && t.role === "user" && t.seq === lastUser && <TurnControls inv={inventory} kinds={["edit"]} seq={t.seq} />}
-        {chatId && t.role === "assistant" && t.seq === lastAssistant && <TurnControls inv={inventory} kinds={["regenerate", "rewind"]} seq={t.seq} />}
+        {chatId && t.role === "user" && t.seq === lastUser && (
+          <TurnControls inv={inventory} kinds={["edit"]} seq={t.seq} reuse={onReuse && { label: "Edit as new message", onClick: () => onReuse(t.text) }} />
+        )}
+        {chatId && t.role === "assistant" && t.seq === lastAssistant && (
+          <TurnControls inv={inventory} kinds={["regenerate", "rewind"]} seq={t.seq} reuse={onReuse && askedText ? { label: "Ask again", onClick: () => onReuse(askedText) } : undefined} />
+        )}
       </article>
     ),
-    [focusSeq, chatId, inventory, lastUser, lastAssistant],
+    [focusSeq, chatId, inventory, lastUser, lastAssistant, onReuse, askedText],
   );
   const note = loadingMore ? (
     "Loading older messages…"
@@ -633,6 +656,14 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     onDraft((draft.trim() === "" ? "" : draft.replace(/\s*$/, "\n")) + t.slice(0, MAX_REPLY));
     document.getElementById("composer-input")?.focus();
   };
+  // Edit as new message / Ask again: the earlier text goes into the composer, after anything already typed there.
+  // Stable for the transcript's memoised rows; it always writes into the draft as it is now.
+  const reuseInto = useRef<(t: string) => void>(() => {});
+  reuseInto.current = (t: string) => {
+    onDraft((draftRef.current.trim() === "" ? "" : draftRef.current.replace(/\s*$/, "\n\n")) + t.slice(0, MAX_INPUT));
+    document.getElementById("composer-input")?.focus();
+  };
+  const reuseText = useCallback((t: string) => reuseInto.current(t), []);
   const [banner, setBanner] = useState("");
   // Phone layout: keep the open conversation's chip in view in the sideways-scrolling strip.
   useEffect(() => {
@@ -1362,6 +1393,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           key={current ?? "new"}
           chatId={current ?? undefined}
           inventory={inventory}
+          onReuse={reuseText}
           turns={turns}
           pending={pending}
           run={run}
