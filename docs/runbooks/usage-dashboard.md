@@ -5,7 +5,9 @@ day `days-1` days ago: totals, by model, by chat (deleted chats as one "Deleted 
 `deleted_run_usage`) and by day (every day in the range, empty ones included). The account menu's **Usage** panel shows
 it as a per-day bar chart with a table view, and tables by model and by chat; it reads only while open.
 
-- Tokens are what Hermes reported. Replies that reported nothing are counted (`unreported`), never as zero tokens.
+- Tokens are what Hermes reported. Replies that reported nothing are counted (`unreported`), never as zero tokens; a
+  group whose replies all reported nothing shows "unknown". A deleted chat's unreported replies stay counted per day
+  (`deleted_unreported_runs`, migration 0020).
 - The rupiah figure is this app's estimate from the dated price list (`internal/chat/usage.go`, `priceListDate`).
   A model with no known price is counted as `unpriced` and never priced; a group with nothing priceable shows no
   estimate. It is not the provider's bill: an admin reads the shared Kenari account's real usage at

@@ -6,6 +6,8 @@ import { describeCode, getUsageRange, type UsageRange, type UsageTotals } from "
 // figures are this app's estimate from its dated price list, not the provider's bill. Read only while open.
 
 const num = (n: number) => n.toLocaleString("en-US");
+/** Tokens of a group: unknown when it has replies and none of them reported usage, never 0. */
+export const tokens = (t: UsageTotals) => (t.runs > 0 && t.unreported === t.runs ? "unknown" : num(t.input + t.output));
 const rp = (n: number | null) => (n === null ? "—" : `≈ Rp ${Math.round(n).toLocaleString("en-US")}`);
 
 function caveats(t: UsageTotals): string {
@@ -56,7 +58,7 @@ export function UsageDashboard() {
           ) : (
             <>
               <p>
-                <strong>{num(data.total.input + data.total.output)} tokens</strong> in {num(data.total.runs)} replies since {data.since} (UTC) · estimated spend {rp(data.total.estimate)}
+                <strong>{tokens(data.total)} tokens</strong> in {num(data.total.runs)} replies since {data.since} (UTC) · estimated spend {rp(data.total.estimate)}
                 {caveats(data.total)}
               </p>
               <p className="label">
@@ -68,7 +70,7 @@ export function UsageDashboard() {
                 {data.byDay.map((d) => {
                   const t = d.input + d.output;
                   return (
-                    <span key={d.day} className="usage-bar" title={`${d.day}: ${num(t)} tokens, ${num(d.runs)} replies, ${rp(d.estimate)}`}>
+                    <span key={d.day} className="usage-bar" title={`${d.day}: ${tokens(d)} tokens, ${num(d.runs)} replies, ${rp(d.estimate)}`}>
                       <span style={{ height: `${t === 0 ? 0 : Math.max(2, (t / peak) * 100)}%` }} />
                     </span>
                   );
@@ -82,7 +84,7 @@ export function UsageDashboard() {
                   </thead>
                   <tbody>
                     {data.byDay.map((d) => (
-                      <tr key={d.day}><td>{d.day}</td><td>{num(d.runs)}</td><td>{num(d.input + d.output)}</td><td>{rp(d.estimate)}</td></tr>
+                      <tr key={d.day}><td>{d.day}</td><td>{num(d.runs)}</td><td>{tokens(d)}</td><td>{rp(d.estimate)}</td></tr>
                     ))}
                   </tbody>
                 </table>
@@ -117,7 +119,7 @@ export function UsageDashboard() {
                       <tr key={c.chatId || "deleted"}>
                         <td>{c.deleted ? "Deleted chats" : c.title || "Untitled"}</td>
                         <td>{num(c.runs)}{c.unreported ? ` (${c.unreported} unreported)` : ""}</td>
-                        <td>{num(c.input + c.output)}</td>
+                        <td>{tokens(c)}</td>
                         <td>{rp(c.estimate)}</td>
                       </tr>
                     ))}

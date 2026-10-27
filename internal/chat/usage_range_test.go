@@ -66,6 +66,10 @@ func TestUsageRangeIsOwnerScopedAndHonest(t *testing.T) {
 		t.Fatal(err)
 	}
 	spentOnce(t, a, alice, gone, 500_000, "deepseek-v4-1-flash")
+	quietGone := spentOnce(t, a, alice, gone, 0, "")
+	if _, err := a.db.Exec(`UPDATE runs SET input_tokens = NULL, output_tokens = NULL, usage_model = NULL WHERE id = ?`, quietGone); err != nil {
+		t.Fatal(err)
+	}
 	deleteAdvertised(t, a)
 	if w := alice.do("DELETE", "/api/chats/"+gone, nil, nil); w.Code >= 300 {
 		t.Fatalf("delete: %d %s", w.Code, w.Body.String())
@@ -85,7 +89,7 @@ func TestUsageRangeIsOwnerScopedAndHonest(t *testing.T) {
 	if v.Days != 30 || len(v.ByDay) != 30 || v.Currency != "IDR" || v.PriceDate == "" {
 		t.Fatalf("shape: %+v", v)
 	}
-	if v.Total.Runs != 4 || v.Total.Unreported != 1 || v.Total.Unpriced != 1 {
+	if v.Total.Runs != 5 || v.Total.Unreported != 2 || v.Total.Unpriced != 1 { // the deleted chat's unreported reply still counts
 		t.Errorf("totals: %+v", v.Total)
 	}
 	if v.Total.Estimate == nil || *v.Total.Estimate != 5500+2750 {
@@ -98,7 +102,7 @@ func TestUsageRangeIsOwnerScopedAndHonest(t *testing.T) {
 	}
 	var deleted, withQuiet bool
 	for _, c := range v.ByChat {
-		if c.Deleted && c.ChatID == "" && c.Output == 500_000 {
+		if c.Deleted && c.ChatID == "" && c.Output == 500_000 && c.Unreported == 1 && c.Runs == 2 {
 			deleted = true
 		}
 		if c.ChatID == c2 && c.Unreported == 1 {
@@ -111,8 +115,8 @@ func TestUsageRangeIsOwnerScopedAndHonest(t *testing.T) {
 	if strings.Contains(w.Body.String(), bob.id) {
 		t.Error("bob's id in alice's usage")
 	}
-	if v90 := decodeBody[rangeAnswer](t, alice.get("/api/me/usage?days=90")); v90.Total.Runs != 5 {
-		t.Errorf("90 days: %d runs, want 5 (the 40-day-old reply included)", v90.Total.Runs)
+	if v90 := decodeBody[rangeAnswer](t, alice.get("/api/me/usage?days=90")); v90.Total.Runs != 6 {
+		t.Errorf("90 days: %d runs, want 6 (the 40-day-old reply included)", v90.Total.Runs)
 	}
 	if b := decodeBody[rangeAnswer](t, bob.get("/api/me/usage?days=7")); b.Total.Runs != 1 || len(b.ByChat) != 1 {
 		t.Errorf("bob: %+v", b.Total)

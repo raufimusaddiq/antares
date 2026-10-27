@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { UsageDashboard } from "./UsageDashboard";
+import { tokens, UsageDashboard } from "./UsageDashboard";
 
 afterEach(() => {
   cleanup();
@@ -24,6 +24,12 @@ const open = (c: HTMLElement) => {
   d.open = true;
   fireEvent(d, new Event("toggle"));
 };
+
+it("a group whose replies all reported nothing shows unknown tokens, never 0", () => {
+  expect(tokens(t({ runs: 2, unreported: 2 }))).toBe("unknown");
+  expect(tokens(t({ runs: 3, unreported: 1, input: 10, output: 5 }))).toBe("15");
+  expect(tokens(t())).toBe("0"); // no replies at all: zero is the truth
+});
 
 // #151: reads only while open, switches range, keeps unknowns unknown, labels the estimate and deleted chats.
 describe("usage dashboard", () => {

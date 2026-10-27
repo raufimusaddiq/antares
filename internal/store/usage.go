@@ -232,7 +232,9 @@ func UsageRows(ctx context.Context, db Querier, userID string, since time.Time) 
 		UNION ALL
 		SELECT '', '', day, 1, model, runs, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens
 		FROM deleted_run_usage WHERE user_id = ? AND day >= ?
-		ORDER BY 3, 1, 5`, userID, ts(since), userID, since.UTC().Format("2006-01-02"))
+		UNION ALL
+		SELECT '', '', day, 0, '', runs, 0, 0, 0, 0 FROM deleted_unreported_runs WHERE user_id = ? AND day >= ?
+		ORDER BY 3, 1, 5`, userID, ts(since), userID, since.UTC().Format("2006-01-02"), userID, since.UTC().Format("2006-01-02"))
 	if err != nil {
 		return nil, err
 	}
