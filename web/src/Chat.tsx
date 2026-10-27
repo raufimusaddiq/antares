@@ -45,6 +45,7 @@ import { MAX_REPLY, ReplyContext } from "./openui/reply";
 import { Artifacts } from "./Artifacts";
 import { ExportChat } from "./ExportChat";
 import { MemorySkillsPanel } from "./MemorySkills";
+import { UsageDashboard } from "./UsageDashboard";
 import { JobsPanel } from "./Jobs";
 import { fenceSelection, inFence, indentInFence, toggleList, wrapSelection, type Edit } from "./composerEdit";
 import { Notifications } from "./Notifications";
@@ -57,6 +58,7 @@ import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, describeFolded, describeTool, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
+import { Dictation } from "./Dictation";
 import type { AttachmentRef } from "./MediaPreview";
 import { RunPrompts } from "./RunPrompts";
 import { QueuePanel } from "./QueuePanel";
@@ -1343,6 +1345,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           <div id="bar-actions" className={menuOpen ? "bar-actions open" : "bar-actions"}>
             <Notifications />
             <MemorySkillsPanel />
+            <UsageDashboard />
             {offers(inventory, "jobs") && <JobsPanel />}
             {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? openTitle.current} />}
             {canAdmin && onAdmin && (
@@ -1499,6 +1502,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
               )}
             </details>
           )}
+          <Dictation onText={(t) => onDraft(draft.trim() === "" ? t : `${draft.replace(/\s*$/, "")} ${t}`)} />
           <Recorder />
           <Templates own={ownTemplates} onChange={setOwnTemplates} />
           <p className="label" data-policy="drafts">

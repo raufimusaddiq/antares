@@ -729,6 +729,20 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 .skills { list-style: none; margin: 0.5rem 0; padding: 0; display: grid; gap: 0.5rem; max-height: 16rem; overflow-y: auto; }
 .skills p { margin: 0.15rem 0 0; }
 
+/* #151 usage dashboard, in the account menu. One series: ink bars, 2px gaps, 4px rounded tops on a baseline. */
+.usage-panel summary { cursor: pointer; }
+.usage-panel h3 { margin: 0.75rem 0 0.25rem; font-size: 1rem; }
+.usage-bars { display: flex; align-items: flex-end; gap: 2px; height: 6rem; padding-bottom: 1px; border-bottom: 1px solid var(--ink-2); }
+.usage-bar { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; min-width: 2px; }
+.usage-bar:hover > span { opacity: 0.7; }
+.usage-bar > span { display: block; width: 100%; background: var(--ink); border-radius: 4px 4px 0 0; }
+.usage-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.usage-table th, .usage-table td { text-align: left; padding: 0.15rem 0.4rem; border-bottom: 1px solid var(--ink-2); }
+
+/* #167 dictation, beside the recorder. */
+.dictation { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.dictation .notice { flex-basis: 100%; }
+
 /* #105 scheduled tasks, in the account menu. */
 .jobs-panel summary { cursor: pointer; }
 .jobs { list-style: none; margin: 0.5rem 0; padding: 0; display: grid; gap: 0.75rem; }
