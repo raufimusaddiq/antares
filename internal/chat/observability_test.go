@@ -187,6 +187,7 @@ func TestStreamDisconnectsAreCountedOnEveryPath(t *testing.T) {
 	_, fr = a.hx.runWithInput(t, "signed out")
 	s = u.open(run, "")
 	recv(t, fr.opens, "stream")
+	opened(s)
 	if w := u.do("POST", "/api/auth/logout", nil, nil); w.Code >= 300 {
 		t.Fatalf("logout: %d", w.Code)
 	}

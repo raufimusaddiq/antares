@@ -14,7 +14,7 @@ No log line carries a prompt, a reply, a draft, a title, a cookie, a header, a q
 
 | Line | Fields |
 |---|---|
-| `http …` (every `/api` request) | `req` (request id), `method`, `route` (the route pattern, never the raw path), `status`, `ms`, `bytes`, `user` (internal opaque id, or `-`), `error` (the API error code of a refusal, or `-`) |
+| `http …` (every `/api` request) | `req` (request id), `method` (a standard method, else `OTHER`: a client chooses it), `route` (the route pattern, never the raw path), `status`, `ms`, `bytes`, `user` (internal opaque id, or `-`), `error` (the API error code of a refusal, or `-`) |
 | `run …` (every run that ends, is cancelled or is disconnected) | `user`, `chat`, `run`, `binding` (the binding id, never its key), `state`, `outcome` (`success`/`failure`/`cancelled`/`unknown`), `error` |
 | `run usage …` | `run`, input / output / cache-read tokens, when Hermes reported them (not the model: it is an upstream string) |
 | `chat: history page …`, `chat: search index …` | durations and counts only (#171) |

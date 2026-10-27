@@ -91,8 +91,17 @@ func accessLog(mux *http.ServeMux, next http.Handler) http.Handler {
 			obs.Denied()
 		}
 		log.Printf("http req=%s method=%s route=%q status=%d ms=%d bytes=%d user=%s error=%s",
-			rec.ID, r.Method, route, sw.status, time.Since(began).Milliseconds(), sw.bytes, user, category)
+			rec.ID, logMethod(r.Method), route, sw.status, time.Since(began).Milliseconds(), sw.bytes, user, category)
 	})
+}
+
+// logMethod is the request method as logged: a client chooses it, so anything but a standard method is OTHER.
+func logMethod(m string) string {
+	switch m {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions:
+		return m
+	}
+	return "OTHER"
 }
 
 // statusWriter keeps the status, the byte count and the first bytes of an error body (for its code). It passes
