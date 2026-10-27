@@ -42,6 +42,24 @@ another batch for a signed-out session. A batch already being written finishes f
 read is not cancelled with the request (`TestSignOutBetweenGuardAndStreamStartSendsNothing`,
 `TestSignOutWaitsForTheBatchInFlight`, `TestRevokedSessionStopsAContinuousStream`). The web app offers it in the account menu.
 
+**An admin can do the same for a user** (#113): `POST /api/admin/users/{userId}/revoke-sessions` (admin guard, same
+origin, no body) revokes every live session of that account and its push subscriptions, stops its open streams the
+same way, and audits `admin.revoke_sessions` with actor, target and outcome only. The account, its chats and its
+workspace are untouched: the person signs in again (`TestAdminRevokeSessionsSignsTheUserOutEverywhere`). The user
+screen offers it under **Sessions**. The audit screen's **Export audit log (JSON)** walks every page of
+`GET /api/admin/audit` and saves the metadata it returns (no content); a log longer than 400 pages is refused, never
+exported in part.
+
+## Appearance and diagnostics (#113)
+
+The account menu has two per-device panels. **Appearance** (theme, text size, conversation-list width, focus mode) is
+kept in this browser's local storage (`antares:appearance:v1`) and applied as `data-*` attributes on `<html>` before the
+first paint; "Follow the system" is the default, and an OS reduced-motion setting is always honoured. **Diagnostics**
+shows the server build (`GET /api/version`, public: `{"revision": "<commit>"}` stamped at image build from
+`REVISION`, `unknown` for a local build), the bundle (`/source-hash.txt`), network and server readiness (`/readyz`)
+with its latency, live-reply support and the app-update state. It reads nothing else: no cookie, token, account
+field or upstream key (`web/src/Settings.test.tsx`).
+
 ## Guards
 
 `Active` (every chat-touching route) = valid session ∧ `APPROVED` ∧ `tenant_status = READY` ∧ a

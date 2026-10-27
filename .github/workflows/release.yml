@@ -32,6 +32,8 @@ jobs:
         with:
           context: .
           push: true
+          build-args: |
+            REVISION=${{ github.sha }}
           tags: |
             ghcr.io/raufimusaddiq/antares:${{ github.sha }}
             ghcr.io/raufimusaddiq/antares:latest
