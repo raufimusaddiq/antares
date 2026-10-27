@@ -448,3 +448,30 @@ func TestATooFrequentTaskLeftBehindCannotBeResumed(t *testing.T) {
 		t.Errorf("the owner can still delete it: %d", w.Code)
 	}
 }
+
+// #194 review: the pending shutdown is recorded in the suspension's own transaction, so a process that stops between
+// the suspension and the pause (simulated: the suspension alone, no pause) still leaves the account to the retry.
+func TestSuspensionWithoutAPauseIsRecoveredByTheRetry(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	createJob(t, alice, "one", "every 2h")
+	admin := a.user("carol")
+	if _, err := a.db.Exec(`UPDATE users SET role = 'ADMIN' WHERE id = ?`, admin.id); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.Decide(context.Background(), a.db, admin.id, alice.id, store.ActionSuspend, "abuse", "req", time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if ids, _ := store.PendingJobShutdowns(context.Background(), a.db, "", 10); !slices.Contains(ids, alice.id) {
+		t.Fatalf("the suspension did not record the pending shutdown: %v", ids)
+	}
+	a.svc.retryJobShutdowns(context.Background()) // what the loop does after a restart
+	for _, j := range a.hx.jobsOf(alice.profile) {
+		if j["enabled"] != false {
+			t.Error("job still enabled after the retry")
+		}
+	}
+	if ids, _ := store.PendingJobShutdowns(context.Background(), a.db, "", 10); len(ids) != 0 {
+		t.Errorf("still pending: %v", ids)
+	}
+}

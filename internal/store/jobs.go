@@ -6,15 +6,10 @@ import (
 	"time"
 )
 
-// JobShutdownPending is the tenant detail of a suspended account whose scheduled jobs could not be paused upstream
-// (PRD §12 rule 3): they may still run until a retry pauses them. The admin user screen shows it as recorded.
+// JobShutdownPending is the tenant detail of a suspended account whose scheduled jobs are not yet verified paused
+// upstream (PRD §12 rule 3): Decide sets it with the suspension, and it is cleared once a pause is verified. Until then
+// the jobs may still run, and the admin user screen shows it as recorded.
 const JobShutdownPending = "SUSPENSION_PENDING_JOB_SHUTDOWN: this account's scheduled jobs could not be paused in its workspace and may still run. Antares retries every few minutes."
-
-// MarkJobShutdownPending records the pending shutdown on a suspended account (only while it is still suspended).
-func MarkJobShutdownPending(ctx context.Context, db *sql.DB, userID string) error {
-	_, err := db.ExecContext(ctx, `UPDATE users SET tenant_detail = ? WHERE id = ? AND approval_status = 'SUSPENDED'`, JobShutdownPending, userID)
-	return err
-}
 
 // ClearJobShutdownPending removes the mark once the jobs are paused; any other detail is left alone.
 func ClearJobShutdownPending(ctx context.Context, db *sql.DB, userID string) error {

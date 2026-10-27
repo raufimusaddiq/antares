@@ -253,8 +253,10 @@ func Decide(ctx context.Context, db *sql.DB, actor, target, action, reason, reqI
 			tenant_attempts = 0, tenant_next_attempt_at = NULL, approved_at = ?, approved_by = ?
 			WHERE id = ? AND approval_status = ?`, t.to, next, ts(now), actor, target, from)
 	case ActionSuspend:
+		// The pending job shutdown is recorded with the suspension itself (PRD §12 rule 3): it is cleared only once
+		// the account's scheduled jobs are verified paused, so a restart in between still leaves it to the retry loop.
 		res, err = tx.ExecContext(ctx, `UPDATE users SET approval_status = 'SUSPENDED', tenant_status = 'DISABLED',
-			tenant_detail = NULL, tenant_next_attempt_at = NULL WHERE id = ? AND approval_status = ?`, target, from)
+			tenant_detail = ?, tenant_next_attempt_at = NULL WHERE id = ? AND approval_status = ?`, JobShutdownPending, target, from)
 	default: // reject
 		res, err = tx.ExecContext(ctx, `UPDATE users SET approval_status = 'REJECTED', tenant_detail = NULL
 			WHERE id = ? AND approval_status = ?`, target, from)

@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { JobsPanel } from "./Jobs";
+import { JobsPanel, when } from "./Jobs";
 
 afterEach(() => {
   cleanup();
@@ -59,4 +59,10 @@ describe("scheduled tasks", () => {
     fireEvent.click(screen.getByRole("button", { name: "Add task" }));
     expect((await screen.findByRole("alert")).textContent).toContain("at most once an hour");
   });
+});
+
+it("shows times in UTC, as the panel says", () => {
+  expect(when("2026-10-27T02:30:00+07:00")).toBe("2026-10-26 19:30 UTC");
+  expect(when(null)).toBe("—");
+  expect(when("not a time")).toBe("—");
 });

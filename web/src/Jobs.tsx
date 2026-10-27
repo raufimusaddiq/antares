@@ -5,7 +5,11 @@ import { createJob, deleteJob, describeJobCode, jobAction, listJobs, type Job } 
 // panel is open. A task's results stay in the workspace: the assistant offers no route to read them back, so the panel
 // shows when a task last ran and how that went, not what it produced.
 
-const when = (s: string | null) => (s ? new Date(s).toLocaleString() : "—");
+/** A time in UTC, as the panel says: "2026-10-27 09:00 UTC". */
+export const when = (s: string | null) => {
+  const d = s ? new Date(s) : null;
+  return d && !Number.isNaN(d.getTime()) ? `${d.toISOString().slice(0, 16).replace("T", " ")} UTC` : "—";
+};
 
 export function JobsPanel() {
   const [open, setOpen] = useState(false);

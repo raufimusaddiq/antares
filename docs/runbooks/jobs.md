@@ -30,9 +30,11 @@ with another user's id.
 ## Suspension (PRD §12 rule 3)
 
 Suspending an account pauses every enabled task in its workspace through its own binding, then reads the list back. Every job change holds a per-account lock and re-checks the account after taking it, and the suspension takes the same lock, so a change racing a suspension either finishes first (and is then paused) or is refused; the 10-task count and the create are atomic under it too. Retries rotate through the marked accounts, 20 per tick.
-The outcome is audited as `admin.suspend_jobs` (`ok` or `pending`). If Hermes cannot be reached, the account's tenant
-detail becomes `SUSPENSION_PENDING_JOB_SHUTDOWN: …`, which the admin user screen shows as recorded, and the chat
-service retries every 5 minutes; a retry that succeeds clears it and audits `system.suspend_jobs ok`. Reactivating
+The outcome is audited as `admin.suspend_jobs` (`ok` or `pending`). The suspension itself records
+`SUSPENSION_PENDING_JOB_SHUTDOWN: …` as the account's tenant detail in the same transaction, and it is cleared only
+once the pause is verified. So if Hermes cannot be reached, or the process stops before the pause runs, the admin user
+screen shows it and the chat service retries every 5 minutes; a retry that succeeds clears it and audits
+`system.suspend_jobs ok` (`TestSuspensionWithoutAPauseIsRecoveredByTheRetry`). Reactivating
 leaves the tasks paused: the user resumes them. Tests: `TestSuspensionPausesTheUsersJobsUpstream`,
 `TestSuspensionWithUnreachableJobsIsPendingThenRetried`.
 
