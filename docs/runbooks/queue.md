@@ -22,10 +22,10 @@ text only; images are not queued. Rows cascade with the chat and the user.
 | `PATCH /api/chats/{chatId}/queue/{itemId}` `{input}` | edit a `QUEUED` message (one being sent cannot change: `404`) |
 | `DELETE /api/chats/{chatId}/queue/{itemId}` | remove a `QUEUED` message |
 | `PATCH /api/chats/{chatId}/queue` `{paused}` | pause (`USER`) or resume. Resuming is the explicit recovery: a free chat sends its head at once |
+| `POST /api/chats/{chatId}/queue/next` | **Send next**: send the head now, even from a paused queue (it stays paused). A busy chat is `409 RUN_CONFLICT`, an empty queue `409 QUEUE_EMPTY` |
 
 `POST /queue` and `PATCH /queue` answer with `started: {runId, input}` when their dispatch began a run, so the browser follows
 that reply instead of showing an idle chat.
-| `POST /api/chats/{chatId}/queue/next` | **Send next**: send the head now, even from a paused queue (it stays paused). A busy chat is `409 RUN_CONFLICT`, an empty queue `409 QUEUE_EMPTY` |
 
 The last two are additions to the PRD §29.1 table, which lists only the collection and item routes: pause/unpause and "Send
 next" are required by `QUEUE-001` and need a route. Every route checks ownership before reading the body; a foreign chat or item
