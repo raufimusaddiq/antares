@@ -104,7 +104,7 @@ export function MemorySkillsPanel() {
           <h3>Your instructions</h3>
           <p className="label">Added to each of your messages as preferences. The assistant's base instructions are set by the operator, are not shown here and always come first.</p>
           <label>
-            Instructions <textarea value={text} maxLength={max} readOnly={saving} aria-busy={saving} onChange={(e) => setText(e.target.value)} />
+            Instructions <textarea value={text} maxLength={max} readOnly={saving || saved === null} aria-busy={saving || saved === null} onChange={(e) => setText(e.target.value)} />
           </label>
           <button type="button" disabled={saving || saved === null || text.trim() === saved} onClick={() => void save()}>
             Save instructions

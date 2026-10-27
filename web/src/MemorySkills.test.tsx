@@ -96,6 +96,21 @@ describe("Memory & Skills", () => {
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
+  it("the editor is read-only until the instructions are read, so nothing typed is replaced", async () => {
+    let answer!: (r: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((path: string) => (path === "/api/capabilities" ? Promise.resolve(json(200, inventory)) : new Promise<Response>((r) => (answer = r)))),
+    );
+    const { container } = render(<MemorySkillsPanel />);
+    open(container);
+    const box = screen.getByLabelText("Instructions") as HTMLTextAreaElement;
+    expect(box.readOnly).toBe(true);
+    answer(json(200, { text: "stored", max: 2000 }));
+    await waitFor(() => expect(box.readOnly).toBe(false));
+    expect(box.value).toBe("stored");
+  });
+
   it("a failed re-read leaves Save off", async () => {
     let failRead = false;
     vi.stubGlobal(
