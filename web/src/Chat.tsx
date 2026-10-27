@@ -43,6 +43,7 @@ import { Markdown } from "./Markdown";
 import { MAX_REPLY, ReplyContext } from "./openui/reply";
 import { Artifacts } from "./Artifacts";
 import { ExportChat } from "./ExportChat";
+import { UsageDashboard } from "./UsageDashboard";
 import { fenceSelection, inFence, indentInFence, toggleList, wrapSelection, type Edit } from "./composerEdit";
 import { Notifications } from "./Notifications";
 import { ImageStrip, useImageAttachments, type Attachment } from "./ImageAttachments";
@@ -1338,6 +1339,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           </button>
           <div id="bar-actions" className={menuOpen ? "bar-actions open" : "bar-actions"}>
             <Notifications />
+            <UsageDashboard />
             {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? openTitle.current} />}
             {canAdmin && onAdmin && (
               <button type="button" className="quiet" data-icon="shield" onClick={onAdmin}>

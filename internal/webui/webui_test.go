@@ -110,6 +110,8 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		// #101 staged image and audio assets: upload/preview/delete by the server-issued asset id. Owner-checked
 		// on every call; the page never builds one from message text.
 		"/api/assets": true, "/api/assets/": true,
+		// #151 the caller's own usage over 7/30/90 days.
+		"/api/me/usage": true,
 		"/api/me/new-chat-draft": true, "/api/me/templates": true, "/api/me/templates/": true,
 	}
 	pathRe := regexp.MustCompile(`/api/[A-Za-z0-9_/.-]*`)

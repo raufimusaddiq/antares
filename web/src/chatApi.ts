@@ -842,3 +842,51 @@ export const getCapabilities = (signal?: AbortSignal) => call("GET", "/api/capab
 
 /** True only when the server reported this capability as available. Unknown ids are not offered. */
 export const offers = (inv: Inventory | null, id: string): boolean => inv?.capabilities.find((c) => c.id === id)?.available === true;
+
+/** One group of the usage dashboard (#151). estimate is null when nothing in it could be priced. */
+export interface UsageTotals {
+  runs: number;
+  unreported: number;
+  unpriced: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  estimate: number | null;
+}
+export interface UsageRange {
+  days: number;
+  since: string;
+  currency: string;
+  priceDate: string;
+  total: UsageTotals;
+  byModel: (UsageTotals & { model: string })[];
+  byChat: (UsageTotals & { chatId: string; title: string; deleted: boolean })[];
+  byDay: (UsageTotals & { day: string })[];
+}
+
+function totals(v: unknown): UsageTotals | null {
+  if (typeof v !== "object" || v === null) return null;
+  const o = v as Record<string, unknown>;
+  const n = (k: string) => (typeof o[k] === "number" ? (o[k] as number) : NaN);
+  const t = { runs: n("runs"), unreported: n("unreported"), unpriced: n("unpriced"), input: n("input"), output: n("output"), cacheRead: n("cacheRead") };
+  if (Object.values(t).some(Number.isNaN)) return null;
+  const e = o.estimate;
+  if (e !== null && typeof e !== "number") return null;
+  return { ...t, estimate: e as number | null };
+}
+
+export function parseUsageRange(v: unknown): UsageRange | null {
+  if (typeof v !== "object" || v === null) return null;
+  const o = v as Record<string, unknown>;
+  const total = totals(o.total);
+  const list = <T,>(x: unknown, extra: (r: Record<string, unknown>) => T | null) =>
+    Array.isArray(x) ? x.map((r) => { const t = totals(r); const e = typeof r === "object" && r ? extra(r as Record<string, unknown>) : null; return t && e ? { ...t, ...e } : null; }) : null;
+  const byModel = list(o.byModel, (r) => (typeof r.model === "string" ? { model: r.model } : null));
+  const byChat = list(o.byChat, (r) => (typeof r.chatId === "string" && typeof r.title === "string" && typeof r.deleted === "boolean" ? { chatId: r.chatId, title: r.title, deleted: r.deleted } : null));
+  const byDay = list(o.byDay, (r) => (typeof r.day === "string" ? { day: r.day } : null));
+  if (!total || !byModel || !byChat || !byDay || [byModel, byChat, byDay].some((l) => l.some((x) => x === null))) return null;
+  if (typeof o.days !== "number" || typeof o.since !== "string" || typeof o.currency !== "string" || typeof o.priceDate !== "string") return null;
+  return { days: o.days, since: o.since, currency: o.currency, priceDate: o.priceDate, total, byModel: byModel as UsageRange["byModel"], byChat: byChat as UsageRange["byChat"], byDay: byDay as UsageRange["byDay"] };
+}
+
+export const getUsageRange = (days: 7 | 30 | 90) => call("GET", `/api/me/usage?days=${days}`, parseUsageRange);
