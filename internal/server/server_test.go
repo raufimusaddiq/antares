@@ -1,10 +1,12 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"github.com/raufimusaddiq/antares/internal/webui"
 	"io/fs"
+	"log"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -246,5 +248,21 @@ func TestServiceWorkerIsServedFreshAndIsNotTheShell(t *testing.T) {
 	}
 	if !strings.Contains(body, `addEventListener("push"`) || !strings.Contains(body, "notificationclick") {
 		t.Error("the worker does not handle push")
+	}
+}
+
+// #114: the method is client-chosen, so a non-standard one is logged as OTHER, never verbatim.
+func TestAccessLogNeverCarriesAnArbitraryMethod(t *testing.T) {
+	var buf bytes.Buffer
+	log.SetOutput(&buf)
+	defer log.SetOutput(os.Stderr)
+	s := New(func(context.Context) error { return nil }, t.TempDir())
+	for _, m := range []string{"PRIVATE-PROMPT-77", "GET"} {
+		rec := httptest.NewRecorder()
+		s.Routes().ServeHTTP(rec, httptest.NewRequest(m, "/api/nope", nil))
+	}
+	got := buf.String()
+	if strings.Contains(got, "PRIVATE-PROMPT-77") || !strings.Contains(got, "method=OTHER") || !strings.Contains(got, "method=GET") {
+		t.Fatalf("access log:\n%s", got)
 	}
 }
