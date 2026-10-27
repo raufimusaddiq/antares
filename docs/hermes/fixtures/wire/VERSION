@@ -1,0 +1,4 @@
+hermes image: sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d
+captured: 2026-10-27T08:14:41Z (capture directory 20261027T081441Z)
+antares: b0707458ef0946abefb91bf00516258627912b19
+how: synthetic smoke run-19518c40900d, prompt "Use web search to find today's date in Jakarta, then answer in one line."
