@@ -20,6 +20,7 @@ class FakeAntares(http.server.BaseHTTPRequestHandler):
     leak = False
     stuck = False
     garbled = False  # B's job list answers something that is not JSON
+    leak_writes = False  # B may delete, pause, resume and run A's job
     state = {}
 
     def log_message(self, *a):
@@ -58,7 +59,9 @@ class FakeAntares(http.server.BaseHTTPRequestHandler):
         return self.send(404)
 
     def do_DELETE(self):
-        return self.send(404 if self.who() != "a" else 204)
+        if self.who() == "a" or self.leak_writes:
+            return self.send(204)
+        return self.send(404)
 
     def do_POST(self):
         st, me, p = self.state, self.who(), self.path
@@ -73,6 +76,8 @@ class FakeAntares(http.server.BaseHTTPRequestHandler):
         if p == "/api/jobs" and me == "a":
             st["job"] = {"id": JOB, "name": "isolation probe", "paused": False, "state": "scheduled", "schedule": "every 120m"}
             return self.send(201, st["job"])
+        if p.startswith(f"/api/jobs/{JOB}/") and me == "b" and self.leak_writes:
+            return self.send(200, st["job"])
         if p == f"/api/jobs/{JOB}/run" and me == "a":
             st["job"].update(lastRunAt="2026-10-28T00:00:00Z", lastStatus="ok")
             return self.send(200, st["job"])
@@ -95,7 +100,7 @@ class ProbeTest(unittest.TestCase):
         self.data = os.path.join(self.dir, "data")
         os.makedirs(os.path.join(self.data, "profiles/u_probe/cron/output", JOB))
         self.write_run(probe.MARKER)
-        FakeAntares.leak = FakeAntares.stuck = FakeAntares.garbled = False
+        FakeAntares.leak = FakeAntares.stuck = FakeAntares.garbled = FakeAntares.leak_writes = False
         FakeAntares.state = {"approved": {}, "store": {"enabled": True}}
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeAntares)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
@@ -131,7 +136,7 @@ class ProbeTest(unittest.TestCase):
     def test_isolated_and_paused_passes(self):
         checks, passed = self.run_probe()
         self.assertTrue(passed, checks)
-        self.assertEqual(len(checks), 22)
+        self.assertEqual(len(checks), 23)
 
     def test_a_leak_to_b_fails(self):
         FakeAntares.leak = True
@@ -145,11 +150,33 @@ class ProbeTest(unittest.TestCase):
         self.assertFalse(passed)
         self.assertFalse(checks["Hermes' own store has the job disabled"])
 
+    def test_a_leak_on_a_mutating_route_fails(self):
+        FakeAntares.leak_writes = True
+        checks, passed = self.run_probe()
+        self.assertFalse(passed)
+        for route in ("DELETE /api/jobs/<A job>", "POST /api/jobs/<A job>/pause", "POST /api/jobs/<A job>/run"):
+            self.assertFalse(checks[f"B {route} is 404"], route)
+
+    def test_command_output_beside_the_marker_fails(self):
+        self.write_run(f"{probe.MARKER}\n\nlinux 6.8 x86_64")
+        checks, passed = self.run_probe()
+        self.assertFalse(passed)
+        self.assertFalse(checks["the cron run's reply is exactly the no-terminal marker"])
+
+    def test_a_missing_binding_is_a_failed_check_not_a_crash(self):
+        c = sqlite3.connect(self.db)
+        c.execute("DELETE FROM tenant_bindings")
+        c.commit()
+        c.close()
+        checks, passed = self.run_probe()
+        self.assertFalse(passed)
+        self.assertFalse(checks["A has a workspace binding"])
+
     def test_the_marker_only_in_the_prompt_fails(self):
         self.write_run("uid=1000(hermes) gid=1000(hermes)")
         checks, passed = self.run_probe()
         self.assertFalse(passed)
-        self.assertFalse(checks["the cron run's reply reports no terminal tool and holds no command output"])
+        self.assertFalse(checks["the cron run's reply is exactly the no-terminal marker"])
 
     def test_an_unexpected_body_is_a_failed_check_not_a_crash(self):
         FakeAntares.garbled = True

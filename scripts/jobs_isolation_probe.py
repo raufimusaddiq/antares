@@ -9,6 +9,7 @@ Hermes is read inside its container (HERMES_CONTAINER, default "hermes", as scri
 hermes user, read-only: the job's output file and the profile's job store. Prints no cookie, key or prompt output beyond the marker.
 """
 import json
+from contextlib import closing
 import os
 import sqlite3
 import subprocess
@@ -128,13 +129,19 @@ class Probe:
 
         self.check("the run finished", self.until(finished, self.run_wait),
                    json.dumps({k: last.get(k) for k in ("lastRunAt", "lastStatus", "state")}))
-        profile = sqlite3.connect(f"file:{self.db}?mode=ro", uri=True).execute(
-            "SELECT profile_name FROM tenant_bindings WHERE user_id = ?", (me["A"]["id"],)).fetchone()[0]
+        with closing(sqlite3.connect(f"file:{self.db}?mode=ro", uri=True)) as db:
+            row = db.execute("SELECT profile_name FROM tenant_bindings WHERE user_id = ?", (me["A"]["id"],)).fetchone()
+        if not self.check("A has a workspace binding", row is not None and isinstance(row[0], str) and row[0] != ""):
+            return
+        profile = row[0]
         # The run document repeats the prompt (which names the marker) before "## Response": only the response counts.
         doc = self.hermes_read(f"cat /opt/data/profiles/{profile}/cron/output/{jid}/*.md 2>/dev/null")
         reply = doc.rsplit(RESPONSE_HEADING, 1)[1] if RESPONSE_HEADING in doc else ""
-        self.check("the cron run's reply reports no terminal tool and holds no command output", MARKER in reply and "uid=" not in reply,
-                   "marker in the reply" if MARKER in reply else ("uid= in the reply" if "uid=" in reply else "no reply section read"))
+        # Asked to reply with exactly the marker when it has no terminal: the reply must be the marker and nothing else
+        # (quotes, backticks and a full stop around it allowed), so any command output beside it fails the check.
+        said = reply.strip().strip("`*_\"'. \n")
+        self.check("the cron run's reply is exactly the no-terminal marker", said == MARKER,
+                   "exact marker" if said == MARKER else (f"reply of {len(said)} characters" if said else "no reply section read"))
 
         # Suspension pauses the job upstream and verifies it.
         st, view = self.call("ADMIN", "POST", f"/api/admin/users/{me['A']['id']}/suspend", {"reason": "jobs isolation probe"})
@@ -142,9 +149,10 @@ class Probe:
         self.check("admin suspends A", st == 200, str(st))
         self.check("suspension verified the jobs paused (no pending mark)", view is not None and view.get("tenantDetail") == "",
                    (view or {}).get("tenantDetail", "")[:60])
-        row = sqlite3.connect(f"file:{self.db}?mode=ro", uri=True).execute(
-            "SELECT outcome FROM audit_log WHERE action = 'admin.suspend_jobs' AND target_id = ? ORDER BY created_at DESC LIMIT 1",
-            (me["A"]["id"],)).fetchone()
+        with closing(sqlite3.connect(f"file:{self.db}?mode=ro", uri=True)) as db:
+            row = db.execute(
+                "SELECT outcome FROM audit_log WHERE action = 'admin.suspend_jobs' AND target_id = ? ORDER BY created_at DESC LIMIT 1",
+                (me["A"]["id"],)).fetchone()
         self.check("audit admin.suspend_jobs ok", row is not None and row[0] == "ok", str(row))
         upstream = []
         try:
