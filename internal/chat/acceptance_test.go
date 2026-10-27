@@ -240,3 +240,54 @@ func TestAcceptanceTenReconnectCyclesWithToolsAndOpenUI(t *testing.T) {
 		t.Errorf("status %s", u.runStatus(run))
 	}
 }
+
+// UXP-ACC-014/016, bounded: while the client is away the run streams more than the replay buffer holds (journalBytes,
+// 4 MiB). On reconnect from its old position the client is told the start is gone (run.resumed {replace:true}), gets
+// only what the bounded buffer kept, and still ends on the stored outcome with the full output. One Hermes run.
+func TestAcceptanceReconnectPastTheReplayBound(t *testing.T) {
+	a := newApp(t)
+	u := a.user("alice")
+	run := u.send(u.newChat(), "flood")
+	_, fr := a.hx.runWithInput(t, "flood")
+	s := u.open(run, "")
+	recv(t, fr.opens, "upstream stream")
+	a.hx.push(fr, "assistant.delta", `{"delta":"first "}`)
+	s.waitFor(t, "assistant.delta")
+	s.close()
+	old := s.events()[len(s.events())-1].ID
+
+	chunk := strings.Repeat("x", 60<<10) // under the per-delta clip
+	pushed := 0
+	for pushed*len(chunk) < journalBytes+(512<<10) {
+		frame, _ := json.Marshal(map[string]string{"delta": chunk})
+		a.hx.push(fr, "assistant.delta", string(frame))
+		pushed++
+	}
+	a.hx.push(fr, "run.completed", `{"output":"the canonical final answer"}`)
+	eventually(t, func() bool { return u.runStatus(run) == store.RunCompleted }, "the run to finish while nobody listens")
+
+	s2 := u.open(run, old)
+	<-s2.done
+	evs := s2.events()
+	if len(evs) == 0 || evs[0].Name != "run.resumed" || !strings.Contains(evs[0].Data, `"replace":true`) {
+		t.Fatalf("the client was not told its start is gone: first %v", s2.names()[:min(3, len(s2.names()))])
+	}
+	replayed := 0
+	deltas := 0
+	for _, e := range evs {
+		if e.Name == "assistant.delta" {
+			deltas++
+			replayed += len(e.Data)
+		}
+	}
+	if deltas >= pushed || replayed > journalBytes {
+		t.Errorf("replay not bounded: %d of %d deltas, %d bytes (bound %d)", deltas, pushed, replayed, journalBytes)
+	}
+	last := evs[len(evs)-1]
+	if last.Name != "run.completed" || !strings.Contains(last.Data, "the canonical final answer") {
+		t.Errorf("did not end on the stored outcome: %s %.80s", last.Name, last.Data)
+	}
+	if n := createRuns(a, `"flood"`); n != 1 {
+		t.Fatalf("Hermes was asked to start %d runs", n)
+	}
+}

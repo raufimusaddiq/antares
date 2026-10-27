@@ -1,7 +1,7 @@
 # Acceptance scenarios → runnable tests
 
 Issue #154 (and the 2026-10-26 audit's adjacent cases). Each row names the test that runs the scenario end to end and
-asserts its outcome. Feature-parity tracking per requirement lives in `docs/FEATURE_PARITY_AIXELL.md` (#112).
+asserts its outcome. Per-requirement parity tracking is issue #112.
 
 | Scenario | Test | What it asserts |
 |---|---|---|
@@ -12,4 +12,5 @@ asserts its outcome. Feature-parity tracking per requirement lives in `docs/FEAT
 | Tool failure, missing tool id, duplicate id | `web/src/Activity.test.tsx` | failed rows say failed; unmatched starts/ends are untracked, never done |
 | `run.resumed` clears tools as well as text | `web/src/Activity.test.tsx` ("run.resumed clears tools…") | no stale tool rows after a replay |
 | Bounded tool history for a noisy stream | `web/src/Activity.test.tsx` ("a noisy stream stays bounded…") | 500 calls → at most 40 rows, counts exact |
+| UXP-ACC-014/016 bounded: reconnect after the replay buffer overflowed | `TestAcceptanceReconnectPastTheReplayBound` | `run.resumed {replace:true}` first; replayed deltas fewer than pushed and within `journalBytes` (4 MiB); ends on the stored `run.completed` with the full output; one Hermes run |
 | Reconnect without duplicates (base case) | `internal/chat/chat_test.go` `TestReconnectResumesWithoutDuplicating` | resume by `Last-Event-ID`, no event twice |
