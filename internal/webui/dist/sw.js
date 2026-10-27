@@ -1,7 +1,7 @@
-const CACHE = "antares-public-f239a0b100b9a4bc38e3e12ab121c2910caa1579a46737eae7c6fbd76ccbfd37";
-const PUBLIC = ["/offline.html","/assets/index-Ci3Nc1W2.css","/assets/index-KDnHCkrm.js","/assets/offline-fa7ba79e6ead331b.css","/assets/rolldown-runtime-BWaJ3C7D.js"];
+const CACHE = "antares-public-4373580e992d4aedbcb2f8d4bbf347f73fccf9bfab2409ec1b154e1ca408c966";
+const PUBLIC = ["/offline.html","/assets/index-Ci3Nc1W2.css","/assets/index-Lm5AQWr9.js","/assets/offline-fa7ba79e6ead331b.css","/assets/rolldown-runtime-BWaJ3C7D.js"];
 // On-demand chunks (OpenUI Block, Chart): not fetched at install, cached the first time the page asks for them.
-const OPTIONAL = ["/assets/Block-D4HHfeRK.js","/assets/Chart-CyPGiJGf.js","/assets/ci-info-Bauk7qhZ.js"];
+const OPTIONAL = ["/assets/Block-U9vKAjRh.js","/assets/Chart-B-4_I4HH.js","/assets/ci-info-Bauk7qhZ.js"];
 const optional = new Set(OPTIONAL.map(path => new URL(path, self.location.origin).href));
 const allowed = new Set([...PUBLIC, ...OPTIONAL].map(path => new URL(path, self.location.origin).href));
 

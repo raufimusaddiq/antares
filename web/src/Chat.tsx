@@ -863,8 +863,12 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     [detach, loadTurns],
   );
 
+  // The open chat as it was opened: a chat from search, from Archived, or one archived while open is not in `chats`, and
+  // its controls (Visualize) still show its state.
+  const [openSummary, setOpenSummary] = useState<ChatSummary | null>(null);
   const open = useCallback(
     (c: ChatSummary) => {
+      setOpenSummary(c);
       nav.current++;
       openTitle.current = c.title;
       discardImages(); // staged images belong to the message being written in the chat being left
@@ -891,7 +895,6 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   // A search result: the owning chat, at the matching turn. The turn may be in an
   // older page than the newest one, so pages are fetched back until it is held.
   const visualizeSaving = useRef(0); // Visualize saves not yet answered; submit refuses while any is pending
-  const [unlisted, setUnlisted] = useState<ChatSummary | null>(null); // the open chat when it came from search, not the list
   const openResult = useCallback(
     async (r: SearchResult) => {
       let c: ChatSummary | undefined = chats.find((x) => x.id === r.chatId);
@@ -902,7 +905,6 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           return;
         }
         c = got.value;
-        setUnlisted(got.value); // not in the loaded list: kept for the controls that show the open chat's state
       }
       if (r.chatId !== currentRef.current) open(c);
       if (r.turn !== null) setFocus({ chat: r.chatId, seq: r.turn, nonce: ++focusCount.current });
@@ -1520,10 +1522,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
                 visualizeSaving.current++;
                 void p.finally(() => visualizeSaving.current--);
               }}
-              chat={chats.find((c) => c.id === current) ?? (unlisted?.id === current ? unlisted : undefined)}
+              chat={chats.find((c) => c.id === current) ?? (openSummary?.id === current ? openSummary : undefined)}
               onChanged={(c) => {
                 setChats((l) => l.map((x) => (x.id === c.id ? { ...x, visualize: c.visualize } : x)));
-                setUnlisted((u) => (u?.id === c.id ? { ...u, visualize: c.visualize } : u));
+                setOpenSummary((u) => (u?.id === c.id ? { ...u, visualize: c.visualize } : u));
               }}
             />
           )}

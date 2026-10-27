@@ -393,4 +393,25 @@ describe("Visualize and sending", () => {
       await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(1));
     });
   }
+
+  it("an archived chat, opened from Archived or archived while open, keeps its toggle", async () => {
+    api.getCapabilities.mockResolvedValue(ok(inventory(true)));
+    api.listChats.mockImplementation((_c?: string, archived?: boolean) =>
+      Promise.resolve(ok({ chats: archived ? [chat("c2", "Old", { archived: true, visualize: true })] : [chat("c1", "One")], nextCursor: "" })),
+    );
+    render(<Chat email={EMAIL} onSignOut={() => {}} />);
+    await waitFor(() => expect(rows()).toEqual(["One"]));
+    // Opened from Archived.
+    fireEvent.click(screen.getByRole("button", { name: "Show archived" }));
+    const archive = await screen.findByRole("region", { name: "Archived conversations" });
+    fireEvent.click(await within(archive).findByText("Old"));
+    expect(((await screen.findByRole("checkbox", { name: /Visualize/ })) as HTMLInputElement).checked).toBe(true);
+    // Archived while open.
+    fireEvent.click(screen.getByText("One"));
+    await waitFor(() => expect((screen.getByRole("checkbox", { name: /Visualize/ }) as HTMLInputElement).checked).toBe(false));
+    api.changeChat.mockResolvedValue(ok(chat("c1", "One", { archived: true })));
+    fireEvent.click(within(openMenu("One")).getByRole("menuitem", { name: "Archive" }));
+    await waitFor(() => expect(rows()).toEqual([]));
+    expect(screen.getByRole("checkbox", { name: /Visualize/ })).toBeTruthy();
+  });
 });
