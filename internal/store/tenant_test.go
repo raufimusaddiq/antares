@@ -196,6 +196,10 @@ func TestSuspendRevokesSessionsAndDisablesTheBinding(t *testing.T) {
 	}
 	u, _ := SessionUser(context.Background(), db, "adm", t0)
 	_ = u
+	// The admin route clears the pending job shutdown once the jobs are paused; this test has none to pause.
+	if err := ClearJobShutdownPending(context.Background(), db, user); err != nil {
+		t.Fatal(err)
+	}
 	// Reactivation keeps the credential but demands re-verification.
 	got, err := Decide(context.Background(), db, admin, user, ActionReactivate, "", "r", t0)
 	if err != nil || got.TenantStatus != "CONFIGURING" {
