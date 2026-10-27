@@ -19,9 +19,8 @@ import (
 )
 
 const (
-	maxBodyBytes   = 64 << 10
-	maxInput       = 32 << 10
-	sessionRecheck = time.Second // how stale a run stream's last session check may be before it sends more events
+	maxBodyBytes = 64 << 10
+	maxInput     = 32 << 10
 )
 
 var (
@@ -655,19 +654,15 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 	last := l.parseEventID(r.Header.Get("Last-Event-ID"))
 	tick := time.NewTicker(s.heartbeat)
 	defer tick.Stop()
-	checked := time.Now() // the guard admitted this request with a live session just now
+	session, opened := auth.SessionHash(r), time.Now() // the guard has just found this session live
 	for {
 		evs, lost, done, wait := l.since(last)
-		// A revoked session gets nothing more, not even a terminal event that arrived before the next heartbeat (#150).
-		// Checked before a terminal event always, and otherwise at most once a second, so a fast stream of deltas does not
-		// turn into a database read per token. checked moves only after a check that passed.
-		if done || ((len(evs) > 0 || lost) && time.Since(checked) >= sessionRecheck) {
-			if !auth.SessionLive(r.Context(), s.db, r, s.now()) {
-				writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
-				fl.Flush()
-				return
-			}
-			checked = time.Now()
+		// A signed-out session gets nothing more, not one more delta nor a terminal event (#150): before every batch the
+		// stream asks the in-memory sign-out record, which costs no database read. The heartbeat below reads the database.
+		if (len(evs) > 0 || lost || done) && s.revokedSince(uid, session, opened) {
+			writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
+			fl.Flush()
+			return
 		}
 		if lost {
 			writeEvent(w, "", "run.resumed", []byte(`{"replace":true}`))

@@ -332,12 +332,34 @@ func (a *Auth) logoutAll(w http.ResponseWriter, r *http.Request) {
 		a.apiError(w, r, http.StatusInternalServerError, "INTERNAL", "Could not sign out everywhere; try again")
 		return
 	}
+	a.revoked(u.ID, "")
 	if err := store.Audit(r.Context(), a.db, u.ID, "auth.logout_all", "user", u.ID, "ok", newRequestID(), now); err != nil {
 		log.Printf("auth: audit write failed: %v", err)
 	}
 	clearCookie(w, sessionCookie)
 	w.Header().Set("Cache-Control", "no-store")
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// SessionHash is the stored form of the request's session cookie ("" without one): what a revocation names (#150).
+func SessionHash(r *http.Request) string {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || c.Value == "" {
+		return ""
+	}
+	return hashToken(c.Value)
+}
+
+// revocationListener is told when sessions end through a sign-out, so open run streams stop at once instead of at
+// their next heartbeat (#150). tokenHash "" means every session of userID.
+type revocationListener interface {
+	SessionsRevoked(userID, tokenHash string)
+}
+
+func (a *Auth) revoked(userID, tokenHash string) {
+	if l, ok := a.chat.(revocationListener); ok {
+		l.SessionsRevoked(userID, tokenHash)
+	}
 }
 
 // SessionLive reports whether the request's session cookie still names a live session. A long-lived response (the
@@ -375,6 +397,7 @@ func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
 		a.apiError(w, r, http.StatusInternalServerError, "INTERNAL", "Could not sign out; try again")
 		return
 	}
+	a.revoked(u.ID, h)
 	if err := store.Audit(r.Context(), a.db, u.ID, "auth.logout", "user", u.ID, "ok", newRequestID(), now); err != nil {
 		log.Printf("auth: audit write failed: %v", err)
 	}

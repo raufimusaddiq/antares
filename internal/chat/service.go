@@ -66,6 +66,8 @@ type Service struct {
 	// before its claim is released (queue.go), to place the run's end inside that window.
 	queueConflictHook func()
 
+	revoked revocations // sign-outs open streams must obey at once (revocations.go)
+
 	base context.Context
 	stop context.CancelFunc
 	wg   sync.WaitGroup

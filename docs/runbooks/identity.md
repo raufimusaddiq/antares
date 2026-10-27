@@ -32,9 +32,10 @@ clears the cookie. Every request re-reads the user row: a status change applies 
 the caller's own account (`store.RevokeUserSessions`; the account comes from the session, never the request), audits
 `auth.logout_all`, and clears the cookie. Every other device's next request is a 401 and has to sign in again, and
 the account's push subscriptions are removed in the same transaction, so a signed-out device stops getting alerts. An open
-run event stream re-checks its own session at each heartbeat and before it sends any event (`auth.SessionLive`), so a
-sign-out here, everywhere or by revocation ends it with `run.disconnected`, as a suspension does, even when the reply
-completes before the next heartbeat. The web app offers it in the account menu.
+run event stream ends with `run.disconnected` without sending another event: `auth` tells the chat service of each
+sign-out (`SessionsRevoked`), and the stream checks that in-memory record before every batch of events, so no further
+delta or terminal event reaches a signed-out session and no database read is added per batch. The heartbeat still reads
+the database (`auth.SessionLive`), which covers revocations made elsewhere (an admin suspension, a newer login). The web app offers it in the account menu.
 
 ## Guards
 

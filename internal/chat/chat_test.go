@@ -878,8 +878,8 @@ func TestRevokedSessionGetsNoTerminalEventEvenBeforeAHeartbeat(t *testing.T) {
 	s := u.open(run, "")
 	recv(t, fr.opens, "stream")
 	s.waitFor(t, "run.started")
-	if _, err := store.RevokeUserSessions(a.svc.base, a.db, u.id, time.Now()); err != nil {
-		t.Fatal(err)
+	if w := u.do("POST", "/api/auth/logout-all", nil, nil); w.Code != 204 { // another device signs out everywhere
+		t.Fatalf("logout-all: %d %s", w.Code, w.Body.String())
 	}
 	a.hx.push(fr, "run.completed", `{"output":"after revocation"}`)
 	select {
@@ -892,8 +892,8 @@ func TestRevokedSessionGetsNoTerminalEventEvenBeforeAHeartbeat(t *testing.T) {
 	}
 }
 
-// Review #186: deltas arriving faster than the recheck interval must not postpone the session check forever. After
-// revocation a steady stream of deltas (heartbeat an hour away, no terminal event) ends within about a second.
+// Review #186: after a sign-out everywhere, not one more delta reaches the open stream, however fast they come and
+// with the heartbeat an hour away: the next batch meets the in-memory sign-out record.
 func TestRevokedSessionStopsAContinuousStream(t *testing.T) {
 	a := newApp(t, appOpts{heartbeat: time.Hour})
 	u := a.user("alice")
@@ -902,8 +902,8 @@ func TestRevokedSessionStopsAContinuousStream(t *testing.T) {
 	s := u.open(run, "")
 	recv(t, fr.opens, "stream")
 	s.waitFor(t, "run.started")
-	if _, err := store.RevokeUserSessions(a.svc.base, a.db, u.id, time.Now()); err != nil {
-		t.Fatal(err)
+	if w := u.do("POST", "/api/auth/logout-all", nil, nil); w.Code != 204 {
+		t.Fatalf("logout-all: %d %s", w.Code, w.Body.String())
 	}
 	stop := make(chan struct{})
 	defer close(stop)
