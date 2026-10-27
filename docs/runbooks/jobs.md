@@ -24,7 +24,8 @@ Re-run it after a Hermes upgrade:
 It reads Hermes inside the container named by `HERMES_CONTAINER` (default `hermes`), as the `hermes` user, read-only.
 `scripts/test_jobs_isolation_probe.py` checks its verdicts offline (fake Antares, fake container), including that a
 leak to B on any job route, command output in the reply, a job left enabled upstream, a missing binding and an
-unexpected response body each fail it, and that it always writes its report.
+unexpected response body each fail it, and that it always writes its report, also when Antares does not answer at all (an "Antares answers" check, added after
+the recorded live run, fails first and the run stops there).
 
 ## What exists
 

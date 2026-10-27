@@ -46,6 +46,8 @@ class Probe:
                 status, raw = r.status, r.read()
         except urllib.error.HTTPError as e:
             status, raw = e.code, e.read()
+        except OSError:  # refused, unreachable, reset or timed out (URLError and socket timeouts are OSErrors)
+            return 0, None  # no HTTP answer at all: the caller's check fails, and the report is still written
         try:
             return status, (json.loads(raw) if raw else None)
         except ValueError:  # not JSON: the caller sees no body, and its check fails
@@ -77,6 +79,9 @@ class Probe:
         return cond()
 
     def run(self):
+        # Fails fast when Antares does not answer at all, rather than waiting out the admin poll below.
+        if not self.check("Antares answers", self.call("ADMIN", "GET", "/api/me")[0] != 0):
+            return
         if not self.check("admin API reachable (admin workspace ready)",
                           self.until(lambda: self.call("ADMIN", "GET", "/api/admin/users")[0] == 200, self.wait)):
             return

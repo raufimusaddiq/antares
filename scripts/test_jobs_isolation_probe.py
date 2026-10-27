@@ -136,7 +136,7 @@ class ProbeTest(unittest.TestCase):
     def test_isolated_and_paused_passes(self):
         checks, passed = self.run_probe()
         self.assertTrue(passed, checks)
-        self.assertEqual(len(checks), 23)
+        self.assertEqual(len(checks), 24)
 
     def test_a_leak_to_b_fails(self):
         FakeAntares.leak = True
@@ -184,6 +184,18 @@ class ProbeTest(unittest.TestCase):
         self.assertFalse(passed)
         self.assertFalse(checks["B's list does not contain A's job"])
         self.assertIn("Hermes' own store has the job disabled", checks)  # the run went on to the end
+
+    def test_an_unreachable_origin_still_writes_the_report(self):
+        report = os.path.join(self.dir, "report.json")
+        env = {"ANTARES_SMOKE_COOKIE_ADMIN": "admin", "ANTARES_SMOKE_COOKIE_A": "a", "ANTARES_SMOKE_COOKIE_B": "b"}
+        port = self.server.server_address[1]
+        self.server.shutdown()
+        self.server.server_close()  # nothing listens on this port now: the connection is refused
+        self.assertEqual(probe.main(["p", f"http://127.0.0.1:{port}", self.db, report], env), 1)
+        with open(report) as f:
+            rep = json.load(f)
+        self.assertFalse(rep["passed"])
+        self.assertEqual(rep["checks"][0], {"check": "Antares answers", "pass": False, "detail": ""})
 
     def test_main_refuses_without_fixture_sessions(self):
         self.assertEqual(probe.main(["p", "http://x", self.db, os.path.join(self.dir, "r.json")], {}), 3)
