@@ -868,6 +868,30 @@ func TestOpenStreamClosesWhenTheSessionIsRevoked(t *testing.T) {
 	}
 }
 
+// Review #186: revocation followed at once by completion. The terminal event lands before any heartbeat (which is
+// set far away here), and the revoked session still gets run.disconnected, never run.completed.
+func TestRevokedSessionGetsNoTerminalEventEvenBeforeAHeartbeat(t *testing.T) {
+	a := newApp(t, appOpts{heartbeat: time.Hour})
+	u := a.user("alice")
+	run := u.send(u.newChat(), "q")
+	_, fr := a.hx.runWithInput(t, "q")
+	s := u.open(run, "")
+	recv(t, fr.opens, "stream")
+	s.waitFor(t, "run.started")
+	if _, err := store.RevokeUserSessions(a.svc.base, a.db, u.id, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	a.hx.push(fr, "run.completed", `{"output":"after revocation"}`)
+	select {
+	case <-s.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the stream did not end")
+	}
+	if s.has("run.completed") || !s.has("run.disconnected") || strings.Contains(s.text(), "after revocation") {
+		t.Errorf("a revoked session received %v", s.names())
+	}
+}
+
 func TestMessagesAreProxiedFromTheOwnedSessionOnly(t *testing.T) {
 	a := newApp(t)
 	alice, bob := a.user("alice"), a.user("bobby")

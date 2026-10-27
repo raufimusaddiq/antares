@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/raufimusaddiq/antares/internal/store"
 )
 
 func concrete(path string) string {
@@ -352,6 +354,11 @@ func TestLogoutAllEndsOnlyTheCallersSessions(t *testing.T) {
 			t.Fatalf("setup: %d", w.Code)
 		}
 	}
+	// Each account has a device registered for alerts (the phone for s-1).
+	for _, sub := range []string{"s-1", "s-2"} {
+		h.exec(`INSERT INTO push_subscriptions (id, user_id, endpoint_hash, sealed_endpoint, sealed_keys, created_at) VALUES (?, ?, ?, x'00', x'00', 'x')`,
+			store.NewID(), h.userID(sub), "hash-"+sub)
+	}
 	for _, hdr := range []map[string]string{nil, {"Origin": "https://evil.example.test"}, {"Sec-Fetch-Site": "cross-site"}} {
 		if w := laptop.do("POST", "/api/auth/logout-all", hdr); w.Code != http.StatusForbidden {
 			t.Errorf("headers %v: %d", hdr, w.Code)
@@ -383,5 +390,11 @@ func TestLogoutAllEndsOnlyTheCallersSessions(t *testing.T) {
 	}
 	if n := h.count(`SELECT COUNT(*) FROM audit_log WHERE action = 'auth.logout_all'`); n != 1 {
 		t.Errorf("audit rows = %d", n)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM push_subscriptions s JOIN users u ON u.id = s.user_id WHERE u.google_sub = 's-1'`); n != 0 {
+		t.Errorf("%d push subscriptions left: signed-out devices would still get alerts", n)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM push_subscriptions s JOIN users u ON u.id = s.user_id WHERE u.google_sub = 's-2'`); n != 1 {
+		t.Errorf("another account's push subscription was touched: %d", n)
 	}
 }

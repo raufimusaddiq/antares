@@ -30,9 +30,11 @@ clears the cookie. Every request re-reads the user row: a status change applies 
 
 **Sign out everywhere** (#150) is `POST /api/auth/logout-all`, same origin rules: it revokes every live session of
 the caller's own account (`store.RevokeUserSessions`; the account comes from the session, never the request), audits
-`auth.logout_all`, and clears the cookie. Every other device's next request is a 401 and has to sign in again. An open
-run event stream re-checks its own session at each heartbeat (`auth.SessionLive`), so a sign-out here, everywhere or by
-revocation ends it with `run.disconnected`, as a suspension does. The web app offers it in the account menu.
+`auth.logout_all`, and clears the cookie. Every other device's next request is a 401 and has to sign in again, and
+the account's push subscriptions are removed in the same transaction, so a signed-out device stops getting alerts. An open
+run event stream re-checks its own session at each heartbeat and before it sends any event (`auth.SessionLive`), so a
+sign-out here, everywhere or by revocation ends it with `run.disconnected`, as a suspension does, even when the reply
+completes before the next heartbeat. The web app offers it in the account menu.
 
 ## Guards
 

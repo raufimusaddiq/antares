@@ -447,7 +447,7 @@ async function mobileLayout(browser) {
     check(`mobile layout ${w}px, Jump to latest returns to the newest turn`, await page.evaluate(() => { const l = document.querySelector(".log"); return l.scrollTop + l.clientHeight >= l.scrollHeight - 2; }));
     await page.getByRole("button", { name: "Menu" }).click();
     await verdict("account menu open", { scope: ".bar-actions" });
-    check(`mobile layout ${w}px, Sign out is in the menu`, await page.getByRole("button", { name: "Sign out" }).isVisible());
+    check(`mobile layout ${w}px, Sign out is in the menu`, await page.getByRole("button", { name: "Sign out", exact: true }).isVisible());
     const clicks = await pointerCheck(page, ".bar-actions");
     check(`mobile layout ${w}px, a real pointer click reaches every menu action`, clicks.length === 0, clicks.slice(0, 3).join("; "));
     await page.keyboard.press("Escape");

@@ -656,6 +656,12 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 	defer tick.Stop()
 	for {
 		evs, lost, done, wait := l.since(last)
+		// A revoked session gets nothing more, not even a terminal event that arrived before the next heartbeat (#150).
+		if (len(evs) > 0 || lost) && !auth.SessionLive(r.Context(), s.db, r, s.now()) {
+			writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
+			fl.Flush()
+			return
+		}
 		if lost {
 			writeEvent(w, "", "run.resumed", []byte(`{"replace":true}`))
 		}
