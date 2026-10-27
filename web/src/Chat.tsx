@@ -44,6 +44,7 @@ import { Markdown } from "./Markdown";
 import { MAX_REPLY, ReplyContext } from "./openui/reply";
 import { Artifacts } from "./Artifacts";
 import { ExportChat } from "./ExportChat";
+import { OpenChatVisualize } from "./VisualizeToggle";
 import { MemorySkillsPanel } from "./MemorySkills";
 import { UsageDashboard } from "./UsageDashboard";
 import { JobsPanel } from "./Jobs";
@@ -862,8 +863,12 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     [detach, loadTurns],
   );
 
+  // The open chat as it was opened: a chat from search, from Archived, or one archived while open is not in `chats`, and
+  // its controls (Visualize) still show its state.
+  const [openSummary, setOpenSummary] = useState<ChatSummary | null>(null);
   const open = useCallback(
     (c: ChatSummary) => {
+      setOpenSummary(c);
       nav.current++;
       openTitle.current = c.title;
       discardImages(); // staged images belong to the message being written in the chat being left
@@ -889,6 +894,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   // A search result: the owning chat, at the matching turn. The turn may be in an
   // older page than the newest one, so pages are fetched back until it is held.
+  const visualizeSaving = useRef(0); // Visualize saves not yet answered; submit refuses while any is pending
   const openResult = useCallback(
     async (r: SearchResult) => {
       let c: ChatSummary | undefined = chats.find((x) => x.id === r.chatId);
@@ -1230,6 +1236,13 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   }, [current, busy, modelTick]);
 
   const onSubmit = () => {
+    // A Visualize change still being saved decides how this message would run, so nothing is sent until it settles.
+    // Refused before anything is cleared or held: the text stays where it is, in this chat, and a second press meets
+    // the same refusal.
+    if (visualizeSaving.current > 0) {
+      setBanner("Visualize is still being saved. Send again in a moment.");
+      return;
+    }
     const input = draft.trim();
     setSteer(null); // a new message starts a new run; the last steer's outcome no longer describes it
     const hold = sync.hold();
@@ -1501,6 +1514,20 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
                 <SpendingForm spending={usage.spending} onSaved={() => current && void getUsage(current).then((r) => setUsage(r.ok ? r.value : null))} />
               )}
             </details>
+          )}
+          {/* A new, still blank chat is real and listed: its toggle shows, so the first message can ask for visuals. */}
+          {current && (
+            <OpenChatVisualize
+              onSaving={(p) => {
+                visualizeSaving.current++;
+                void p.finally(() => visualizeSaving.current--);
+              }}
+              chat={chats.find((c) => c.id === current) ?? (openSummary?.id === current ? openSummary : undefined)}
+              onChanged={(c) => {
+                setChats((l) => l.map((x) => (x.id === c.id ? { ...x, visualize: c.visualize } : x)));
+                setOpenSummary((u) => (u?.id === c.id ? { ...u, visualize: c.visualize } : u));
+              }}
+            />
           )}
           <Dictation onText={(t) => onDraft(draft.trim() === "" ? t : `${draft.replace(/\s*$/, "")} ${t}`)} />
           <Recorder />

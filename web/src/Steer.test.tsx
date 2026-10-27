@@ -18,7 +18,7 @@ import { Chat } from "./Chat";
 
 const ok = <T,>(value: T) => ({ ok: true as const, value });
 const fail = (code: string, status: number) => ({ ok: false as const, code, status });
-const chat = (id: string, extra: Partial<ChatSummary> = {}): ChatSummary => ({ id, title: "Busy", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false, ...extra });
+const chat = (id: string, extra: Partial<ChatSummary> = {}): ChatSummary => ({ id, title: "Busy", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false, visualize: false, ...extra });
 const inventory = (steer: boolean): Inventory => ({
   capabilities: [{ id: "steer", label: "Steer a running reply", available: steer, reason: steer ? "" : "Hermes does not report run_steer as enabled" }],
   toolsets: [],

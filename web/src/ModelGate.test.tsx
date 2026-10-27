@@ -9,7 +9,7 @@ vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi"
 import { Chat } from "./Chat";
 
 const ok = <T,>(value: T) => ({ ok: true as const, value });
-const chat = (id: string): ChatSummary => ({ id, title: "t", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false });
+const chat = (id: string): ChatSummary => ({ id, title: "t", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false, visualize: false });
 const inv = (status: boolean): Inventory => ({ capabilities: [{ id: "models", label: "Model choices", available: status, reason: status ? "" : "none" }], toolsets: [], providers: [], skills: [] });
 
 beforeEach(() => {
