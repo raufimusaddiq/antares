@@ -19,6 +19,8 @@ import {
   runEventsUrl,
   sendMessage,
   steerRun,
+  enqueueMessage,
+  type ChatQueue,
   type ChatSummary,
   type ChatUsage,
   type Inventory,
@@ -48,6 +50,7 @@ import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
 import type { AttachmentRef } from "./MediaPreview";
 import { RunPrompts } from "./RunPrompts";
+import { QueuePanel } from "./QueuePanel";
 import { forgetChatDrafts, loadDraft, matchTemplates, mergeTemplates, saveDraft, type Template } from "./drafts";
 import { DraftNotice, sharedTextApplied, takeSharedText, useDraftSync, NO_HOLD, type SendHold } from "./DraftSync";
 import { listOwnTemplates, type OwnTemplate } from "./draftApi";
@@ -348,8 +351,15 @@ const STEER_WORDS: Record<SteerNote, string> = {
   failed: "",
 };
 
-export function Composer(props: { value: string; busy: boolean; onChange: (v: string) => void; onSubmit: () => void; templates?: readonly Template[]; images?: ComposerImages; steer?: ComposerSteer }) {
+/** Queue is the third intent (PRD §27.4, issue #110): while a reply runs, the text waits to be sent as a new message after it. */
+export interface ComposerQueue {
+  failure: string;
+  onQueue: () => void;
+}
+
+export function Composer(props: { value: string; busy: boolean; onChange: (v: string) => void; onSubmit: () => void; templates?: readonly Template[]; images?: ComposerImages; steer?: ComposerSteer; queue?: ComposerQueue }) {
   const steer = props.steer;
+  const queue = props.queue;
   const img = props.images;
   const blocked = img?.pending === true;
   const empty = props.value.trim() === "";
@@ -540,6 +550,16 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
           <span className="btn-label">Steer</span>
         </button>
       )}
+      {queue && (
+        <button type="button" onClick={queue.onQueue} disabled={empty || blocked}>
+          <span className="btn-label">Queue</span>
+        </button>
+      )}
+      {queue?.failure && (
+        <span role="alert" data-queue="failed">
+          {queue.failure}
+        </span>
+      )}
       {steer?.note && (
         <span id="steer-note" role="status" data-steer={steer.note}>
           {steer.note === "failed" ? steer.failure : STEER_WORDS[steer.note]}
@@ -721,6 +741,15 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           // screen if it cannot be fetched.
           void loadTurns(chatId).then((ok) => {
             if (ok && currentRef.current === chatId) dispatch({ k: "clear" });
+            // The server sends the next queued message before it announces the end: follow the run it became.
+            void getChat(chatId).then((c) => {
+              const next = c.ok ? c.value.activeRunId : "";
+              if (!next || next === runId || currentRef.current !== chatId) return;
+              const head = queueRef.current?.items[0];
+              setChats((l) => l.map((x) => (x.id === chatId ? { ...x, activeRunId: next } : x)));
+              if (head) setTurns((t) => [...t, { seq: t.length > 0 ? t[t.length - 1].seq + 1 : 0, role: "user", text: head.input }]);
+              attach(next, chatId);
+            });
           });
         }
       };
@@ -1197,6 +1226,41 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   const steerShown = steer !== null && steer.chatId === current;
 
+  // Queue: the text waits on the server and is sent as a new message after the reply ends. The draft is cleared only
+  // when the server stored it and the text was not changed meanwhile; a refusal keeps it and says why.
+  const queueRef = useRef<ChatQueue | null>(null);
+  const [queueTick, setQueueTick] = useState(0);
+  const [queueFailure, setQueueFailure] = useState("");
+  useEffect(() => setQueueFailure(""), [current]);
+  const onQueue = () => {
+    const text = draft.trim();
+    const chat = currentRef.current;
+    if (!chat || text === "") return;
+    void enqueueMessage(chat, text).then((r) => {
+      if (currentRef.current !== chat) return;
+      if (!r.ok) {
+        setQueueFailure(describeCode(r.code));
+        return;
+      }
+      setQueueFailure("");
+      queueRef.current = r.value;
+      setQueueTick((n) => n + 1);
+      // The reply ended while this was on its way, so the server sent it at once: follow that run.
+      if (r.value.started) onQueueSent(r.value.started.runId, r.value.started.input);
+      if (draftRef.current.trim() === text) {
+        setDraft("");
+        saveDraft(email, chat, "");
+      }
+    });
+  };
+  const onQueueSent = (runId: string, input: string) => {
+    const chat = currentRef.current;
+    if (!chat) return;
+    setChats((l) => l.map((x) => (x.id === chat ? { ...x, activeRunId: runId } : x)));
+    setTurns((t) => [...t, { seq: t.length > 0 ? t[t.length - 1].seq + 1 : 0, role: "user", text: input }]);
+    attach(runId, chat);
+  };
+
   // Nothing to read yet: the conversation area shows the starting card instead of an empty list.
   const empty = turns.length === 0 && !pending && !run && !turnsError && (current === null || current === blankChat.current);
   return (
@@ -1351,12 +1415,16 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           <Recorder />
           <Templates own={ownTemplates} onChange={setOwnTemplates} />
         </div>
+        {current && current !== blankChat.current && (
+          <QueuePanel chatId={current} busy={busy} tick={queueTick} onSent={onQueueSent} onQueue={(q) => (queueRef.current = q)} />
+        )}
         <DraftNotice sync={sync} />
         <Composer
           value={draft}
           busy={busy}
           onChange={onDraft}
           onSubmit={onSubmit}
+          queue={busy && current && run !== null && !isTerminal(run.phase) ? { failure: queueFailure, onQueue } : undefined}
           steer={canSteer || steerShown ? { available: canSteer, note: steerShown ? steer.note : null, failure: steerShown ? steer.failure : "", onSteer } : undefined}
           templates={mergeTemplates(ownTemplates)}
           images={{

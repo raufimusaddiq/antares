@@ -37,6 +37,12 @@ var builtProbes = []probe{
 	{"chat delete", "DELETE /api/chats/{chatId}"},
 	{"history/messages read", "GET /api/chats/{chatId}/messages"},
 	{"send message (run admission)", "POST /api/chats/{chatId}/messages"},
+	{"queue read", "GET /api/chats/{chatId}/queue"},
+	{"queue add", "POST /api/chats/{chatId}/queue"},
+	{"queue pause/resume", "PATCH /api/chats/{chatId}/queue"},
+	{"queue send next", "POST /api/chats/{chatId}/queue/next"},
+	{"queued message edit", "PATCH /api/chats/{chatId}/queue/{itemId}"},
+	{"queued message remove", "DELETE /api/chats/{chatId}/queue/{itemId}"},
 	{"artifact download", "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}"},
 	{"artifact preview", "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview"},
 	{"search within a chat", "GET /api/chats/{chatId}/search"},
@@ -98,6 +104,7 @@ type victim struct {
 	markers                    []string // anything that must never appear in a refusal
 	runRows, chatRows, hxAlice int
 	assetID                    string
+	itemID                     string // alice's queued message, in a paused queue
 }
 
 const aliceAudio = "\x1a\x45\xdf\xa3alice-voice-marker-8b2f"
@@ -135,7 +142,16 @@ func newVictim(t testing.TB) *victim {
 		t.Fatalf("stage alice's audio: %d %s", w.Code, w.Body.String())
 	}
 	v.assetID = decodeBody[struct{ ID string }](t, w).ID
-	v.markers = []string{v.assetID, "alice-voice-marker-8b2f", v.chatID, v.runID, v.title, v.output, "alice-artifact-secret-4e7a", v.session, v.hermesRun, alice.profile, alice.key, alice.id,
+	// A queued message waiting in a paused queue (paused first, so it is not sent).
+	if w := alice.do("PATCH", "/api/chats/"+v.chatID+"/queue", nil, map[string]bool{"paused": true}); w.Code != 200 {
+		t.Fatalf("pause alice's queue: %d %s", w.Code, w.Body.String())
+	}
+	w = alice.do("POST", "/api/chats/"+v.chatID+"/queue", nil, map[string]string{"input": "alice-private-queued-3c9a"})
+	if w.Code != 201 {
+		t.Fatalf("queue alice's message: %d %s", w.Code, w.Body.String())
+	}
+	v.itemID = decodeBody[struct{ Items []struct{ ID string } }](t, w).Items[0].ID
+	v.markers = []string{v.itemID, "alice-private-queued-3c9a", v.assetID, "alice-voice-marker-8b2f", v.chatID, v.runID, v.title, v.output, "alice-artifact-secret-4e7a", v.session, v.hermesRun, alice.profile, alice.key, alice.id,
 		"alice-private-question-2b8e", "alice-private-input-5d40", alice.cookie}
 	// Alice searches her own chats once, so her content is in the index (and her
 	// transcript has been read from Hermes) before anyone else probes.
@@ -208,6 +224,10 @@ func (v *victim) untouched(t testing.TB, what string) {
 	if st := v.alice.runStatus(v.runID); st != store.RunCompleted {
 		t.Errorf("%s: alice's completed run is now %s", what, st)
 	}
+	if q, err := store.GetQueue(v.a.svc.base, v.a.db, v.alice.id, v.chatID); err != nil || len(q.Items) != 1 || q.Items[0].ID != v.itemID ||
+		q.Items[0].Input != "alice-private-queued-3c9a" || q.Items[0].Status != "QUEUED" || q.Paused != "USER" {
+		t.Errorf("%s: alice's queue changed: %+v %v", what, q, err)
+	}
 	if n := v.aliceHermesReqs(); n != v.hxAlice {
 		t.Errorf("%s: probes made %d request(s) to Hermes under alice's profile", what, n-v.hxAlice)
 	}
@@ -217,11 +237,12 @@ func (v *victim) untouched(t testing.TB, what string) {
 // refusal is about the caller and not about a missing ref.
 func (v *victim) fill(key, chatID, runID string) (string, string) {
 	m, p := fill(key, chatID, runID)
-	asset := store.NewID() // the "absent" twin of a probe is called with other chat and run ids
+	asset, item := store.NewID(), store.NewID() // the "absent" twin of a probe is called with other chat and run ids
 	if chatID == v.chatID {
-		asset = v.assetID
+		asset, item = v.assetID, v.itemID
 	}
 	p = strings.ReplaceAll(p, "{assetId}", asset)
+	p = strings.ReplaceAll(p, "{itemId}", item)
 	if strings.Contains(p, "/artifacts/") {
 		p += "?ref=" + v.ref
 	}
