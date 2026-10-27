@@ -28,6 +28,20 @@ session is revoked. Absolute lifetime 7 days (no idle extension yet). Logout is 
 /api/auth/logout`, same-origin only (`Origin` must equal `ANTARES_PUBLIC_ORIGIN`), sets `revoked_at`,
 clears the cookie. Every request re-reads the user row: a status change applies on the next request.
 
+**Sign out everywhere** (#150) is `POST /api/auth/logout-all`, same origin rules: it revokes every live session of
+the caller's own account (`store.RevokeUserSessions`; the account comes from the session, never the request), audits
+`auth.logout_all`, and clears the cookie. Every other device's next request is a 401 and has to sign in again, and
+the account's push subscriptions are removed in the same transaction, so a signed-out device stops getting alerts. An open
+run event stream ends with `run.disconnected` without sending another event. Each stream registers itself with its
+user and session and then re-checks the session once in the database, so a sign-out that landed between the guard and
+the stream's start is caught. `auth` then tells the chat service of every sign-out (`SessionsRevoked`), which marks each
+matching open stream under the lock that stream writes its batches under: once the sign-out answers, no stream starts
+another batch for a signed-out session. A batch already being written finishes first (the sign-out waits for it, at most
+2 s per stream, so a client that stopped reading cannot hold it open). The heartbeat still reads the database
+(`auth.SessionLive`), which covers revocations made elsewhere; only a session the database says is gone counts, and the
+read is not cancelled with the request (`TestSignOutBetweenGuardAndStreamStartSendsNothing`,
+`TestSignOutWaitsForTheBatchInFlight`, `TestRevokedSessionStopsAContinuousStream`). The web app offers it in the account menu.
+
 ## Guards
 
 `Active` (every chat-touching route) = valid session ∧ `APPROVED` ∧ `tenant_status = READY` ∧ a

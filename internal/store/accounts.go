@@ -107,6 +107,29 @@ func RevokeSession(ctx context.Context, db *sql.DB, tokenHash string, now time.T
 	return err
 }
 
+// RevokeUserSessions ends every live session of one user and forgets every device it would push alerts to (sign out
+// everywhere, #150): a device that is signed out must not keep receiving the account's notifications. It touches only
+// that user's rows, in one transaction, and reports how many sessions it ended.
+func RevokeUserSessions(ctx context.Context, db *sql.DB, userID string, now time.Time) (int64, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `UPDATE app_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`, ts(now), userID)
+	if err != nil {
+		return 0, err
+	}
+	n, err := res.RowsAffected()
+	if err != nil {
+		return 0, err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM push_subscriptions WHERE user_id = ?`, userID); err != nil {
+		return 0, err
+	}
+	return n, tx.Commit()
+}
+
 // Audit appends to audit_log. actor may be empty when no account is known yet
 // (a login that failed before identity was established).
 func Audit(ctx context.Context, db *sql.DB, actor, action, targetKind, targetID, outcome, requestID string, now time.Time) error {

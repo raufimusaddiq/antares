@@ -845,6 +845,138 @@ func TestOpenStreamClosesWhenTheAccountIsSuspended(t *testing.T) {
 	}
 }
 
+// #150: a session ended while its stream is open (sign-out here, sign-out everywhere on another device, or any
+// revocation) ends the stream at the next heartbeat, as a suspension does, and the run is not reported completed.
+func TestOpenStreamClosesWhenTheSessionIsRevoked(t *testing.T) {
+	a := newApp(t, appOpts{heartbeat: 20 * time.Millisecond})
+	u := a.user("alice")
+	run := u.send(u.newChat(), "q")
+	_, fr := a.hx.runWithInput(t, "q")
+	s := u.open(run, "")
+	recv(t, fr.opens, "stream")
+	s.waitFor(t, "run.started")
+	if _, err := store.RevokeUserSessions(a.svc.base, a.db, u.id, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-s.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the stream outlived the session")
+	}
+	if !s.has("run.disconnected") || s.has("run.completed") {
+		t.Errorf("events: %v", s.names())
+	}
+}
+
+// Review #186: revocation followed at once by completion. The terminal event lands before any heartbeat (which is
+// set far away here), and the revoked session still gets run.disconnected, never run.completed.
+func TestRevokedSessionGetsNoTerminalEventEvenBeforeAHeartbeat(t *testing.T) {
+	a := newApp(t, appOpts{heartbeat: time.Hour})
+	u := a.user("alice")
+	run := u.send(u.newChat(), "q")
+	_, fr := a.hx.runWithInput(t, "q")
+	s := u.open(run, "")
+	recv(t, fr.opens, "stream")
+	s.waitFor(t, "run.started")
+	if w := u.do("POST", "/api/auth/logout-all", nil, nil); w.Code != 204 { // another device signs out everywhere
+		t.Fatalf("logout-all: %d %s", w.Code, w.Body.String())
+	}
+	a.hx.push(fr, "run.completed", `{"output":"after revocation"}`)
+	select {
+	case <-s.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the stream did not end")
+	}
+	if s.has("run.completed") || !s.has("run.disconnected") || strings.Contains(s.text(), "after revocation") {
+		t.Errorf("a revoked session received %v", s.names())
+	}
+}
+
+// Review #186: after a sign-out everywhere, not one more delta reaches the open stream, however fast they come and
+// with the heartbeat an hour away: the next batch meets the in-memory sign-out record.
+func TestRevokedSessionStopsAContinuousStream(t *testing.T) {
+	a := newApp(t, appOpts{heartbeat: time.Hour})
+	u := a.user("alice")
+	run := u.send(u.newChat(), "q")
+	_, fr := a.hx.runWithInput(t, "q")
+	s := u.open(run, "")
+	recv(t, fr.opens, "stream")
+	s.waitFor(t, "run.started")
+	if w := u.do("POST", "/api/auth/logout-all", nil, nil); w.Code != 204 {
+		t.Fatalf("logout-all: %d %s", w.Code, w.Body.String())
+	}
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(50 * time.Millisecond):
+				a.hx.push(fr, "assistant.delta", `{"delta":"d"}`)
+			}
+		}
+	}()
+	select {
+	case <-s.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("a continuous stream outlived the revoked session")
+	}
+	if !s.has("run.disconnected") || s.has("run.completed") {
+		t.Errorf("events: %v", s.names())
+	}
+}
+
+// Review #186: a sign-out that lands after the guard admitted the stream and before the stream registered (database
+// revoked, no stream to mark yet) is caught by the stream's own re-check: nothing of the run is sent.
+func TestSignOutBetweenGuardAndStreamStartSendsNothing(t *testing.T) {
+	a := newApp(t, appOpts{heartbeat: time.Hour})
+	u := a.user("alice")
+	run := u.send(u.newChat(), "q")
+	_, fr := a.hx.runWithInput(t, "q")
+	recv(t, fr.opens, "upstream stream")
+	a.hx.push(fr, "assistant.delta", `{"delta":"PRIVATE-DELTA"}`)
+	time.Sleep(50 * time.Millisecond)
+	a.svc.streamOpenHook = func() {
+		if _, err := store.RevokeUserSessions(a.svc.base, a.db, u.id, time.Now()); err != nil {
+			t.Error(err)
+		}
+		a.svc.SessionsRevoked(u.id, "") // what auth does next: no stream is registered yet, so nothing is marked
+	}
+	s := u.open(run, "")
+	select {
+	case <-s.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("a stream on a revoked session stayed open")
+	}
+	if strings.Contains(s.text(), "PRIVATE-DELTA") || s.has("assistant.delta") || s.has("run.completed") || !s.has("run.disconnected") {
+		t.Errorf("a revoked session received %v", s.names())
+	}
+}
+
+// Review #186: an idle stream (no events, heartbeat an hour away) ends as soon as its session is signed out.
+func TestSignOutEndsAnIdleStreamAtOnce(t *testing.T) {
+	a := newApp(t, appOpts{heartbeat: time.Hour})
+	u := a.user("alice")
+	run := u.send(u.newChat(), "q")
+	_, fr := a.hx.runWithInput(t, "q")
+	s := u.open(run, "")
+	recv(t, fr.opens, "stream")
+	s.waitFor(t, "run.started")
+	began := time.Now()
+	if w := u.do("POST", "/api/auth/logout-all", nil, nil); w.Code != 204 {
+		t.Fatalf("logout-all: %d %s", w.Code, w.Body.String())
+	}
+	select {
+	case <-s.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("an idle stream waited for its heartbeat")
+	}
+	if took := time.Since(began); took > time.Second || !s.has("run.disconnected") {
+		t.Errorf("ended after %v with %v", took, s.names())
+	}
+}
+
 func TestMessagesAreProxiedFromTheOwnedSessionOnly(t *testing.T) {
 	a := newApp(t)
 	alice, bob := a.user("alice"), a.user("bobby")

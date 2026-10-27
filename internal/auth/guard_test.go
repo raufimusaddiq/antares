@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/raufimusaddiq/antares/internal/store"
 )
 
 func concrete(path string) string {
@@ -336,5 +338,63 @@ func TestAuditRecordsLoginLogoutAndRejection(t *testing.T) {
 	want := []string{"user auth.login ok", "user auth.logout ok", "- auth.login rejected:id_token"}
 	if strings.Join(got, "|") != strings.Join(want, "|") {
 		t.Fatalf("audit = %q, want %q", got, want)
+	}
+}
+
+// #150: sign out everywhere ends every session of the caller's own account (this browser and others), never another
+// account's, and is audited. A refused or anonymous call changes nothing.
+func TestLogoutAllEndsOnlyTheCallersSessions(t *testing.T) {
+	h := newHarness(t)
+	laptop := h.userIn("s-1", "APPROVED", "READY", "USER", true)
+	phone := h.browser()
+	phone.login("s-1", "s-1@example.test") // the same account on a second device
+	other := h.userIn("s-2", "APPROVED", "READY", "USER", true)
+	for _, b := range []*browser{laptop, phone, other} {
+		if w := b.get("/api/me"); w.Code != 200 {
+			t.Fatalf("setup: %d", w.Code)
+		}
+	}
+	// Each account has a device registered for alerts (the phone for s-1).
+	for _, sub := range []string{"s-1", "s-2"} {
+		h.exec(`INSERT INTO push_subscriptions (id, user_id, endpoint_hash, sealed_endpoint, sealed_keys, created_at) VALUES (?, ?, ?, x'00', x'00', 'x')`,
+			store.NewID(), h.userID(sub), "hash-"+sub)
+	}
+	for _, hdr := range []map[string]string{nil, {"Origin": "https://evil.example.test"}, {"Sec-Fetch-Site": "cross-site"}} {
+		if w := laptop.do("POST", "/api/auth/logout-all", hdr); w.Code != http.StatusForbidden {
+			t.Errorf("headers %v: %d", hdr, w.Code)
+		}
+	}
+	if w := h.browser().do("POST", "/api/auth/logout-all", map[string]string{"Origin": testOrigin}); w.Code != http.StatusUnauthorized {
+		t.Errorf("anonymous: %d", w.Code)
+	}
+	if w := phone.get("/api/me"); w.Code != 200 {
+		t.Fatal("a refused sign-out-everywhere must leave the sessions alone")
+	}
+
+	if w := laptop.do("POST", "/api/auth/logout-all", map[string]string{"Origin": testOrigin}); w.Code != http.StatusNoContent {
+		t.Fatalf("logout-all = %d %s", w.Code, w.Body.String())
+	}
+	if _, kept := laptop.cookies[sessionCookie]; kept {
+		t.Error("cookie not cleared")
+	}
+	for _, p := range []string{"/api/me", "/api/chats"} {
+		if w := phone.get(p); w.Code != http.StatusUnauthorized {
+			t.Errorf("the other device on %s = %d", p, w.Code)
+		}
+	}
+	if w := other.get("/api/me"); w.Code != 200 {
+		t.Errorf("another account was signed out: %d", w.Code)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM app_sessions s JOIN users u ON u.id = s.user_id WHERE u.google_sub = 's-1' AND s.revoked_at IS NULL`); n != 0 {
+		t.Errorf("%d live sessions left for the account", n)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM audit_log WHERE action = 'auth.logout_all'`); n != 1 {
+		t.Errorf("audit rows = %d", n)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM push_subscriptions s JOIN users u ON u.id = s.user_id WHERE u.google_sub = 's-1'`); n != 0 {
+		t.Errorf("%d push subscriptions left: signed-out devices would still get alerts", n)
+	}
+	if n := h.count(`SELECT COUNT(*) FROM push_subscriptions s JOIN users u ON u.id = s.user_id WHERE u.google_sub = 's-2'`); n != 1 {
+		t.Errorf("another account's push subscription was touched: %d", n)
 	}
 }

@@ -66,6 +66,11 @@ type Service struct {
 	// before its claim is released (queue.go), to place the run's end inside that window.
 	queueConflictHook func()
 
+	streams streamSet // open run streams, for sign-outs to stop at once (revocations.go)
+	// streamOpenHook, when set by a test, runs in a run stream after the guard admitted it and before the stream
+	// registers, to place a sign-out exactly in that window.
+	streamOpenHook func()
+
 	base context.Context
 	stop context.CancelFunc
 	wg   sync.WaitGroup

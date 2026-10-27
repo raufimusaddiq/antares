@@ -12,7 +12,8 @@ interface Props {
   view: View;
   onRefresh: () => void;
   onSignOut: () => void;
-  signOutFailed?: boolean;
+  /** Why the last sign-out did not fully work; empty when it did. */
+  signOutMessage?: string;
 }
 
 interface Copy {
@@ -94,7 +95,7 @@ function copyFor(view: View): Copy {
   }
 }
 
-export function Screen({ view, onRefresh, onSignOut, signOutFailed }: Props) {
+export function Screen({ view, onRefresh, onSignOut, signOutMessage = "" }: Props) {
   const c = copyFor(view);
   const account = view.screen === "account" ? view.account : null;
   const showLogin = view.screen === "login" || view.screen === "login-failed";
@@ -143,7 +144,7 @@ export function Screen({ view, onRefresh, onSignOut, signOutFailed }: Props) {
           Sign out
         </button>
       )}
-      {signOutFailed && <p role="alert">Could not sign out. Try again.</p>}
+      {signOutMessage && <p role="alert">{signOutMessage}</p>}
     </main>
   );
 }

@@ -172,7 +172,7 @@ try {
     for (const f of await pointerCheck(page, ".bar-actions")) fail(f);
     await page.keyboard.press("Escape");
     await page.setViewportSize({ width: w, height: h });
-    if (await page.getByRole("button", { name: "Sign out" }).isVisible()) fail("Escape did not close the menu");
+    if (await page.getByRole("button", { name: "Sign out", exact: true }).isVisible()) fail("Escape did not close the menu");
     // Search: opens in the strip, finds the seeded text, opens the hit, and closes.
     await page.getByRole("button", { name: "Search", exact: true }).click();
     await page.fill("#search-input", "queue");

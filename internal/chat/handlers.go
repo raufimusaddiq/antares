@@ -654,8 +654,27 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 	last := l.parseEventID(r.Header.Get("Last-Event-ID"))
 	tick := time.NewTicker(s.heartbeat)
 	defer tick.Stop()
+	// #150: register, then re-check the session once. A sign-out before this point is in the database; one after it
+	// marks this stream, and the mark is taken under the same lock the batch is written under.
+	if s.streamOpenHook != nil {
+		s.streamOpenHook()
+	}
+	st, unregister := s.registerStream(uid, auth.SessionHash(r))
+	defer unregister()
+	if !auth.SessionLive(r.Context(), s.db, r, s.now()) {
+		writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
+		fl.Flush()
+		return
+	}
 	for {
 		evs, lost, done, wait := l.since(last)
+		st.mu.Lock()
+		if st.revoked {
+			writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
+			fl.Flush()
+			st.mu.Unlock()
+			return
+		}
 		if lost {
 			writeEvent(w, "", "run.resumed", []byte(`{"replace":true}`))
 		}
@@ -664,15 +683,23 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 			last = e.seq
 		}
 		fl.Flush()
+		st.mu.Unlock()
 		if done {
 			return
 		}
 		select {
 		case <-wait:
+		case <-st.wake: // signed out: the top of the loop sends run.disconnected under the write lock
 		case <-tick.C:
 			// Re-check the account while a stream is open: a suspension must end it.
 			if _, err := store.ActiveBinding(r.Context(), s.db, uid); err != nil {
 				writeEvent(w, "", "run.disconnected", []byte(`{"code":"TENANT_NOT_READY"}`))
+				fl.Flush()
+				return
+			}
+			// And the session: a sign-out (here or everywhere) or a revocation must end it too (#150).
+			if !auth.SessionLive(r.Context(), s.db, r, s.now()) {
+				writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
 				fl.Flush()
 				return
 			}

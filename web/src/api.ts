@@ -61,18 +61,23 @@ export function parseAccount(body: unknown): Account | null {
   };
 }
 
-/** True once the server no longer considers the browser signed in. */
-export async function signOut(): Promise<boolean> {
+/**
+ * "ok": the server no longer considers this browser signed in (and, for everywhere, ended every session of the account).
+ * "expired": this browser's session had already ended, so sign out everywhere could not run: other devices may still be
+ * signed in, and the reader must sign in again to end them. "failed": nothing is known to have changed; try again.
+ */
+export type SignOutResult = "ok" | "expired" | "failed";
+
+export async function signOut(everywhere = false): Promise<SignOutResult> {
   try {
-    const res = await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
-    const ok = res.status === 204 || res.status === 401;
-    if (ok) {
-      purgeUserState();
-      purgeDrafts();
-    }
-    return ok;
+    const res = await fetch(everywhere ? "/api/auth/logout-all" : "/api/auth/logout", { method: "POST", credentials: "same-origin" });
+    if (res.status !== 204 && res.status !== 401) return "failed";
+    purgeUserState(); // either way this browser is signed out now
+    purgeDrafts();
+    // A plain sign-out that finds no session has done its job; sign out everywhere has not (#150 review).
+    return res.status === 401 && everywhere ? "expired" : "ok";
   } catch {
-    return false;
+    return "failed";
   }
 }
 

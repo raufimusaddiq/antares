@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { loadSession, signOut, type Session } from "./api";
+import { loadSession, signOut, type Session, type SignOutResult } from "./api";
 import { AdminScreens, AdminShell, Forbidden } from "./Admin";
 import { Chat } from "./Chat";
 import { revokeThisDevice, chatIdFromPath } from "./push";
@@ -52,9 +52,16 @@ const takeLink = (): string | null => {
   }
 };
 
+/** What a sign-out tells the reader. Empty when it simply worked. */
+export function signOutWords(r: SignOutResult, everywhere: boolean): string {
+  if (r === "ok") return "";
+  if (r === "expired") return "This device's session had already ended, so your other devices may still be signed in. Sign in again, then use Sign out everywhere.";
+  return everywhere ? "Could not sign out everywhere: your other devices may still be signed in. Try again." : "Could not sign out. Try again.";
+}
+
 export function App() {
   const [session, setSession] = useState<Session>({ kind: "loading" });
-  const [failedSignOut, setFailedSignOut] = useState(false);
+  const [signOutMessage, setSignOutMessage] = useState("");
   const [failed] = useState(loginFailed);
   const [path, setPath] = useState(() => window.location.pathname);
   // The chat a notification pointed at: from the address, or remembered across sign-in.
@@ -86,11 +93,14 @@ export function App() {
 
   const view = viewOf(session);
 
-  const onSignOut = () => {
+  // Only a literal true signs out everywhere: screens that hand this straight to onClick pass a click event, which
+  // must mean a plain sign-out.
+  const onSignOut = (everywhere?: unknown) => {
     // This device stops getting the account's alerts before the session ends (best effort).
-    void revokeThisDevice().then(signOut).then((ok) => {
-      setFailedSignOut(!ok);
-      if (ok) setSession({ kind: "anonymous", loginFailed: false });
+    const all = everywhere === true;
+    void revokeThisDevice().then(() => signOut(all)).then((r) => {
+      setSignOutMessage(signOutWords(r, all));
+      if (r !== "failed") setSession({ kind: "anonymous", loginFailed: false });
     });
   };
 
@@ -123,12 +133,12 @@ export function App() {
         </AdminShell>
       );
     }
-    return <Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onSignOut={onSignOut} />;
+    return <Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onSignOut={onSignOut} signOutError={signOutMessage} />;
   }
   return (
     <Screen
       view={view}
-      signOutFailed={failedSignOut}
+      signOutMessage={signOutMessage}
       onRefresh={() => {
         setSession({ kind: "loading" });
         refresh();

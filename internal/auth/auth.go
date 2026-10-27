@@ -312,6 +312,75 @@ func safeAvatar(s string) string {
 	return s
 }
 
+// logoutAll ends every session of the caller's own account, this one included, and clears the cookie (#150,
+// PRD §26.1). Another device's next request is a 401, and an open run stream ends at its next heartbeat
+// (SessionLive). Only the caller's own sessions are touched: the account comes from the session, never the request.
+func (a *Auth) logoutAll(w http.ResponseWriter, r *http.Request) {
+	if !a.sameOrigin(r) {
+		a.apiError(w, r, http.StatusForbidden, "FORBIDDEN", "Cross-origin request refused")
+		return
+	}
+	u, ok := a.current(r)
+	if !ok {
+		clearCookie(w, sessionCookie)
+		a.apiError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Sign in required")
+		return
+	}
+	now := a.now()
+	if _, err := store.RevokeUserSessions(r.Context(), a.db, u.ID, now); err != nil {
+		log.Printf("auth: revoke all failed: %v", err)
+		a.apiError(w, r, http.StatusInternalServerError, "INTERNAL", "Could not sign out everywhere; try again")
+		return
+	}
+	a.revoked(u.ID, "")
+	if err := store.Audit(r.Context(), a.db, u.ID, "auth.logout_all", "user", u.ID, "ok", newRequestID(), now); err != nil {
+		log.Printf("auth: audit write failed: %v", err)
+	}
+	clearCookie(w, sessionCookie)
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// SessionHash is the stored form of the request's session cookie ("" without one): what a revocation names (#150).
+func SessionHash(r *http.Request) string {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || c.Value == "" {
+		return ""
+	}
+	return hashToken(c.Value)
+}
+
+// revocationListener is told when sessions end through a sign-out, so open run streams stop at once instead of at
+// their next heartbeat (#150). tokenHash "" means every session of userID.
+type revocationListener interface {
+	SessionsRevoked(userID, tokenHash string)
+}
+
+func (a *Auth) revoked(userID, tokenHash string) {
+	if l, ok := a.chat.(revocationListener); ok {
+		l.SessionsRevoked(userID, tokenHash)
+	}
+}
+
+// SessionLive reports whether the request's session cookie still names a live session. A long-lived response (the
+// run event stream) calls it while it is open, so a sign-out, a sign-out everywhere or a revocation ends it. Only a
+// session the database says is gone is "not live": a lookup that failed (a busy database, a cancelled request) proves
+// nothing, and the stream's next check asks again.
+func SessionLive(ctx context.Context, db *sql.DB, r *http.Request, now time.Time) bool {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || c.Value == "" {
+		return false
+	}
+	// Not cancelled with the request: a client that leaves mid-query must not interrupt a database read (an interrupted
+	// read can leave its connection in a state that makes the next write on it fail).
+	_, err = store.SessionUser(context.WithoutCancel(ctx), db, hashToken(c.Value), now)
+	if err != nil && !errors.Is(err, store.ErrNoSession) {
+		log.Printf("auth: session re-check failed: %v", err)
+		return true
+	}
+	return err == nil
+}
+
 // logout invalidates the session server-side and clears the cookie.
 func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {
@@ -336,6 +405,7 @@ func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
 		a.apiError(w, r, http.StatusInternalServerError, "INTERNAL", "Could not sign out; try again")
 		return
 	}
+	a.revoked(u.ID, h)
 	if err := store.Audit(r.Context(), a.db, u.ID, "auth.logout", "user", u.ID, "ok", newRequestID(), now); err != nil {
 		log.Printf("auth: audit write failed: %v", err)
 	}

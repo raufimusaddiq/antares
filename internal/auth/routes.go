@@ -97,6 +97,7 @@ func (a *Auth) Register(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/auth/google/start", a.start)
 	mux.HandleFunc("GET "+callbackPath, a.callback)
 	mux.HandleFunc("POST /api/auth/logout", a.logout)
+	mux.HandleFunc("POST /api/auth/logout-all", a.logoutAll)
 	mux.Handle("GET /api/me", a.signedIn(http.HandlerFunc(a.me)))
 	mux.Handle("GET /api/account/status", a.signedIn(http.HandlerFunc(a.accountStatus)))
 
