@@ -30,6 +30,19 @@ func TestHealthzAlwaysOK(t *testing.T) {
 	}
 }
 
+// #113: /api/version answers the build's commit and nothing else, uncached, without a session.
+func TestVersionIsTheRevisionOnly(t *testing.T) {
+	s := New(func(context.Context) error { return errors.New("db down") }, t.TempDir())
+	for rev, want := range map[string]string{"": `{"revision":"unknown"}`, "abc123": `{"revision":"abc123"}`} {
+		Revision = rev
+		rec := get(s.Routes(), "/api/version")
+		if rec.Code != 200 || strings.TrimSpace(rec.Body.String()) != want || rec.Header().Get("Cache-Control") != "no-store" {
+			t.Errorf("revision %q: %d %s %q", rev, rec.Code, rec.Body, rec.Header().Get("Cache-Control"))
+		}
+	}
+	Revision = ""
+}
+
 func TestReadyzReflectsChecker(t *testing.T) {
 	var err error
 	s := New(func(context.Context) error { return err }, t.TempDir())

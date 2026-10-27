@@ -46,6 +46,8 @@ import { Artifacts } from "./Artifacts";
 import { ExportChat } from "./ExportChat";
 import { VisualizeToggle } from "./VisualizeToggle";
 import { MemorySkillsPanel } from "./MemorySkills";
+import { UsageDashboard } from "./UsageDashboard";
+import { JobsPanel } from "./Jobs";
 import { fenceSelection, inFence, indentInFence, toggleList, wrapSelection, type Edit } from "./composerEdit";
 import { Notifications } from "./Notifications";
 import { ImageStrip, useImageAttachments, type Attachment } from "./ImageAttachments";
@@ -57,6 +59,7 @@ import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, describeFolded, describeTool, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
+import { Dictation } from "./Dictation";
 import type { AttachmentRef } from "./MediaPreview";
 import { RunPrompts } from "./RunPrompts";
 import { QueuePanel } from "./QueuePanel";
@@ -64,6 +67,7 @@ import { forgetChatDrafts, loadDraft, matchTemplates, mergeTemplates, saveDraft,
 import { DraftNotice, sharedTextApplied, takeSharedText, useDraftSync, NO_HOLD, type SendHold } from "./DraftSync";
 import { listOwnTemplates, type OwnTemplate } from "./draftApi";
 import { Templates } from "./Templates";
+import { AppearancePanel, DiagnosticsPanel } from "./Settings";
 
 const MAX_INPUT = 32_000;
 const RECONNECT_TRIES = 5;
@@ -1342,12 +1346,16 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           <div id="bar-actions" className={menuOpen ? "bar-actions open" : "bar-actions"}>
             <Notifications />
             <MemorySkillsPanel />
+            <UsageDashboard />
+            {offers(inventory, "jobs") && <JobsPanel />}
             {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? openTitle.current} />}
             {canAdmin && onAdmin && (
               <button type="button" className="quiet" data-icon="shield" onClick={onAdmin}>
                 Admin
               </button>
             )}
+            <AppearancePanel />
+            <DiagnosticsPanel />
             <button type="button" className="quiet" data-icon="logout" onClick={() => onSignOut()}>
               Sign out
             </button>
@@ -1499,6 +1507,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             const open = chats.find((c) => c.id === current);
             return open ? <VisualizeToggle chat={open} onChanged={(c) => setChats((l) => l.map((x) => (x.id === c.id ? { ...x, visualize: c.visualize } : x)))} /> : null;
           })()}
+          <Dictation onText={(t) => onDraft(draft.trim() === "" ? t : `${draft.replace(/\s*$/, "")} ${t}`)} />
           <Recorder />
           <Templates own={ownTemplates} onChange={setOwnTemplates} />
           <p className="label" data-policy="drafts">

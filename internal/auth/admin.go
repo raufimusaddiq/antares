@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -97,6 +99,7 @@ func (a *Auth) registerAdmin(mux *http.ServeMux) {
 	for _, act := range []string{store.ActionApprove, store.ActionReject, store.ActionSuspend, store.ActionReactivate} {
 		mux.Handle("POST /api/admin/users/{userId}/"+act, a.adminRoute(true, a.adminDecide(act)))
 	}
+	mux.Handle("POST /api/admin/users/{userId}/revoke-sessions", a.adminRoute(true, a.adminRevokeSessions))
 	mux.Handle("POST /api/admin/users/{userId}/tenant-binding", a.adminRoute(true, a.adminRequeue(store.RequeueProvision)))
 	mux.Handle("POST /api/admin/users/{userId}/tenant-verify", a.adminRoute(true, a.adminRequeue(store.RequeueVerify)))
 	mux.Handle("GET /api/admin/audit", a.adminRoute(false, a.adminAudit))
@@ -219,8 +222,78 @@ func (a *Auth) adminDecide(action string) http.HandlerFunc {
 		if (action == store.ActionApprove || action == store.ActionReactivate) && a.tenants != nil {
 			a.tenants.Kick(id)
 		}
+		if action == store.ActionSuspend {
+			// Re-read either way: the view shows the pending mark, or that it was cleared.
+			a.pauseJobs(r.Context(), actor.ID, id)
+			if again, err := store.GetAdminUser(r.Context(), a.db, id); err == nil {
+				u = again
+			}
+		}
 		writeJSON(w, http.StatusOK, adminView(u))
 	}
+}
+
+// jobPauser is the chat service's part in a suspension (PRD §12 rule 3): pause the account's scheduled jobs upstream.
+type jobPauser interface {
+	PauseUserJobs(ctx context.Context, userID string) error
+}
+
+// pauseJobs pauses a just-suspended account's jobs and audits the outcome (admin.suspend_jobs, ok or pending). The
+// suspension already recorded SUSPENSION_PENDING_JOB_SHUTDOWN in its own transaction; it is cleared here only when the
+// pause is verified, so a failure, or a restart before this runs, leaves it to the chat service's retry loop. Without
+// a chat service there are no jobs to pause and the mark is cleared. It reports whether the mark is still set.
+func (a *Auth) pauseJobs(ctx context.Context, actor, id string) (pending bool) {
+	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	var perr error
+	if p, ok := a.chat.(jobPauser); ok {
+		perr = p.PauseUserJobs(pctx, id)
+	}
+	cancel()
+	rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer rcancel()
+	outcome := "ok"
+	if perr != nil {
+		outcome, pending = "pending", true
+	} else if err := store.ClearJobShutdownPending(rctx, a.db, id); err != nil {
+		log.Printf("auth: user %s: jobs paused, but the pending mark could not be cleared (the retry will): %v", id, err)
+		pending = true
+	}
+	if err := store.Audit(rctx, a.db, actor, "admin.suspend_jobs", "user", id, outcome, newRequestID(), a.now()); err != nil {
+		log.Printf("auth: audit write failed: %v", err)
+	}
+	return pending
+}
+
+// adminRevokeSessions signs the user out everywhere (#113): every session ends, devices stop getting alerts, open run
+// streams stop at once. The account and its data are untouched. Audited as metadata only (actor, target, action).
+func (a *Auth) adminRevokeSessions(w http.ResponseWriter, r *http.Request) {
+	id, ok := targetID(w, r, a)
+	if !ok {
+		return
+	}
+	var body struct{}
+	if !decodeBody(w, r, &body) {
+		a.apiError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "This action takes no body")
+		return
+	}
+	if _, err := store.GetAdminUser(r.Context(), a.db, id); err != nil { // an unknown user is the same 404 as elsewhere
+		a.adminError(w, r, err)
+		return
+	}
+	actor, _ := UserFrom(r.Context())
+	now := a.now()
+	// Revocation and audit commit together; a failure of either changes nothing.
+	if err := store.AdminRevokeSessions(r.Context(), a.db, actor.ID, id, newRequestID(), now); err != nil {
+		a.adminError(w, r, err)
+		return
+	}
+	a.revoked(id, "")
+	u, err := store.GetAdminUser(r.Context(), a.db, id)
+	if err != nil {
+		a.adminError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, adminView(u))
 }
 
 func (a *Auth) adminRequeue(mode string) http.HandlerFunc {

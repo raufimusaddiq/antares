@@ -53,6 +53,49 @@ describe("Memory & Skills", () => {
     expect((screen.getByLabelText("Instructions") as HTMLTextAreaElement).value).toBe("Be brief.");
   });
 
+  it("keeps the editor read-only while a save is pending, so nothing typed is lost", async () => {
+    let answer!: (r: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((path: string, init?: RequestInit) => {
+        if (path === "/api/capabilities") return Promise.resolve(json(200, inventory));
+        if (init?.method === "PUT") return new Promise<Response>((r) => (answer = r));
+        return Promise.resolve(json(200, { text: "", max: 2000 }));
+      }),
+    );
+    const { container } = render(<MemorySkillsPanel />);
+    open(container);
+    await screen.findByText("arxiv");
+    const box = screen.getByLabelText("Instructions") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "first" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save instructions" }));
+    await waitFor(() => expect(box.readOnly).toBe(true));
+    answer(json(200, { text: "first", max: 2000 }));
+    await waitFor(() => expect(box.readOnly).toBe(false));
+    expect(box.value).toBe("first");
+  });
+
+  it("a reopen after a failed read shows the skills", async () => {
+    let fail = true;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (path: string) => {
+        if (path === "/api/capabilities") return fail ? json(503, { error: { code: "HERMES_UNAVAILABLE", message: "x" } }) : json(200, inventory);
+        return json(200, { text: "", max: 2000 });
+      }),
+    );
+    const { container } = render(<MemorySkillsPanel />);
+    open(container);
+    expect(await screen.findByRole("alert")).toBeTruthy();
+    fail = false;
+    const d = container.querySelector("details")!;
+    d.open = false;
+    fireEvent(d, new Event("toggle"));
+    open(container);
+    expect(await screen.findByText("arxiv")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+  });
+
   it("says so when no skills are available", async () => {
     vi.stubGlobal(
       "fetch",

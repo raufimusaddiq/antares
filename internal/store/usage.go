@@ -210,3 +210,42 @@ func UserModelUsage(ctx context.Context, db Querier, userID string, since time.T
 	}
 	return out, rows.Err()
 }
+
+// UsageRow is one group of a user's finished replies in a usage range (#151): one chat, one UTC day, one model.
+// ChatID is "" for chats the user has deleted (kept per day and model only). Reported is false for the group of
+// replies that finished with no usage reported: they are counted, never as zero tokens.
+type UsageRow struct {
+	ChatID, Title, Day string
+	Reported           bool
+	ModelUsage
+}
+
+// UsageRows groups the user's finished replies started at or after since (deleted chats: from since's day).
+// Ownership is in the query: only the caller's own runs and chats.
+func UsageRows(ctx context.Context, db Querier, userID string, since time.Time) ([]UsageRow, error) {
+	rows, err := db.QueryContext(ctx, `
+		SELECT r.chat_id, COALESCE(c.title,''), substr(r.created_at,1,10), r.input_tokens IS NOT NULL, COALESCE(r.usage_model,''), COUNT(*),
+			COALESCE(SUM(r.input_tokens),0), COALESCE(SUM(r.output_tokens),0), COALESCE(SUM(r.cache_read_tokens),0), COALESCE(SUM(r.cache_write_tokens),0)
+		FROM runs r JOIN chats c ON c.id = r.chat_id AND c.user_id = r.user_id
+		WHERE r.user_id = ? AND r.created_at >= ? AND r.status IN ('COMPLETED','FAILED','CANCELLED','TIMED_OUT')
+		GROUP BY r.chat_id, substr(r.created_at,1,10), r.input_tokens IS NOT NULL, COALESCE(r.usage_model,'')
+		UNION ALL
+		SELECT '', '', day, 1, model, runs, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens
+		FROM deleted_run_usage WHERE user_id = ? AND day >= ?
+		UNION ALL
+		SELECT '', '', day, 0, '', runs, 0, 0, 0, 0 FROM deleted_unreported_runs WHERE user_id = ? AND day >= ?
+		ORDER BY 3, 1, 5`, userID, ts(since), userID, since.UTC().Format("2006-01-02"), userID, since.UTC().Format("2006-01-02"))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []UsageRow
+	for rows.Next() {
+		var u UsageRow
+		if err := rows.Scan(&u.ChatID, &u.Title, &u.Day, &u.Reported, &u.Model, &u.Runs, &u.Input, &u.Output, &u.CacheRead, &u.CacheWrite); err != nil {
+			return nil, err
+		}
+		out = append(out, u)
+	}
+	return out, rows.Err()
+}

@@ -112,6 +112,14 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		"/api/assets": true, "/api/assets/": true,
 		// #111 the caller's own additional instructions.
 		"/api/me/personality": true,
+		// #151 the caller's own usage over 7/30/90 days.
+		"/api/me/usage": true,
+		// #105 scheduled tasks: the caller's own list/create and /api/jobs/{id}[/pause|/resume|/run], owner-scoped by
+		// the caller's own workspace.
+		"/api/jobs": true, "/api/jobs/": true,
+		// #113 diagnostics: the running build's commit, public, nothing else. The admin "sign out everywhere" is
+		// /api/admin/users/{id}/revoke-sessions, covered above.
+		"/api/version":           true,
 		"/api/me/new-chat-draft": true, "/api/me/templates": true, "/api/me/templates/": true,
 	}
 	pathRe := regexp.MustCompile(`/api/[A-Za-z0-9_/.-]*`)

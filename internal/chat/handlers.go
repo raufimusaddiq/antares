@@ -35,7 +35,7 @@ var (
 func (s *Service) Handlers() map[string]http.Handler {
 	chatGet, chatPut, chatDel := s.chatDraftAPI().handlers(s)
 	newGet, newPut, newDel := s.newChatDraftAPI().handlers(s)
-	return map[string]http.Handler{
+	h := map[string]http.Handler{
 		"GET /api/chats/{chatId}/draft":                                chatGet,
 		"PUT /api/chats/{chatId}/draft":                                chatPut,
 		"DELETE /api/chats/{chatId}/draft":                             chatDel,
@@ -44,6 +44,7 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"DELETE /api/me/new-chat-draft":                                newDel,
 		"GET /api/me/personality":                                      http.HandlerFunc(s.getPersonality),
 		"PUT /api/me/personality":                                      http.HandlerFunc(s.putPersonality),
+		"GET /api/me/usage":                                            http.HandlerFunc(s.getUsageRange),
 		"GET /api/me/templates":                                        http.HandlerFunc(s.listTemplates),
 		"POST /api/me/templates":                                       http.HandlerFunc(s.createTemplate),
 		"PUT /api/me/templates/{templateId}":                           http.HandlerFunc(s.putTemplate),
@@ -92,6 +93,10 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"POST /api/chats/{chatId}/edit-turn":  http.HandlerFunc(s.noTurnMutation("edit-turn")),
 		"POST /api/chats/{chatId}/rewind":     http.HandlerFunc(s.noTurnMutation("rewind")),
 	}
+	for k, v := range s.jobHandlers() {
+		h[k] = v
+	}
+	return h
 }
 
 // ---- answers -------------------------------------------------------------------
