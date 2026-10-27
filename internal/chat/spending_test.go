@@ -189,3 +189,27 @@ func TestSpendingLimitsInputIsStrictAndOwnerScoped(t *testing.T) {
 		t.Errorf("null did not clear: %+v", cleared)
 	}
 }
+
+// Review #190: deleting the chat that spent the money does not reset the limit or the warnings.
+func TestDeletingAChatDoesNotResetSpending(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	spender := alice.newChat()
+	spent(t, a, alice, spender, 1_000_000, "deepseek-v4-1-flash") // Rp 5,500 today
+	putSpending(t, alice, map[string]any{"dailySoft": 1000, "monthlySoft": nil, "dailyHard": 5500})
+	ctx := context.Background()
+	if _, err := store.BeginDeleteChat(ctx, a.db, alice.id, spender, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.FinishDeleteChat(ctx, a.db, alice.id, spender); err != nil {
+		t.Fatal(err)
+	}
+	w := alice.get("/api/me/spending-limits")
+	sp := decodeBody[spendingAnswer](t, w)
+	if sp.Day.Spent == nil || *sp.Day.Spent != 5500 || !sp.HardReached || len(sp.Warnings) != 1 {
+		t.Fatalf("spend after deleting the chat: %+v", sp)
+	}
+	if got := send(alice, alice.newChat(), nextIdem()); got != 403 {
+		t.Fatalf("a deleted chat reset the daily limit: send = %d", got)
+	}
+}

@@ -355,6 +355,7 @@ describe("usage text", () => {
     expect(t).toContain("Daily spending limit of Rp 5,500 reached: new messages are refused");
     expect(t).not.toMatch(/Rp 0\b/);
     expect(describeGlance({ ...base, spending: sp })).toBe("Daily spending limit reached");
+    expect(describeGlance({ ...base, spending: { ...sp, hardReached: false, warnings: ["daily", "monthly"] } })).toBe("Spending warning: daily and monthly limit reached");
     expect(describeSpending({ ...sp, dailySoft: null, monthlySoft: null, dailyHard: null, warnings: [], hardReached: false }).join("\n")).toContain("No spending limits set");
     expect(parseSpending({ day: {}, month: {} })?.day.spent).toBeNull();
     expect(parseSpending(null)).toBeNull();

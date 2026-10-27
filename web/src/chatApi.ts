@@ -527,6 +527,8 @@ export function describeUsage(u: ChatUsage): string[] {
 export function describeGlance(u: ChatUsage): string {
   if (u.budget.reached) return "Token limit reached";
   if (u.spending?.hardReached) return "Daily spending limit reached";
+  // A reached warning is shown where the reader looks, not only inside the closed usage panel (review #190).
+  if (u.spending?.warnings.length) return `Spending warning: ${u.spending.warnings.join(" and ")} limit reached`;
   const used = u.tokens ? `${fmt(u.tokens.total)} tokens used` : "Usage unknown";
   const ctx = u.carriedTokens !== null && u.windowTokens ? `context ${Math.min(100, Math.round((u.carriedTokens / u.windowTokens) * 100))}% full` : "context in use unknown";
   return `${used} · ${ctx}`;

@@ -183,13 +183,19 @@ func SetSpendingLimits(ctx context.Context, db *sql.DB, userID string, l Spendin
 }
 
 // UserModelUsage sums the user's finished replies that reported usage and started at or after since, per model, across
-// all of the user's chats (#152 spending windows, #151 usage dashboard). Replies of deleted chats are not here: only
-// their token totals survive (deleted_chat_usage), with no time.
+// all of the user's chats (#152 spending windows, #151 usage dashboard), deleted chats included (deleted_run_usage,
+// kept per UTC day: for a deleted chat the window starts at since's day).
 func UserModelUsage(ctx context.Context, db *sql.DB, userID string, since time.Time) ([]ModelUsage, error) {
-	rows, err := db.QueryContext(ctx, `SELECT COALESCE(usage_model,''), COUNT(*), SUM(input_tokens), SUM(output_tokens),
-		SUM(cache_read_tokens), SUM(cache_write_tokens) FROM runs
+	// Live runs, plus what deleted chats' runs cost (kept per UTC day, so the window is compared by day).
+	rows, err := db.QueryContext(ctx, `SELECT model, SUM(n), SUM(i), SUM(o), SUM(cr), SUM(cw) FROM (
+		SELECT COALESCE(usage_model,'') AS model, COUNT(*) AS n, SUM(input_tokens) AS i, SUM(output_tokens) AS o,
+			SUM(COALESCE(cache_read_tokens,0)) AS cr, SUM(COALESCE(cache_write_tokens,0)) AS cw FROM runs
 		WHERE user_id = ? AND input_tokens IS NOT NULL AND created_at >= ?
-		AND status IN ('COMPLETED','FAILED','CANCELLED','TIMED_OUT') GROUP BY usage_model ORDER BY usage_model`, userID, ts(since))
+		AND status IN ('COMPLETED','FAILED','CANCELLED','TIMED_OUT') GROUP BY usage_model
+		UNION ALL
+		SELECT model, SUM(runs), SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens), SUM(cache_write_tokens)
+		FROM deleted_run_usage WHERE user_id = ? AND day >= ? GROUP BY model
+	) GROUP BY model ORDER BY model`, userID, ts(since), userID, since.UTC().Format("2006-01-02"))
 	if err != nil {
 		return nil, err
 	}

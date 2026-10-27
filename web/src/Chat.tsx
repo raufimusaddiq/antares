@@ -1454,12 +1454,17 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
               {describeGlance(usage)}
             </button>
           )}
+          {usage?.spending && (usage.spending.warnings.length > 0 || usage.spending.hardReached) && (
+            <span className="sr" role="status">
+              {usage.spending.hardReached ? "The daily spending limit is reached: new messages are refused." : `Spending warning: the ${usage.spending.warnings.join(" and ")} warning is reached. Messages still go through.`}
+            </span>
+          )}
         </div>
         <div id="chat-extras" className={moreOpen ? "extras open" : "extras"}>
           <div className="chat-actions-slot" ref={setActionsSlot} />
           {usage && (
             <details className="usage" open={usage.budget.reached}>
-              <summary>{usage.budget.reached ? "Token limit reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens used` : "Usage unknown"}</summary>
+              <summary>{usage.budget.reached ? "Token limit reached" : usage.spending?.hardReached ? "Daily spending limit reached" : usage.spending?.warnings.length ? "Usage: spending warning reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens used` : "Usage unknown"}</summary>
               <ul>
                 {[...describeUsage(usage), ...(usage.spending ? describeSpending(usage.spending) : [])].map((l) => (
                   <li key={l}>{l}</li>
