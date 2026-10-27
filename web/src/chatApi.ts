@@ -289,6 +289,8 @@ export interface QueuedMessage {
 export interface ChatQueue {
   items: QueuedMessage[];
   paused: string;
+  /** The run this request's change started (resume, or a message queued just as the reply ended); null when none. */
+  started: { runId: string; input: string } | null;
 }
 
 export function parseQueue(v: unknown): ChatQueue | null {
@@ -297,7 +299,9 @@ export function parseQueue(v: unknown): ChatQueue | null {
   const items = rows(o.items, (r) =>
     str(r.id) && typeof r.position === "number" && typeof r.input === "string" ? { id: str(r.id), position: r.position, input: r.input, sending: r.status === "SUBMITTING" } : null,
   );
-  return items ? { items, paused: o.paused } : null;
+  const st = obj(o.started);
+  const started = st && str(st.runId) && typeof st.input === "string" ? { runId: str(st.runId), input: st.input } : null;
+  return items ? { items, paused: o.paused, started } : null;
 }
 
 const queuePath = (chatId: string) => `/api/chats/${encodeURIComponent(chatId)}/queue`;

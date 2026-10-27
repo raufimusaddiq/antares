@@ -62,6 +62,10 @@ type Service struct {
 	notifier  Notifier
 	kenari    *kenari.Catalogue
 
+	// queueConflictHook, when set by a test, runs after a queued message was refused for a busy chat and
+	// before its claim is released (queue.go), to place the run's end inside that window.
+	queueConflictHook func()
+
 	base context.Context
 	stop context.CancelFunc
 	wg   sync.WaitGroup

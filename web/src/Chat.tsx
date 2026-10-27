@@ -1245,6 +1245,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
       setQueueFailure("");
       queueRef.current = r.value;
       setQueueTick((n) => n + 1);
+      // The reply ended while this was on its way, so the server sent it at once: follow that run.
+      if (r.value.started) onQueueSent(r.value.started.runId, r.value.started.input);
       if (draftRef.current.trim() === text) {
         setDraft("");
         saveDraft(email, chat, "");

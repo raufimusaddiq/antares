@@ -28,7 +28,11 @@ const ok = <T,>(value: T) => ({ ok: true as const, value });
 const fail = (code: string, status: number) => ({ ok: false as const, code, status });
 const chat = (extra: Partial<ChatSummary> = {}): ChatSummary => ({ id: "c1", title: "Talk", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false, ...extra });
 const inventory: Inventory = { capabilities: [], toolsets: [], providers: [], skills: [] };
-const queued = (inputs: string[], paused = ""): ChatQueue => ({ items: inputs.map((input, i) => ({ id: `q${i + 1}`, position: i + 1, input, sending: false })), paused });
+const queued = (inputs: string[], paused = "", started: ChatQueue["started"] = null): ChatQueue => ({
+  items: inputs.map((input, i) => ({ id: `q${i + 1}`, position: i + 1, input, sending: false })),
+  paused,
+  started,
+});
 
 class FakeSource {
   static CLOSED = 2;
@@ -133,6 +137,17 @@ describe("the queue panel", () => {
     expect(await within(panel()).findByRole("button", { name: "Pause queue" })).toBeTruthy();
   });
 
+  it("follows the reply a resume started", async () => {
+    api.getQueue.mockResolvedValue(ok(queued(["resumed message"], "CANCELLED")));
+    await mount(chat());
+    api.pauseQueue.mockResolvedValue(ok(queued([], "", { runId: "r5", input: "resumed message" })));
+    api.getQueue.mockResolvedValue(ok(queued([])));
+    fireEvent.click(await within(panel()).findByRole("button", { name: "Resume queue" }));
+    await waitFor(() => expect(FakeSource.all.some((s) => s.url.includes("/r5/"))).toBe(true));
+    expect(await screen.findByText("resumed message")).toBeTruthy();
+    expect(await screen.findByText("Working…")).toBeTruthy();
+  });
+
   it("sends the next message by hand once the reply has ended, and shows it as the user's turn", async () => {
     api.getQueue.mockResolvedValue(ok(queued(["by hand"], "USER")));
     await mount(chat());
@@ -153,7 +168,7 @@ describe("the queue panel", () => {
     fireEvent.click(within(second).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.editQueued).toHaveBeenCalledWith("c1", "q2", "second, better"));
     expect(await within(panel()).findByText("second, better")).toBeTruthy();
-    api.removeQueued.mockResolvedValue(ok({ items: [{ id: "q2", position: 1, input: "second, better", sending: false }], paused: "USER" }));
+    api.removeQueued.mockResolvedValue(ok({ items: [{ id: "q2", position: 1, input: "second, better", sending: false }], paused: "USER", started: null }));
     fireEvent.click(within(within(panel()).getByRole("listitem", { name: "Queued message 1 of 2" })).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(api.removeQueued).toHaveBeenCalledWith("c1", "q1"));
     expect(await within(panel()).findByRole("listitem", { name: "Queued message 1 of 1" })).toBeTruthy();

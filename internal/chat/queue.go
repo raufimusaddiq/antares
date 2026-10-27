@@ -34,6 +34,13 @@ type queueView struct {
 	Items []queueItemView `json:"items"`
 	// Paused is why automatic sending is off ("" when it is on): USER, or what stopped it.
 	Paused string `json:"paused"`
+	// Started is the run this request's dispatch began, so the browser can follow it; absent when none.
+	Started *startedView `json:"started,omitempty"`
+}
+
+type startedView struct {
+	RunID string `json:"runId"`
+	Input string `json:"input"`
 }
 
 func viewQueue(q store.Queue) queueView {
@@ -71,8 +78,8 @@ func (s *Service) ownChat(w http.ResponseWriter, r *http.Request, uid, chatID st
 	return false
 }
 
-// writeQueue answers with the chat's queue as stored now.
-func (s *Service) writeQueue(w http.ResponseWriter, r *http.Request, uid, chatID string, status int) {
+// writeQueue answers with the chat's queue as stored now, and the run this request started, if any.
+func (s *Service) writeQueue(w http.ResponseWriter, r *http.Request, uid, chatID string, status int, started *startedView) {
 	q, err := store.GetQueue(r.Context(), s.db, uid, chatID)
 	switch {
 	case errors.Is(err, store.ErrNoChat):
@@ -80,7 +87,9 @@ func (s *Service) writeQueue(w http.ResponseWriter, r *http.Request, uid, chatID
 	case err != nil:
 		internalError(w, "get queue", err)
 	default:
-		writeJSON(w, status, viewQueue(q))
+		v := viewQueue(q)
+		v.Started = started
+		writeJSON(w, status, v)
 	}
 }
 
@@ -91,7 +100,7 @@ func (s *Service) getQueue(w http.ResponseWriter, r *http.Request) {
 		notFound(w)
 		return
 	}
-	s.writeQueue(w, r, uid, chatID, http.StatusOK)
+	s.writeQueue(w, r, uid, chatID, http.StatusOK, nil)
 }
 
 // enqueue adds a message to the end of the chat's queue. If the chat is free and its queue is not
@@ -126,8 +135,8 @@ func (s *Service) enqueue(w http.ResponseWriter, r *http.Request) {
 		internalError(w, "enqueue", err)
 		return
 	}
-	s.dispatchIfFree(r.Context(), uid, chatID)
-	s.writeQueue(w, r, uid, chatID, http.StatusCreated)
+	started := s.dispatchIfFree(r.Context(), uid, chatID)
+	s.writeQueue(w, r, uid, chatID, http.StatusCreated, started)
 }
 
 func (s *Service) editQueued(w http.ResponseWriter, r *http.Request) {
@@ -171,7 +180,7 @@ func (s *Service) answerItem(w http.ResponseWriter, r *http.Request, uid, chatID
 	case err != nil:
 		internalError(w, "queue item", err)
 	default:
-		s.writeQueue(w, r, uid, chatID, http.StatusOK)
+		s.writeQueue(w, r, uid, chatID, http.StatusOK, nil)
 	}
 }
 
@@ -206,10 +215,11 @@ func (s *Service) pauseQueue(w http.ResponseWriter, r *http.Request) {
 		internalError(w, "pause queue", err)
 		return
 	}
+	var started *startedView
 	if !*body.Paused {
-		s.dispatchIfFree(r.Context(), uid, chatID)
+		started = s.dispatchIfFree(r.Context(), uid, chatID)
 	}
-	s.writeQueue(w, r, uid, chatID, http.StatusOK)
+	s.writeQueue(w, r, uid, chatID, http.StatusOK, started)
 }
 
 // sendNext is the owner's "Send next": it sends the head even from a paused queue, and only once the
@@ -221,7 +231,7 @@ func (s *Service) sendNext(w http.ResponseWriter, r *http.Request) {
 		notFound(w)
 		return
 	}
-	run, rf, err := s.dispatchNext(r.Context(), uid, chatID, true)
+	run, _, rf, err := s.dispatchNext(r.Context(), uid, chatID, true)
 	switch {
 	case errors.Is(err, store.ErrNoChat):
 		notFound(w)
@@ -238,41 +248,61 @@ func (s *Service) sendNext(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// dispatchIfFree sends the head of an unpaused queue when the chat has no run. A busy chat, an empty or
-// paused queue, or a dispatch already in flight is not an error: the run's end tries again.
-func (s *Service) dispatchIfFree(ctx context.Context, uid, chatID string) {
-	if _, _, err := s.dispatchNext(ctx, uid, chatID, false); err != nil && !errors.Is(err, store.ErrNoItem) && !errors.Is(err, store.ErrQueueBusy) && !errors.Is(err, store.ErrNoChat) {
+// dispatchIfFree sends the head of an unpaused queue when the chat has no run, and says which run it
+// started (nil when none). A busy chat, an empty or paused queue, or a dispatch already in flight is not an
+// error: whoever holds the claim, or the run's end, tries again.
+func (s *Service) dispatchIfFree(ctx context.Context, uid, chatID string) *startedView {
+	run, item, rf, err := s.dispatchNext(ctx, uid, chatID, false)
+	if err != nil && !errors.Is(err, store.ErrNoItem) && !errors.Is(err, store.ErrQueueBusy) && !errors.Is(err, store.ErrNoChat) {
 		log.Printf("chat: queue dispatch for chat %s: %v", chatID, err)
 	}
+	if err != nil || rf != nil {
+		return nil
+	}
+	return &startedView{RunID: run.ID, Input: item.Input}
 }
 
 // dispatchNext claims the head of the queue (QUEUED -> SUBMITTING, exactly once) and admits it as a new
 // turn under its stable key. Admitted, the item leaves the queue; refused, it goes back to the head and
-// the queue is paused with the refusal's code, except for a busy chat, whose run's end dispatches again.
+// the queue is paused with the refusal's code. A busy chat is not a pause: its run's end dispatches again.
 // A refusal is returned as rf for the caller to answer with; err is a claim or store failure.
-func (s *Service) dispatchNext(ctx context.Context, uid, chatID string, explicit bool) (run store.Run, rf *refusal, err error) {
-	item, err := store.ClaimNext(ctx, s.db, uid, chatID, explicit, s.now())
-	if err != nil {
-		return store.Run{}, nil, err
-	}
-	rf = &refusal{}
-	r := (&http.Request{Header: http.Header{}}).WithContext(ctx)
-	run, ok := s.admit(rf, r, uid, chatID, item.IdempotencyKey(), item.Input, nil)
-	// The settle runs even if ctx ended: a claim must not stay SUBMITTING behind a dropped request.
-	settle, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
-	defer cancel()
-	if err := store.SettleClaim(settle, s.db, uid, item.ID, ok, s.now()); err != nil {
-		log.Printf("chat: queue item %s: could not settle its claim: %v", item.ID, err)
-	}
-	if ok {
-		return run, nil, nil
-	}
-	if code := rf.code(); code != hermes.CodeRunConflict {
-		if err := store.PauseQueueIfWaiting(settle, s.db, uid, chatID, code); err != nil {
-			log.Printf("chat: queue for chat %s: could not pause: %v", chatID, err)
+func (s *Service) dispatchNext(ctx context.Context, uid, chatID string, explicit bool) (store.Run, store.QueueItem, *refusal, error) {
+	for attempt := 0; ; attempt++ {
+		item, err := store.ClaimNext(ctx, s.db, uid, chatID, explicit, s.now())
+		if err != nil {
+			return store.Run{}, store.QueueItem{}, nil, err
+		}
+		rf := &refusal{}
+		r := (&http.Request{Header: http.Header{}}).WithContext(ctx)
+		run, ok := s.admit(rf, r, uid, chatID, item.IdempotencyKey(), item.Input, nil)
+		if !ok && s.queueConflictHook != nil && rf.code() == hermes.CodeRunConflict {
+			s.queueConflictHook()
+		}
+		// The settle runs even if ctx ended: a claim must not stay SUBMITTING behind a dropped request.
+		settle, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		if err := store.SettleClaim(settle, s.db, uid, item.ID, ok, s.now()); err != nil {
+			log.Printf("chat: queue item %s: could not settle its claim: %v", item.ID, err)
+		}
+		if ok {
+			cancel()
+			return run, item, nil, nil
+		}
+		if code := rf.code(); code != hermes.CodeRunConflict {
+			if err := store.PauseQueueIfWaiting(settle, s.db, uid, chatID, code); err != nil {
+				log.Printf("chat: queue for chat %s: could not pause: %v", chatID, err)
+			}
+			cancel()
+			return store.Run{}, item, rf, nil
+		}
+		// The chat was busy. Its run may have ended between admission and the release above, and its
+		// end-of-run dispatch then found this claim in flight and stood down. Now that the claim is
+		// released, look once more, so the queue is never left waiting with nothing to wake it.
+		c, err := store.GetChat(settle, s.db, uid, chatID)
+		cancel()
+		if attempt > 0 || err != nil || c.ActiveRunID != "" {
+			return store.Run{}, item, rf, nil
 		}
 	}
-	return store.Run{}, rf, nil
 }
 
 // afterRun is told the stored status of a run that has stopped, before its end is announced. A completed

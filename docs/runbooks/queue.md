@@ -22,6 +22,9 @@ text only; images are not queued. Rows cascade with the chat and the user.
 | `PATCH /api/chats/{chatId}/queue/{itemId}` `{input}` | edit a `QUEUED` message (one being sent cannot change: `404`) |
 | `DELETE /api/chats/{chatId}/queue/{itemId}` | remove a `QUEUED` message |
 | `PATCH /api/chats/{chatId}/queue` `{paused}` | pause (`USER`) or resume. Resuming is the explicit recovery: a free chat sends its head at once |
+
+`POST /queue` and `PATCH /queue` answer with `started: {runId, input}` when their dispatch began a run, so the browser follows
+that reply instead of showing an idle chat.
 | `POST /api/chats/{chatId}/queue/next` | **Send next**: send the head now, even from a paused queue (it stays paused). A busy chat is `409 RUN_CONFLICT`, an empty queue `409 QUEUE_EMPTY` |
 
 The last two are additions to the PRD §29.1 table, which lists only the collection and item routes: pause/unpause and "Send
@@ -38,6 +41,9 @@ is `404`, byte-identical to one that does not exist (`threat_test.go` probes all
    item's life, so a repeated dispatch replays the run it already became instead of sending again.
 3. **Settle.** Admitted: the row is deleted. Refused: it goes back to the head, and the queue is paused with the refusal's code
    (except `RUN_CONFLICT`: a busy chat's own end dispatches again).
+4. **No stranding.** A run can end between a busy-chat refusal and the release of that claim; its end-of-run dispatch then finds
+   the claim in flight and stands down. So after releasing a busy-chat refusal the dispatcher reads the chat once more and, if it
+   is now free, dispatches again (`TestQueueIsNotStrandedWhenTheRunEndsDuringARefusedClaim`).
 
 A process that dies holding a claim: on start-up `store.RecoverRuns` puts it back to `QUEUED` and pauses the chat's queue
 `INTERRUPTED`; the owner decides, and a re-send under the same key replays any run it had become.

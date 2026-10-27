@@ -14,7 +14,8 @@ type queueAnswer struct {
 		ID, Input, Status string
 		Position          int
 	}
-	Paused string
+	Paused  string
+	Started *struct{ RunID, Input string }
 }
 
 func (p *person) queue(chatID string) queueAnswer {
@@ -273,5 +274,59 @@ func TestQueueRejectsBadInput(t *testing.T) {
 	}
 	if w := u.do("PATCH", "/api/chats/"+chat+"/queue", nil, map[string]any{}); w.Code != 400 {
 		t.Errorf("pause without paused: %d", w.Code)
+	}
+}
+
+// Review #177: a message queued while the reply is running is claimed at once and refused (busy chat). If
+// the reply ends before that claim is released, the end-of-run dispatch finds the claim in flight and stands
+// down; the releaser must then look again, or the unpaused queue is stranded with nothing to wake it.
+func TestQueueIsNotStrandedWhenTheRunEndsDuringARefusedClaim(t *testing.T) {
+	a := newApp(t)
+	u := a.user("alice")
+	chat := u.newChat()
+	run := u.send(chat, "first")
+	_, fr := a.hx.runWithInput(t, "first")
+	s := u.open(run, "")
+	recv(t, fr.opens, "upstream stream")
+	once := sync.Once{}
+	a.svc.queueConflictHook = func() {
+		once.Do(func() {
+			a.hx.push(fr, "run.completed", `{"output":"done"}`)
+			s.waitFor(t, "run.completed") // emitted after the end-of-run dispatch, which saw this claim and stood down
+		})
+	}
+	q := u.enqueue(chat, "second")
+	_, fr2 := a.hx.runWithInput(t, "second")
+	if q.Started == nil || q.Started.Input != "second" || len(q.Items) != 0 {
+		t.Errorf("enqueue answer: %+v", q)
+	}
+	recv(t, fr2.opens, "second run's stream")
+	if n := hermesRuns(a, "second"); n != 1 {
+		t.Errorf("Hermes was asked %d times", n)
+	}
+}
+
+// Review #177: resuming a free chat's queue starts its head and says which run, so the browser can follow it.
+func TestResumeReportsTheRunItStarted(t *testing.T) {
+	a := newApp(t)
+	u := a.user("alice")
+	chat := u.newChat()
+	if w := u.do("PATCH", "/api/chats/"+chat+"/queue", nil, map[string]bool{"paused": true}); w.Code != 200 {
+		t.Fatalf("pause: %d", w.Code)
+	}
+	if q := u.enqueue(chat, "waiting"); q.Started != nil {
+		t.Fatalf("a paused queue started a run on enqueue: %+v", q)
+	}
+	w := u.do("PATCH", "/api/chats/"+chat+"/queue", nil, map[string]bool{"paused": false})
+	if w.Code != 200 {
+		t.Fatalf("resume: %d %s", w.Code, w.Body.String())
+	}
+	q := decodeBody[queueAnswer](t, w)
+	if q.Started == nil || q.Started.Input != "waiting" || q.Started.RunID == "" || len(q.Items) != 0 {
+		t.Fatalf("resume answer: %+v", q)
+	}
+	a.hx.runWithInput(t, "waiting")
+	if st := u.runStatus(q.Started.RunID); st == "" {
+		t.Error("the reported run is not the caller's")
 	}
 }

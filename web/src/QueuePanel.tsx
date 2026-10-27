@@ -61,6 +61,7 @@ export function QueuePanel({ chatId, busy, tick, onSent, onQueue }: { chatId: st
     if (r.ok) {
       show(r.value);
       setError("");
+      if (r.value.started) onSent(r.value.started.runId, r.value.started.input); // a resume that sent: follow its reply
     } else {
       setError(describeCode(r.code));
       await load();
