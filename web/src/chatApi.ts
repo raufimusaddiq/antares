@@ -607,6 +607,17 @@ export function describeSpending(s: Spending): string[] {
   return lines;
 }
 
+/** A whole-rupiah limit as typed: digits, optionally grouped in threes with one separator used throughout ("50000",
+ * "50.000", "50,000", "50 000"). Empty is null (no limit). Anything else, including a fraction ("1.5", "1,50") or mixed
+ * separators, is undefined: refused, never guessed. */
+export function parseRupiah(t: string): number | null | undefined {
+  const s = t.trim();
+  if (s === "") return null;
+  if (!/^\d+$/.test(s) && !/^\d{1,3}(?:([.,  ])\d{3})(?:\1\d{3})*$/.test(s)) return undefined;
+  const n = Number(s.replace(/\D/g, ""));
+  return Number.isSafeInteger(n) && n > 0 && n <= 1e12 ? n : undefined;
+}
+
 export type SpendingFields = { dailySoft: string; monthlySoft: string; dailyHard: string };
 
 /** The form text for the server's limits: whole rupiah, empty for none. */

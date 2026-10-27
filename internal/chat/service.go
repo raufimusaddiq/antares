@@ -368,6 +368,7 @@ func (s *Service) finish(l *liveRun, to, code, output string) {
 		l.emit("run.failed", map[string]string{"runId": l.runID, "status": store.RunFailed, "code": hermes.CodeHermesUnavailable}, true)
 		return
 	}
+	logRunState(run)
 	if s.notifier != nil && store.RunTerminal(run.Status) {
 		s.notifier.RunFinished(run.UserID, run.ID, run.ChatID, run.Status) // the stored status, so a cancel is never a completion
 	}
@@ -419,6 +420,9 @@ func (s *Service) disconnect(l *liveRun, userID, runID string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(s.base), 10*time.Second)
 	defer cancel()
 	_, _ = store.MoveRun(ctx, s.db, userID, runID, []string{store.RunRunning}, store.RunDisconnected, "", "", s.now())
+	if run, err := store.GetRun(ctx, s.db, userID, runID); err == nil {
+		logRunState(run)
+	}
 	if err := store.PauseQueueIfWaiting(ctx, s.db, userID, l.chatID, store.RunDisconnected); err != nil { // unknown state: the owner decides
 		log.Printf("chat: run %s: could not pause its chat's queue: %v", runID, err)
 	}
@@ -487,6 +491,7 @@ func (s *Service) Cancel(ctx context.Context, userID, runID string) (run store.R
 	if run, err = store.GetRun(ctx, s.db, userID, runID); err != nil {
 		return store.Run{}, false, err
 	}
+	logRunState(run)
 	if l != nil {
 		l.emit(terminalEvent(run.Status), terminalPayload(run, ""), store.RunTerminal(run.Status))
 	}
@@ -587,4 +592,26 @@ func (s *Service) attach(ctx context.Context, run store.Run) (*liveRun, error) {
 		s.follow(wctx, l, run.UserID, run.ID, b, run.HermesRunID)
 	}()
 	return l, nil
+}
+
+// logRunState writes the run's stored state with the PRD §13.2 identifiers (issue #114): internal user, chat and run
+// ids, the state, the error code, and token usage when Hermes reported it. A run whose outcome is not known is
+// DISCONNECTED and logged as "unknown", never as success. No prompt, output or key is logged.
+func logRunState(run store.Run) {
+	outcome := "unknown"
+	switch run.Status {
+	case store.RunCompleted:
+		outcome = "success"
+	case store.RunFailed, store.RunTimedOut:
+		outcome = "failure"
+	case store.RunCancelled:
+		outcome = "cancelled"
+	case store.RunPending, store.RunRunning:
+		outcome = "running"
+	}
+	code := run.ErrorCode
+	if code == "" {
+		code = "-"
+	}
+	log.Printf("run user=%s chat=%s run=%s binding=%s state=%s outcome=%s error=%s", run.UserID, run.ChatID, run.ID, run.BindingID, run.Status, outcome, code)
 }

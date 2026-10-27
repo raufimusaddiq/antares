@@ -4,7 +4,7 @@ import { Composer, Transcript } from "./Chat";
 import { parseInventory } from "./chatApi";
 import { Markdown, safeHref } from "./Markdown";
 import { indentInFence, wrapSelection } from "./composerEdit";
-import { describeCode, describeGlance, describeSpending, describeTurns, describeUsage, parseSpending, reconcileSpending, spendingFields, getMessages, listChats, parseLimitInput, parseUsage, sendMessage } from "./chatApi";
+import { describeCode, describeGlance, describeSpending, describeTurns, describeUsage, parseSpending, reconcileSpending, spendingFields, parseRupiah, getMessages, listChats, parseLimitInput, parseUsage, sendMessage } from "./chatApi";
 import { isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 
 const md = (text: string) => renderToStaticMarkup(<Markdown text={text} />);
@@ -359,6 +359,15 @@ describe("usage text", () => {
     expect(describeSpending({ ...sp, dailySoft: null, monthlySoft: null, dailyHard: null, warnings: [], hardReached: false }).join("\n")).toContain("No spending limits set");
     expect(parseSpending({ day: {}, month: {} })?.day.spent).toBeNull();
     expect(parseSpending(null)).toBeNull();
+  });
+
+  it("spending form: a limit is whole rupiah, grouped consistently or not at all; a fraction is refused (#152)", () => {
+    for (const [typed, want] of [["50000", 50000], ["50.000", 50000], ["50,000", 50000], ["1 500 000", 1500000], ["1.500.000", 1500000], ["", null], ["  ", null]] as const) {
+      expect(parseRupiah(typed)).toBe(want);
+    }
+    for (const bad of ["1.5", "1,5", "1,50", "12.34", "1.500,00", "1,500.000", "1.5000", "0", "-5", "5e3", "Rp 5000", "1.000.0000", "2000000000000"]) {
+      expect(parseRupiah(bad)).toBeUndefined();
+    }
   });
 
   it("spending form: a refresh updates untouched fields and keeps unsaved edits (#152)", () => {

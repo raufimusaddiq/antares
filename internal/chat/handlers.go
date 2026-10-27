@@ -15,6 +15,7 @@ import (
 
 	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/hermes"
+	"github.com/raufimusaddiq/antares/internal/obs"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -657,6 +658,15 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Accel-Buffering", "no")
 	h.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
+	obs.StreamOpened(r.Header.Get("Last-Event-ID") != "")
+	// One count per stream that did not see its run to the end: the browser left, the server ended it, or it carried
+	// a lost upstream (run.disconnected).
+	finished, cut := false, false
+	defer func() {
+		if !finished || cut {
+			obs.StreamDisconnected()
+		}
+	}()
 	_, _ = io.WriteString(w, "retry: 3000\n\n")
 	fl.Flush()
 
@@ -671,7 +681,7 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 	st, unregister := s.registerStream(uid, auth.SessionHash(r))
 	defer unregister()
 	if !auth.SessionLive(r.Context(), s.db, r, s.now()) {
-		writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
+		streamDisconnected(w, []byte(`{"code":"UNAUTHENTICATED"}`))
 		fl.Flush()
 		return
 	}
@@ -679,7 +689,7 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 		evs, lost, done, wait := l.since(last)
 		st.mu.Lock()
 		if st.revoked {
-			writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
+			streamDisconnected(w, []byte(`{"code":"UNAUTHENTICATED"}`))
 			fl.Flush()
 			st.mu.Unlock()
 			return
@@ -690,10 +700,12 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 		for _, e := range evs {
 			writeEvent(w, l.eventID(e.seq), e.name, e.data)
 			last = e.seq
+			cut = cut || e.name == "run.disconnected"
 		}
 		fl.Flush()
 		st.mu.Unlock()
 		if done {
+			finished = true
 			return
 		}
 		select {
@@ -702,13 +714,13 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 		case <-tick.C:
 			// Re-check the account while a stream is open: a suspension must end it.
 			if _, err := store.ActiveBinding(r.Context(), s.db, uid); err != nil {
-				writeEvent(w, "", "run.disconnected", []byte(`{"code":"TENANT_NOT_READY"}`))
+				streamDisconnected(w, []byte(`{"code":"TENANT_NOT_READY"}`))
 				fl.Flush()
 				return
 			}
 			// And the session: a sign-out (here or everywhere) or a revocation must end it too (#150).
 			if !auth.SessionLive(r.Context(), s.db, r, s.now()) {
-				writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
+				streamDisconnected(w, []byte(`{"code":"UNAUTHENTICATED"}`))
 				fl.Flush()
 				return
 			}
@@ -720,6 +732,11 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// streamDisconnected ends a run stream from the server side (suspension, sign-out); the stream's own defer counts it.
+func streamDisconnected(w io.Writer, data []byte) {
+	writeEvent(w, "", "run.disconnected", data)
 }
 
 func writeEvent(w io.Writer, id, name string, data []byte) {
