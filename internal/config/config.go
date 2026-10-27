@@ -40,7 +40,10 @@ type Config struct {
 	Addr      string
 	DBPath    string
 	StaticDir string // development override; empty serves the embedded bundle
-	SecretKey Secret // 32-byte master key for secrets at rest
+	// WireCaptureDir, when set, records sanitized Hermes wire fixtures for synthetic smoke accounts only (#169,
+	// docs/runbooks/wire-fixtures.md). Empty (the default) records nothing.
+	WireCaptureDir string
+	SecretKey      Secret // 32-byte master key for secrets at rest
 
 	// Google OIDC login (AUTH-001). All three are required: there is no
 	// degraded mode without a way to sign in.
@@ -79,12 +82,14 @@ const defaultIssuer = "https://accounts.google.com"
 // Load reads configuration through getenv and reports every problem at once.
 func Load(getenv func(string) string) (Config, error) {
 	c := Config{
-		Addr:        orDefault(getenv("ANTARES_ADDR"), ":8080"),
-		DBPath:      getenv("ANTARES_DB_PATH"),
-		StaticDir:   getenv("ANTARES_STATIC_DIR"),
-		AdminIssuer: orDefault(getenv("ANTARES_ADMIN_GOOGLE_ISSUER"), defaultIssuer),
-		AdminSub:    getenv("ANTARES_ADMIN_GOOGLE_SUB"),
-		AdminEmail:  getenv("ANTARES_ADMIN_EMAIL"),
+		Addr:      orDefault(getenv("ANTARES_ADDR"), ":8080"),
+		DBPath:    getenv("ANTARES_DB_PATH"),
+		StaticDir: getenv("ANTARES_STATIC_DIR"),
+
+		WireCaptureDir: getenv("ANTARES_WIRE_CAPTURE_DIR"),
+		AdminIssuer:    orDefault(getenv("ANTARES_ADMIN_GOOGLE_ISSUER"), defaultIssuer),
+		AdminSub:       getenv("ANTARES_ADMIN_GOOGLE_SUB"),
+		AdminEmail:     getenv("ANTARES_ADMIN_EMAIL"),
 
 		GoogleClientID: getenv("ANTARES_GOOGLE_CLIENT_ID"),
 	}
@@ -110,6 +115,9 @@ func Load(getenv func(string) string) (Config, error) {
 				*limit.dst = n
 			}
 		}
+	}
+	if c.WireCaptureDir != "" && !filepath.IsAbs(c.WireCaptureDir) {
+		problems = append(problems, "ANTARES_WIRE_CAPTURE_DIR must be an absolute path")
 	}
 	switch {
 	case c.DBPath == "":

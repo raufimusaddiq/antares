@@ -684,3 +684,17 @@ func ListAudit(ctx context.Context, db *sql.DB, limit int, beforeAt, beforeID st
 	}
 	return out, more, nil
 }
+
+// SyntheticIssuer is the issuer of accounts minted by scripts/smoke_fixtures.py: never a real Google sign-in.
+const SyntheticIssuer = "https://synthetic-test.invalid/antares"
+
+// IsSyntheticProfile reports whether a Hermes profile belongs to a synthetic smoke account. Only those are ever
+// recorded by the wire fixture capture (#169).
+func IsSyntheticProfile(ctx context.Context, db *sql.DB, profile string) (bool, error) {
+	if profile == "" {
+		return false, nil
+	}
+	var n int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM users WHERE tenant_profile = ? AND google_issuer = ?`, profile, SyntheticIssuer).Scan(&n)
+	return n > 0, err
+}
