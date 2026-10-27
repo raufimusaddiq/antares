@@ -845,6 +845,29 @@ func TestOpenStreamClosesWhenTheAccountIsSuspended(t *testing.T) {
 	}
 }
 
+// #150: a session ended while its stream is open (sign-out here, sign-out everywhere on another device, or any
+// revocation) ends the stream at the next heartbeat, as a suspension does, and the run is not reported completed.
+func TestOpenStreamClosesWhenTheSessionIsRevoked(t *testing.T) {
+	a := newApp(t, appOpts{heartbeat: 20 * time.Millisecond})
+	u := a.user("alice")
+	run := u.send(u.newChat(), "q")
+	_, fr := a.hx.runWithInput(t, "q")
+	s := u.open(run, "")
+	recv(t, fr.opens, "stream")
+	s.waitFor(t, "run.started")
+	if _, err := store.RevokeUserSessions(a.svc.base, a.db, u.id, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-s.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("the stream outlived the session")
+	}
+	if !s.has("run.disconnected") || s.has("run.completed") {
+		t.Errorf("events: %v", s.names())
+	}
+}
+
 func TestMessagesAreProxiedFromTheOwnedSessionOnly(t *testing.T) {
 	a := newApp(t)
 	alice, bob := a.user("alice"), a.user("bobby")

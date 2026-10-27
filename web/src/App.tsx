@@ -86,9 +86,11 @@ export function App() {
 
   const view = viewOf(session);
 
-  const onSignOut = () => {
+  // Only a literal true signs out everywhere: screens that hand this straight to onClick pass a click event, which
+  // must mean a plain sign-out.
+  const onSignOut = (everywhere?: unknown) => {
     // This device stops getting the account's alerts before the session ends (best effort).
-    void revokeThisDevice().then(signOut).then((ok) => {
+    void revokeThisDevice().then(() => signOut(everywhere === true)).then((ok) => {
       setFailedSignOut(!ok);
       if (ok) setSession({ kind: "anonymous", loginFailed: false });
     });

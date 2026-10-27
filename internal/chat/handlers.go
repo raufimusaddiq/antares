@@ -676,6 +676,12 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 				fl.Flush()
 				return
 			}
+			// And the session: a sign-out (here or everywhere) or a revocation must end it too (#150).
+			if !auth.SessionLive(r.Context(), s.db, r, s.now()) {
+				writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
+				fl.Flush()
+				return
+			}
 			_, _ = io.WriteString(w, ": keep-alive\n\n")
 			fl.Flush()
 		case <-r.Context().Done():

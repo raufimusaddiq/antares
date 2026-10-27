@@ -28,6 +28,12 @@ session is revoked. Absolute lifetime 7 days (no idle extension yet). Logout is 
 /api/auth/logout`, same-origin only (`Origin` must equal `ANTARES_PUBLIC_ORIGIN`), sets `revoked_at`,
 clears the cookie. Every request re-reads the user row: a status change applies on the next request.
 
+**Sign out everywhere** (#150) is `POST /api/auth/logout-all`, same origin rules: it revokes every live session of
+the caller's own account (`store.RevokeUserSessions`; the account comes from the session, never the request), audits
+`auth.logout_all`, and clears the cookie. Every other device's next request is a 401 and has to sign in again. An open
+run event stream re-checks its own session at each heartbeat (`auth.SessionLive`), so a sign-out here, everywhere or by
+revocation ends it with `run.disconnected`, as a suspension does. The web app offers it in the account menu.
+
 ## Guards
 
 `Active` (every chat-touching route) = valid session ∧ `APPROVED` ∧ `tenant_status = READY` ∧ a

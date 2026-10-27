@@ -312,6 +312,45 @@ func safeAvatar(s string) string {
 	return s
 }
 
+// logoutAll ends every session of the caller's own account, this one included, and clears the cookie (#150,
+// PRD §26.1). Another device's next request is a 401, and an open run stream ends at its next heartbeat
+// (SessionLive). Only the caller's own sessions are touched: the account comes from the session, never the request.
+func (a *Auth) logoutAll(w http.ResponseWriter, r *http.Request) {
+	if !a.sameOrigin(r) {
+		a.apiError(w, r, http.StatusForbidden, "FORBIDDEN", "Cross-origin request refused")
+		return
+	}
+	u, ok := a.current(r)
+	if !ok {
+		clearCookie(w, sessionCookie)
+		a.apiError(w, r, http.StatusUnauthorized, "UNAUTHENTICATED", "Sign in required")
+		return
+	}
+	now := a.now()
+	if _, err := store.RevokeUserSessions(r.Context(), a.db, u.ID, now); err != nil {
+		log.Printf("auth: revoke all failed: %v", err)
+		a.apiError(w, r, http.StatusInternalServerError, "INTERNAL", "Could not sign out everywhere; try again")
+		return
+	}
+	if err := store.Audit(r.Context(), a.db, u.ID, "auth.logout_all", "user", u.ID, "ok", newRequestID(), now); err != nil {
+		log.Printf("auth: audit write failed: %v", err)
+	}
+	clearCookie(w, sessionCookie)
+	w.Header().Set("Cache-Control", "no-store")
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// SessionLive reports whether the request's session cookie still names a live session. A long-lived response (the
+// run event stream) calls it while it is open, so a sign-out, a sign-out everywhere or a revocation ends it.
+func SessionLive(ctx context.Context, db *sql.DB, r *http.Request, now time.Time) bool {
+	c, err := r.Cookie(sessionCookie)
+	if err != nil || c.Value == "" {
+		return false
+	}
+	_, err = store.SessionUser(ctx, db, hashToken(c.Value), now)
+	return err == nil
+}
+
 // logout invalidates the session server-side and clears the cookie.
 func (a *Auth) logout(w http.ResponseWriter, r *http.Request) {
 	if !a.sameOrigin(r) {

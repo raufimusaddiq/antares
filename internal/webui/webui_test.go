@@ -82,7 +82,7 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 	// up to a template-literal "${": /api/chats/ is /api/chats/{id}[/messages] and
 	// /api/runs/ is /api/runs/{id}[/events|/cancel]. Nothing else was widened.
 	allowed := map[string]bool{
-		"/api/me": true, "/api/auth/logout": true, "/api/auth/google/start": true,
+		"/api/me": true, "/api/auth/logout": true, "/api/auth/logout-all": true, "/api/auth/google/start": true,
 		"/api/chats": true, "/api/chats/": true, "/api/runs/": true,
 		// #47 adds the admin screens, again one by one: the user list, /api/admin/users/{id}
 		// and its action POSTs, and the audit feed. /api/admin/system is not here because

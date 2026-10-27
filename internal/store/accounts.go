@@ -107,6 +107,16 @@ func RevokeSession(ctx context.Context, db *sql.DB, tokenHash string, now time.T
 	return err
 }
 
+// RevokeUserSessions ends every live session of one user (sign out everywhere, #150). It touches only that user's
+// rows, and reports how many sessions it ended.
+func RevokeUserSessions(ctx context.Context, db *sql.DB, userID string, now time.Time) (int64, error) {
+	res, err := db.ExecContext(ctx, `UPDATE app_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`, ts(now), userID)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // Audit appends to audit_log. actor may be empty when no account is known yet
 // (a login that failed before identity was established).
 func Audit(ctx context.Context, db *sql.DB, actor, action, targetKind, targetID, outcome, requestID string, now time.Time) error {

@@ -61,10 +61,10 @@ export function parseAccount(body: unknown): Account | null {
   };
 }
 
-/** True once the server no longer considers the browser signed in. */
-export async function signOut(): Promise<boolean> {
+/** True once the server no longer considers the browser signed in. everywhere also ends the account's other sessions (#150). */
+export async function signOut(everywhere = false): Promise<boolean> {
   try {
-    const res = await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+    const res = await fetch(everywhere ? "/api/auth/logout-all" : "/api/auth/logout", { method: "POST", credentials: "same-origin" });
     const ok = res.status === 204 || res.status === 401;
     if (ok) {
       purgeUserState();

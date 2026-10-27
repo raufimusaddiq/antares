@@ -620,7 +620,7 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
 
 // ---- the app --------------------------------------------------------------------
 
-export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatId = null }: { email: string; onSignOut: () => void; canAdmin?: boolean; onAdmin?: () => void; initialChatId?: string | null }) {
+export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatId = null }: { email: string; onSignOut: (everywhere?: boolean) => void; canAdmin?: boolean; onAdmin?: () => void; initialChatId?: string | null }) {
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [listState, setListState] = useState<"loading" | "ready" | "error">("loading");
   const [current, setCurrent] = useState<string | null>(null);
@@ -1339,8 +1339,12 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
                 Admin
               </button>
             )}
-            <button type="button" className="quiet" data-icon="logout" onClick={onSignOut}>
+            <button type="button" className="quiet" data-icon="logout" onClick={() => onSignOut()}>
               Sign out
+            </button>
+            {/* #150: ends this account's sessions on every device; each one has to sign in again. */}
+            <button type="button" className="quiet" data-icon="logout" onClick={() => onSignOut(true)}>
+              Sign out everywhere
             </button>
           </div>
         </div>
