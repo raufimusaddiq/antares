@@ -1434,7 +1434,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           <div className="chat-actions-slot" ref={setActionsSlot} />
           {usage && (
             <details className="usage" open={usage.budget.reached}>
-              <summary>{usage.budget.reached ? "Token limit reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens` : "Usage unknown"}</summary>
+              <summary>{usage.budget.reached ? "Token limit reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens used` : "Usage unknown"}</summary>
               <ul>
                 {describeUsage(usage).map((l) => (
                   <li key={l}>{l}</li>

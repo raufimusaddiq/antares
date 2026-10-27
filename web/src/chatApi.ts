@@ -437,7 +437,10 @@ export interface ChatUsage {
   turns: { runId: string; status: string; tokens: { input: number; output: number; total: number } | null }[];
   turnsTruncated: boolean;
   priceListDate: string;
+  /** The size the provider publishes for the last model; null when unknown. Not how full it is. */
   windowTokens: number | null;
+  /** How much of the window the conversation fills now. null is unknown (the assistant does not report it): never 0. */
+  carriedTokens: number | null;
   /** limit null: the user set none. used null: no finished reply reported usage (unknown, not zero). enforced: a limit is set and usage is known. */
   budget: { limit: number | null; used: number | null; enforced: boolean; reached: boolean; basis: string };
 }
@@ -485,6 +488,8 @@ export function parseUsage(v: unknown): ChatUsage | null {
     turnsTruncated: o.turnsTruncated === true,
     priceListDate: str(cost.priceListDate),
     windowTokens: num(ctx.windowTokens),
+    // Only an explicit REPORTED state makes a number an occupancy; anything else stays unknown.
+    carriedTokens: ctx.occupancy === "REPORTED" ? num(ctx.carriedTokens) : null,
     budget: { limit, used, enforced: b.enforced === true, reached: b.reached === true, basis: str(b.basis) },
   };
 }
@@ -496,9 +501,14 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 /** The words shown for a chat's usage. Unknown is "—", cost is always labelled an estimate, the budget behaviour is stated. */
 export function describeUsage(u: ChatUsage): string[] {
   const lines: string[] = [];
-  lines.push(u.tokens ? `Tokens: ${fmt(u.tokens.total)} (${fmt(u.tokens.input)} in, ${fmt(u.tokens.output)} out)` : "Tokens: — (none reported)");
+  lines.push(u.tokens ? `Used in this chat, all replies: ${fmt(u.tokens.total)} tokens (${fmt(u.tokens.input)} in, ${fmt(u.tokens.output)} out)` : "Used in this chat, all replies: — (none reported)");
   lines.push(u.costIDR !== null ? `Estimated cost: about Rp ${fmt(Math.round(u.costIDR))}, from the provider price list of ${u.priceListDate}; not a bill` : "Estimated cost: — (no price for the model)");
-  lines.push(`Context in use: — (not reported)${u.windowTokens !== null ? `; model window ${fmt(u.windowTokens)} tokens` : ""}`);
+  lines.push(`Model context window: ${u.windowTokens !== null ? `${fmt(u.windowTokens)} tokens` : "— (unknown)"}`);
+  lines.push(
+    u.carriedTokens !== null
+      ? `Context in use now: ${fmt(u.carriedTokens)} tokens${u.windowTokens ? ` (${Math.min(100, Math.round((u.carriedTokens / u.windowTokens) * 100))}% of the window)` : ""}`
+      : "Context in use now: — (the assistant does not report it; the total above is not how full the window is)",
+  );
   if (u.unknownModelRuns > 0) lines.push(`${u.unknownModelRuns} ${u.unknownModelRuns === 1 ? "reply" : "replies"} did not report which model answered (recovered after a disconnect), so no cost is estimated for ${u.unknownModelRuns === 1 ? "it" : "them"}`);
   if (u.unpricedRuns > u.unknownModelRuns) lines.push(`${u.unpricedRuns - u.unknownModelRuns} ${u.unpricedRuns - u.unknownModelRuns === 1 ? "reply was" : "replies were"} from a model with no known price and ${u.unpricedRuns - u.unknownModelRuns === 1 ? "is" : "are"} left out of the estimate`);
   if (u.finishedRuns > u.reportedRuns) lines.push(`${u.finishedRuns - u.reportedRuns} finished ${u.finishedRuns - u.reportedRuns === 1 ? "reply" : "replies"} reported no usage and ${u.finishedRuns - u.reportedRuns === 1 ? "is" : "are"} not counted`);

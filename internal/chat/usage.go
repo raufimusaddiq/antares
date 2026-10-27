@@ -66,9 +66,15 @@ type usageView struct {
 		Finished int `json:"finished"`
 		Reported int `json:"reported"`
 	} `json:"runs"`
+	// Context keeps three things apart (issue #165): Tokens above is lifetime use summed over replies;
+	// WindowTokens is the size the provider publishes for the last model; occupancy is how much of that
+	// window the conversation fills now. Hermes reports the first two and not the third (its sessions and
+	// run terminals carry cumulative input/output only), so Occupancy is UNKNOWN and CarriedTokens null:
+	// never 0, never estimated from the lifetime total.
 	Context struct {
 		WindowTokens  *int64 `json:"windowTokens"`  // the provider's published size for the last model; null if unknown
-		CarriedTokens *int64 `json:"carriedTokens"` // always null: Hermes does not report it
+		Occupancy     string `json:"occupancy"`     // UNKNOWN; REPORTED only when an upstream field says how full the window is
+		CarriedTokens *int64 `json:"carriedTokens"` // set only when Occupancy is REPORTED
 	} `json:"context"`
 	Cost struct {
 		Estimated    bool     `json:"estimated"`
@@ -118,6 +124,7 @@ const atLimit = "new messages are refused until the limit is raised or removed; 
 
 func buildUsage(chatID string, cu store.ChatUsage, limit, userUsed int64, userKnown bool) usageView {
 	var v usageView
+	v.Context.Occupancy = "UNKNOWN"
 	v.ChatID = chatID
 	v.Runs.Finished, v.Runs.Reported = cu.Finished, cu.Reported
 	v.Cost.Estimated, v.Cost.Currency = true, priceCurrency

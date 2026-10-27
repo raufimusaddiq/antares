@@ -37,6 +37,7 @@ const (
 	CapRewind       = "rewind"
 	CapChatDelete   = "chat_delete"
 	CapSteer        = "steer"
+	CapCompaction   = "compaction"
 )
 
 const (
@@ -341,7 +342,15 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 		}
 	}
 
-	inv.Capabilities = []Capability{models, lock, settings, tools, skills, progress, approvals, clarify, regenerate, editTurn, rewind, chatDelete, steer}
+	// Compaction (issue #165): the deployed route table (api_server.py:1646-1692) has no compaction route,
+	// and no session or run payload says how full the context window is, so neither manual compaction
+	// nor a "nearly full" alert can rest on upstream state. Listed, always unsupported, with that reason.
+	compaction := unsupported(CapCompaction, "Compact the conversation", "Hermes has no compaction route and does not report how full the context window is")
+	if !capsOK {
+		compaction.Reason = why("a compaction route")
+	}
+
+	inv.Capabilities = []Capability{models, lock, settings, tools, skills, progress, approvals, clarify, regenerate, editTurn, rewind, chatDelete, steer, compaction}
 	return inv, nil
 }
 
