@@ -182,7 +182,8 @@ a.btn, button {
 }
 a.btn:hover, button:hover:not(:disabled) { background: color-mix(in srgb, var(--mark) 55%, var(--card)); color: var(--mark-ink); }
 a.btn:active, button:active:not(:disabled) { transform: translate(1px, 1px); }
-button:disabled { color: var(--ink-2); background: transparent; border-style: dashed; border-color: var(--ink-2); cursor: not-allowed; }
+/* Disabled reads as quieter, not broken: a solid, faded outline (a dashed one looked like a drop zone or an error). */
+button:disabled { color: var(--ink-2); background: transparent; border-color: var(--ink-2); opacity: 0.55; cursor: not-allowed; }
 .icon { width: 1.1rem; height: 1.1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Secondary actions (Cancel, Try again, Show more, Refresh, Sign out): text on the page, a thin outline. */
@@ -355,9 +356,14 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tools { margin: 0.3rem 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--ink-2); }
 
 /* Regenerate, edit and rewind cannot be activated: mono text, a dotted underline, and the reason a press away. */
-.turn-controls { display: flex; flex-wrap: wrap; gap: 0 0.9rem; margin-top: 0.25rem; font-size: 0.75rem; }
+.turn-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.35rem; margin: 0.25rem 0 0 -0.5rem; font-size: 0.75rem; }
 .turn-control { display: inline-flex; flex-wrap: wrap; align-items: center; min-width: 0; max-width: 100%; }
-.turn-control button { min-height: 0; padding: 0; background: transparent; border: 0; border-radius: 0; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; color: var(--ink); text-decoration: underline dotted; text-underline-offset: 4px; text-decoration-thickness: 1px; cursor: help; }
+/* One family of small text actions under a turn. The upstream-unavailable ones (aria-disabled: a press explains why) are
+   muted; the one that works (Ask again / Edit as new message) is in ink with a hover fill, the same size and shape. */
+.turn-control button, .turn-controls > button { min-height: 2rem; padding: 0 0.5rem; background: transparent; border: 0; border-radius: var(--r-pill); font-family: var(--font-mono); font-size: 0.75rem; font-weight: 600; letter-spacing: 0.04em; box-shadow: none; }
+.turn-control button { color: var(--ink-2); cursor: help; }
+.turn-controls > button { color: var(--ink); font-weight: 700; }
+.turn-controls > button:hover:not(:disabled) { background: color-mix(in srgb, var(--mark) 55%, transparent); }
 .turn-control button:hover:not(:disabled) { background: transparent; color: var(--cobalt); }
 .turn-control button[data-icon]::before { width: 1em; height: 1em; margin-right: 0.3rem; }
 /* The reason is always in the document and is the button's description. It is only visually hidden until shown, and when
@@ -471,7 +477,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 
 /* ---- search (UXP-003) ---------------------------------------------------------- */
 .search { margin: 0.6rem 0 0; }
-.search input[type="search"] { width: 100%; box-sizing: border-box; min-height: 2.5rem; padding: 0.3rem 0.8rem 0.3rem 2.4rem; font: inherit; color: var(--ink); background: transparent var(--search-glyph) 0.8rem center / 1.1rem no-repeat; border: 1.5px dashed var(--ink-2); border-radius: var(--r-md); }
+.search input[type="search"] { width: 100%; box-sizing: border-box; min-height: 2.5rem; padding: 0.3rem 0.8rem 0.3rem 2.4rem; font: inherit; color: var(--ink); background: transparent var(--search-glyph) 0.8rem center / 1.1rem no-repeat; border: 1.5px solid var(--ink-2); border-radius: var(--r-md); }
 .search-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 0.75rem; margin: 0.4rem 0; font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2); }
 .search-filters label { display: inline-flex; align-items: center; gap: 0.4rem; }
 .search-results ul { list-style: none; margin: 0.4rem 0; padding: 0; }
@@ -495,8 +501,23 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 .recorder { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0; padding: 0; }
 .recorder button { min-height: 2rem; padding-inline: 0.6rem; }
 .recorder button[data-icon="mic"]::before { color: var(--cobalt); }
-.recorder-note { flex: 1 1 14rem; color: var(--ink-2); font-family: var(--font-mono); font-size: 0.75rem; }
-.search-toggle, .extras-toggle { display: none; }
+.recorder-note { flex: 1 1 100%; color: var(--ink-2); }
+.search-toggle { display: none; }
+/* Options: one toggle beside the model and usage chips at every width. Everything else that belongs to the chat (usage
+   details and limits, Visualize, voice, templates) lives in this drawer, so the conversation keeps its height. */
+.extras-toggle { display: inline-flex; align-self: center; margin: 0; padding: 0 0.4rem; background: transparent; border-color: transparent; font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; color: var(--ink); }
+.extras { display: none; }
+.extras.open { display: block; max-height: min(50dvh, 30rem); overflow: auto; box-sizing: border-box; padding: 0.75rem 1rem 0.85rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: var(--hard-sm); }
+.extras.open > * { margin-block: 0 0.6rem; max-width: 100%; }
+.extras.open > :last-child { margin-bottom: 0; }
+.extras-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.5rem; }
+/* Voice: Dictate and Record side by side, their notes and messages on the line below. */
+.extras-row > .dictation, .extras-row > .recorder { display: contents; }
+.extras-row .notice, .extras-row [role="alert"], .extras-row [role="status"] { flex: 1 1 100%; }
+.extras .usage, .extras .template-manager { margin: 0; }
+.extras-foot { margin: 0.2rem 0 0; padding-top: 0.6rem; border-top: 1px solid var(--hair); }
+/* Helper text in the drawer is read, not scanned: the UI face at 13px rather than small mono. */
+.extras .label, .recorder-note, .visualize-toggle { font-family: var(--font-ui); font-size: 0.8125rem; line-height: 1.45; }
 .search-body { display: contents; }
 
 .composer .templates, .usage { font-size: 0.8125rem; }
@@ -638,16 +659,16 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   .turn.user :is(p, .plain) { font-size: 1.6rem; }
   .turn.assistant h1:not(.who) { font-size: 1.55rem; }
   .turn.assistant h2:not(.who) { font-size: 1.3rem; }
-  .extras-toggle { display: inline-flex; align-self: flex-start; justify-content: flex-start; margin: 0; padding: 0 0.4rem; background: transparent; border-color: transparent; font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; color: var(--ink); }
-  .extras { display: none; }
   /* The chip row stays one short line on a phone, so the conversation keeps its height: chips shrink and end in an
      ellipsis rather than leave the screen (their accessible names keep the whole text). */
   .composer-chips { flex-wrap: nowrap; gap: 0.6rem; margin: 0; }
   .composer-chips > * { flex: 0 1 auto; min-width: 0; white-space: nowrap; }
   .composer-chips > .extras-toggle { flex: none; }
   .composer-chips summary, .composer-chips button { min-height: 1.6rem; font-size: 0.72rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
+  /* A chip's text starts at its left edge and ends in the ellipsis (centred, it was cut at both ends). */
+  .composer-chips button[data-chip] { display: block; text-align: left; }
   .composer-chips details[open] { white-space: normal; flex: 1 0 100%; }
-  .extras.open { display: block; max-height: 40dvh; overflow: auto; margin: 0.25rem 0 0.5rem; padding: 0.5rem 0.75rem 0.75rem; background-color: var(--peri); background-image: var(--dots); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: 3px 3px 0 var(--ink); }
+  .extras.open { max-height: 40dvh; margin: 0.25rem 0 0.5rem; padding: 0.6rem 0.75rem 0.75rem; }
   /* Composer: one row — attach, camera, the message, send. The words stay in the DOM as the accessible names. */
   .composer { gap: 0.1rem; padding: 0.2rem 0.25rem; margin-bottom: 0.6rem; border-radius: 26px; box-shadow: 3px 3px 0 var(--ink); }
   .composer textarea { order: 3; flex: 1 1 6rem; padding: 0.55rem 0.4rem; resize: none; min-height: 2.75rem; max-height: min(7rem, 16dvh); }
