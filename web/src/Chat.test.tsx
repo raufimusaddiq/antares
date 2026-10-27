@@ -4,7 +4,7 @@ import { Composer, Transcript } from "./Chat";
 import { parseInventory } from "./chatApi";
 import { Markdown, safeHref } from "./Markdown";
 import { indentInFence, wrapSelection } from "./composerEdit";
-import { describeCode, describeTurns, describeUsage, getMessages, listChats, parseLimitInput, parseUsage, sendMessage } from "./chatApi";
+import { describeCode, describeGlance, describeTurns, describeUsage, getMessages, listChats, parseLimitInput, parseUsage, sendMessage } from "./chatApi";
 import { isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 
 const md = (text: string) => renderToStaticMarkup(<Markdown text={text} />);
@@ -336,6 +336,14 @@ describe("usage text", () => {
     const unknown = describeUsage(wire({ windowTokens: 128000, occupancy: "UNKNOWN", carriedTokens: null })!).join("\n");
     expect(unknown).toContain("Context in use now: —");
     expect(unknown).not.toMatch(/0%|: 0 tokens/);
+  });
+
+  it("the usage chip is glanceable and keeps unknown context unknown (#164)", () => {
+    expect(describeGlance(base)).toBe("1,200 tokens used · context in use unknown");
+    expect(describeGlance({ ...base, tokens: null })).toBe("Usage unknown · context in use unknown");
+    expect(describeGlance({ ...base, carriedTokens: 250000 })).toBe("1,200 tokens used · context 25% full");
+    expect(describeGlance({ ...base, budget: { ...base.budget, reached: true } })).toBe("Token limit reached");
+    expect(describeGlance(base)).not.toMatch(/0%/);
   });
 
   it("states the limit, its basis and what happens at it", () => {

@@ -7,6 +7,7 @@ import {
   describeCode,
   describeTurns,
   describeUsage,
+  describeGlance,
   parseLimitInput,
   getChat,
   getMessages,
@@ -1427,9 +1428,25 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           }}
         />
         </ReplyContext.Provider>
-        <button type="button" className="quiet extras-toggle" data-icon="chevron" aria-expanded={moreOpen} aria-controls="chat-extras" onClick={() => setMoreOpen((o) => !o)}>
-          {budgetReached && !moreOpen ? "Options · token limit reached" : "Options"}
-        </button>
+        {/* Beside the input (#164): the chat's model and effort, one open away from changing, and usage at a glance. */}
+        <div className="composer-chips">
+          <button type="button" className="quiet extras-toggle" data-icon="chevron" aria-expanded={moreOpen} aria-controls="chat-extras" onClick={() => setMoreOpen((o) => !o)}>
+            {budgetReached && !moreOpen ? "Options · token limit reached" : "Options"}
+          </button>
+          {current && offers(inventory, "models") && <ModelPicker chatId={current} disabled={busy} onChanged={() => setModelTick((n) => n + 1)} />}
+          {!current && offers(inventory, "models") && <span className="label">Model: assistant default (choose one once the chat exists)</span>}
+          {current && inventoryFailed && (
+            <p role="status">
+              Could not check which models are available.{" "}
+              <button type="button" onClick={() => setInventoryTick((n) => n + 1)}>Retry model check</button>
+            </p>
+          )}
+          {usage && (
+            <button type="button" className="quiet" data-chip="usage" aria-controls="chat-extras" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}>
+              {describeGlance(usage)}
+            </button>
+          )}
+        </div>
         <div id="chat-extras" className={moreOpen ? "extras open" : "extras"}>
           <div className="chat-actions-slot" ref={setActionsSlot} />
           {usage && (
@@ -1455,13 +1472,6 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
                 onSaved={() => current && void getUsage(current).then((r) => setUsage(r.ok ? r.value : null))}
               />
             </details>
-          )}
-          {current && offers(inventory, "models") && <ModelPicker chatId={current} disabled={busy} onChanged={() => setModelTick((n) => n + 1)} />}
-          {current && inventoryFailed && (
-            <p role="status">
-              Could not check which models are available.{" "}
-              <button type="button" onClick={() => setInventoryTick((n) => n + 1)}>Retry model check</button>
-            </p>
           )}
           <Recorder />
           <Templates own={ownTemplates} onChange={setOwnTemplates} />
