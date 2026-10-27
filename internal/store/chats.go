@@ -222,6 +222,13 @@ func AdmitRun(ctx context.Context, db *sql.DB, userID, chatID, idemKey string, n
 	return AdmitRunWithin(ctx, db, userID, chatID, idemKey, now, 0)
 }
 
+// RunByKey is the caller's run admitted under idemKey in chatID (a replay of the same message), or sql.ErrNoRows.
+func RunByKey(ctx context.Context, db *sql.DB, userID, chatID, idemKey string) (Run, error) {
+	return scanRun(db.QueryRowContext(ctx, `SELECT `+runCols+` FROM runs r
+		JOIN chats c ON c.id = r.chat_id AND c.user_id = r.user_id
+		WHERE r.user_id = ? AND r.idempotency_key = ? AND r.chat_id = ?`, userID, idemKey, chatID))
+}
+
 // ErrBudget means the user has already used maxTokens, so no new run is admitted.
 var ErrBudget = errors.New("store: the chat has used its token budget")
 
@@ -236,12 +243,7 @@ func AdmitRunWithin(ctx context.Context, db *sql.DB, userID, chatID, idemKey str
 	}
 	// A replay is decided first: the same key on the same chat is the same run,
 	// even while that run is still active.
-	existing := func() (Run, error) {
-		return scanRun(db.QueryRowContext(ctx, `SELECT `+runCols+` FROM runs r
-			JOIN chats c ON c.id = r.chat_id AND c.user_id = r.user_id
-			WHERE r.user_id = ? AND r.idempotency_key = ? AND r.chat_id = ?`, userID, idemKey, chatID))
-	}
-	if r, err := existing(); err == nil {
+	if r, err := RunByKey(ctx, db, userID, chatID, idemKey); err == nil {
 		return r, false, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return Run{}, false, err
@@ -276,7 +278,7 @@ func AdmitRunWithin(ctx context.Context, db *sql.DB, userID, chatID, idemKey str
 	if err != nil {
 		switch {
 		case strings.Contains(err.Error(), "runs.idempotency_key"): // lost a race with the same key
-			if r, gerr := existing(); gerr == nil {
+			if r, gerr := RunByKey(ctx, db, userID, chatID, idemKey); gerr == nil {
 				return r, false, nil
 			}
 			return Run{}, false, ErrRunActive // the key belongs to another chat: not a replay

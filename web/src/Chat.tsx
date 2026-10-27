@@ -7,6 +7,9 @@ import {
   describeCode,
   describeTurns,
   describeUsage,
+  describeSpending,
+  putSpending,
+  type Spending,
   describeGlance,
   parseLimitInput,
   getChat,
@@ -1082,7 +1085,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   // Usage is read from the server whenever the chat changes or a reply ends. A failed read shows nothing, never a number.
   const [usage, setUsage] = useState<ChatUsage | null>(null);
   // A reached token limit opens the options once (the notice is in them); after that the toggle owns the state, so they can be closed.
-  const budgetReached = usage?.budget.reached === true;
+  const budgetReached = usage?.budget.reached === true || usage?.spending?.hardReached === true;
   useEffect(() => {
     if (budgetReached) setMoreOpen(true);
   }, [budgetReached]);
@@ -1458,7 +1461,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             <details className="usage" open={usage.budget.reached}>
               <summary>{usage.budget.reached ? "Token limit reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens used` : "Usage unknown"}</summary>
               <ul>
-                {describeUsage(usage).map((l) => (
+                {[...describeUsage(usage), ...(usage.spending ? describeSpending(usage.spending) : [])].map((l) => (
                   <li key={l}>{l}</li>
                 ))}
               </ul>
@@ -1476,6 +1479,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
                 limit={usage.budget.limit}
                 onSaved={() => current && void getUsage(current).then((r) => setUsage(r.ok ? r.value : null))}
               />
+              {usage.spending && (
+                <SpendingForm spending={usage.spending} onSaved={() => current && void getUsage(current).then((r) => setUsage(r.ok ? r.value : null))} />
+              )}
             </details>
           )}
           <Recorder />
@@ -1509,6 +1515,46 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         />
       </main>
     </div>
+  );
+}
+
+/** Optional money limits (#152): two warnings and one hard limit, in the price list's currency. Empty means none. */
+function SpendingForm({ spending, onSaved }: { spending: Spending; onSaved: () => void }) {
+  const show = (n: number | null) => (n === null ? "" : String(Math.round(n)));
+  const [v, setV] = useState({ dailySoft: show(spending.dailySoft), monthlySoft: show(spending.monthlySoft), dailyHard: show(spending.dailyHard) });
+  const [err, setErr] = useState("");
+  const read = (t: string): number | null | undefined => {
+    if (t.trim() === "") return null;
+    const n = Number(t.replace(/[,.\s]/g, ""));
+    return Number.isInteger(n) && n > 0 && n <= 1e12 ? n : undefined;
+  };
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const l = { dailySoft: read(v.dailySoft), monthlySoft: read(v.monthlySoft), dailyHard: read(v.dailyHard) };
+        if (l.dailySoft === undefined || l.monthlySoft === undefined || l.dailyHard === undefined) {
+          setErr("Use whole rupiah amounts, or leave a field empty for no limit. Nothing was changed.");
+          return;
+        }
+        void putSpending(l as { dailySoft: number | null; monthlySoft: number | null; dailyHard: number | null }).then((r) => {
+          setErr(r.ok ? "" : "Could not save the limits. Nothing was changed.");
+          if (r.ok) onSaved();
+        });
+      }}
+    >
+      <label>
+        Daily warning (Rp, a warning only) <input inputMode="numeric" value={v.dailySoft} onChange={(e) => setV({ ...v, dailySoft: e.target.value })} />
+      </label>{" "}
+      <label>
+        Monthly warning (Rp, a warning only) <input inputMode="numeric" value={v.monthlySoft} onChange={(e) => setV({ ...v, monthlySoft: e.target.value })} />
+      </label>{" "}
+      <label>
+        Daily spending limit (Rp, refuses new messages) <input inputMode="numeric" value={v.dailyHard} onChange={(e) => setV({ ...v, dailyHard: e.target.value })} />
+      </label>{" "}
+      <button type="submit">Save spending limits</button>
+      {err && <p role="alert">{err}</p>}
+    </form>
   );
 }
 

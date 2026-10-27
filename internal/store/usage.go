@@ -151,3 +151,56 @@ func SetTokenBudget(ctx context.Context, db *sql.DB, userID string, limit int64,
 		userID, v, ts(now))
 	return err
 }
+
+// SpendingLimits are a user's optional money limits in the price list's currency (#152). Zero means not set.
+type SpendingLimits struct {
+	DailySoft, MonthlySoft, DailyHard float64
+}
+
+// GetSpendingLimits reads the caller's limits; a user who set none gets the zero value.
+func GetSpendingLimits(ctx context.Context, db *sql.DB, userID string) (SpendingLimits, error) {
+	var a, b, c sql.NullFloat64
+	err := db.QueryRowContext(ctx, `SELECT daily_soft_idr, monthly_soft_idr, daily_hard_idr FROM user_preferences WHERE user_id = ?`, userID).Scan(&a, &b, &c)
+	if err == sql.ErrNoRows {
+		return SpendingLimits{}, nil
+	}
+	return SpendingLimits{DailySoft: a.Float64, MonthlySoft: b.Float64, DailyHard: c.Float64}, err
+}
+
+// SetSpendingLimits replaces the caller's three limits at once (zero clears one). Repeating it is harmless.
+func SetSpendingLimits(ctx context.Context, db *sql.DB, userID string, l SpendingLimits, now time.Time) error {
+	v := func(f float64) any {
+		if f > 0 {
+			return f
+		}
+		return nil
+	}
+	_, err := db.ExecContext(ctx, `INSERT INTO user_preferences (user_id, daily_soft_idr, monthly_soft_idr, daily_hard_idr, updated_at) VALUES (?,?,?,?,?)
+		ON CONFLICT(user_id) DO UPDATE SET daily_soft_idr = excluded.daily_soft_idr, monthly_soft_idr = excluded.monthly_soft_idr,
+		daily_hard_idr = excluded.daily_hard_idr, updated_at = excluded.updated_at`,
+		userID, v(l.DailySoft), v(l.MonthlySoft), v(l.DailyHard), ts(now))
+	return err
+}
+
+// UserModelUsage sums the user's finished replies that reported usage and started at or after since, per model, across
+// all of the user's chats (#152 spending windows, #151 usage dashboard). Replies of deleted chats are not here: only
+// their token totals survive (deleted_chat_usage), with no time.
+func UserModelUsage(ctx context.Context, db *sql.DB, userID string, since time.Time) ([]ModelUsage, error) {
+	rows, err := db.QueryContext(ctx, `SELECT COALESCE(usage_model,''), COUNT(*), SUM(input_tokens), SUM(output_tokens),
+		SUM(cache_read_tokens), SUM(cache_write_tokens) FROM runs
+		WHERE user_id = ? AND input_tokens IS NOT NULL AND created_at >= ?
+		AND status IN ('COMPLETED','FAILED','CANCELLED','TIMED_OUT') GROUP BY usage_model ORDER BY usage_model`, userID, ts(since))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ModelUsage
+	for rows.Next() {
+		var m ModelUsage
+		if err := rows.Scan(&m.Model, &m.Runs, &m.Input, &m.Output, &m.CacheRead, &m.CacheWrite); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

@@ -62,6 +62,8 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"GET /api/me/model-visibility":                                 http.HandlerFunc(s.getModelVisibility),
 		"PUT /api/me/model-visibility":                                 http.HandlerFunc(s.putModelVisibility),
 		"GET /api/me/budget":                                           http.HandlerFunc(s.getBudget),
+		"GET /api/me/spending-limits":                                  http.HandlerFunc(s.getSpending),
+		"PUT /api/me/spending-limits":                                  http.HandlerFunc(s.putSpending),
 		"PUT /api/me/budget":                                           http.HandlerFunc(s.putBudget),
 		"GET /api/search/chats":                                        http.HandlerFunc(s.searchAll),
 		"GET /api/capabilities":                                        http.HandlerFunc(s.capabilities),
@@ -415,6 +417,20 @@ func (s *Service) admit(w http.ResponseWriter, r *http.Request, uid, chatID, ide
 	if chat.ActiveRunID == "" {
 		if budget, err = store.TokenBudget(r.Context(), s.db, uid); err != nil {
 			internalError(w, "token budget", err)
+			return store.Run{}, false
+		}
+	}
+	// The daily hard spending limit (#152): a free chat whose user is at or over it takes no new message. A soft
+	// limit never blocks. A replay of an existing key is still answered by AdmitRunWithin below.
+	if chat.ActiveRunID == "" {
+		if sp, err := s.spending(r.Context(), uid); err != nil {
+			internalError(w, "spending", err)
+			return store.Run{}, false
+		} else if sp.HardReached {
+			if existing, err := store.RunByKey(r.Context(), s.db, uid, chatID, idem); err == nil {
+				return existing, true
+			}
+			apiError(w, http.StatusForbidden, "BUDGET_REACHED", "You have reached the daily spending limit you set; raise or remove it to continue")
 			return store.Run{}, false
 		}
 	}
