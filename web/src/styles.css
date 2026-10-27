@@ -726,6 +726,12 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 .dictation { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
 .dictation .notice { flex-basis: 100%; }
 
+/* #105 scheduled tasks, in the account menu. */
+.jobs-panel summary { cursor: pointer; }
+.jobs { list-style: none; margin: 0.5rem 0; padding: 0; display: grid; gap: 0.75rem; }
+.jobs .actions { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+.jobs-panel textarea { width: 100%; min-height: 4rem; }
+
 /* Per-device appearance (#113, web/src/appearance.ts). Text size scales every rem. */
 :root[data-text="large"] { font-size: 112.5%; }
 :root[data-text="larger"] { font-size: 125%; }

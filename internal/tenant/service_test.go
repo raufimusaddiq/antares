@@ -580,6 +580,7 @@ func TestReactivationRotatesAndReverifiesTheExistingBinding(t *testing.T) {
 	u := r.approved("u1")
 	r.svc.Process(context.Background(), u)
 	store.Decide(context.Background(), r.db, r.admin, u, store.ActionSuspend, "abuse", "r", r.clk.Now())
+	store.ClearJobShutdownPending(context.Background(), r.db, u) // the admin route does this once jobs are paused
 	if _, err := store.Decide(context.Background(), r.db, r.admin, u, store.ActionReactivate, "", "r", r.clk.Now()); err != nil {
 		t.Fatal(err)
 	}

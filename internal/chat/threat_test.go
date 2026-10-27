@@ -68,8 +68,9 @@ var builtProbes = []probe{
 }
 
 // idFree are built routes with no id in the path: they must scope by the caller.
-var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "GET /api/me/spending-limits", "PUT /api/me/spending-limits", "GET /api/capabilities", "POST /api/assets", "GET /api/models", "GET /api/me/model-visibility", "PUT /api/me/model-visibility",
-	"GET /api/me/new-chat-draft", "PUT /api/me/new-chat-draft", "DELETE /api/me/new-chat-draft", "GET /api/me/templates", "POST /api/me/templates"}
+var idFree = []string{"GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "GET /api/me/spending-limits", "PUT /api/me/spending-limits",
+	"GET /api/capabilities", "POST /api/assets", "GET /api/models", "GET /api/me/model-visibility", "PUT /api/me/model-visibility", "GET /api/me/new-chat-draft", "PUT /api/me/new-chat-draft",
+	"DELETE /api/me/new-chat-draft", "GET /api/me/templates", "POST /api/me/templates", "GET /api/jobs", "POST /api/jobs"}
 
 // templateRoutes carry a template id, not a chat or run id; their cross-user probes live in
 // drafts_test.go (TestTemplatesAreOwnerScoped), which owns the fixture that creates one.
@@ -433,6 +434,9 @@ func TestEveryChatRouteIsClassified(t *testing.T) {
 	}
 	for _, k := range templateRoutes {
 		covered[k] = "probed in drafts_test.go"
+	}
+	for _, k := range jobRoutes {
+		covered[k] = "probed in jobs_test.go"
 	}
 	for k := range built {
 		if covered[k] == "" {
