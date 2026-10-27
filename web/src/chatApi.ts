@@ -767,3 +767,18 @@ export const getCapabilities = (signal?: AbortSignal) => call("GET", "/api/capab
 
 /** True only when the server reported this capability as available. Unknown ids are not offered. */
 export const offers = (inv: Inventory | null, id: string): boolean => inv?.capabilities.find((c) => c.id === id)?.available === true;
+
+/** The user's own additional instructions (#111). */
+export interface Personality {
+  text: string;
+  max: number;
+}
+
+export function parsePersonality(v: unknown): Personality | null {
+  if (typeof v !== "object" || v === null) return null;
+  const o = v as Record<string, unknown>;
+  return typeof o.text === "string" && typeof o.max === "number" ? { text: o.text, max: o.max } : null;
+}
+
+export const getPersonality = () => call("GET", "/api/me/personality", parsePersonality);
+export const putPersonality = (text: string) => call("PUT", "/api/me/personality", parsePersonality, { text });
