@@ -21,7 +21,7 @@ Hermes offers none, and `GET /v1/skills` returning data does not imply one. A sk
 ## Personal instructions
 
 `GET/PUT /api/me/personality` (Active guard, same origin; `{"text": "…"}`, up to 2,000 characters, empty clears)
-stores the text in `user_preferences.personality` (migration 0020). Each of the user's later runs sends it as the
+stores the text in `user_preferences.personality` (migration 0021). Each of the user's later runs sends it as the
 `instructions` field of `POST /v1/runs`; Hermes puts that into the run's ephemeral system prompt, appended after the
 profile's own prompt (`agent/chat_completion_helpers.py`), and Antares prefixes it as preferences that never override
 the instructions above. Nothing is written to a profile file, a SOUL or another profile. The base agent policy is the

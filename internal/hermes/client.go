@@ -15,6 +15,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/raufimusaddiq/antares/internal/obs"
 )
 
 // This file is the chat adapter (PRD §6, §9A.2, §9A.3): the only code that
@@ -162,7 +164,9 @@ func NewClient(baseURL string, o ClientOptions) (*Client, error) {
 // unexpected status is mapped to an error code; the response body is only read
 // by the caller on success.
 func (c *Client) do(ctx context.Context, b Binding, method, path string, hdr map[string]string, body any) (*http.Response, error) {
+	began := time.Now()
 	resp, err := c.send(ctx, b, method, path, hdr, body)
+	obs.Upstream(time.Since(began)) // to the response headers; a stream's own length is not latency
 	if err != nil {
 		return nil, err
 	}

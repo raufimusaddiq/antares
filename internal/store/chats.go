@@ -223,8 +223,22 @@ func AdmitRun(ctx context.Context, db *sql.DB, userID, chatID, idemKey string, n
 	return AdmitRunWithin(ctx, db, userID, chatID, idemKey, now, 0)
 }
 
+// RunByKey is the caller's run admitted under idemKey in chatID (a replay of the same message), or sql.ErrNoRows.
+func RunByKey(ctx context.Context, db *sql.DB, userID, chatID, idemKey string) (Run, error) {
+	return scanRun(db.QueryRowContext(ctx, `SELECT `+runCols+` FROM runs r
+		JOIN chats c ON c.id = r.chat_id AND c.user_id = r.user_id
+		WHERE r.user_id = ? AND r.idempotency_key = ? AND r.chat_id = ?`, userID, idemKey, chatID))
+}
+
 // ErrBudget means the user has already used maxTokens, so no new run is admitted.
 var ErrBudget = errors.New("store: the chat has used its token budget")
+
+// Querier is what *sql.DB and *sql.Tx share, so a read can run inside an admission transaction.
+type Querier interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+	QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error)
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
 
 // AdmitRunWithin is AdmitRun with a per-user token budget: when maxTokens > 0 and the
 // user's reported input+output tokens across all their chats have reached it (a new
@@ -232,52 +246,31 @@ var ErrBudget = errors.New("store: the chat has used its token budget")
 // ErrBudget. A replay of an existing key is decided first and is never refused,
 // so it still gets its original run back.
 func AdmitRunWithin(ctx context.Context, db *sql.DB, userID, chatID, idemKey string, now time.Time, maxTokens int64) (run Run, created bool, err error) {
+	return AdmitRunGated(ctx, db, userID, chatID, idemKey, now, maxTokens, nil)
+}
+
+// AdmitRunGated is AdmitRunWithin with an extra admission gate (the daily hard spending limit, #152). The insert,
+// budget check and gate share one immediate transaction, so they hold the write lock together: usage recorded
+// by a reply finishing meanwhile is either seen by the gate or written after the run exists, never in between.
+// A busy chat is ErrRunActive before any limit is read; a non-nil error from gate refuses the run and is returned
+// as is. A replay is still decided first and never gated.
+func AdmitRunGated(ctx context.Context, db *sql.DB, userID, chatID, idemKey string, now time.Time, maxTokens int64,
+	gate func(ctx context.Context, q Querier) error) (run Run, created bool, err error) {
 	if _, err := GetChat(ctx, db, userID, chatID); err != nil {
 		return Run{}, false, err
 	}
 	// A replay is decided first: the same key on the same chat is the same run,
 	// even while that run is still active.
-	existing := func() (Run, error) {
-		return scanRun(db.QueryRowContext(ctx, `SELECT `+runCols+` FROM runs r
-			JOIN chats c ON c.id = r.chat_id AND c.user_id = r.user_id
-			WHERE r.user_id = ? AND r.idempotency_key = ? AND r.chat_id = ?`, userID, idemKey, chatID))
-	}
-	if r, err := existing(); err == nil {
+	if r, err := RunByKey(ctx, db, userID, chatID, idemKey); err == nil {
 		return r, false, nil
 	} else if !errors.Is(err, sql.ErrNoRows) {
 		return Run{}, false, err
 	}
-	if maxTokens > 0 {
-		var used int64
-		if err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM runs
-			WHERE user_id = ?`, userID).Scan(&used); err != nil {
-			return Run{}, false, err
-		}
-		var gone int64
-		if err := db.QueryRowContext(ctx, `SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM deleted_chat_usage WHERE user_id = ?`, userID).Scan(&gone); err != nil {
-			return Run{}, false, err
-		}
-		used += gone
-		if used >= maxTokens {
-			return Run{}, false, ErrBudget
-		}
-	}
-	id := NewID()
-	t := ts(now)
-	// The chat must still be usable at the moment of the insert: a delete that started after the
-	// check above has already moved it to PENDING_DELETE, and no run may join a chat on its way out.
-	res, err := db.ExecContext(ctx, `INSERT INTO runs (id, user_id, chat_id, idempotency_key, status, created_at, updated_at)
-		SELECT ?, ?, ?, ?, 'PENDING', ?, ? WHERE EXISTS (SELECT 1 FROM chats WHERE id = ? AND user_id = ? AND status IN `+liveChat+`)`,
-		id, userID, chatID, idemKey, t, t, chatID, userID)
-	if err == nil {
-		if n, _ := res.RowsAffected(); n == 0 {
-			return Run{}, false, ErrNoChat
-		}
-	}
+	id, err := admitTx(ctx, db, userID, chatID, idemKey, now, maxTokens, gate)
 	if err != nil {
 		switch {
 		case strings.Contains(err.Error(), "runs.idempotency_key"): // lost a race with the same key
-			if r, gerr := existing(); gerr == nil {
+			if r, gerr := RunByKey(ctx, db, userID, chatID, idemKey); gerr == nil {
 				return r, false, nil
 			}
 			return Run{}, false, ErrRunActive // the key belongs to another chat: not a replay
@@ -286,13 +279,59 @@ func AdmitRunWithin(ctx context.Context, db *sql.DB, userID, chatID, idemKey str
 		}
 		return Run{}, false, err
 	}
-	// A message into the archive brings the chat back: archived means out of the way, not closed.
-	if _, err := db.ExecContext(ctx, `UPDATE chats SET updated_at = ?, status = CASE WHEN status = 'ARCHIVED' THEN 'ACTIVE' ELSE status END
-		WHERE id = ? AND user_id = ?`, t, chatID, userID); err != nil {
-		return Run{}, false, err
-	}
 	r, err := GetRun(ctx, db, userID, id)
 	return r, err == nil, err
+}
+
+func admitTx(ctx context.Context, db *sql.DB, userID, chatID, idemKey string, now time.Time, maxTokens int64,
+	gate func(ctx context.Context, q Querier) error) (string, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", err
+	}
+	defer tx.Rollback()
+	id := NewID()
+	t := ts(now)
+	// The insert goes first, so a busy chat answers ErrRunActive whatever the limits say. The chat must still be
+	// usable at this moment: a delete that started meanwhile has already moved it to PENDING_DELETE, and no run may
+	// join a chat on its way out.
+	res, err := tx.ExecContext(ctx, `INSERT INTO runs (id, user_id, chat_id, idempotency_key, status, created_at, updated_at)
+		SELECT ?, ?, ?, ?, 'PENDING', ?, ? WHERE EXISTS (SELECT 1 FROM chats WHERE id = ? AND user_id = ? AND status IN `+liveChat+`)`,
+		id, userID, chatID, idemKey, t, t, chatID, userID)
+	if err != nil {
+		return "", err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return "", ErrNoChat
+	}
+	// Then the limits, still under the write lock: a refusal rolls the insert back. The new run reported nothing,
+	// so it adds nothing to what they count.
+	if maxTokens > 0 {
+		var used int64
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM runs
+			WHERE user_id = ?`, userID).Scan(&used); err != nil {
+			return "", err
+		}
+		var gone int64
+		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM deleted_chat_usage WHERE user_id = ?`, userID).Scan(&gone); err != nil {
+			return "", err
+		}
+		used += gone
+		if used >= maxTokens {
+			return "", ErrBudget
+		}
+	}
+	if gate != nil {
+		if err := gate(ctx, tx); err != nil {
+			return "", err
+		}
+	}
+	// A message into the archive brings the chat back: archived means out of the way, not closed.
+	if _, err := tx.ExecContext(ctx, `UPDATE chats SET updated_at = ?, status = CASE WHEN status = 'ARCHIVED' THEN 'ACTIVE' ELSE status END
+		WHERE id = ? AND user_id = ?`, t, chatID, userID); err != nil {
+		return "", err
+	}
+	return id, tx.Commit()
 }
 
 // MoveRun changes a run's status only while it is still in one of the from
