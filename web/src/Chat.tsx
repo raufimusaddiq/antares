@@ -56,6 +56,7 @@ import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, describeFolded, describeTool, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
+import { Dictation } from "./Dictation";
 import type { AttachmentRef } from "./MediaPreview";
 import { RunPrompts } from "./RunPrompts";
 import { QueuePanel } from "./QueuePanel";
@@ -1497,6 +1498,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
               )}
             </details>
           )}
+          <Dictation onText={(t) => onDraft(draft.trim() === "" ? t : `${draft.replace(/\s*$/, "")} ${t}`)} />
           <Recorder />
           <Templates own={ownTemplates} onChange={setOwnTemplates} />
           <p className="label" data-policy="drafts">
