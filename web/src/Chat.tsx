@@ -44,7 +44,7 @@ import { Markdown } from "./Markdown";
 import { MAX_REPLY, ReplyContext } from "./openui/reply";
 import { Artifacts } from "./Artifacts";
 import { ExportChat } from "./ExportChat";
-import { VisualizeToggle } from "./VisualizeToggle";
+import { OpenChatVisualize } from "./VisualizeToggle";
 import { MemorySkillsPanel } from "./MemorySkills";
 import { UsageDashboard } from "./UsageDashboard";
 import { JobsPanel } from "./Jobs";
@@ -1503,10 +1503,13 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
               )}
             </details>
           )}
-          {(() => {
-            const open = chats.find((c) => c.id === current);
-            return open ? <VisualizeToggle chat={open} onChanged={(c) => setChats((l) => l.map((x) => (x.id === c.id ? { ...x, visualize: c.visualize } : x)))} /> : null;
-          })()}
+          {current && current !== blankChat.current && (
+            <OpenChatVisualize
+              chatId={current}
+              listed={chats.find((c) => c.id === current)}
+              onChanged={(c) => setChats((l) => l.map((x) => (x.id === c.id ? { ...x, visualize: c.visualize } : x)))}
+            />
+          )}
           <Dictation onText={(t) => onDraft(draft.trim() === "" ? t : `${draft.replace(/\s*$/, "")} ${t}`)} />
           <Recorder />
           <Templates own={ownTemplates} onChange={setOwnTemplates} />

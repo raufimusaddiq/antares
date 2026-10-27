@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { ChatSummary } from "./chatApi";
-import { VisualizeToggle } from "./VisualizeToggle";
+import { OpenChatVisualize, VisualizeToggle } from "./VisualizeToggle";
 
 afterEach(() => {
   cleanup();
@@ -38,4 +38,22 @@ describe("VisualizeToggle", () => {
     expect(changed).not.toHaveBeenCalled();
     expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false);
   });
+});
+
+// #198 review: a chat opened from a search result outside the loaded list still shows its toggle, read by id.
+it("shows the toggle for an open chat that is not in the loaded list", async () => {
+  const asked: string[] = [];
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (path: string, init?: RequestInit) => {
+      asked.push(`${init?.method ?? "GET"} ${path}`);
+      return new Response(JSON.stringify({ ...chat, id: "c9", visualize: init?.method === "PATCH" ? false : true }), { status: 200 });
+    }),
+  );
+  render(<OpenChatVisualize chatId="c9" listed={undefined} onChanged={() => {}} />);
+  const box = (await screen.findByRole("checkbox")) as HTMLInputElement;
+  expect(box.checked).toBe(true);
+  expect(asked).toEqual(["GET /api/chats/c9"]);
+  fireEvent.click(box);
+  await waitFor(() => expect((screen.getByRole("checkbox") as HTMLInputElement).checked).toBe(false));
 });
