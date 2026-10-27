@@ -91,6 +91,8 @@ func TestDiscoverDerivesFromTheRealCapturedPayloads(t *testing.T) {
 		CapApprovals: StatusAvailable, CapClarify: StatusUnsupported,
 		// run_steer and its POST route are both in the capture.
 		CapSteer: StatusAvailable,
+		// No compaction route exists upstream (#165).
+		CapCompaction: StatusUnsupported,
 	}
 	for id, st := range want {
 		if got := byID(inv, id); got.Status != st {
@@ -143,7 +145,7 @@ func TestDiscoverNeverDefaultsToAvailable(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(inv.Capabilities) != 13 {
+			if len(inv.Capabilities) != 14 {
 				t.Fatalf("want a verdict for every capability, got %d", len(inv.Capabilities))
 			}
 			for _, cp := range inv.Capabilities {

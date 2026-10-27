@@ -77,7 +77,7 @@ describe("phone layout toggles", () => {
   });
 
   it("opens the options once when the token limit is reached, and the toggle can close and reopen them", async () => {
-    const usage = { tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, total: 2 }, finishedRuns: 1, reportedRuns: 1, costIDR: null, unpricedRuns: 0, unknownModelRuns: 0, turns: [], turnsTruncated: false, priceListDate: "", windowTokens: null, budget: { limit: 10000, used: 20000, enforced: true, reached: true, basis: "" } };
+    const usage = { tokens: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0, total: 2 }, finishedRuns: 1, reportedRuns: 1, costIDR: null, unpricedRuns: 0, unknownModelRuns: 0, turns: [], turnsTruncated: false, priceListDate: "", windowTokens: null, carriedTokens: null, budget: { limit: 10000, used: 20000, enforced: true, reached: true, basis: "" } };
     api.listChats.mockResolvedValue(ok({ chats: [{ id: "c1", title: "Talk", createdAt: "", updatedAt: "", activeRunId: "" }], nextCursor: "" }));
     api.getUsage.mockResolvedValue(ok(usage));
     await mount();

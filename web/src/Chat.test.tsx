@@ -309,16 +309,33 @@ describe("api client", () => {
 });
 
 describe("usage text", () => {
-  const base = { tokens: { input: 1000, output: 200, cacheRead: 400, cacheWrite: 0, total: 1200 }, finishedRuns: 2, reportedRuns: 1, costIDR: 3.4, unpricedRuns: 0, unknownModelRuns: 0, turns: [] as { runId: string; status: string; tokens: { input: number; output: number; total: number } | null }[], turnsTruncated: false, priceListDate: "2026-10-23", windowTokens: 1000000, budget: { limit: 2000000 as number | null, used: 1200 as number | null, enforced: true, reached: false, basis: "" } };
+  const base = { tokens: { input: 1000, output: 200, cacheRead: 400, cacheWrite: 0, total: 1200 }, finishedRuns: 2, reportedRuns: 1, costIDR: 3.4, unpricedRuns: 0, unknownModelRuns: 0, turns: [] as { runId: string; status: string; tokens: { input: number; output: number; total: number } | null }[], turnsTruncated: false, priceListDate: "2026-10-23", windowTokens: 1000000, carriedTokens: null as number | null, budget: { limit: 2000000 as number | null, used: 1200 as number | null, enforced: true, reached: false, basis: "" } };
 
   it("labels cost as an estimate with its price date, and shows unknowns as a dash", () => {
     const t = describeUsage(base).join("\n");
     expect(t).toContain("Estimated cost: about Rp 3");
     expect(t).toContain("2026-10-23");
-    expect(t).toContain("Context in use: —");
+    expect(t).toContain("Context in use now: —");
+    expect(t).toContain("Model context window: 1,000,000 tokens");
+    expect(t).toContain("Used in this chat, all replies: 1,200 tokens");
+    expect(t).not.toMatch(/\d+%/);
     expect(t).toContain("1 finished reply reported no usage and is not counted");
     expect(describeUsage({ ...base, unpricedRuns: 2 }).join("\n")).toContain("2 replies were from a model with no known price");
-    expect(describeUsage({ ...base, tokens: null, costIDR: null }).join("\n")).toContain("Tokens: — (none reported)");
+    expect(describeUsage({ ...base, tokens: null, costIDR: null }).join("\n")).toContain("Used in this chat, all replies: — (none reported)");
+  });
+
+  it("keeps an unknown occupancy unknown: a stray number without REPORTED is not read, and nothing becomes 0% (#165)", () => {
+    const wire = (context: object) =>
+      parseUsage({ chatId: "c", tokens: null, runs: { finished: 0, reported: 0 }, context, cost: { amount: null }, budget: { limitTokens: null, usedTokens: null } });
+    expect(wire({ windowTokens: 128000, occupancy: "UNKNOWN", carriedTokens: null })?.carriedTokens).toBeNull();
+    expect(wire({ windowTokens: 128000, occupancy: "UNKNOWN", carriedTokens: 0 })?.carriedTokens).toBeNull();
+    expect(wire({ windowTokens: 128000, carriedTokens: 5000 })?.carriedTokens).toBeNull();
+    const reported = wire({ windowTokens: 100000, occupancy: "REPORTED", carriedTokens: 25000 })!;
+    expect(reported.carriedTokens).toBe(25000);
+    expect(describeUsage(reported).join("\n")).toContain("Context in use now: 25,000 tokens (25% of the window)");
+    const unknown = describeUsage(wire({ windowTokens: 128000, occupancy: "UNKNOWN", carriedTokens: null })!).join("\n");
+    expect(unknown).toContain("Context in use now: —");
+    expect(unknown).not.toMatch(/0%|: 0 tokens/);
   });
 
   it("states the limit, its basis and what happens at it", () => {

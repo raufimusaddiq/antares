@@ -4,6 +4,7 @@ import (
 	"context"
 	"math"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -31,8 +32,11 @@ type usageBody struct {
 		PriceListSource  string
 		UnknownModelRuns int
 	}
-	Context struct{ WindowTokens, CarriedTokens *int64 }
-	Budget  struct {
+	Context struct {
+		WindowTokens, CarriedTokens *int64
+		Occupancy                   string
+	}
+	Budget struct {
 		LimitTokens, UsedTokens *int64
 		UsageKnown, Enforced    bool
 		Reached                 bool
@@ -116,7 +120,7 @@ func TestUsageFromHermesAndLabelledEstimate(t *testing.T) {
 	if !u.b.Cost.Estimated || u.b.Cost.Currency != "IDR" || u.b.Cost.Amount == nil || math.Abs(*u.b.Cost.Amount-want) > 1e-9 || u.b.Cost.PriceListDate != "2026-10-23" {
 		t.Fatalf("cost: %+v want %v", u.b.Cost, want)
 	}
-	if u.b.Context.CarriedTokens != nil || u.b.Context.WindowTokens == nil || *u.b.Context.WindowTokens != 1_000_000 {
+	if u.b.Context.CarriedTokens != nil || u.b.Context.Occupancy != "UNKNOWN" || u.b.Context.WindowTokens == nil || *u.b.Context.WindowTokens != 1_000_000 {
 		t.Fatalf("context: carried must be unknown (Hermes does not report it), window is the provider's: %+v", u.b.Context)
 	}
 }
@@ -501,5 +505,26 @@ func TestPerTurnUsage(t *testing.T) {
 	bob := a.user("bobby")
 	if w := bob.get("/api/chats/" + chat + "/usage"); w.Code != 404 {
 		t.Fatalf("bob reads alice's turns: %d", w.Code)
+	}
+}
+
+// #165: an unknown occupancy is an explicit state on the wire, and null is never turned into 0, even for a
+// chat with no runs, where every count is legitimately zero.
+func TestUsageOccupancyIsExplicitlyUnknownNeverZero(t *testing.T) {
+	a := newApp(t)
+	u := a.user("alice")
+	chat := u.newChat()
+	w := u.get("/api/chats/" + chat + "/usage")
+	if w.Code != 200 {
+		t.Fatalf("usage: %d %s", w.Code, w.Body.String())
+	}
+	body := w.Body.String()
+	for _, want := range []string{`"occupancy":"UNKNOWN"`, `"carriedTokens":null`, `"tokens":null`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("usage lacks %s: %s", want, body)
+		}
+	}
+	if strings.Contains(body, `"carriedTokens":0`) {
+		t.Errorf("unknown occupancy became zero: %s", body)
 	}
 }
