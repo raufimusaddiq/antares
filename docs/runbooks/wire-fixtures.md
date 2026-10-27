@@ -23,7 +23,7 @@ data. A string becomes `"<string>"` unless it is a listed event, status, role or
 become `0`; booleans and nulls stay; arrays keep three elements. Ids, text, previews, secrets and URLs never reach a file,
 whether as a value or as a key (`TestSanitizeRedactsAdversarialKeysAndValues`). Files are `0600`.
 
-Each Antares process writes into its own subdirectory, `<dir>/<UTC start time>/`, so an older or interrupted capture is
+Each Antares process writes into its own subdirectory, `<dir>/<UTC start time>-<random>/`, so an older or interrupted capture is
 never mixed into a new one and cannot satisfy the contract check on its behalf.
 
 ## Capture procedure (owner, on the Antares host)
@@ -35,7 +35,15 @@ never mixed into a new one and cannot satisfy the contract check on its behalf.
 3. Copy the **newest** subdirectory's files out (`docker exec antares ls /data/wire-capture` lists them by start time):
    `docker cp antares:/data/wire-capture/<newest>/. docs/hermes/fixtures/wire/` and write the Hermes image id
    (`docker inspect -f '{{.Image}}' hermes`) and the capture date into `docs/hermes/fixtures/wire/VERSION`.
-4. Remove the variable, redeploy, and delete `/data/wire-capture` in the container.
+4. Remove the variable and delete the capture **before** restarting: Antares refuses to start over a data directory that
+   holds anything but the database. Use the volume that is actually mounted at `/data` (its name depends on the Compose
+   project), and check that only the database files are left before redeploying:
+   ```sh
+   vol=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' antares)
+   test -n "$vol" || { echo "no volume mounted at /data"; exit 1; }
+   docker run --rm -v "$vol":/data busybox:1.36 sh -c 'rm -rf /data/wire-capture && ls -A /data'
+   # expect only: antares.sqlite antares.sqlite-shm antares.sqlite-wal
+   ```
 5. Read the files before committing (they are shape only, so a review is quick) and open a PR.
 
 Re-capture after every Hermes upgrade.
