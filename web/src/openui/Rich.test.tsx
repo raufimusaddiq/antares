@@ -29,6 +29,15 @@ describe("safe actions", () => {
     }
   });
 
+  it("a model-labelled action never reads as completed: after the click it says nothing was sent (#173)", () => {
+    const add = vi.fn();
+    withReply('root = Stack([Button("Submit order", "Order 2 coffees")])', add);
+    expect(screen.queryByRole("status")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Submit order" }));
+    expect(add).toHaveBeenCalledWith("Order 2 coffees");
+    expect(screen.getByRole("status").textContent).toBe("Added to your message. Nothing was sent.");
+  });
+
   it("with no composer to write into the button is disabled", () => {
     withReply('root = Stack([Button("Go", "x")])', null);
     expect((screen.getByRole("button", { name: "Go" }) as HTMLButtonElement).disabled).toBe(true);
