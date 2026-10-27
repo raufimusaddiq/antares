@@ -18,7 +18,9 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 COPY --from=web /src/internal/webui/dist ./internal/webui/dist
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/antares ./cmd/antares \
+# The commit, for the diagnostics view (GET /api/version); .git is not in the build context.
+ARG REVISION=unknown
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w -X github.com/raufimusaddiq/antares/internal/server.Revision=${REVISION}" -o /out/antares ./cmd/antares \
  && mkdir /out/data
 
 # Stage 3: no shell, no package manager, no toolchain, non-root.
