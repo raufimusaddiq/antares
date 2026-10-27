@@ -954,6 +954,29 @@ func TestSignOutBetweenGuardAndStreamStartSendsNothing(t *testing.T) {
 	}
 }
 
+// Review #186: an idle stream (no events, heartbeat an hour away) ends as soon as its session is signed out.
+func TestSignOutEndsAnIdleStreamAtOnce(t *testing.T) {
+	a := newApp(t, appOpts{heartbeat: time.Hour})
+	u := a.user("alice")
+	run := u.send(u.newChat(), "q")
+	_, fr := a.hx.runWithInput(t, "q")
+	s := u.open(run, "")
+	recv(t, fr.opens, "stream")
+	s.waitFor(t, "run.started")
+	began := time.Now()
+	if w := u.do("POST", "/api/auth/logout-all", nil, nil); w.Code != 204 {
+		t.Fatalf("logout-all: %d %s", w.Code, w.Body.String())
+	}
+	select {
+	case <-s.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("an idle stream waited for its heartbeat")
+	}
+	if took := time.Since(began); took > time.Second || !s.has("run.disconnected") {
+		t.Errorf("ended after %v with %v", took, s.names())
+	}
+}
+
 func TestMessagesAreProxiedFromTheOwnedSessionOnly(t *testing.T) {
 	a := newApp(t)
 	alice, bob := a.user("alice"), a.user("bobby")

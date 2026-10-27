@@ -689,6 +689,7 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 		}
 		select {
 		case <-wait:
+		case <-st.wake: // signed out: the top of the loop sends run.disconnected under the write lock
 		case <-tick.C:
 			// Re-check the account while a stream is open: a suspension must end it.
 			if _, err := store.ActiveBinding(r.Context(), s.db, uid); err != nil {

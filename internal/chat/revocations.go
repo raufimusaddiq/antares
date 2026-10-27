@@ -18,6 +18,8 @@ type openStream struct {
 	userID, session string
 	mu              sync.Mutex
 	revoked         bool
+	wake            chan struct{} // closed by the sign-out, so an idle stream does not wait for its heartbeat
+	once            sync.Once
 }
 
 const revokeWait = 2 * time.Second
@@ -28,7 +30,7 @@ type streamSet struct {
 }
 
 func (s *Service) registerStream(userID, session string) (*openStream, func()) {
-	st := &openStream{userID: userID, session: session}
+	st := &openStream{userID: userID, session: session, wake: make(chan struct{})}
 	s.streams.mu.Lock()
 	if s.streams.open == nil {
 		s.streams.open = map[*openStream]struct{}{}
@@ -60,6 +62,7 @@ func (s *Service) SessionsRevoked(userID, tokenHash string) {
 			st.mu.Lock()
 			st.revoked = true
 			st.mu.Unlock()
+			st.once.Do(func() { close(st.wake) })
 			close(marked)
 		}()
 		wg.Add(1)
