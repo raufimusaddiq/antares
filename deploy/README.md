@@ -163,6 +163,19 @@ With synthetic accounts instead of real sessions, run the same command through t
 removed afterwards, on failure too (`python3 -I scripts/smoke_fixtures.py run --db … --workdir … -- <antares-smoke …>`). Only its
 exit `0` counts: `4` means cleanup left residue. Usage and guarantees: `docs/runbooks/smoke-test.md`.
 
+## 4b. Daily backup (once per host)
+
+From the `deploy/` directory (where step 4 left you):
+
+```sh
+sudo install -m 0755 -o root -g root ./antares-backup.sh /opt/antares/bin/antares-backup.sh
+sudo install -m 0644 -o root -g root ./antares-backup.service ./antares-backup.timer /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now antares-backup.timer
+sudo systemctl start antares-backup.service && journalctl -u antares-backup -n 5   # "antares-backup: verified …"
+```
+
+Verified backups go to `/var/backups/antares/scheduled`, newest 14 kept (`docs/runbooks/backup-restore.md`).
+
 ## 5. Caddy (documented, not applied)
 
 Add to the existing site, then `caddy reload` (the owner's step):

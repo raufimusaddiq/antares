@@ -10,6 +10,13 @@ into the production container nor a manual delete of a profile path. Both stayed
 `testa` profile; nothing under `default` was written. (A canary write into `testb` was attempted and
 blocked by the permission classifier; I did not retry it.)
 
+> **Staleness (#175, 2026-10-27).** This evidence was captured on Hermes Agent v0.22.2 (image `sha256:36099926…`).
+> Production now runs v0.22.5, image `sha256:9c5561579f3f…` (built 2026-10-23), so the findings below describe an older
+> build. Current evidence on the running build: three production smoke runs on 2026-10-27 passed every tenant check
+> (endpoint, profile_identity, credential_isolation, session_ownership, toolset_policy, memory_boundary) and 14 of 14
+> cross-user probes (`docs/runbooks/smoke-test.md`). Tool-level isolation (A/B negative tool probes) is still unproven and
+> is tracked in #161. Re-run the smoke and update this note after every Hermes upgrade.
+
 ## Verdict
 
 **Phase 0 FAILS. Multi-user is NOT demonstrated safe on this deployment. Phase 1 multi-user scope is blocked until the open items below pass.**
