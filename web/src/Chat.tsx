@@ -62,6 +62,7 @@ import { forgetChatDrafts, loadDraft, matchTemplates, mergeTemplates, saveDraft,
 import { DraftNotice, sharedTextApplied, takeSharedText, useDraftSync, NO_HOLD, type SendHold } from "./DraftSync";
 import { listOwnTemplates, type OwnTemplate } from "./draftApi";
 import { Templates } from "./Templates";
+import { AppearancePanel, DiagnosticsPanel } from "./Settings";
 
 const MAX_INPUT = 32_000;
 const RECONNECT_TRIES = 5;
@@ -1345,6 +1346,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
                 Admin
               </button>
             )}
+            <AppearancePanel />
+            <DiagnosticsPanel />
             <button type="button" className="quiet" data-icon="logout" onClick={() => onSignOut()}>
               Sign out
             </button>
