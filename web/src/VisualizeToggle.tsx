@@ -4,7 +4,7 @@ import { changeChat, describeCode, type ChatSummary } from "./chatApi";
 // The per-chat Visualize toggle (#153, LLM-008). On, this chat's next messages tell the assistant it may add a chart,
 // table or card; what it sends is still checked and rendered by the safe renderer (web/src/openui). Saved on the
 // server per chat; the checkbox shows what the server stored, not what was clicked.
-// onSaving receives each pending save, so a message sent meanwhile waits for it: the run then reads the new setting.
+// onSaving receives each pending save, so Chat can hold sending until it settles: no run reads a half-changed setting.
 export function VisualizeToggle({ chat, onChanged, onSaving }: { chat: ChatSummary; onChanged: (c: ChatSummary) => void; onSaving?: (p: Promise<{ ok: boolean }>) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");

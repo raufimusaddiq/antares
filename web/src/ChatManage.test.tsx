@@ -367,42 +367,30 @@ describe("Visualize for a chat opened from search", () => {
   });
 });
 
-// #198 review: a message sent while a Visualize change is still being saved waits for the save, so its run reads the
-// new setting rather than the old one.
+// #198 review: while a Visualize change is being saved nothing is sent; the text stays in the chat's box, and sending
+// works once the save has settled (with whatever setting is then stored).
 describe("Visualize and sending", () => {
-  it("a send waits for a pending Visualize save", async () => {
-    await mount([chat("c1", "One")]);
-    fireEvent.click(screen.getByText("One"));
-    let saved!: (v: unknown) => void;
-    api.changeChat.mockReturnValue(new Promise((r) => (saved = r)));
-    api.sendMessage.mockResolvedValue(ok({ runId: "r1", status: "PENDING" }));
-    fireEvent.click(await screen.findByRole("checkbox", { name: /Visualize/ }));
-    await waitFor(() => expect(api.changeChat).toHaveBeenCalledWith("c1", { visualize: true }));
-    fireEvent.change(document.getElementById("composer-input")!, { target: { value: "chart it" } });
-    fireEvent.click(screen.getByRole("button", { name: /^Send/ }));
-    await new Promise((r) => setTimeout(r, 50));
-    expect(api.sendMessage).not.toHaveBeenCalled();
-    saved(ok(chat("c1", "One", { visualize: true })));
-    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
-  });
-
-  it("a failed Visualize save stops the send and keeps the message", async () => {
-    await mount([chat("c1", "One")]);
-    fireEvent.click(screen.getByText("One"));
-    let saved!: (v: unknown) => void;
-    api.changeChat.mockReturnValue(new Promise((r) => (saved = r)));
-    api.sendMessage.mockResolvedValue(ok({ runId: "r1", status: "PENDING" }));
-    fireEvent.click(await screen.findByRole("checkbox", { name: /Visualize/ }));
-    await waitFor(() => expect(api.changeChat).toHaveBeenCalled());
-    const box = document.getElementById("composer-input") as HTMLTextAreaElement;
-    fireEvent.change(box, { target: { value: "chart it" } });
-    fireEvent.click(screen.getByRole("button", { name: /^Send/ }));
-    saved({ ok: false, code: "HERMES_UNAVAILABLE", status: 503 });
-    await waitFor(() => expect(screen.getByText(/the message was not sent/)).toBeTruthy());
-    expect(api.sendMessage).not.toHaveBeenCalled();
-    expect(box.value).toBe("chart it");
-    expect((screen.getByRole("checkbox", { name: /Visualize/ }) as HTMLInputElement).checked).toBe(false);
-    fireEvent.click(screen.getByRole("button", { name: /^Send/ })); // the next send goes, with the stored setting
-    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
-  });
+  for (const outcome of ["stored", "failed"] as const) {
+    it(`a send during a pending Visualize save is held, then goes after the save (${outcome})`, async () => {
+      await mount([chat("c1", "One")]);
+      fireEvent.click(screen.getByText("One"));
+      let saved!: (v: unknown) => void;
+      api.changeChat.mockReturnValue(new Promise((r) => (saved = r)));
+      api.sendMessage.mockResolvedValue(ok({ runId: "r1", status: "PENDING" }));
+      fireEvent.click(await screen.findByRole("checkbox", { name: /Visualize/ }));
+      await waitFor(() => expect(api.changeChat).toHaveBeenCalledWith("c1", { visualize: true }));
+      const box = document.getElementById("composer-input") as HTMLTextAreaElement;
+      fireEvent.change(box, { target: { value: "chart it" } });
+      fireEvent.click(screen.getByRole("button", { name: /^Send/ }));
+      fireEvent.click(screen.getByRole("button", { name: /^Send/ })); // a second press meets the same refusal
+      await waitFor(() => expect(screen.getByText(/still being saved/)).toBeTruthy());
+      expect(api.sendMessage).not.toHaveBeenCalled();
+      expect(box.value).toBe("chart it");
+      saved(outcome === "stored" ? ok(chat("c1", "One", { visualize: true })) : { ok: false, code: "HERMES_UNAVAILABLE", status: 503 });
+      await waitFor(() => expect((screen.getByRole("checkbox", { name: /Visualize/ }) as HTMLInputElement).disabled).toBe(false));
+      expect((screen.getByRole("checkbox", { name: /Visualize/ }) as HTMLInputElement).checked).toBe(outcome === "stored");
+      fireEvent.click(screen.getByRole("button", { name: /^Send/ }));
+      await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(1));
+    });
+  }
 });

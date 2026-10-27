@@ -890,7 +890,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   // A search result: the owning chat, at the matching turn. The turn may be in an
   // older page than the newest one, so pages are fetched back until it is held.
-  const visualizeSave = useRef<Promise<boolean> | null>(null); // the latest Visualize save (true: stored), awaited by submit
+  const visualizeSaving = useRef(0); // Visualize saves not yet answered; submit refuses while any is pending
   const [unlisted, setUnlisted] = useState<ChatSummary | null>(null); // the open chat when it came from search, not the list
   const openResult = useCallback(
     async (r: SearchResult) => {
@@ -1034,22 +1034,6 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
       // This submission owns `hold` and ends it exactly once, whichever way it leaves (SendHold.release ignores repeats).
       try {
         setBanner("");
-        // A Visualize change still being saved decides how this message runs: wait for it, so the run reads it. If it
-        // failed, the message is not sent (it would run with the setting the reader just changed away from): it goes back
-        // into the box, and the checkbox shows what is still stored.
-        const pendingSave = visualizeSave.current;
-        if (pendingSave) {
-          const saved = await pendingSave;
-          if (visualizeSave.current === pendingSave) visualizeSave.current = null;
-          if (!saved) {
-            if (hold.text.trim() !== "") {
-              const typed = draftNow.current;
-              onDraft(typed.trim() === "" ? hold.text : `${hold.text.replace(/\s*$/, "")}\n\n${typed}`);
-            }
-            setBanner("Visualize could not be changed, so the message was not sent. Check the setting and send again.");
-            return;
-          }
-        }
         let chat = current;
         if (!chat) {
           const c = await newChat();
@@ -1250,6 +1234,13 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   }, [current, busy, modelTick]);
 
   const onSubmit = () => {
+    // A Visualize change still being saved decides how this message would run, so nothing is sent until it settles.
+    // Refused before anything is cleared or held: the text stays where it is, in this chat, and a second press meets
+    // the same refusal.
+    if (visualizeSaving.current > 0) {
+      setBanner("Visualize is still being saved. Send again in a moment.");
+      return;
+    }
     const input = draft.trim();
     setSteer(null); // a new message starts a new run; the last steer's outcome no longer describes it
     const hold = sync.hold();
@@ -1525,7 +1516,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           {/* A new, still blank chat is real and listed: its toggle shows, so the first message can ask for visuals. */}
           {current && (
             <OpenChatVisualize
-              onSaving={(p) => (visualizeSave.current = p.then((r) => r.ok, () => false))}
+              onSaving={(p) => {
+                visualizeSaving.current++;
+                void p.finally(() => visualizeSaving.current--);
+              }}
               chat={chats.find((c) => c.id === current) ?? (unlisted?.id === current ? unlisted : undefined)}
               onChanged={(c) => {
                 setChats((l) => l.map((x) => (x.id === c.id ? { ...x, visualize: c.visualize } : x)));
