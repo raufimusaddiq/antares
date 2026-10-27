@@ -42,7 +42,11 @@ func (f *fakeHermes) serveJobs(w http.ResponseWriter, method, profile, path stri
 			}
 			list := []map[string]any{}
 			for _, j := range mine {
-				list = append(list, j)
+				c := map[string]any{"latest_execution": nil} // Hermes' list always sets it (null: never ran)
+				for k, v := range j {
+					c[k] = v
+				}
+				list = append(list, c)
 			}
 			out(map[string]any{"jobs": list})
 		case "POST":
@@ -448,6 +452,12 @@ func TestATooFrequentTaskLeftBehindCannotBeResumed(t *testing.T) {
 	if a.hx.jobsOf(alice.profile)[left]["enabled"] != false {
 		t.Error("the task was resumed")
 	}
+	if w := alice.do("POST", "/api/jobs/"+left+"/run", nil, map[string]any{}); w.Code != 400 || !strings.Contains(w.Body.String(), "SCHEDULE_TOO_FREQUENT") {
+		t.Errorf("run now: %d %s", w.Code, w.Body.String())
+	}
+	if a.hx.jobsOf(alice.profile)[left]["last_run_at"] != nil {
+		t.Error("the refused task was run")
+	}
 	if w := alice.do("DELETE", "/api/jobs/"+left, nil, nil); w.Code != 204 {
 		t.Errorf("the owner can still delete it: %d", w.Code)
 	}
@@ -542,14 +552,15 @@ func TestMalformedJobListKeepsTheShutdownPending(t *testing.T) {
 	a := newApp(t)
 	alice := a.user("alice")
 	createJob(t, alice, "one", "every 2h")
-	for _, body := range []string{`{}`, `{"jobs":null}`, `{"jobs":[{"id":"not-an-id"}]}`} {
+	for _, body := range []string{`{}`, `{"jobs":null}`, `{"jobs":[{"id":"not-an-id"}]}`,
+		`{"jobs":[{"id":"000000000001","latest_execution":null}]}`, `{"jobs":[{"id":"000000000001","enabled":false}]}`} {
 		a.hx.mu.Lock()
 		a.hx.jobsList = body
 		a.hx.mu.Unlock()
 		a.svc.retryJobShutdowns(context.Background())
 	}
 	a.hx.mu.Lock()
-	a.hx.jobsList = `{}`
+	a.hx.jobsList = `{"jobs":[{"id":"000000000001","enabled":false}]}` // no latest_execution: cannot be verified
 	a.hx.mu.Unlock()
 	if v := suspend(t, a, alice); v["tenantDetail"] != store.JobShutdownPending {
 		t.Fatalf("suspension with a malformed job list: detail %v", v["tenantDetail"])
@@ -579,6 +590,11 @@ func TestSuspensionDuringAnExecutionStaysPendingUntilItEnds(t *testing.T) {
 	a.svc.retryJobShutdowns(context.Background())
 	if ids, _ := store.PendingJobShutdowns(context.Background(), a.db, "", 10); len(ids) != 1 {
 		t.Fatalf("cleared while still running: %v", ids)
+	}
+	a.hx.setJob(alice.profile, job.ID, "latest_execution", map[string]any{"status": "unknown"})
+	a.svc.retryJobShutdowns(context.Background())
+	if ids, _ := store.PendingJobShutdowns(context.Background(), a.db, "", 10); len(ids) != 1 {
+		t.Fatalf("cleared with the execution's state unknown: %v", ids)
 	}
 	a.hx.setJob(alice.profile, job.ID, "latest_execution", map[string]any{"status": "completed"})
 	a.svc.retryJobShutdowns(context.Background())

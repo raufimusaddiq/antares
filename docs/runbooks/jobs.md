@@ -41,8 +41,8 @@ with another user's id.
 ## Suspension (PRD §12 rule 3)
 
 Suspending an account pauses every enabled task in its workspace through its own binding, then reads the list back.
-Hermes has no route to cancel an execution in flight, so the shutdown counts as verified only when no task's latest
-execution is still claimed or running; until then the account stays marked and the retry checks again
+Hermes has no route to cancel an execution in flight, so the shutdown counts as verified only when every task reports `enabled: false` and a latest
+execution that is absent or finished (completed/failed); a missing field or an unknown status fails closed; until then the account stays marked and the retry checks again
 (`TestSuspensionDuringAnExecutionStaysPendingUntilItEnds`). Every job change holds a per-account lock and re-checks the account after taking it, and the suspension takes the same lock, so a change racing a suspension either finishes first (and is then paused) or is refused; the 10-task count and the create are atomic under it too. Retries rotate through the marked accounts, 20 per tick.
 The outcome is audited as `admin.suspend_jobs` (`ok` or `pending`). The suspension itself records
 `SUSPENSION_PENDING_JOB_SHUTDOWN: …` as the account's tenant detail in the same transaction, and it is cleared only

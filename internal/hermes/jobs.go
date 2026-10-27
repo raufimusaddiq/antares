@@ -2,6 +2,7 @@ package hermes
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -39,6 +40,12 @@ func (j Job) Running() bool {
 	return j.LatestExecution != nil && (j.LatestExecution.Status == "claimed" || j.LatestExecution.Status == "running")
 }
 
+// Settled reports that the job has no execution in flight that anyone can see: none at all, or a latest one that
+// finished (completed or failed). An unknown or unrecognised status is not settled: it cannot be shown to have stopped.
+func (j Job) Settled() bool {
+	return j.LatestExecution == nil || j.LatestExecution.Status == "completed" || j.LatestExecution.Status == "failed"
+}
+
 // JobSchedule is how Hermes parsed the schedule text.
 type JobSchedule struct {
 	Kind    string `json:"kind"` // once | interval | cron
@@ -57,21 +64,34 @@ func ValidJobID(s string) bool { return jobIDRE.MatchString(s) }
 // ListJobs returns every job of the binding's profile, paused ones included.
 func (c *Client) ListJobs(ctx context.Context, b Binding) ([]Job, error) {
 	var out struct {
-		Jobs *[]Job `json:"jobs"`
+		Jobs *[]json.RawMessage `json:"jobs"`
 	}
 	if err := c.jobCall(ctx, b, http.MethodGet, "/api/jobs?include_disabled=true", nil, &out); err != nil {
 		return nil, err
 	}
-	// A success without a list, or with a job that has no valid id, is not an empty list: suspension relies on it.
+	// Suspension relies on this list, so it fails closed: a success without a list, or with a job missing its id, its
+	// "enabled" flag or its "latest_execution" (Hermes' list sets it, null when the job never ran), is an error, never
+	// "no jobs" or "disabled".
 	if out.Jobs == nil {
 		return nil, fail(CodeHermesUnavailable)
 	}
-	for _, j := range *out.Jobs {
-		if !ValidJobID(j.ID) {
+	jobs := make([]Job, 0, len(*out.Jobs))
+	for _, raw := range *out.Jobs {
+		var j Job
+		var keys map[string]json.RawMessage
+		if json.Unmarshal(raw, &j) != nil || json.Unmarshal(raw, &keys) != nil || !ValidJobID(j.ID) {
 			return nil, fail(CodeHermesUnavailable)
 		}
+		var enabled bool
+		if e, ok := keys["enabled"]; !ok || json.Unmarshal(e, &enabled) != nil {
+			return nil, fail(CodeHermesUnavailable)
+		}
+		if _, ok := keys["latest_execution"]; !ok {
+			return nil, fail(CodeHermesUnavailable)
+		}
+		jobs = append(jobs, j)
 	}
-	return *out.Jobs, nil
+	return jobs, nil
 }
 
 // CreateJob creates a job that delivers locally (no messaging channel) and starts paused: the caller checks how

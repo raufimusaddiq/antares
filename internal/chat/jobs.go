@@ -283,6 +283,10 @@ func (s *Service) jobAction(action string) http.HandlerFunc {
 				jobError(w, err)
 				return
 			}
+			if !hourlyAtMost(cur.Schedule) { // a refused task whose cleanup delete failed is never run either
+				apiError(w, http.StatusBadRequest, "SCHEDULE_TOO_FREQUENT", "This task runs more than once an hour, so it cannot be run. Delete it and add it again with a slower schedule.")
+				return
+			}
 			if cur.Running() || ranWithinTheHour(cur.LastRunAt, s.now()) || dueWithinTheHour(cur.NextRunAt, s.now()) {
 				apiError(w, http.StatusTooManyRequests, hermes.CodeRateLimited, "This task ran less than an hour ago, is running now, or is due within the hour")
 				return
@@ -333,10 +337,10 @@ func (s *Service) PauseUserJobs(ctx context.Context, userID string) error {
 		if j.Enabled {
 			return errors.New("chat: a job is still enabled after pausing")
 		}
-		// Hermes cannot cancel an execution in flight, so the shutdown is verified only once none is running;
-		// until then the account stays marked and the retry checks again.
-		if j.Running() {
-			return errors.New("chat: a job execution is still running")
+		// Hermes cannot cancel an execution in flight, so the shutdown is verified only once every job's latest
+		// execution is known to have finished; until then the account stays marked and the retry checks again.
+		if !j.Settled() {
+			return errors.New("chat: a job execution is running or its state is unknown")
 		}
 	}
 	return nil
