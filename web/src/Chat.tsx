@@ -7,6 +7,12 @@ import {
   describeCode,
   describeTurns,
   describeUsage,
+  describeSpending,
+  reconcileSpending,
+  parseRupiah,
+  spendingFields,
+  putSpending,
+  type Spending,
   describeGlance,
   parseLimitInput,
   getChat,
@@ -1083,7 +1089,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   // Usage is read from the server whenever the chat changes or a reply ends. A failed read shows nothing, never a number.
   const [usage, setUsage] = useState<ChatUsage | null>(null);
   // A reached token limit opens the options once (the notice is in them); after that the toggle owns the state, so they can be closed.
-  const budgetReached = usage?.budget.reached === true;
+  const budgetReached = usage?.budget.reached === true || usage?.spending?.hardReached === true;
   useEffect(() => {
     if (budgetReached) setMoreOpen(true);
   }, [budgetReached]);
@@ -1453,14 +1459,19 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
               {describeGlance(usage)}
             </button>
           )}
+          {usage?.spending && (usage.spending.warnings.length > 0 || usage.spending.hardReached) && (
+            <span className="sr" role="status">
+              {usage.spending.hardReached ? "The daily spending limit is reached: new messages are refused." : `Spending warning: the ${usage.spending.warnings.join(" and ")} warning is reached. Messages still go through.`}
+            </span>
+          )}
         </div>
         <div id="chat-extras" className={moreOpen ? "extras open" : "extras"}>
           <div className="chat-actions-slot" ref={setActionsSlot} />
           {usage && (
             <details className="usage" open={usage.budget.reached}>
-              <summary>{usage.budget.reached ? "Token limit reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens used` : "Usage unknown"}</summary>
+              <summary>{usage.budget.reached ? "Token limit reached" : usage.spending?.hardReached ? "Daily spending limit reached" : usage.spending?.warnings.length ? "Usage: spending warning reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens used` : "Usage unknown"}</summary>
               <ul>
-                {describeUsage(usage).map((l) => (
+                {[...describeUsage(usage), ...(usage.spending ? describeSpending(usage.spending) : [])].map((l) => (
                   <li key={l}>{l}</li>
                 ))}
               </ul>
@@ -1478,6 +1489,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
                 limit={usage.budget.limit}
                 onSaved={() => current && void getUsage(current).then((r) => setUsage(r.ok ? r.value : null))}
               />
+              {usage.spending && (
+                <SpendingForm spending={usage.spending} onSaved={() => current && void getUsage(current).then((r) => setUsage(r.ok ? r.value : null))} />
+              )}
             </details>
           )}
           <Recorder />
@@ -1511,6 +1525,49 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         />
       </main>
     </div>
+  );
+}
+
+/** Optional money limits (#152): two warnings and one hard limit, in the price list's currency. Empty means none. */
+function SpendingForm({ spending, onSaved }: { spending: Spending; onSaved: () => void }) {
+  const server = spendingFields(spending);
+  const [v, setV] = useState(server);
+  const base = useRef(server);
+  const key = `${server.dailySoft}|${server.monthlySoft}|${server.dailyHard}`;
+  useEffect(() => {
+    const before = base.current;
+    base.current = server;
+    setV((typed) => reconcileSpending(before, server, typed));
+  }, [key]);
+  const [err, setErr] = useState("");
+  const read = parseRupiah;
+  return (
+    <form
+      onSubmit={(e) => {
+        e.preventDefault();
+        const l = { dailySoft: read(v.dailySoft), monthlySoft: read(v.monthlySoft), dailyHard: read(v.dailyHard) };
+        if (l.dailySoft === undefined || l.monthlySoft === undefined || l.dailyHard === undefined) {
+          setErr("Use whole rupiah amounts, or leave a field empty for no limit. Nothing was changed.");
+          return;
+        }
+        void putSpending(l as { dailySoft: number | null; monthlySoft: number | null; dailyHard: number | null }).then((r) => {
+          setErr(r.ok ? "" : "Could not save the limits. Nothing was changed.");
+          if (r.ok) onSaved();
+        });
+      }}
+    >
+      <label>
+        Daily warning (Rp, a warning only) <input inputMode="numeric" value={v.dailySoft} onChange={(e) => setV({ ...v, dailySoft: e.target.value })} />
+      </label>{" "}
+      <label>
+        Monthly warning (Rp, a warning only) <input inputMode="numeric" value={v.monthlySoft} onChange={(e) => setV({ ...v, monthlySoft: e.target.value })} />
+      </label>{" "}
+      <label>
+        Daily spending limit (Rp, refuses new messages) <input inputMode="numeric" value={v.dailyHard} onChange={(e) => setV({ ...v, dailyHard: e.target.value })} />
+      </label>{" "}
+      <button type="submit">Save spending limits</button>
+      {err && <p role="alert">{err}</p>}
+    </form>
   );
 }
 
