@@ -18,6 +18,7 @@ import {
   newIdempotencyKey,
   runEventsUrl,
   sendMessage,
+  steerRun,
   type ChatSummary,
   type ChatUsage,
   type Inventory,
@@ -328,7 +329,27 @@ export interface ComposerImages {
 
 const IMAGE_ACCEPT = IMAGE_TYPES.join(",");
 
-export function Composer(props: { value: string; busy: boolean; onChange: (v: string) => void; onSubmit: () => void; templates?: readonly Template[]; images?: ComposerImages }) {
+/** Where a steer stands. "late" is a refusal from a run that had already ended; "refused" is the assistant declining a live one. */
+export type SteerNote = "sending" | "accepted" | "refused" | "late" | "failed";
+
+/** Steer is its own intent beside Send (PRD §21.5, issue #149): present only while a live run can take it. */
+export interface ComposerSteer {
+  available: boolean;
+  note: SteerNote | null;
+  failure: string;
+  onSteer: () => void;
+}
+
+const STEER_WORDS: Record<SteerNote, string> = {
+  sending: "Sending guidance…",
+  accepted: "Guidance accepted. The assistant will take it into account in this reply.",
+  refused: "The assistant did not accept guidance right now. Your text is still here.",
+  late: "Too late: the reply had already finished. Your text is still here; send it as a new message.",
+  failed: "",
+};
+
+export function Composer(props: { value: string; busy: boolean; onChange: (v: string) => void; onSubmit: () => void; templates?: readonly Template[]; images?: ComposerImages; steer?: ComposerSteer }) {
+  const steer = props.steer;
   const img = props.images;
   const blocked = img?.pending === true;
   const empty = props.value.trim() === "";
@@ -514,6 +535,16 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
           Waiting for images: let uploads finish, or retry or remove a failed one.
         </span>
       )}
+      {steer?.available && (
+        <button type="button" onClick={steer.onSteer} disabled={empty || blocked || steer.note === "sending"} aria-describedby="steer-note">
+          <span className="btn-label">Steer</span>
+        </button>
+      )}
+      {steer?.note && (
+        <span id="steer-note" role="status" data-steer={steer.note}>
+          {steer.note === "failed" ? steer.failure : STEER_WORDS[steer.note]}
+        </span>
+      )}
       <button type="submit" disabled={empty || props.busy || blocked}>
         <span className="btn-label">Send</span>
         <svg className="icon" viewBox="0 0 24 24" aria-hidden="true" focusable="false">
@@ -548,6 +579,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const [promptTick, setPromptTick] = useState(0);
   const [pending, setPending] = useState<Pending | null>(null);
   const [draft, setDraft] = useState("");
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
   const draftNow = useRef(""); // what the box holds right now, for code that runs after an await
   draftNow.current = draft;
   // Typing writes the draft of the chat on screen. Switching chats loads that chat's draft;
@@ -1107,6 +1140,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   const onSubmit = () => {
     const input = draft.trim();
+    setSteer(null); // a new message starts a new run; the last steer's outcome no longer describes it
     const hold = sync.hold();
     setDraft("");
     saveDraft(email, currentRef.current, "");
@@ -1129,6 +1163,39 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
       // Any other status means the run ended on its own first: the stream reports it.
     });
   };
+
+  // Steer goes to the live run only; it never becomes a user turn. The draft is cleared only when the assistant accepted it
+  // and the text was not changed meanwhile; a refusal keeps it, and a refusal from a run that had ended is called too late.
+  // The outcome belongs to the chat it was sent from, so it stays on screen after the run ends, until the next send.
+  const [steer, setSteer] = useState<{ chatId: string | null; note: SteerNote; failure: string } | null>(null);
+  const canSteer = run !== null && run.phase === "streaming" && offers(inventory, "steer");
+  const onSteer = () => {
+    const text = draft.trim();
+    if (!run || !canSteer || text === "") return;
+    const { runId } = run;
+    const chat = currentRef.current;
+    const note = (n: SteerNote, failure = "") => setSteer({ chatId: chat, note: n, failure });
+    note("sending");
+    void steerRun(runId, text).then(async (r) => {
+      if (r.ok) {
+        note("accepted");
+        if (currentRef.current === chat && draftRef.current.trim() === text) {
+          setDraft("");
+          saveDraft(email, chat, "");
+        }
+        return;
+      }
+      if (r.code !== "STEER_REFUSED") {
+        note("failed", describeCode(r.code));
+        return;
+      }
+      const now = await getRun(runId);
+      const over = now.ok && ["COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"].includes(now.value.status);
+      note(over ? "late" : "refused");
+    });
+  };
+
+  const steerShown = steer !== null && steer.chatId === current;
 
   // Nothing to read yet: the conversation area shows the starting card instead of an empty list.
   const empty = turns.length === 0 && !pending && !run && !turnsError && (current === null || current === blankChat.current);
@@ -1290,6 +1357,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           busy={busy}
           onChange={onDraft}
           onSubmit={onSubmit}
+          steer={canSteer || steerShown ? { available: canSteer, note: steerShown ? steer.note : null, failure: steerShown ? steer.failure : "", onSteer } : undefined}
           templates={mergeTemplates(ownTemplates)}
           images={{
             available: imageInput?.available === true,

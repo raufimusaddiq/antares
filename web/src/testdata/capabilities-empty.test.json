@@ -11,7 +11,8 @@
             {"id": "regenerate", "label": "Regenerate an answer", "status": "unsupported", "reason": "Hermes has no route to retry an answer; start a new chat instead"},
             {"id": "edit_turn", "label": "Edit an earlier message", "status": "unsupported", "reason": "Hermes has no route to branch a chat at an earlier message; start a new chat instead"},
             {"id": "rewind", "label": "Rewind the last turn", "status": "unsupported", "reason": "Hermes has no route to remove the last turn; start a new chat instead"},
-            {"id": "chat_delete", "label": "Delete conversations", "status": "unsupported", "reason": "Hermes does not advertise a session delete route"}
+            {"id": "chat_delete", "label": "Delete conversations", "status": "unsupported", "reason": "Hermes does not advertise a session delete route"},
+            {"id": "steer", "label": "Steer a running reply", "status": "unsupported", "reason": "Hermes does not report run_steer as enabled"}
   ],
   "toolsets": [],
   "providers": [],

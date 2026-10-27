@@ -47,6 +47,13 @@ event, ownership re-check) land together. A whole-session `/fork` or a second `P
 - "Landed" = Hermes returned `accepted:true`. Antares then emits `run.steered {runId, accepted}` on the run's
   event journal. It appends nothing to the transcript and does not echo the guidance text; the run's
   status is unchanged.
-- Not built: the web UI control (the API and the event are in place), and `pending_steer` replay
-  (`api_server_runs.py:202`: Hermes returns undelivered steer text on terminal events; surfacing it is a
-  follow-up).
+- Capability: `GET /api/capabilities` lists `steer`, available only when Hermes reports `features.run_steer` and
+  advertises `POST /v1/runs/{run_id}/steer` (`internal/hermes/discovery.go`).
+- Web control (issue #149): while a reply is streaming and `steer` is available, the composer stays editable and
+  shows a **Steer** button beside the disabled **Send**. Steer and Send are separate intents; Enter never steers.
+  The outcome is stated in the composer: accepted (draft cleared only if unchanged since it was sent), refused by
+  a live run, too late (the refusal came from a run that had already ended, read back with `GET /api/runs/{id}`),
+  or another failure in plain words. A refusal keeps the text. Nothing is added to the transcript
+  (`web/src/Steer.test.tsx`).
+- Not built: `pending_steer` replay (`api_server_runs.py:202`: Hermes returns undelivered steer text on terminal
+  events; surfacing it is a follow-up), and the queue intent (#110).
