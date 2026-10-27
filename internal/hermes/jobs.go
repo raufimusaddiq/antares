@@ -82,8 +82,8 @@ func (c *Client) ListJobs(ctx context.Context, b Binding) ([]Job, error) {
 		if json.Unmarshal(raw, &j) != nil || json.Unmarshal(raw, &keys) != nil || !ValidJobID(j.ID) {
 			return nil, fail(CodeHermesUnavailable)
 		}
-		var enabled bool
-		if e, ok := keys["enabled"]; !ok || json.Unmarshal(e, &enabled) != nil {
+		// "enabled" must be a literal true or false: a null would decode as false ("paused") without an error.
+		if e, ok := keys["enabled"]; !ok || (string(e) != "true" && string(e) != "false") {
 			return nil, fail(CodeHermesUnavailable)
 		}
 		if _, ok := keys["latest_execution"]; !ok {

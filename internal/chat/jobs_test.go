@@ -553,14 +553,15 @@ func TestMalformedJobListKeepsTheShutdownPending(t *testing.T) {
 	alice := a.user("alice")
 	createJob(t, alice, "one", "every 2h")
 	for _, body := range []string{`{}`, `{"jobs":null}`, `{"jobs":[{"id":"not-an-id"}]}`,
-		`{"jobs":[{"id":"000000000001","latest_execution":null}]}`, `{"jobs":[{"id":"000000000001","enabled":false}]}`} {
+		`{"jobs":[{"id":"000000000001","latest_execution":null}]}`, `{"jobs":[{"id":"000000000001","enabled":false}]}`,
+		`{"jobs":[{"id":"000000000001","enabled":null,"latest_execution":null}]}`, `{"jobs":[{"id":"000000000001","enabled":"false","latest_execution":null}]}`} {
 		a.hx.mu.Lock()
 		a.hx.jobsList = body
 		a.hx.mu.Unlock()
 		a.svc.retryJobShutdowns(context.Background())
 	}
 	a.hx.mu.Lock()
-	a.hx.jobsList = `{"jobs":[{"id":"000000000001","enabled":false}]}` // no latest_execution: cannot be verified
+	a.hx.jobsList = `{"jobs":[{"id":"000000000001","enabled":null,"latest_execution":null}]}` // enabled unknown: cannot be verified
 	a.hx.mu.Unlock()
 	if v := suspend(t, a, alice); v["tenantDetail"] != store.JobShutdownPending {
 		t.Fatalf("suspension with a malformed job list: detail %v", v["tenantDetail"])
