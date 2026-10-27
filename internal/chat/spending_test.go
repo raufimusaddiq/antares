@@ -170,6 +170,7 @@ func TestSpendingLimitsInputIsStrictAndOwnerScoped(t *testing.T) {
 		"zero":           map[string]any{"dailySoft": 0, "monthlySoft": nil, "dailyHard": nil},
 		"string":         map[string]any{"dailySoft": "100", "monthlySoft": nil, "dailyHard": nil},
 		"too large":      map[string]any{"dailySoft": 2e12, "monthlySoft": nil, "dailyHard": nil},
+		"fractional":     map[string]any{"dailySoft": nil, "monthlySoft": nil, "dailyHard": 5500.6},
 		"server field":   map[string]any{"dailySoft": 1, "monthlySoft": nil, "dailyHard": nil, "userId": bob.id},
 	} {
 		if w := alice.do("PUT", "/api/me/spending-limits", nil, body); w.Code != 400 {

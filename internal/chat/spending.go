@@ -129,8 +129,8 @@ func (s *Service) getSpending(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, v)
 }
 
-// putSpending replaces the caller's own three limits. Each member must be present: null clears it, a positive number
-// up to 10^12 sets it; anything else is refused and nothing changes. Repeating a request is harmless.
+// putSpending replaces the caller's own three limits. Each member must be present: null clears it, a whole positive
+// rupiah amount up to 10^12 sets it (whole, so the form shows and resends exactly what is stored); anything else is refused and nothing changes. Repeating a request is harmless.
 func (s *Service) putSpending(w http.ResponseWriter, r *http.Request) {
 	uid, _ := user(r)
 	var in struct {
@@ -154,8 +154,8 @@ func (s *Service) putSpending(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		var n float64
-		if json.Unmarshal(f.raw, &n) != nil || math.IsNaN(n) || n <= 0 || n > maxSpendingIDR {
-			apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "A limit must be null (none) or a positive amount up to 1,000,000,000,000")
+		if json.Unmarshal(f.raw, &n) != nil || math.IsNaN(n) || n <= 0 || n > maxSpendingIDR || n != math.Trunc(n) {
+			apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "A limit must be null (none) or a whole positive rupiah amount up to 1,000,000,000,000")
 			return
 		}
 		*f.dst = n
