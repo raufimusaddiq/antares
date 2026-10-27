@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   getRun: vi.fn(),
   sendMessage: vi.fn(),
   getCapabilities: vi.fn(),
+  searchChats: vi.fn(),
 }));
 
 vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi")>()), ...api }));
@@ -346,5 +347,22 @@ describe("a message into an archived chat", () => {
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
     await waitFor(() => expect(rows()).toEqual(["Old talk", "Live"]));
     await waitFor(() => expect(within(screen.getByRole("region", { name: "Archived conversations" })).queryByText("Old talk")).toBeNull());
+  });
+});
+
+// #198 review: a chat opened from a search result outside the loaded list shows its own Visualize state.
+describe("Visualize for a chat opened from search", () => {
+  it("shows the toggle for an out-of-page result, as the server stored it", async () => {
+    await mount([chat("c1", "One")]);
+    api.searchChats.mockResolvedValue(
+      ok({ results: [{ chatId: "c9", chatTitle: "Far away", kind: "title", turn: null, role: "title", createdAt: "", snippet: [] }], nextCursor: "", index: { complete: true, chats: 2, pending: 0, failed: 0, partial: 0 } }),
+    );
+    api.getChat.mockResolvedValue(ok(chat("c9", "Far away", { visualize: true })));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "far away" } });
+    fireEvent.submit(screen.getByRole("search"));
+    fireEvent.click(await screen.findByRole("button", { name: /Far away/ }));
+    const box = (await screen.findByRole("checkbox", { name: /Visualize/ })) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    expect(api.getChat).toHaveBeenCalledWith("c9");
   });
 });
