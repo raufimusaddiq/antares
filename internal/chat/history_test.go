@@ -11,6 +11,7 @@ import (
 
 	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/hermes"
+	"github.com/raufimusaddiq/antares/internal/store"
 )
 
 type historyPage struct {
@@ -331,4 +332,34 @@ func TestMeasureOpenAndPageBack500TurnChat(t *testing.T) {
 	measure("open (newest 50 of 1000)", "/api/chats/"+chat+"/messages", 16<<10)
 	cur := getPage(t, u, chat, "").NextCursor
 	measure("page back (50 of 1000)", "/api/chats/"+chat+"/messages?cursor="+url.QueryEscape(cur), 16<<10)
+}
+
+// #171: history paging and index writes log their latency, with counts and durations only: no chat id, title,
+// session or turn text reaches the log.
+func TestHistoryAndIndexLatencyAreLoggedWithoutContent(t *testing.T) {
+	a := newApp(t)
+	u := a.user("alice")
+	chat := u.newChat()
+	c, err := store.GetChat(a.svc.base, a.db, u.id, chat)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a.hx.mu.Lock()
+	a.hx.msgs[c.HermesSessionID] = []map[string]any{{"role": "user", "content": "TELEMETRY-SECRET-77 question"}, {"role": "assistant", "content": "TELEMETRY-SECRET-77 answer"}}
+	a.hx.mu.Unlock()
+	before := len(logBuf.String())
+	if w := u.get("/api/chats/" + chat + "/messages"); w.Code != 200 {
+		t.Fatalf("history: %d %s", w.Code, w.Body.String())
+	}
+	got := logBuf.String()[before:]
+	for _, want := range []string{"chat: history page fetch_ms=", "chat: search index write_ms="} {
+		if !strings.Contains(got, want) {
+			t.Errorf("log lacks %q:\n%s", want, got)
+		}
+	}
+	for _, secret := range []string{"TELEMETRY-SECRET-77", chat, u.id} {
+		if strings.Contains(got, secret) {
+			t.Errorf("telemetry logged %q:\n%s", secret, got)
+		}
+	}
 }

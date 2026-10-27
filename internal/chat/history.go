@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -148,11 +149,13 @@ func (s *Service) getMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	read := s.now()
+	began := time.Now()
 	all, err := s.hx.Transcript(r.Context(), b, c.HermesSessionID)
 	if err != nil {
 		upstreamError(w, err)
 		return
 	}
+	fetched := time.Since(began)
 	// The transcript is in hand: bring a stale search index of this chat up to date from it.
 	if stale, err := store.StaleChats(r.Context(), s.db, uid, c.ID, 1, time.Time{}); err == nil && len(stale) == 1 {
 		s.indexTranscript(r.Context(), uid, c, all, read)
@@ -174,6 +177,9 @@ func (s *Service) getMessages(w http.ResponseWriter, r *http.Request) {
 	if page == nil {
 		page = []hermes.Message{}
 	}
+	// Latency telemetry (#171): every page reads the whole transcript, so its cost is the fetch, not the page.
+	// Counts and durations only; no id, title or text.
+	log.Printf("chat: history page fetch_ms=%d total_ms=%d turns=%d page=%d", fetched.Milliseconds(), time.Since(began).Milliseconds(), len(all), len(page))
 	writeJSON(w, http.StatusOK, map[string]any{"messages": page, "nextCursor": next, "total": len(all)})
 }
 
