@@ -1,4 +1,4 @@
-const CACHE = "antares-public-5f26b86215233a6afea5f5a9c7186f939abe47f2c64a305d4b9ebb8063e77a23";
+const CACHE = "antares-public-7db66b3799dd7ad11bc5bb474d10be1bd5846df0ec20c3b085cae96b1be61f01";
 const PUBLIC = ["/offline.html","/assets/index--PgWjoAM.css","/assets/index-Bwtj5zbM.js","/assets/offline-fa7ba79e6ead331b.css","/assets/rolldown-runtime-BWaJ3C7D.js"];
 // On-demand chunks (OpenUI Block, Chart): not fetched at install, cached the first time the page asks for them.
 const OPTIONAL = ["/assets/Block-ekibacOm.js","/assets/Chart-iwugcsGH.js","/assets/ci-info-Bauk7qhZ.js"];

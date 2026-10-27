@@ -3,13 +3,14 @@
 Issue #173. Replies are rendered by a small Markdown subset (`web/src/Markdown.tsx`) that never parses HTML and never
 uses `dangerouslySetInnerHTML`; fenced `openui` blocks go to the OpenUI renderer (`web/src/openui/`) through
 `splitSegments` (`MessageBody.tsx`). This page records where that differs from GitHub Flavored Markdown, on purpose.
-`web/src/MarkdownGfm.test.tsx` holds one case per behaviour with the GFM shape beside ours, and fails if a shape changes
-or if a difference is not listed here.
+`web/src/MarkdownGfm.test.tsx` holds one case per behaviour. The GFM shape is computed by micromark with its GFM
+extension (a reference implementation, dev dependency only), not written by hand; the test fails if either shape changes,
+if a difference is not listed here, or if a listed difference is no longer real.
 
 ## Same as GFM
 
 Paragraphs, `*em*`, `**strong**`, `` `code` ``, `[text](https://…)` links, ordered and bullet lists, pipe tables
-(alignment rows accepted), and fenced code with a language (labelled, with a Copy button that copies the whole block,
+(alignment rows accepted), `$…$` left as literal text (GFM has no math either), and fenced code with a language (labelled, with a Copy button that copies the whole block,
 however long).
 
 ## Intentional divergences
@@ -26,7 +27,6 @@ however long).
 | `autolink` | bare URLs stay text | only explicit links are links |
 | `task-list` | `[ ]` shown as text, never an input | a reply never creates form controls outside OpenUI |
 | `setext-heading` | underlined headings are a paragraph | only `#` headings are recognised |
-| `math` | `$…$` shown as written | no math typesetting |
 
 Inputs over 200,000 characters are not parsed at all and are shown as plain preformatted text.
 
