@@ -22,5 +22,9 @@ Each device draft carries the time it was written (`antares:draft:v1:at:…`). A
 so nothing can be purged at that moment; the next start either sees the 401 (everything goes) or a session for whoever signs in
 (other accounts' text goes, and nothing older than a week stays). The server copy restores a purged draft after sign-in.
 
-The policy is stated in the product: the Options drawer says "Unsent text is kept on this device for up to 7 days and removed
-when you sign out or your session ends". Tests: `web/src/DraftPolicy.test.ts` reads `localStorage` after every path above.
+After any purge the device is **sealed**: `saveDraft` writes nothing until a session loads for an account again
+(`purgeStaleDrafts`), so text typed into a composer still on screen after a 401 does not recreate the purged draft.
+
+The 7 days are not a timer: nothing runs while the app is closed, so an old draft is cleared at the next start, not on its
+seventh day. The product says exactly that in the Options drawer ("text older than 7 days is cleared the next time you open
+Antares"). Tests: `web/src/DraftPolicy.test.ts` reads `localStorage` after every path above, including typing after a 401.

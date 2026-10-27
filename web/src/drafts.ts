@@ -23,8 +23,13 @@ export function loadDraft(email: string, chatId: string | null): string {
 export const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const stampKey = (email: string, chatId: string | null) => `${PREFIX}at:${keyOf(email, chatId).slice(PREFIX.length)}`;
 
+// After a purge (sign-out, an ended or suspended session) this device writes no draft until a session loads for an
+// account again: text typed into a composer still on screen after a 401 must not recreate what was just removed.
+let sealed = false;
+
 /** Empty text removes the entry rather than storing "". */
 export function saveDraft(email: string, chatId: string | null, text: string, now = Date.now()): void {
+  if (sealed && text !== "") return;
   try {
     if (text === "") {
       localStorage.removeItem(keyOf(email, chatId));
@@ -98,6 +103,7 @@ export function forgetChatDrafts(email: string, chatId: string): void {
  * shared browser, and nothing outlives a week on the device.
  */
 export function purgeStaleDrafts(email: string, now = Date.now()): void {
+  sealed = false; // a session is live for this account: its drafts may be kept again
   const own = `${encodeURIComponent(email)}:`;
   try {
     const doomed: string[] = [];
@@ -121,6 +127,7 @@ export function purgeStaleDrafts(email: string, now = Date.now()): void {
 
 /** Sign-out, an expired session and suspension: the next person on this browser inherits nothing. */
 export function purgeDrafts(): void {
+  sealed = true;
   try {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);

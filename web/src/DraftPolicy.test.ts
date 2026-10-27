@@ -39,6 +39,18 @@ describe("local drafts follow the session (#172)", () => {
     });
   }
 
+  it("typing after a 401 does not recreate the purged draft, until a session loads again", async () => {
+    seed();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 401 })));
+    await listChats();
+    saveDraft(A, "c1", "typed after the session ended");
+    expect(drafts()).toEqual([]);
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "ACTIVE", email: A })));
+    await loadSession(false);
+    saveDraft(A, "c1", "signed in again");
+    expect(loadDraft(A, "c1")).toBe("signed in again");
+  });
+
   it("another account signing in on the same browser finds nothing of the first", async () => {
     seed();
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "ACTIVE", email: B })));

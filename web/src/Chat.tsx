@@ -1476,7 +1476,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           <Recorder />
           <Templates own={ownTemplates} onChange={setOwnTemplates} />
           <p className="label" data-policy="drafts">
-            Unsent text is kept on this device for up to 7 days and removed when you sign out or your session ends; your account keeps a copy for your other devices.
+            Unsent text is kept on this device until you sign out or your session ends, and text older than 7 days is cleared the next time you open Antares. Your account keeps a copy for your other devices.
           </p>
         </div>
         {current && current !== blankChat.current && (
