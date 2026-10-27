@@ -64,3 +64,24 @@ describe("ExportChat", () => {
     expect((screen.getByRole("button", { name: "Export PDF" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });
+
+// #154 (UXP-ACC-004): a 1000-turn history, served newest page first as the server does, exports to Markdown with every
+// turn once, in chronological order.
+describe("exporting a long history", () => {
+  it("assembles 1000 turns in order across pages", async () => {
+    const { loadAllTurns, toMarkdown } = await import("./exportChat");
+    const all = Array.from({ length: 1000 }, (_, i) => ({ seq: i, role: (i % 2 ? "assistant" : "user") as "user" | "assistant", text: `turn ${String(i).padStart(4, "0")}` }));
+    getMessages.mockImplementation(async (_c: string, cursor?: string) => {
+      const end = cursor ? Number(cursor) : all.length;
+      const start = Math.max(0, end - 50);
+      return { ok: true, value: { turns: all.slice(start, end), nextCursor: start > 0 ? String(start) : "", total: all.length } };
+    });
+    const r = await loadAllTurns("c1");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.turns.map((t) => t.seq)).toEqual(all.map((t) => t.seq));
+    const md = toMarkdown("Long", r.turns, new Date("2026-10-27T00:00:00Z"));
+    const order = [...md.matchAll(/turn (\d{4})/g)].map((m) => Number(m[1]));
+    expect(order).toEqual(all.map((t) => t.seq));
+  });
+});

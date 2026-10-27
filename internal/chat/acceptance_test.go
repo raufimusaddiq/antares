@@ -51,6 +51,12 @@ func TestAcceptanceSuspendedWhileFinishingThenReattach(t *testing.T) {
 	if !s1.has("run.disconnected") || s1.has("run.completed") {
 		t.Fatalf("suspended stream: %v", s1.names())
 	}
+	// While suspended nothing private is reachable: no reattach to the run, no transcript, no run status.
+	for _, path := range []string{"/api/runs/" + run + "/events", "/api/runs/" + run, "/api/chats"} {
+		if w := u.get(path); w.Code != 403 || errCode(t, w) != "ACCOUNT_SUSPENDED" {
+			t.Fatalf("suspended %s: %d %s", path, w.Code, w.Body.String())
+		}
+	}
 	a.hx.push(fr, "assistant.delta", `{"delta":"done"}`)
 	a.hx.push(fr, "run.completed", `{"output":"almost done"}`)
 	eventually(t, func() bool {
@@ -78,34 +84,48 @@ func TestAcceptanceSuspendedWhileFinishingThenReattach(t *testing.T) {
 	}
 }
 
-// UXP-ACC-004: a 1000-turn transcript, as Hermes returns it with compacted turns included (hermes.Client.Transcript
-// always asks with include_compacted=true). Search finds a turn near the start; paging the history end to end returns every turn once,
-// in order, which is what export reads.
+// UXP-ACC-004: a 1000-turn transcript as Hermes returns it with include_compacted=true (hermes.Client.Transcript always
+// asks for it): the first 600 turns are compacted (flagged, as Hermes marks them) and tool-role messages are interleaved,
+// which Antares does not show. Search finds a compacted turn; paging end to end returns exactly the 1000 user and
+// assistant turns, once each, in chronological order, which is what export reads (web/src/ExportChat.test.tsx exports
+// the same shape to Markdown).
 func TestAcceptanceThousandTurnCompactedSearchAndPaging(t *testing.T) {
 	a := newApp(t)
 	u := a.user("alice")
 	chat := u.newChat()
-	turns := make([][2]string, 0, 1000)
+	var list []map[string]any
 	for i := 0; i < 1000; i++ {
 		role := "user"
 		if i%2 == 1 {
 			role = "assistant"
 		}
-		text := fmt.Sprintf("turn %d body", i)
+		text := fmt.Sprintf("turn %04d body", i)
 		if i == 3 {
-			text = "turn 3 mentions the rare word zanzibarite"
+			text = "turn 0003 mentions the rare word zanzibarite"
 		}
-		turns = append(turns, [2]string{role, text})
+		m := map[string]any{"role": role, "content": text}
+		if i < 600 {
+			m["compacted"] = true
+		}
+		list = append(list, m)
+		if i%50 == 7 {
+			list = append(list, map[string]any{"role": "tool", "content": "tool output that is not a turn", "compacted": i < 600})
+		}
 	}
-	a.setTranscript(t, u, chat, turns...)
+	a.hx.mu.Lock()
+	a.hx.msgs[decodeSession(t, a, u, chat)] = list
+	a.hx.mu.Unlock()
 
 	r := doSearch(t, u, "/api/search/chats?q=zanzibarite", 200)
 	if len(r.Results) != 1 || r.Results[0].ChatID != chat || r.Results[0].Turn == nil || *r.Results[0].Turn != 3 {
-		t.Fatalf("search: %+v", r.Results)
+		t.Fatalf("search in a compacted turn: %+v", r.Results)
+	}
+	if r := doSearch(t, u, "/api/search/chats?q=tool+output", 200); len(r.Results) != 0 {
+		t.Fatalf("a tool message was indexed as a turn: %+v", r.Results)
 	}
 
+	var texts []string
 	seen := map[int]bool{}
-	order := []int{}
 	cursor := ""
 	for page := 0; page < 100; page++ {
 		path := "/api/chats/" + chat + "/messages"
@@ -117,27 +137,37 @@ func TestAcceptanceThousandTurnCompactedSearchAndPaging(t *testing.T) {
 			t.Fatalf("page %d: %d %s", page, w.Code, w.Body.String())
 		}
 		p := decodeBody[struct {
-			Messages   []struct{ Seq int }
+			Messages []struct {
+				Seq  int
+				Text string
+			}
 			NextCursor string
 			Total      int
 		}](t, w)
 		if p.Total != 1000 {
 			t.Fatalf("total %d", p.Total)
 		}
+		var chunk []string
 		for _, m := range p.Messages {
 			if seen[m.Seq] {
 				t.Fatalf("turn %d returned twice", m.Seq)
 			}
 			seen[m.Seq] = true
-			order = append(order, m.Seq)
+			chunk = append(chunk, m.Text)
 		}
+		texts = append(chunk, texts...) // pages run newest first; each page is in order
 		if p.NextCursor == "" {
 			break
 		}
 		cursor = p.NextCursor
 	}
-	if len(seen) != 1000 {
-		t.Fatalf("paged %d of 1000 turns", len(seen))
+	if len(texts) != 1000 {
+		t.Fatalf("paged %d of 1000 turns", len(texts))
+	}
+	for i, txt := range texts {
+		if !strings.HasPrefix(txt, fmt.Sprintf("turn %04d ", i)) {
+			t.Fatalf("turn %d out of order: %q", i, txt)
+		}
 	}
 }
 
@@ -164,17 +194,16 @@ func TestAcceptanceTenReconnectCyclesWithToolsAndOpenUI(t *testing.T) {
 		a.hx.push(fr, "assistant.delta", string(frame))
 		want.WriteString(piece)
 		eventually(t, func() bool {
-			n := 0
 			for _, e := range s.events() {
-				if e.Name == "assistant.delta" {
-					n++
+				if e.Name == "assistant.delta" && strings.Contains(e.Data, strings.TrimSuffix(strings.TrimPrefix(fmt.Sprintf("%q", piece), `"`), `"`)) {
+					return true
 				}
 			}
-			return n >= 1
-		}, "the cycle's delta")
-		evs := s.events()
-		all = append(all, evs...)
+			return false
+		}, "this cycle's own delta")
 		s.close()
+		evs := s.events() // after close: nothing more can arrive on this stream
+		all = append(all, evs...)
 		s = u.open(run, evs[len(evs)-1].ID)
 	}
 	a.hx.push(fr, "run.completed", `{}`)
