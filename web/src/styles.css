@@ -697,3 +697,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   *, *::before, *::after { transition: none !important; animation: none !important; }
   .run-streaming::after, .run-reconnecting::after { width: calc(100% - 1rem); opacity: 0.6; }
 }
+
+/* #167 dictation, beside the recorder. */
+.dictation { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.dictation .notice { flex-basis: 100%; }
