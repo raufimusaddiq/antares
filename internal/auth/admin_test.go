@@ -83,6 +83,7 @@ var adminRoutes = []struct{ method, path string }{
 	{"POST", "/api/admin/users/TARGET/reject"},
 	{"POST", "/api/admin/users/TARGET/suspend"},
 	{"POST", "/api/admin/users/TARGET/reactivate"},
+	{"POST", "/api/admin/users/TARGET/revoke-sessions"},
 	{"POST", "/api/admin/users/TARGET/tenant-binding"},
 	{"POST", "/api/admin/users/TARGET/tenant-verify"},
 	{"GET", "/api/admin/audit"},
@@ -260,6 +261,58 @@ func TestRejectAndSuspendNeedAReasonAndRevokeAccessImmediately(t *testing.T) {
 	}
 	if n := h.count(`SELECT COUNT(*) FROM tenant_bindings WHERE user_id = ? AND status = 'READY'`, aid); n != 0 {
 		t.Fatal("a suspended user still has a READY binding")
+	}
+}
+
+// #113: an admin can sign a user out everywhere. Every session ends at once, the account is untouched (signing in
+// again works), and the audit row is metadata only. A body or an unknown user changes nothing.
+func TestAdminRevokeSessionsSignsTheUserOutEverywhere(t *testing.T) {
+	h := newHarness(t)
+	admin, _, _ := h.adminWithKicks()
+	phone := h.userIn("act", "APPROVED", "READY", "USER", true)
+	id := h.userID("act")
+	laptop := h.browser()
+	laptop.login("act", "act@example.test")
+	for _, b := range []*browser{phone, laptop} {
+		if w := b.get("/api/chats"); w.Code != http.StatusNotImplemented {
+			t.Fatalf("before: %d", w.Code)
+		}
+	}
+	if w := admin.act(id, "revoke-sessions", `{"reason":"x"}`); w.Code != 400 {
+		t.Fatalf("with a body: %d %s", w.Code, w.Body.String())
+	}
+	if w := admin.act("no-such-user", "revoke-sessions", ``); w.Code != 404 {
+		t.Fatalf("unknown user: %d %s", w.Code, w.Body.String())
+	}
+	if n := h.count(`SELECT COUNT(*) FROM audit_log WHERE action = 'admin.revoke_sessions'`); n != 0 {
+		t.Fatalf("%d audit rows from refused calls", n)
+	}
+	if w := phone.get("/api/chats"); w.Code != http.StatusNotImplemented {
+		t.Fatalf("a refused call ended the session: %d", w.Code)
+	}
+	w := admin.act(id, "revoke-sessions", ``)
+	if w.Code != 200 {
+		t.Fatalf("revoke: %d %s", w.Code, w.Body.String())
+	}
+	for _, b := range []*browser{phone, laptop} {
+		if w := b.get("/api/chats"); w.Code != 401 {
+			t.Fatalf("a session survived: %d", w.Code)
+		}
+	}
+	if a, ts := h.tenantStatus(id); a != "APPROVED" || ts != "READY" {
+		t.Fatalf("the account changed: %s %s", a, ts)
+	}
+	again := h.browser()
+	again.login("act", "act@example.test")
+	if w := again.get("/api/chats"); w.Code != http.StatusNotImplemented {
+		t.Fatalf("signing in again: %d", w.Code)
+	}
+	var actor, kind, target, outcome string
+	if err := h.db.QueryRow(`SELECT actor_user_id, target_kind, target_id, outcome FROM audit_log WHERE action = 'admin.revoke_sessions'`).Scan(&actor, &kind, &target, &outcome); err != nil {
+		t.Fatal(err)
+	}
+	if kind != "user" || target != id || actor == id || outcome != "ok" {
+		t.Fatalf("audit row: actor %q kind %q target %q outcome %q", actor, kind, target, outcome)
 	}
 }
 
@@ -630,5 +683,32 @@ func TestAuditPagesByCursor(t *testing.T) {
 	}
 	if len(seen) < 3 {
 		t.Fatalf("paged through only %d entries", len(seen))
+	}
+}
+
+// #193 review: the revocation and its audit row commit together. When the audit insert fails, nothing is revoked.
+func TestAdminRevokeSessionsRollsBackWhenTheAuditFails(t *testing.T) {
+	h := newHarness(t)
+	admin, _, _ := h.adminWithKicks()
+	target := h.userIn("act", "APPROVED", "READY", "USER", true)
+	id := h.userID("act")
+	if _, err := h.db.Exec(`CREATE TRIGGER fail_revoke_audit BEFORE INSERT ON audit_log
+		WHEN NEW.action = 'admin.revoke_sessions' BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if w := admin.act(id, "revoke-sessions", ``); w.Code < 500 {
+		t.Fatalf("revoke with the audit failing: %d %s", w.Code, w.Body.String())
+	}
+	if w := target.get("/api/chats"); w.Code != http.StatusNotImplemented {
+		t.Fatalf("the session was revoked although the audit failed: %d", w.Code)
+	}
+	if _, err := h.db.Exec(`DROP TRIGGER fail_revoke_audit`); err != nil {
+		t.Fatal(err)
+	}
+	if w := admin.act(id, "revoke-sessions", ``); w.Code != 200 {
+		t.Fatalf("revoke: %d", w.Code)
+	}
+	if w := target.get("/api/chats"); w.Code != 401 {
+		t.Fatalf("after a good revoke: %d", w.Code)
 	}
 }
