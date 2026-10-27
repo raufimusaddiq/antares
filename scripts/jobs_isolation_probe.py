@@ -19,6 +19,7 @@ import urllib.request
 
 COOKIE = "__Host-antares_session"
 MARKER = "NO_TERMINAL_TOOL"
+RESPONSE_HEADING = "## Response\n\n"  # Hermes' run document (cron/scheduler_prompt.py _RESPONSE_HEADING)
 PROMPT = ("Use your terminal tool to run the command id and report its output. "
           f"If you have no terminal tool, reply with exactly {MARKER} and nothing else.")
 
@@ -41,18 +42,26 @@ class Probe:
             req.add_header("Content-Type", "application/json")
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
-                raw = r.read()
-                return r.status, (json.loads(raw) if raw else None)
+                status, raw = r.status, r.read()
         except urllib.error.HTTPError as e:
-            raw = e.read()
-            try:
-                return e.code, json.loads(raw)
-            except ValueError:
-                return e.code, None
+            status, raw = e.code, e.read()
+        try:
+            return status, (json.loads(raw) if raw else None)
+        except ValueError:  # not JSON: the caller sees no body, and its check fails
+            return status, None
+
+    def get(self, who, path):
+        """A GET whose body is a JSON object, or {} for any other answer (empty, not JSON, a list): a surprise in the
+        deployment becomes a failed check in the report, never a crash before the report is written."""
+        st, body = self.call(who, "GET", path)
+        return st, body if isinstance(body, dict) else {}
 
     def hermes_read(self, shell):
-        """Runs a read-only shell command in the Hermes container; its stdout, "" on any failure."""
-        out = subprocess.run(self.hermes_cmd + ["sh", "-c", shell], capture_output=True, text=True)
+        """Runs a read-only shell command in the Hermes container and returns its stdout, or "" on failure or timeout."""
+        try:
+            out = subprocess.run(self.hermes_cmd + ["sh", "-c", shell], capture_output=True, text=True, timeout=60)
+        except subprocess.TimeoutExpired:
+            return ""
         return out.stdout if out.returncode == 0 else ""
 
     def check(self, name, ok, detail=""):
@@ -70,34 +79,39 @@ class Probe:
         if not self.check("admin API reachable (admin workspace ready)",
                           self.until(lambda: self.call("ADMIN", "GET", "/api/admin/users")[0] == 200, self.wait)):
             return
-        me = {w: self.call(w, "GET", "/api/me")[1] for w in ("A", "B")}
+        me = {w: self.get(w, "/api/me")[1] for w in ("A", "B")}
+        if not self.check("A and B are signed in", all(isinstance(me[w].get("id"), str) and me[w]["id"] for w in ("A", "B"))):
+            return
         for w in ("A", "B"):
-            if not me[w]["canChat"]:
+            if not me[w].get("canChat"):
                 st, _ = self.call("ADMIN", "POST", f"/api/admin/users/{me[w]['id']}/approve", {})
                 self.check(f"admin approves {w}", st == 200, str(st))
         if not self.check("A and B provisioned and able to chat",
-                          self.until(lambda: all(self.call(w, "GET", "/api/me")[1]["canChat"] for w in ("A", "B")), self.wait)):
+                          self.until(lambda: all(self.get(w, "/api/me")[1].get("canChat") is True for w in ("A", "B")), self.wait)):
             return
 
-        _, caps = self.call("A", "GET", "/api/capabilities")
-        cap = next((c for c in (caps or {}).get("capabilities", []) if c.get("id") == "jobs"), None)
+        _, caps = self.get("A", "/api/capabilities")
+        cap = next((c for c in caps.get("capabilities") or [] if isinstance(c, dict) and c.get("id") == "jobs"), None)
         self.check("the jobs capability is available", cap is not None and cap.get("status") == "available", json.dumps(cap))
 
         st, job = self.call("A", "POST", "/api/jobs", {"name": "isolation probe", "schedule": "every 2h", "prompt": PROMPT})
-        if not self.check("A creates a job", st == 201 and job and job.get("id"), str(st)):
+        job = job if isinstance(job, dict) else {}
+        if not self.check("A creates a job", st == 201 and isinstance(job.get("id"), str) and job["id"] != "", str(st)):
             return
         jid = job["id"]
         self.check("the new job is scheduled, not paused", job.get("paused") is False,
                    json.dumps({k: job.get(k) for k in ("state", "paused", "schedule")}))
 
-        st, lb = self.call("B", "GET", "/api/jobs")
-        self.check("B's list does not contain A's job", st == 200 and all(j["id"] != jid for j in lb["jobs"]),
-                   f"{st} {len((lb or {}).get('jobs', []))} jobs")
+        st, lb = self.get("B", "/api/jobs")
+        listed = lb.get("jobs")
+        self.check("B's list does not contain A's job",
+                   st == 200 and isinstance(listed, list) and all(not isinstance(j, dict) or j.get("id") != jid for j in listed),
+                   f"{st} {len(listed) if isinstance(listed, list) else 'no'} jobs")
         for method, path in [("GET", f"/api/jobs/{jid}"), ("DELETE", f"/api/jobs/{jid}"), ("POST", f"/api/jobs/{jid}/pause"),
                              ("POST", f"/api/jobs/{jid}/resume"), ("POST", f"/api/jobs/{jid}/run")]:
             st, _ = self.call("B", method, path, {} if method == "POST" else None)
             self.check(f"B {method} {path.replace(jid, '<A job>')} is 404", st == 404, str(st))
-        st, still = self.call("A", "GET", f"/api/jobs/{jid}")
+        st, still = self.get("A", f"/api/jobs/{jid}")
         self.check("A's job is unchanged after B's attempts",
                    st == 200 and still.get("paused") is False and still.get("name") == "isolation probe", str(st))
 
@@ -109,21 +123,24 @@ class Probe:
 
         def finished():
             nonlocal last
-            last = self.call("A", "GET", f"/api/jobs/{jid}")[1] or {}
+            last = self.get("A", f"/api/jobs/{jid}")[1]
             return bool(last.get("lastRunAt") and last.get("lastStatus"))
 
         self.check("the run finished", self.until(finished, self.run_wait),
                    json.dumps({k: last.get(k) for k in ("lastRunAt", "lastStatus", "state")}))
         profile = sqlite3.connect(f"file:{self.db}?mode=ro", uri=True).execute(
             "SELECT profile_name FROM tenant_bindings WHERE user_id = ?", (me["A"]["id"],)).fetchone()[0]
-        out = self.hermes_read(f"cat /opt/data/profiles/{profile}/cron/output/{jid}/*.md 2>/dev/null | tail -c 4000")
-        self.check("the cron run reported no terminal tool and shows no command output", MARKER in out and "uid=" not in out,
-                   "marker found" if MARKER in out else ("uid= present" if "uid=" in out else "no output read"))
+        # The run document repeats the prompt (which names the marker) before "## Response": only the response counts.
+        doc = self.hermes_read(f"cat /opt/data/profiles/{profile}/cron/output/{jid}/*.md 2>/dev/null")
+        reply = doc.rsplit(RESPONSE_HEADING, 1)[1] if RESPONSE_HEADING in doc else ""
+        self.check("the cron run's reply reports no terminal tool and holds no command output", MARKER in reply and "uid=" not in reply,
+                   "marker in the reply" if MARKER in reply else ("uid= in the reply" if "uid=" in reply else "no reply section read"))
 
         # Suspension pauses the job upstream and verifies it.
         st, view = self.call("ADMIN", "POST", f"/api/admin/users/{me['A']['id']}/suspend", {"reason": "jobs isolation probe"})
+        view = view if isinstance(view, dict) else None
         self.check("admin suspends A", st == 200, str(st))
-        self.check("suspension verified the jobs paused (no pending mark)", bool(view) and view.get("tenantDetail", "") == "",
+        self.check("suspension verified the jobs paused (no pending mark)", view is not None and view.get("tenantDetail") == "",
                    (view or {}).get("tenantDetail", "")[:60])
         row = sqlite3.connect(f"file:{self.db}?mode=ro", uri=True).execute(
             "SELECT outcome FROM audit_log WHERE action = 'admin.suspend_jobs' AND target_id = ? ORDER BY created_at DESC LIMIT 1",
@@ -133,8 +150,8 @@ class Probe:
         try:
             store = json.loads(self.hermes_read(f"cat /opt/data/profiles/{profile}/cron/jobs.json"))
             jobs = store.get("jobs", []) if isinstance(store, dict) else store
-            upstream = [j for j in jobs if j.get("id") == jid]
-        except ValueError:
+            upstream = [j for j in jobs if isinstance(j, dict) and j.get("id") == jid]
+        except (ValueError, AttributeError):
             pass
         self.check("Hermes' own store has the job disabled", len(upstream) == 1 and upstream[0].get("enabled") is False,
                    json.dumps({k: upstream[0].get(k) for k in ("enabled", "state")}) if upstream else "job not found in store")

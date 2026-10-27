@@ -8,12 +8,13 @@ menu panel. Off (the default), the routes stay the 501 placeholder and the capab
 passes and is recorded in `docs/hermes/` (the fake-upstream tests here prove the app's side, not Hermes'). Suspension
 pauses any jobs an account has whether or not the switch is on.
 
-**Live probe, 2026-10-28, Hermes 0.22.5, production `0a52064`: passed 21/21; `ANTARES_JOBS=on` since.**
+**Live probe, 2026-10-28, Hermes 0.22.5, production `0a52064`: passed 22/22; `ANTARES_JOBS=on` since.**
 `scripts/jobs_isolation_probe.py`, run through `scripts/smoke_fixtures.py` (disposable accounts and profiles, removed
 after: cleanup clean), result `docs/hermes/fixtures/jobs-isolation-probe-2026-10-28.json`. It proved, against the real
 Hermes: another account's job is absent from B's list and 404 on GET, DELETE, pause, resume and run, and unchanged after;
-a real cron run of A's job, asked to use the terminal, reported it had no terminal tool and its output held no command
-result (this is the run's own answer, not a read of the toolset Hermes granted it); suspending A paused the
+a real cron run of A's job, asked to use the terminal, replied that it had no terminal tool and its reply (the run
+document after `## Response`, so not the prompt that names the marker) held no command output: the run's own answer,
+not a read of the toolset Hermes granted it; suspending A paused the
 job, verified by Antares (no pending mark, `admin.suspend_jobs ok`) and in Hermes' own store (`enabled: false`).
 Re-run it after a Hermes upgrade:
 

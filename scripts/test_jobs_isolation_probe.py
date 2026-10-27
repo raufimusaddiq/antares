@@ -3,6 +3,7 @@ over a temporary directory) stand in for production, so the probe's verdict logi
 import http.server
 import json
 import os
+import shutil
 import sqlite3
 import sys
 import tempfile
@@ -18,6 +19,7 @@ class FakeAntares(http.server.BaseHTTPRequestHandler):
     """Just enough of Antares for the probe. `leak` lets B read A's job; `stuck` leaves the job enabled upstream."""
     leak = False
     stuck = False
+    garbled = False  # B's job list answers something that is not JSON
     state = {}
 
     def log_message(self, *a):
@@ -43,6 +45,11 @@ class FakeAntares(http.server.BaseHTTPRequestHandler):
         if p == "/api/capabilities":
             return self.send(200, {"capabilities": [{"id": "jobs", "status": "available"}]})
         if p == "/api/jobs":
+            if me == "b" and self.garbled:
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(b"<html>oops</html>")
+                return
             return self.send(200, {"jobs": [st["job"]] if me == "a" and st.get("job") else []})
         if p == f"/api/jobs/{JOB}":
             if me == "a" or self.leak:
@@ -75,6 +82,7 @@ class FakeAntares(http.server.BaseHTTPRequestHandler):
 class ProbeTest(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.dir, True)
         self.db = os.path.join(self.dir, "antares.sqlite")
         c = sqlite3.connect(self.db)
         c.execute("CREATE TABLE tenant_bindings (user_id TEXT, profile_name TEXT)")
@@ -86,13 +94,18 @@ class ProbeTest(unittest.TestCase):
         # The fake container: /opt/data maps to a temporary directory; `sh -c <cmd>` runs there with the path rewritten.
         self.data = os.path.join(self.dir, "data")
         os.makedirs(os.path.join(self.data, "profiles/u_probe/cron/output", JOB))
-        with open(os.path.join(self.data, "profiles/u_probe/cron/output", JOB, "run.md"), "w") as f:
-            f.write(f"Response: {probe.MARKER}\n")
-        FakeAntares.leak = FakeAntares.stuck = False
+        self.write_run(probe.MARKER)
+        FakeAntares.leak = FakeAntares.stuck = FakeAntares.garbled = False
         FakeAntares.state = {"approved": {}, "store": {"enabled": True}}
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), FakeAntares)
         threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.addCleanup(self.server.server_close)
         self.addCleanup(self.server.shutdown)
+
+    def write_run(self, reply):
+        # Hermes' run document: header, the prompt (which names the marker), then "## Response" and the reply.
+        with open(os.path.join(self.data, "profiles/u_probe/cron/output", JOB, "run.md"), "w") as f:
+            f.write(f"# Cron Job: isolation probe\n\n## Prompt\n\n{probe.PROMPT}\n\n{probe.RESPONSE_HEADING}{reply}\n")
 
     def run_probe(self):
         store = os.path.join(self.data, "profiles/u_probe/cron/jobs.json")
@@ -118,7 +131,7 @@ class ProbeTest(unittest.TestCase):
     def test_isolated_and_paused_passes(self):
         checks, passed = self.run_probe()
         self.assertTrue(passed, checks)
-        self.assertEqual(len(checks), 21)
+        self.assertEqual(len(checks), 22)
 
     def test_a_leak_to_b_fails(self):
         FakeAntares.leak = True
@@ -131,6 +144,19 @@ class ProbeTest(unittest.TestCase):
         checks, passed = self.run_probe()
         self.assertFalse(passed)
         self.assertFalse(checks["Hermes' own store has the job disabled"])
+
+    def test_the_marker_only_in_the_prompt_fails(self):
+        self.write_run("uid=1000(hermes) gid=1000(hermes)")
+        checks, passed = self.run_probe()
+        self.assertFalse(passed)
+        self.assertFalse(checks["the cron run's reply reports no terminal tool and holds no command output"])
+
+    def test_an_unexpected_body_is_a_failed_check_not_a_crash(self):
+        FakeAntares.garbled = True
+        checks, passed = self.run_probe()
+        self.assertFalse(passed)
+        self.assertFalse(checks["B's list does not contain A's job"])
+        self.assertIn("Hermes' own store has the job disabled", checks)  # the run went on to the end
 
     def test_main_refuses_without_fixture_sessions(self):
         self.assertEqual(probe.main(["p", "http://x", self.db, os.path.join(self.dir, "r.json")], {}), 3)
