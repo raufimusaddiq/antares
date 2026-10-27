@@ -5,7 +5,7 @@ import { changeChat, describeCode, type ChatSummary } from "./chatApi";
 // table or card; what it sends is still checked and rendered by the safe renderer (web/src/openui). Saved on the
 // server per chat; the checkbox shows what the server stored, not what was clicked.
 // onSaving receives each pending save, so a message sent meanwhile waits for it: the run then reads the new setting.
-export function VisualizeToggle({ chat, onChanged, onSaving }: { chat: ChatSummary; onChanged: (c: ChatSummary) => void; onSaving?: (p: Promise<unknown>) => void }) {
+export function VisualizeToggle({ chat, onChanged, onSaving }: { chat: ChatSummary; onChanged: (c: ChatSummary) => void; onSaving?: (p: Promise<{ ok: boolean }>) => void }) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   return (
@@ -33,6 +33,6 @@ export function VisualizeToggle({ chat, onChanged, onSaving }: { chat: ChatSumma
 
 /** The toggle for the chat on screen: from the loaded list, or (opened from a search result on a later page) the chat
  * that search read by id. Nothing is shown when neither is known. */
-export function OpenChatVisualize({ chat, onChanged, onSaving }: { chat: ChatSummary | undefined; onChanged: (c: ChatSummary) => void; onSaving?: (p: Promise<unknown>) => void }) {
+export function OpenChatVisualize({ chat, onChanged, onSaving }: { chat: ChatSummary | undefined; onChanged: (c: ChatSummary) => void; onSaving?: (p: Promise<{ ok: boolean }>) => void }) {
   return chat ? <VisualizeToggle chat={chat} onChanged={onChanged} onSaving={onSaving} /> : null;
 }

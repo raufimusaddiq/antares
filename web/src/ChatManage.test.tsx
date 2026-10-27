@@ -385,4 +385,24 @@ describe("Visualize and sending", () => {
     saved(ok(chat("c1", "One", { visualize: true })));
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
   });
+
+  it("a failed Visualize save stops the send and keeps the message", async () => {
+    await mount([chat("c1", "One")]);
+    fireEvent.click(screen.getByText("One"));
+    let saved!: (v: unknown) => void;
+    api.changeChat.mockReturnValue(new Promise((r) => (saved = r)));
+    api.sendMessage.mockResolvedValue(ok({ runId: "r1", status: "PENDING" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Visualize/ }));
+    await waitFor(() => expect(api.changeChat).toHaveBeenCalled());
+    const box = document.getElementById("composer-input") as HTMLTextAreaElement;
+    fireEvent.change(box, { target: { value: "chart it" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Send/ }));
+    saved({ ok: false, code: "HERMES_UNAVAILABLE", status: 503 });
+    await waitFor(() => expect(screen.getByText(/the message was not sent/)).toBeTruthy());
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    expect(box.value).toBe("chart it");
+    expect((screen.getByRole("checkbox", { name: /Visualize/ }) as HTMLInputElement).checked).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: /^Send/ })); // the next send goes, with the stored setting
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+  });
 });
