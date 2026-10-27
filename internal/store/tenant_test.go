@@ -683,3 +683,24 @@ func TestRotatedCredentialIsOwnerScopedAndCannotReplaceReadyOrSuspendedBinding(t
 		t.Fatalf("suspended replacement: %v", err)
 	}
 }
+
+// #169: the wire capture records only profiles of synthetic smoke accounts, never a real user's.
+func TestIsSyntheticProfile(t *testing.T) {
+	db, _ := migrated(t)
+	ctx := context.Background()
+	real := mkUser(t, db, "ureal", "USER", "APPROVED", "READY")
+	mkBinding(t, db, real, "u_realrealre", "READY")
+	syn := mkUser(t, db, "usyn", "USER", "APPROVED", "READY")
+	mkBinding(t, db, syn, "u_synthetics", "READY")
+	if _, err := db.Exec(`UPDATE users SET google_issuer = ?, tenant_profile = 'u_synthetics' WHERE id = ?`, SyntheticIssuer, syn); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := db.Exec(`UPDATE users SET tenant_profile = 'u_realrealre' WHERE id = ?`, real); err != nil {
+		t.Fatal(err)
+	}
+	for profile, want := range map[string]bool{"u_synthetics": true, "u_realrealre": false, "u_unknown123": false, "": false} {
+		if got, err := IsSyntheticProfile(ctx, db, profile); err != nil || got != want {
+			t.Errorf("%q: %v %v, want %v", profile, got, err, want)
+		}
+	}
+}

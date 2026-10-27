@@ -123,7 +123,16 @@ func run() error {
 	} else if d+f > 0 {
 		log.Printf("runs recovered: disconnected=%d failed=%d", d, f)
 	}
-	hermesClient, err := hermes.NewClient(cfg.HermesURL, hermes.ClientOptions{})
+	var capture *hermes.Capture
+	if cfg.WireCaptureDir != "" {
+		// Fixtures from the smoke run (#169): only profiles of synthetic smoke accounts are ever recorded.
+		capture = &hermes.Capture{Dir: cfg.WireCaptureDir, Allow: func(ctx context.Context, profile string) bool {
+			ok, err := store.IsSyntheticProfile(ctx, db, profile)
+			return err == nil && ok
+		}}
+		log.Printf("hermes wire capture on for synthetic smoke accounts only")
+	}
+	hermesClient, err := hermes.NewClient(cfg.HermesURL, hermes.ClientOptions{Capture: capture})
 	if err != nil {
 		return err
 	}

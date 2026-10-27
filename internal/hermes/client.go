@@ -112,6 +112,7 @@ type Client struct {
 	call        time.Duration
 	maxStream   time.Duration
 	transcripts chan struct{} // bounds concurrent full-transcript reads
+	capture     *Capture      // sanitized wire fixtures for synthetic smoke profiles (#169); nil = off
 }
 
 // ClientOptions tunes timeouts; zero values mean the production defaults.
@@ -120,6 +121,8 @@ type ClientOptions struct {
 	StreamIdle  time.Duration
 	CallTimeout time.Duration
 	StreamMax   time.Duration
+	// Capture records sanitized fixtures for the profiles it allows (ANTARES_WIRE_CAPTURE_DIR, #169). Nil is off.
+	Capture *Capture
 }
 
 // NewClient builds a Client for the Hermes origin (e.g. http://hermes:8642).
@@ -138,7 +141,7 @@ func NewClient(baseURL string, o ClientOptions) (*Client, error) {
 	if o.HTTPClient != nil && o.HTTPClient.Transport != nil {
 		tr = o.HTTPClient.Transport
 	}
-	c := &Client{base: &url.URL{Scheme: u.Scheme, Host: u.Host}, idle: o.StreamIdle, maxStream: o.StreamMax, transcripts: make(chan struct{}, maxTranscriptReads)}
+	c := &Client{base: &url.URL{Scheme: u.Scheme, Host: u.Host}, idle: o.StreamIdle, maxStream: o.StreamMax, transcripts: make(chan struct{}, maxTranscriptReads), capture: o.Capture}
 	c.call = o.CallTimeout
 	if c.call <= 0 {
 		c.call = callTimeout
@@ -243,10 +246,18 @@ func statusError(status int) error {
 var ErrRunGone = errors.New("hermes: run not found upstream")
 
 func readJSON(resp *http.Response, v any, limit int64) error {
+	return readJSONThen(resp, v, limit, nil)
+}
+
+// readJSONThen is readJSON that also hands the raw body to seen (the fixture capture) before decoding it.
+func readJSONThen(resp *http.Response, v any, limit int64, seen func([]byte)) error {
 	defer resp.Body.Close()
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, limit+1))
 	if err != nil || int64(len(raw)) > limit {
 		return fail(CodeHermesUnavailable)
+	}
+	if seen != nil {
+		seen(raw)
 	}
 	if json.Unmarshal(raw, v) != nil {
 		return fail(CodeHermesUnavailable)
@@ -381,7 +392,7 @@ func (c *Client) CreateRun(ctx context.Context, b Binding, r RunRequest) (string
 	var d struct {
 		RunID string `json:"run_id"`
 	}
-	if err := readJSON(resp, &d, maxAPIResponse); err != nil {
+	if err := readJSONThen(resp, &d, maxAPIResponse, func(raw []byte) { c.capture.body(ctx, b, "run-create", raw) }); err != nil {
 		return "", err
 	}
 	if !ValidID(d.RunID) {
@@ -592,6 +603,7 @@ func (c *Client) StreamEvents(ctx context.Context, b Binding, runID string, fn f
 		}
 		ev := Event{Name: name, Data: bytes.TrimSuffix(data, []byte("\n"))}
 		name, data = "", nil
+		c.capture.frame(parent, b, ev)
 		return fn(ev)
 	}
 	for {
@@ -731,6 +743,7 @@ func (c *Client) Transcript(ctx context.Context, b Binding, sessionID string) ([
 	if err != nil || len(raw) > maxMessagesBody {
 		return nil, fail(CodeHermesUnavailable)
 	}
+	c.capture.body(ctx, b, "session-messages", raw)
 	var list []json.RawMessage
 	var wrapped struct {
 		Messages []json.RawMessage `json:"messages"`
