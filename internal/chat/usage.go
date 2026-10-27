@@ -224,7 +224,9 @@ func (s *Service) recordUsage(userID, runID string, u *hermes.Usage) {
 	defer cancel()
 	if err := store.RecordRunUsage(ctx, s.db, userID, runID, store.RunUsage{Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, Model: u.Model}); err != nil {
 		log.Printf("chat: run %s: could not record usage: %v", runID, err)
+		return
 	}
+	log.Printf("run usage run=%s input_tokens=%d output_tokens=%d cache_read_tokens=%d model=%q", runID, u.Input, u.Output, u.CacheRead, u.Model)
 }
 
 type budgetView struct {
