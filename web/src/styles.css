@@ -356,6 +356,7 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .tools { margin: 0.3rem 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--ink-2); }
 
 /* Regenerate, edit and rewind cannot be activated: mono text, a dotted underline, and the reason a press away. */
+/* The row starts half a button's padding to the left, so the first label's text lines up with the answer's text. */
 .turn-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.35rem; margin: 0.25rem 0 0 -0.5rem; font-size: 0.75rem; }
 .turn-control { display: inline-flex; flex-wrap: wrap; align-items: center; min-width: 0; max-width: 100%; }
 /* One family of small text actions under a turn. The upstream-unavailable ones (aria-disabled: a press explains why) are
@@ -365,7 +366,7 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .turn-controls > button { color: var(--ink); font-weight: 700; }
 .turn-controls > button:hover:not(:disabled) { background: color-mix(in srgb, var(--mark) 55%, transparent); }
 .turn-control button:hover:not(:disabled) { background: transparent; color: var(--cobalt); }
-.turn-control button[data-icon]::before { width: 1em; height: 1em; margin-right: 0.3rem; }
+.turn-control button[data-icon]::before, .turn-controls > button[data-icon]::before { width: 1em; height: 1em; margin-right: 0.3rem; }
 /* The reason is always in the document and is the button's description. It is only visually hidden until shown, and when
    shown it is in the flow under the controls, so it never covers text. */
 .turn-control small { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
@@ -514,7 +515,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 /* Voice: Dictate and Record side by side, their notes and messages on the line below. */
 .extras-row > .dictation, .extras-row > .recorder { display: contents; }
 .extras-row .notice, .extras-row [role="alert"], .extras-row [role="status"] { flex: 1 1 100%; }
-.extras .usage, .extras .template-manager { margin: 0; }
+.extras-row audio { flex: 1 1 100%; max-width: 100%; }
 .extras-foot { margin: 0.2rem 0 0; padding-top: 0.6rem; border-top: 1px solid var(--hair); }
 /* Helper text in the drawer is read, not scanned: the UI face at 13px rather than small mono. */
 .extras .label, .recorder-note, .visualize-toggle { font-family: var(--font-ui); font-size: 0.8125rem; line-height: 1.45; }

@@ -97,3 +97,31 @@ describe("accessibility fallbacks", () => {
     expect(block("@media (prefers-reduced-motion: reduce)")).toMatch(/animation: none/);
   });
 });
+
+// #139 stage 2 (web/README.md "The chat's extras"): no control reads as broken or as a drop zone, and the unavailable
+// turn controls are muted, not underlined links.
+describe("controls look like what they are", () => {
+  const rules = css.replace(/\/\*[\s\S]*?\*\//g, "");
+  it("has no dashed border anywhere (disabled is a solid, faded outline)", () => {
+    expect(rules).not.toMatch(/dashed/);
+    expect(block("button:disabled {")).toMatch(/opacity:/);
+  });
+  it("draws the turn controls as one family with no dotted underline", () => {
+    const tc = rules.slice(rules.indexOf(".turn-control button, .turn-controls > button {"));
+    expect(tc.slice(0, tc.indexOf("}"))).not.toMatch(/underline/);
+    expect(rules).not.toMatch(/\.turn-control button \{[^}]*underline dotted/);
+  });
+  it("keeps the extras in a drawer at every width: hidden unless open, outside any media query", () => {
+    // Brace depth 0 at the rule's start: a top-level rule, not one inside an @media block.
+    const topLevel = (re: RegExp) => {
+      const m = re.exec(rules);
+      expect(m, String(re)).not.toBeNull();
+      let depth = 0;
+      for (const ch of rules.slice(0, m!.index)) depth += ch === "{" ? 1 : ch === "}" ? -1 : 0;
+      return depth;
+    };
+    expect(topLevel(/\.extras \{ display: none; \}/)).toBe(0);
+    expect(topLevel(/\.extras\.open \{[^}]*display: block/)).toBe(0);
+    expect(topLevel(/\.extras-toggle \{[^}]*display: inline-flex/)).toBe(0);
+  });
+});
