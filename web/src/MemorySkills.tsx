@@ -15,10 +15,13 @@ export function MemorySkillsPanel() {
   const [saved, setSaved] = useState<string | null>(null);
   const [max, setMax] = useState(2000);
   const [status, setStatus] = useState("");
+  const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!open) return;
     let live = true;
+    setInv(null);
+    setInvError(""); // a reopen reads again: an earlier failure is not the answer any more
     void getCapabilities().then((r) => {
       if (!live) return;
       if (r.ok) setInv(r.value);
@@ -38,8 +41,10 @@ export function MemorySkillsPanel() {
   }, [open]);
 
   const save = async () => {
+    setSaving(true); // the editor is read-only until the server answers, so nothing typed meanwhile is overwritten
     setStatus("Saving…");
     const r = await putPersonality(text);
+    setSaving(false);
     if (r.ok) {
       setText(r.value.text);
       setSaved(r.value.text); // what the server stored, not what was typed
@@ -93,9 +98,9 @@ export function MemorySkillsPanel() {
           <h3>Your instructions</h3>
           <p className="label">Added to each of your messages as preferences. The assistant's base instructions are set by the operator, are not shown here and always come first.</p>
           <label>
-            Instructions <textarea value={text} maxLength={max} onChange={(e) => setText(e.target.value)} />
+            Instructions <textarea value={text} maxLength={max} readOnly={saving} aria-busy={saving} onChange={(e) => setText(e.target.value)} />
           </label>
-          <button type="button" disabled={saved === null || text.trim() === saved} onClick={() => void save()}>
+          <button type="button" disabled={saving || saved === null || text.trim() === saved} onClick={() => void save()}>
             Save instructions
           </button>
           {status && <p role="status">{status}</p>}
