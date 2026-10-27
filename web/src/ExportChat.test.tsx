@@ -64,3 +64,36 @@ describe("ExportChat", () => {
     expect((screen.getByRole("button", { name: "Export PDF" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });
+
+// #154 (UXP-ACC-004, UXP-ACC-016): a 1000-turn history, served newest page first as the server does, exports to Markdown
+// and to the print copy behind PDF with every turn once, in chronological order.
+describe("exporting a long history", () => {
+  const all = Array.from({ length: 1000 }, (_, i) => ({ seq: i, role: (i % 2 ? "assistant" : "user") as "user" | "assistant", text: `turn ${String(i).padStart(4, "0")}` }));
+  const order = (text: string) => [...text.matchAll(/turn (\d{4})/g)].map((m) => Number(m[1]));
+  beforeEach(() =>
+    getMessages.mockImplementation(async (_c: string, cursor?: string) => {
+      const end = cursor ? Number(cursor) : all.length;
+      const start = Math.max(0, end - 50);
+      return { ok: true, value: { turns: all.slice(start, end), nextCursor: start > 0 ? String(start) : "", total: all.length } };
+    }),
+  );
+
+  it("Markdown: the button saves 1000 turns in order across pages", async () => {
+    render(<ExportChat chatId="c1" title="Long" />);
+    fireEvent.click(screen.getByRole("button", { name: "Export Markdown" }));
+    await waitFor(() => expect(saved).toHaveLength(1));
+    expect(getMessages).toHaveBeenCalledTimes(20);
+    expect(order(saved[0])).toEqual(all.map((t) => t.seq));
+  });
+
+  it("PDF: the button prints 1000 turns in order across pages", async () => {
+    render(<ExportChat chatId="c1" title="Long" />);
+    fireEvent.click(screen.getByRole("button", { name: "Export PDF" }));
+    await waitFor(() => expect(window.print).toHaveBeenCalledTimes(1));
+    const turns = [...document.body.querySelectorAll(".print-root .print-turn")];
+    expect(turns).toHaveLength(1000);
+    expect(order(turns.map((t) => t.textContent).join("\n"))).toEqual(all.map((t) => t.seq));
+    expect(turns[0].className).toContain("user");
+    expect(turns[999].className).toContain("assistant");
+  });
+});
