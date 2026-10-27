@@ -198,12 +198,15 @@ const INSTRUMENT = () => {
   requestAnimationFrame(tick);
   window.__csp = [];
   document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(e.violatedDirective + " " + e.blockedURI));
-  // Every attached-image thumbnail that loads (#142): it must be a blob: URL that really rendered.
+  // Every blob: thumbnail of an attached image, loaded or refused (#142). Sent images in the history share data-media="thumb" but
+  // load from /api/assets, so only blob: sources are recorded.
   window.__thumbs = [];
-  document.addEventListener("load", (e) => {
-    const t = e.target;
-    if (t instanceof HTMLImageElement && t.dataset.media === "thumb") window.__thumbs.push({ blob: t.src.startsWith("blob:"), w: t.naturalWidth });
-  }, true);
+  for (const kind of ["load", "error"]) {
+    document.addEventListener(kind, (e) => {
+      const t = e.target;
+      if (t instanceof HTMLImageElement && t.dataset.media === "thumb" && t.src.startsWith("blob:")) window.__thumbs.push({ ok: kind === "load", w: t.naturalWidth });
+    }, true);
+  }
 };
 
 const scrollerInfo = () => {
@@ -787,7 +790,7 @@ async function images(browser) {
     const unexpected = unexpectedMessages(consoleErrors, csp);
     check(`images ${label}: no console error or CSP violation other than the deliberate 415`, unexpected.length === 0, JSON.stringify(unexpected.slice(0, 2)));
     const rendered = await page.evaluate(() => window.__thumbs ?? []);
-    check(`images ${label}: the attached-image thumbnail rendered (blob: allowed by img-src)`, rendered.length > 0 && rendered.every((t) => t.blob && t.w > 0), JSON.stringify(rendered.slice(0, 3)));
+    check(`images ${label}: every attached-image blob: thumbnail rendered (blob: allowed by img-src)`, rendered.length > 0 && rendered.every((t) => t.ok && t.w > 0), JSON.stringify(rendered.slice(0, 4)));
     const probes = await page.evaluate(async () => {
       const load = (src) => new Promise((res) => {
         const img = new Image();
