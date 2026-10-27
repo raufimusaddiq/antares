@@ -113,7 +113,9 @@ func (s *Service) getUsageRange(w http.ResponseWriter, r *http.Request) {
 	for _, m := range models {
 		v.ByModel = append(v.ByModel, *m)
 	}
-	sort.Slice(v.ByModel, func(i, j int) bool { return v.ByModel[i].Input+v.ByModel[i].Output > v.ByModel[j].Input+v.ByModel[j].Output })
+	sort.Slice(v.ByModel, func(i, j int) bool {
+		return v.ByModel[i].Input+v.ByModel[i].Output > v.ByModel[j].Input+v.ByModel[j].Output
+	})
 	for _, c := range chats {
 		v.ByChat = append(v.ByChat, *c)
 	}
