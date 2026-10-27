@@ -67,6 +67,12 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"GET /api/capabilities":                                        http.HandlerFunc(s.capabilities),
 		"GET /api/chats/{chatId}/input":                                http.HandlerFunc(s.getChatInput),
 		"POST /api/chats/{chatId}/messages":                            http.HandlerFunc(s.postMessage),
+		"GET /api/chats/{chatId}/queue":                                http.HandlerFunc(s.getQueue),
+		"POST /api/chats/{chatId}/queue":                               http.HandlerFunc(s.enqueue),
+		"PATCH /api/chats/{chatId}/queue":                              http.HandlerFunc(s.pauseQueue),
+		"POST /api/chats/{chatId}/queue/next":                          http.HandlerFunc(s.sendNext),
+		"PATCH /api/chats/{chatId}/queue/{itemId}":                     http.HandlerFunc(s.editQueued),
+		"DELETE /api/chats/{chatId}/queue/{itemId}":                    http.HandlerFunc(s.removeQueued),
 		"GET /api/runs/{runId}":                                        http.HandlerFunc(s.getRun),
 		"GET /api/runs/{runId}/events":                                 http.HandlerFunc(s.runEvents),
 		"POST /api/runs/{runId}/cancel":                                http.HandlerFunc(s.cancelRun),
@@ -360,36 +366,46 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "The message is empty, too long or not valid text")
 		return
 	}
+	if run, ok := s.admit(w, r, uid, chatID, idem, body.Input, body.ImageAssetIDs); ok {
+		// A repeat of the same Idempotency-Key is the same run: nothing is sent again.
+		writeJSON(w, http.StatusAccepted, viewRun(run))
+	}
+}
+
+// admit runs every check a new turn needs (ownership, gate, model policy, images, per-user run cap,
+// budget, a free chat) and starts the run. A refusal is written to w and ok is false. A typed message
+// and a queued one (queue.go) both come through here, so a queued message is re-checked at dispatch.
+func (s *Service) admit(w http.ResponseWriter, r *http.Request, uid, chatID, idem, input string, imageIDs []string) (store.Run, bool) {
 	// Ownership first: a foreign chat is a 404 before anything else is learned.
 	chat, err := store.GetChat(r.Context(), s.db, uid, chatID)
 	if errors.Is(err, store.ErrNoChat) {
 		notFound(w)
-		return
+		return store.Run{}, false
 	} else if err != nil {
 		internalError(w, "get chat", err)
-		return
+		return store.Run{}, false
 	}
 	b, _, err := s.gate(r.Context(), uid) // no run is admitted for an account that could not start it
 	if err != nil {
 		s.gateError(w, err)
-		return
+		return store.Run{}, false
 	}
 	if s.refuseUnrunnableChoice(w, r, b, uid, chatID) {
-		return
+		return store.Run{}, false
 	}
-	imgs, ok := s.resolveImages(w, r, b, uid, chatID, body.ImageAssetIDs)
+	imgs, ok := s.resolveImages(w, r, b, uid, chatID, imageIDs)
 	if !ok {
-		return
+		return store.Run{}, false
 	}
 	// A busy chat answers RUN_CONFLICT (or the replay of its own run) from AdmitRun;
 	// the per-user cap only decides about a chat that is free.
 	if chat.ActiveRunID == "" {
 		if n, err := store.ActiveRunCount(r.Context(), s.db, uid); err != nil {
 			internalError(w, "count runs", err)
-			return
+			return store.Run{}, false
 		} else if n >= maxActiveRunsPerUser {
 			apiError(w, http.StatusTooManyRequests, hermes.CodeRateLimited, "Too many runs in progress; retry after a run finishes")
-			return
+			return store.Run{}, false
 		}
 	}
 	// Budget: a free chat at or over its limit takes no new message (a reply
@@ -399,34 +415,33 @@ func (s *Service) postMessage(w http.ResponseWriter, r *http.Request) {
 	if chat.ActiveRunID == "" {
 		if budget, err = store.TokenBudget(r.Context(), s.db, uid); err != nil {
 			internalError(w, "token budget", err)
-			return
+			return store.Run{}, false
 		}
 	}
 	run, created, err := store.AdmitRunWithin(r.Context(), s.db, uid, chatID, idem, s.now(), budget)
 	switch {
 	case errors.Is(err, store.ErrBudget):
 		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "This conversation has reached the token limit you set; raise or remove it to continue")
-		return
+		return store.Run{}, false
 	case errors.Is(err, store.ErrNoChat):
 		notFound(w)
-		return
+		return store.Run{}, false
 	case errors.Is(err, store.ErrRunActive):
 		apiError(w, http.StatusConflict, hermes.CodeRunConflict, "This chat already has a run in progress")
-		return
+		return store.Run{}, false
 	case err != nil:
 		internalError(w, "admit run", err)
-		return
+		return store.Run{}, false
 	}
 	if created {
 		if imgs != nil {
-			if err := store.AttachRunImages(r.Context(), s.db, uid, run.ID, turnDigest(uid, run.ID, body.Input), imgs.assets()); err != nil {
+			if err := store.AttachRunImages(r.Context(), s.db, uid, run.ID, turnDigest(uid, run.ID, input), imgs.assets()); err != nil {
 				log.Printf("chat: run %s: could not record its images: %v", run.ID, err)
 			}
 		}
-		s.start(run, body.Input, imgs)
+		s.start(run, input, imgs)
 	}
-	// A repeat of the same Idempotency-Key is the same run: nothing is sent again.
-	writeJSON(w, http.StatusAccepted, viewRun(run))
+	return run, true
 }
 
 func (s *Service) getRun(w http.ResponseWriter, r *http.Request) {

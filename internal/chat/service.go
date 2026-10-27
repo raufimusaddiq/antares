@@ -367,6 +367,9 @@ func (s *Service) finish(l *liveRun, to, code, output string) {
 			log.Printf("chat: run %s: could not mark search index stale: %v", l.runID, err)
 		}
 	}
+	// The queue moves before the browser hears the end, so a client that reads the chat on run.completed
+	// already sees the run its next queued message became.
+	s.afterRun(run)
 	l.emit(terminalEvent(run.Status), terminalPayload(run, output), store.RunTerminal(run.Status))
 	if !store.RunTerminal(run.Status) { // read back a non-terminal state: leave it resumable
 		l.markDetached()
@@ -402,6 +405,9 @@ func (s *Service) disconnect(l *liveRun, userID, runID string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(s.base), 10*time.Second)
 	defer cancel()
 	_, _ = store.MoveRun(ctx, s.db, userID, runID, []string{store.RunRunning}, store.RunDisconnected, "", "", s.now())
+	if err := store.PauseQueueIfWaiting(ctx, s.db, userID, l.chatID, store.RunDisconnected); err != nil { // unknown state: the owner decides
+		log.Printf("chat: run %s: could not pause its chat's queue: %v", runID, err)
+	}
 	l.emit("run.disconnected", map[string]string{"runId": runID, "status": store.RunDisconnected}, false)
 	l.markDetached()
 }
@@ -444,6 +450,9 @@ func (s *Service) Cancel(ctx context.Context, userID, runID string) (run store.R
 	}
 	if err := store.SettlePrompts(ctx, s.db, userID, runID, s.now()); err != nil {
 		log.Printf("chat: run %s: could not settle its prompts: %v", runID, err)
+	}
+	if err := store.PauseQueueIfWaiting(ctx, s.db, userID, run.ChatID, store.RunCancelled); err != nil { // a stop is not "go on"
+		log.Printf("chat: run %s: could not pause its chat's queue: %v", runID, err)
 	}
 	l := s.liveFor(runID)
 	if l != nil {

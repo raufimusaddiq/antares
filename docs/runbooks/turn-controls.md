@@ -56,4 +56,5 @@ event, ownership re-check) land together. A whole-session `/fork` or a second `P
   or another failure in plain words. A refusal keeps the text. Nothing is added to the transcript
   (`web/src/Steer.test.tsx`).
 - Not built: `pending_steer` replay (`api_server_runs.py:202`: Hermes returns undelivered steer text on terminal
-  events; surfacing it is a follow-up), and the queue intent (#110).
+  events; surfacing it is a follow-up). The queue intent (#110) is a separate composer action, documented in
+  [`queue.md`](queue.md).

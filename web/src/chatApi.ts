@@ -55,6 +55,8 @@ const CODES = [
   "CATALOGUE_UNAVAILABLE",
   "CHAT_STATE",
   "STEER_REFUSED",
+  "QUEUE_FULL",
+  "QUEUE_EMPTY",
 ] as const;
 
 /** Words shown for a code. The server's own message is never displayed. */
@@ -99,6 +101,10 @@ export function describeCode(code: string): string {
       return "The model list could not be read. Try again shortly.";
     case "CHAT_STATE":
       return "This conversation can't be changed that way right now.";
+    case "QUEUE_FULL":
+      return "This conversation's queue is full. Send or remove a queued message first.";
+    case "QUEUE_EMPTY":
+      return "Nothing is queued in this conversation.";
     case "NETWORK":
       return "Could not reach Antares. Check your connection.";
     default:
@@ -270,6 +276,38 @@ export const cancelRun = (runId: string) =>
  *  run had ended or the assistant declined it. Nothing is added to the transcript either way. */
 export const steerRun = (runId: string, input: string) =>
   call("POST", `/api/runs/${encodeURIComponent(runId)}/steer`, (b) => (obj(b)?.accepted === true ? true : null), { input });
+
+/** A message waiting for the conversation's current reply to end (PRD §27.4). The server's queue is the truth. */
+export interface QueuedMessage {
+  id: string;
+  position: number;
+  input: string;
+  sending: boolean;
+}
+
+/** The queue in order, and why it is not sending on its own ("" when it is). */
+export interface ChatQueue {
+  items: QueuedMessage[];
+  paused: string;
+}
+
+export function parseQueue(v: unknown): ChatQueue | null {
+  const o = obj(v);
+  if (!o || typeof o.paused !== "string") return null;
+  const items = rows(o.items, (r) =>
+    str(r.id) && typeof r.position === "number" && typeof r.input === "string" ? { id: str(r.id), position: r.position, input: r.input, sending: r.status === "SUBMITTING" } : null,
+  );
+  return items ? { items, paused: o.paused } : null;
+}
+
+const queuePath = (chatId: string) => `/api/chats/${encodeURIComponent(chatId)}/queue`;
+export const getQueue = (chatId: string) => call("GET", queuePath(chatId), parseQueue);
+export const enqueueMessage = (chatId: string, input: string) => call("POST", queuePath(chatId), parseQueue, { input });
+export const editQueued = (chatId: string, itemId: string, input: string) => call("PATCH", `${queuePath(chatId)}/${encodeURIComponent(itemId)}`, parseQueue, { input });
+export const removeQueued = (chatId: string, itemId: string) => call("DELETE", `${queuePath(chatId)}/${encodeURIComponent(itemId)}`, parseQueue);
+export const pauseQueue = (chatId: string, paused: boolean) => call("PATCH", queuePath(chatId), parseQueue, { paused });
+/** Sends the head now, even from a paused queue, once the current reply has ended. */
+export const sendQueuedNext = (chatId: string) => call("POST", `${queuePath(chatId)}/next`, parseRunRef);
 
 export const getRun = (runId: string) => call("GET", `/api/runs/${encodeURIComponent(runId)}`, parseRunRef);
 

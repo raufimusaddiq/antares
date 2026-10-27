@@ -345,6 +345,15 @@ func RecoverRuns(ctx context.Context, db *sql.DB, now time.Time) (disconnected, 
 	if _, err = db.ExecContext(ctx, `UPDATE run_prompts SET status = 'PENDING' WHERE status = 'SENDING'`); err != nil {
 		return 0, 0, err
 	}
+	// A queued message that was being sent may or may not have become a run. It is queued again and its
+	// chat's queue paused: the owner decides, and a re-send under the same key replays any run it became.
+	if _, err = db.ExecContext(ctx, `UPDATE chats SET queue_paused = COALESCE(queue_paused, 'INTERRUPTED')
+		WHERE id IN (SELECT chat_id FROM queue_items WHERE status = 'SUBMITTING')`); err != nil {
+		return 0, 0, err
+	}
+	if _, err = db.ExecContext(ctx, `UPDATE queue_items SET status = 'QUEUED', updated_at = ? WHERE status = 'SUBMITTING'`, t); err != nil {
+		return 0, 0, err
+	}
 	return disconnected, failed, nil
 }
 
