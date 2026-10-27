@@ -8,6 +8,8 @@ import {
   describeTurns,
   describeUsage,
   describeSpending,
+  reconcileSpending,
+  spendingFields,
   putSpending,
   type Spending,
   describeGlance,
@@ -1525,8 +1527,15 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
 /** Optional money limits (#152): two warnings and one hard limit, in the price list's currency. Empty means none. */
 function SpendingForm({ spending, onSaved }: { spending: Spending; onSaved: () => void }) {
-  const show = (n: number | null) => (n === null ? "" : String(Math.round(n)));
-  const [v, setV] = useState({ dailySoft: show(spending.dailySoft), monthlySoft: show(spending.monthlySoft), dailyHard: show(spending.dailyHard) });
+  const server = spendingFields(spending);
+  const [v, setV] = useState(server);
+  const base = useRef(server);
+  const key = `${server.dailySoft}|${server.monthlySoft}|${server.dailyHard}`;
+  useEffect(() => {
+    const before = base.current;
+    base.current = server;
+    setV((typed) => reconcileSpending(before, server, typed));
+  }, [key]);
   const [err, setErr] = useState("");
   const read = (t: string): number | null | undefined => {
     if (t.trim() === "") return null;

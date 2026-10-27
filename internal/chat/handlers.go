@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -420,24 +421,19 @@ func (s *Service) admit(w http.ResponseWriter, r *http.Request, uid, chatID, ide
 			return store.Run{}, false
 		}
 	}
-	// The daily hard spending limit (#152): a free chat whose user is at or over it takes no new message. A soft
-	// limit never blocks. A replay of an existing key is still answered by AdmitRunWithin below.
+	// The daily hard spending limit (#152): a free chat whose user is at or over it takes no new message, decided in the
+	// same transaction as the insert. A soft limit never blocks; a replay of an existing key is answered before the gate.
+	var gate func(context.Context, store.Querier) error
 	if chat.ActiveRunID == "" {
-		if sp, err := s.spending(r.Context(), uid); err != nil {
-			internalError(w, "spending", err)
-			return store.Run{}, false
-		} else if sp.HardReached {
-			if existing, err := store.RunByKey(r.Context(), s.db, uid, chatID, idem); err == nil {
-				return existing, true
-			}
-			apiError(w, http.StatusForbidden, "BUDGET_REACHED", "You have reached the daily spending limit you set; raise or remove it to continue")
-			return store.Run{}, false
-		}
+		gate = s.hardLimitGate(uid)
 	}
-	run, created, err := store.AdmitRunWithin(r.Context(), s.db, uid, chatID, idem, s.now(), budget)
+	run, created, err := store.AdmitRunGated(r.Context(), s.db, uid, chatID, idem, s.now(), budget, gate)
 	switch {
 	case errors.Is(err, store.ErrBudget):
 		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "This conversation has reached the token limit you set; raise or remove it to continue")
+		return store.Run{}, false
+	case errors.Is(err, errSpendLimit):
+		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "You have reached the daily spending limit you set; raise or remove it to continue")
 		return store.Run{}, false
 	case errors.Is(err, store.ErrNoChat):
 		notFound(w)

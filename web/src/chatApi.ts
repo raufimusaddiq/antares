@@ -607,6 +607,21 @@ export function describeSpending(s: Spending): string[] {
   return lines;
 }
 
+export type SpendingFields = { dailySoft: string; monthlySoft: string; dailyHard: string };
+
+/** The form text for the server's limits: whole rupiah, empty for none. */
+export function spendingFields(s: Pick<Spending, "dailySoft" | "monthlySoft" | "dailyHard">): SpendingFields {
+  const show = (n: number | null) => (n === null ? "" : String(Math.round(n)));
+  return { dailySoft: show(s.dailySoft), monthlySoft: show(s.monthlySoft), dailyHard: show(s.dailyHard) };
+}
+
+/** A refresh of the server's limits updates each field the user has not edited since the last refresh and keeps their
+ * unsaved edits in the others. */
+export function reconcileSpending(before: SpendingFields, after: SpendingFields, typed: SpendingFields): SpendingFields {
+  const pick = (k: keyof SpendingFields) => (typed[k] === before[k] ? after[k] : typed[k]);
+  return { dailySoft: pick("dailySoft"), monthlySoft: pick("monthlySoft"), dailyHard: pick("dailyHard") };
+}
+
 export const putSpending = (l: { dailySoft: number | null; monthlySoft: number | null; dailyHard: number | null }) =>
   call("PUT", "/api/me/spending-limits", parseSpending, l);
 

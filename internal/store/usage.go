@@ -158,7 +158,7 @@ type SpendingLimits struct {
 }
 
 // GetSpendingLimits reads the caller's limits; a user who set none gets the zero value.
-func GetSpendingLimits(ctx context.Context, db *sql.DB, userID string) (SpendingLimits, error) {
+func GetSpendingLimits(ctx context.Context, db Querier, userID string) (SpendingLimits, error) {
 	var a, b, c sql.NullFloat64
 	err := db.QueryRowContext(ctx, `SELECT daily_soft_idr, monthly_soft_idr, daily_hard_idr FROM user_preferences WHERE user_id = ?`, userID).Scan(&a, &b, &c)
 	if err == sql.ErrNoRows {
@@ -185,7 +185,7 @@ func SetSpendingLimits(ctx context.Context, db *sql.DB, userID string, l Spendin
 // UserModelUsage sums the user's finished replies that reported usage and started at or after since, per model, across
 // all of the user's chats (#152 spending windows, #151 usage dashboard), deleted chats included (deleted_run_usage,
 // kept per UTC day: for a deleted chat the window starts at since's day).
-func UserModelUsage(ctx context.Context, db *sql.DB, userID string, since time.Time) ([]ModelUsage, error) {
+func UserModelUsage(ctx context.Context, db Querier, userID string, since time.Time) ([]ModelUsage, error) {
 	// Live runs, plus what deleted chats' runs cost (kept per UTC day, so the window is compared by day).
 	rows, err := db.QueryContext(ctx, `SELECT model, SUM(n), SUM(i), SUM(o), SUM(cr), SUM(cw) FROM (
 		SELECT COALESCE(usage_model,'') AS model, COUNT(*) AS n, SUM(input_tokens) AS i, SUM(output_tokens) AS o,

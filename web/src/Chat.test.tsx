@@ -4,7 +4,7 @@ import { Composer, Transcript } from "./Chat";
 import { parseInventory } from "./chatApi";
 import { Markdown, safeHref } from "./Markdown";
 import { indentInFence, wrapSelection } from "./composerEdit";
-import { describeCode, describeGlance, describeSpending, describeTurns, describeUsage, parseSpending, getMessages, listChats, parseLimitInput, parseUsage, sendMessage } from "./chatApi";
+import { describeCode, describeGlance, describeSpending, describeTurns, describeUsage, parseSpending, reconcileSpending, spendingFields, getMessages, listChats, parseLimitInput, parseUsage, sendMessage } from "./chatApi";
 import { isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 
 const md = (text: string) => renderToStaticMarkup(<Markdown text={text} />);
@@ -359,6 +359,17 @@ describe("usage text", () => {
     expect(describeSpending({ ...sp, dailySoft: null, monthlySoft: null, dailyHard: null, warnings: [], hardReached: false }).join("\n")).toContain("No spending limits set");
     expect(parseSpending({ day: {}, month: {} })?.day.spent).toBeNull();
     expect(parseSpending(null)).toBeNull();
+  });
+
+  it("spending form: a refresh updates untouched fields and keeps unsaved edits (#152)", () => {
+    const before = spendingFields({ dailySoft: 1000, monthlySoft: null, dailyHard: 5500.4 });
+    expect(before).toEqual({ dailySoft: "1000", monthlySoft: "", dailyHard: "5500" });
+    const after = spendingFields({ dailySoft: 2000, monthlySoft: 9000, dailyHard: null });
+    // The user is typing a new daily limit; the other two are as the server last said.
+    const typed = { ...before, dailyHard: "7000" };
+    expect(reconcileSpending(before, after, typed)).toEqual({ dailySoft: "2000", monthlySoft: "9000", dailyHard: "7000" });
+    expect(reconcileSpending(before, after, before)).toEqual(after);
+    expect(reconcileSpending(after, after, typed)).toEqual(typed);
   });
 
   it("states the limit, its basis and what happens at it", () => {

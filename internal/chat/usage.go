@@ -214,7 +214,7 @@ func (s *Service) chatUsage(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v := buildUsage(chatID, cu, limit, used, known)
-	sp, err := s.spending(r.Context(), uid)
+	sp, err := s.spending(r.Context(), s.db, uid)
 	if err != nil {
 		internalError(w, "spending", err)
 		return

@@ -3,6 +3,7 @@ package chat
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"math"
 	"net/http"
 	"time"
@@ -47,8 +48,8 @@ func monthStart(t time.Time) time.Time {
 }
 
 // spendSince estimates the user's spend on priced replies started at or after since.
-func (s *Service) spendSince(ctx context.Context, uid string, since time.Time) (windowSpend, error) {
-	usage, err := store.UserModelUsage(ctx, s.db, uid, since)
+func (s *Service) spendSince(ctx context.Context, q store.Querier, uid string, since time.Time) (windowSpend, error) {
+	usage, err := store.UserModelUsage(ctx, q, uid, since)
 	if err != nil {
 		return windowSpend{}, err
 	}
@@ -69,17 +70,18 @@ func (s *Service) spendSince(ctx context.Context, uid string, since time.Time) (
 	return w, nil
 }
 
-func (s *Service) spending(ctx context.Context, uid string) (spendingView, error) {
-	lim, err := store.GetSpendingLimits(ctx, s.db, uid)
+// spending reads through q: s.db for a view, the admission transaction for the hard-limit gate.
+func (s *Service) spending(ctx context.Context, q store.Querier, uid string) (spendingView, error) {
+	lim, err := store.GetSpendingLimits(ctx, q, uid)
 	if err != nil {
 		return spendingView{}, err
 	}
 	now := s.now()
 	v := spendingView{Currency: priceCurrency, Warnings: []string{}}
-	if v.Day, err = s.spendSince(ctx, uid, dayStart(now)); err != nil {
+	if v.Day, err = s.spendSince(ctx, q, uid, dayStart(now)); err != nil {
 		return spendingView{}, err
 	}
-	if v.Month, err = s.spendSince(ctx, uid, monthStart(now)); err != nil {
+	if v.Month, err = s.spendSince(ctx, q, uid, monthStart(now)); err != nil {
 		return spendingView{}, err
 	}
 	set := func(f float64) *float64 {
@@ -100,9 +102,26 @@ func (s *Service) spending(ctx context.Context, uid string) (spendingView, error
 	return v, nil
 }
 
+// errSpendLimit is the hard-limit gate's refusal, decided inside the admission transaction.
+var errSpendLimit = errors.New("chat: daily hard spending limit reached")
+
+// hardLimitGate refuses a new run while the user's spend today is at or over their daily hard limit.
+func (s *Service) hardLimitGate(uid string) func(context.Context, store.Querier) error {
+	return func(ctx context.Context, q store.Querier) error {
+		sp, err := s.spending(ctx, q, uid)
+		if err != nil {
+			return err
+		}
+		if sp.HardReached {
+			return errSpendLimit
+		}
+		return nil
+	}
+}
+
 func (s *Service) getSpending(w http.ResponseWriter, r *http.Request) {
 	uid, _ := user(r)
-	v, err := s.spending(r.Context(), uid)
+	v, err := s.spending(r.Context(), s.db, uid)
 	if err != nil {
 		internalError(w, "spending", err)
 		return

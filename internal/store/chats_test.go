@@ -298,3 +298,63 @@ func TestListChatsKeysetPagesAreStableWhileChatsAreCreated(t *testing.T) {
 		}
 	}
 }
+
+// #152: the admission gate and the insert hold the write lock together, so usage recorded by a reply finishing
+// meanwhile cannot land between the gate's read and the new run; the next admission sees it and is refused.
+func TestAdmissionGateIsAtomicWithTheInsert(t *testing.T) {
+	d, u := setupTwo(t)
+	db := d.DB
+	ctx := context.Background()
+	first, _, err := AdmitRun(ctx, db, u.a, u.chatA.ID, "idem-gate-1", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := MoveRun(ctx, db, u.a, first.ID, []string{"PENDING"}, "COMPLETED", "", "", t0); err != nil {
+		t.Fatal(err)
+	}
+	second, err := CreateChat(ctx, db, u.a, u.bindA, "sess-gate", "second", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	errSpent := errors.New("spent")
+	gate := func(ctx context.Context, q Querier) error {
+		usage, err := UserModelUsage(ctx, q, u.a, t0.Add(-time.Hour))
+		if err != nil {
+			return err
+		}
+		if len(usage) > 0 {
+			return errSpent
+		}
+		return nil
+	}
+	recorded := make(chan error, 1)
+	held := func(ctx context.Context, q Querier) error {
+		if err := gate(ctx, q); err != nil {
+			return err
+		}
+		go func() { recorded <- RecordRunUsage(context.Background(), db, u.a, first.ID, RunUsage{Output: 10, Model: "m"}) }()
+		select {
+		case err := <-recorded:
+			t.Errorf("usage was written inside the admission (err %v)", err)
+		case <-time.After(300 * time.Millisecond):
+		}
+		return nil
+	}
+	if _, created, err := AdmitRunGated(ctx, db, u.a, second.ID, "idem-gate-2", t0, 0, held); err != nil || !created {
+		t.Fatalf("gated admission: %v %v", created, err)
+	}
+	if err := <-recorded; err != nil {
+		t.Fatalf("usage after the admission: %v", err)
+	}
+	third, err := CreateChat(ctx, db, u.a, u.bindA, "sess-gate-3", "third", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := AdmitRunGated(ctx, db, u.a, third.ID, "idem-gate-3", t0, 0, gate); !errors.Is(err, errSpent) {
+		t.Fatalf("admission after the usage landed = %v, want the gate's refusal", err)
+	}
+	// A replay of an admitted key is answered before the gate.
+	if r, created, err := AdmitRunGated(ctx, db, u.a, second.ID, "idem-gate-2", t0, 0, gate); err != nil || created || r.ChatID != second.ID {
+		t.Fatalf("replay at the limit: %v %v", created, err)
+	}
+}
