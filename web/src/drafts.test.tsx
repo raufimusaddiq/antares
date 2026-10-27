@@ -37,7 +37,7 @@ describe("drafts are keyed by account and chat", () => {
     saveDraft("b@x.test", "c", "y");
     localStorage.setItem("other", "keep");
     saveDraft("a@x.test", "c", "");
-    expect(localStorage.length).toBe(2);
+    expect(localStorage.length).toBe(3); // b's draft and the time it was written (#172), and the unrelated key
     purgeDrafts();
     expect(loadDraft("b@x.test", "c")).toBe("");
     expect(localStorage.getItem("other")).toBe("keep");
