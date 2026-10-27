@@ -266,8 +266,8 @@ export const cancelRun = (runId: string) =>
     return r ? { ...r, upstreamStopped: obj(b)?.upstreamStopped === true } : null;
   });
 
-/** Guidance into the caller's own running run (PRD §21.5). Success is Hermes' acceptance; STEER_REFUSED means the run
- *  had ended or Hermes declined it. Nothing is added to the transcript either way. */
+/** Guidance into the caller's own running run (PRD §21.5). Success is the assistant's acceptance; STEER_REFUSED means the
+ *  run had ended or the assistant declined it. Nothing is added to the transcript either way. */
 export const steerRun = (runId: string, input: string) =>
   call("POST", `/api/runs/${encodeURIComponent(runId)}/steer`, (b) => (obj(b)?.accepted === true ? true : null), { input });
 

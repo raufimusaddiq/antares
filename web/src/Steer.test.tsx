@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ChatSummary, Inventory } from "./chatApi";
 
 const api = vi.hoisted(() => ({
@@ -28,10 +28,20 @@ const inventory = (steer: boolean): Inventory => ({
 
 class FakeSource {
   static CLOSED = 2;
+  static last: FakeSource | null = null;
   readyState = 1;
   onopen: (() => void) | null = null;
   onerror: (() => void) | null = null;
-  addEventListener() {}
+  listeners = new Map<string, ((m: { data: string }) => void)[]>();
+  constructor() {
+    FakeSource.last = this;
+  }
+  addEventListener(name: string, fn: (m: { data: string }) => void) {
+    this.listeners.set(name, [...(this.listeners.get(name) ?? []), fn]);
+  }
+  emit(name: string, data: unknown) {
+    for (const fn of this.listeners.get(name) ?? []) fn({ data: JSON.stringify(data) });
+  }
   close() {
     this.readyState = 2;
   }
@@ -78,6 +88,21 @@ describe("steer during a live reply (#149)", () => {
     await mountLive(true);
     api.getRun.mockResolvedValue(ok({ runId: "r1", status: "COMPLETED" }));
     fireEvent.click(await screen.findByRole("button", { name: "Steer" }));
+    expect(await screen.findByText(/Too late/)).toBeTruthy();
+    expect(box().value).toBe("use the second file");
+  });
+
+  it("still says too late when the reply finishes before the refusal arrives", async () => {
+    let answer!: (v: unknown) => void;
+    api.steerRun.mockReturnValue(new Promise((res) => (answer = res)));
+    await mountLive(true);
+    fireEvent.click(await screen.findByRole("button", { name: "Steer" }));
+    // The run ends while the steer is in flight: the live reply is replaced by the stored transcript.
+    api.getRun.mockResolvedValue(ok({ runId: "r1", status: "COMPLETED" }));
+    api.getMessages.mockResolvedValue(ok({ turns: [{ seq: 0, role: "user", text: "pick a file" }, { seq: 1, role: "assistant", text: "done" }], nextCursor: "", total: 2 }));
+    await act(async () => FakeSource.last!.emit("run.completed", { status: "COMPLETED", output: "done" }));
+    await waitFor(() => expect(screen.queryByText("Working…")).toBeNull());
+    await act(async () => answer(fail("STEER_REFUSED", 409)));
     expect(await screen.findByText(/Too late/)).toBeTruthy();
     expect(box().value).toBe("use the second file");
   });

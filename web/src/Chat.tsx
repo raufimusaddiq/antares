@@ -329,7 +329,7 @@ export interface ComposerImages {
 
 const IMAGE_ACCEPT = IMAGE_TYPES.join(",");
 
-/** Where a steer stands. "late" is a refusal from a run that had already ended; "refused" is Hermes declining a live one. */
+/** Where a steer stands. "late" is a refusal from a run that had already ended; "refused" is the assistant declining a live one. */
 export type SteerNote = "sending" | "accepted" | "refused" | "late" | "failed";
 
 /** Steer is its own intent beside Send (PRD §21.5, issue #149): present only while a live run can take it. */
@@ -1140,6 +1140,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   const onSubmit = () => {
     const input = draft.trim();
+    setSteer(null); // a new message starts a new run; the last steer's outcome no longer describes it
     const hold = sync.hold();
     setDraft("");
     saveDraft(email, currentRef.current, "");
@@ -1163,19 +1164,21 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     });
   };
 
-  // Steer goes to the live run only; it never becomes a user turn. The draft is cleared only when Hermes accepted it and the
-  // text was not changed meanwhile; a refusal keeps it, and a refusal from a run that had ended is called too late.
-  const [steer, setSteer] = useState<{ runId: string; note: SteerNote; failure: string } | null>(null);
+  // Steer goes to the live run only; it never becomes a user turn. The draft is cleared only when the assistant accepted it
+  // and the text was not changed meanwhile; a refusal keeps it, and a refusal from a run that had ended is called too late.
+  // The outcome belongs to the chat it was sent from, so it stays on screen after the run ends, until the next send.
+  const [steer, setSteer] = useState<{ chatId: string | null; note: SteerNote; failure: string } | null>(null);
   const canSteer = run !== null && run.phase === "streaming" && offers(inventory, "steer");
   const onSteer = () => {
     const text = draft.trim();
     if (!run || !canSteer || text === "") return;
     const { runId } = run;
     const chat = currentRef.current;
-    setSteer({ runId, note: "sending", failure: "" });
+    const note = (n: SteerNote, failure = "") => setSteer({ chatId: chat, note: n, failure });
+    note("sending");
     void steerRun(runId, text).then(async (r) => {
       if (r.ok) {
-        setSteer({ runId, note: "accepted", failure: "" });
+        note("accepted");
         if (currentRef.current === chat && draftRef.current.trim() === text) {
           setDraft("");
           saveDraft(email, chat, "");
@@ -1183,14 +1186,16 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         return;
       }
       if (r.code !== "STEER_REFUSED") {
-        setSteer({ runId, note: "failed", failure: describeCode(r.code) });
+        note("failed", describeCode(r.code));
         return;
       }
       const now = await getRun(runId);
       const over = now.ok && ["COMPLETED", "FAILED", "CANCELLED", "TIMED_OUT"].includes(now.value.status);
-      setSteer({ runId, note: over ? "late" : "refused", failure: "" });
+      note(over ? "late" : "refused");
     });
   };
+
+  const steerShown = steer !== null && steer.chatId === current;
 
   // Nothing to read yet: the conversation area shows the starting card instead of an empty list.
   const empty = turns.length === 0 && !pending && !run && !turnsError && (current === null || current === blankChat.current);
@@ -1352,7 +1357,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           busy={busy}
           onChange={onDraft}
           onSubmit={onSubmit}
-          steer={canSteer || (steer !== null && steer.runId === run?.runId) ? { available: canSteer, note: steer?.runId === run?.runId ? steer.note : null, failure: steer?.failure ?? "", onSteer } : undefined}
+          steer={canSteer || steerShown ? { available: canSteer, note: steerShown ? steer.note : null, failure: steerShown ? steer.failure : "", onSteer } : undefined}
           templates={mergeTemplates(ownTemplates)}
           images={{
             available: imageInput?.available === true,
