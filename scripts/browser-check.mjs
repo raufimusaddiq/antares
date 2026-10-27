@@ -149,6 +149,9 @@ function api(req, res, url) {
     if (req.method === "DELETE") { res.writeHead(204); return void res.end(); }
     return send(200, { body: "", revision: 0 });
   }
+  // After a reply completes the chat is read once more, to follow a run its queue started; this mock has no queue.
+  const cm = /^\/api\/chats\/([0-9a-f]{32})$/.exec(url.pathname);
+  if (cm && req.method === "GET") return send(200, { id: cm[1], title: "", createdAt: "2026-01-01T00:00:00Z", updatedAt: "2026-01-01T00:00:00Z", activeRunId: "" });
   if (/^\/api\/chats\/[0-9a-f]{32}\/queue$/.test(url.pathname)) return send(200, { items: [], paused: "" });
   if (/^\/api\/chats\/[0-9a-f]{32}\/usage$/.test(url.pathname)) return send(200, { runs: { finished: 0, reported: 0 }, cost: { amount: null }, context: { windowTokens: null }, budget: state.budgetReached ? { limitTokens: 10000, usedTokens: 20000, enforced: true, reached: true, basis: "" } : { limitTokens: null, usedTokens: null, enforced: false, reached: false, basis: "" }, tokens: state.budgetReached ? { input: 1, output: 1, total: 2 } : null, turns: [], turnsTruncated: false });
   // Images on, as on the owner's account, so the composer is laid out with Attach image and Take photo.
