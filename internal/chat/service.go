@@ -92,8 +92,11 @@ func New(o Options) (*Service, error) {
 		o.Heartbeat = 15 * time.Second
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari,
-		base: ctx, stop: cancel, live: map[string]*liveRun{}}, nil
+	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari,
+		base: ctx, stop: cancel, live: map[string]*liveRun{}}
+	s.wg.Add(1)
+	go s.jobShutdownLoop()
+	return s, nil
 }
 
 // Close stops every worker and waits for them. Runs left in flight are

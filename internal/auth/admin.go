@@ -1,6 +1,7 @@
 package auth
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"io"
@@ -9,6 +10,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 
@@ -218,8 +220,41 @@ func (a *Auth) adminDecide(action string) http.HandlerFunc {
 		if (action == store.ActionApprove || action == store.ActionReactivate) && a.tenants != nil {
 			a.tenants.Kick(id)
 		}
+		if action == store.ActionSuspend && a.pauseJobs(r.Context(), actor.ID, id) {
+			if again, err := store.GetAdminUser(r.Context(), a.db, id); err == nil {
+				u = again // shows the pending job shutdown
+			}
+		}
 		writeJSON(w, http.StatusOK, adminView(u))
 	}
+}
+
+// jobPauser is the chat service's part in a suspension (PRD §12 rule 3): pause the account's scheduled jobs upstream.
+type jobPauser interface {
+	PauseUserJobs(ctx context.Context, userID string) error
+}
+
+// pauseJobs pauses a suspended account's jobs and audits the outcome (admin.suspend_jobs, ok or pending). When it
+// fails the account is marked SUSPENSION_PENDING_JOB_SHUTDOWN, which the admin screen shows and the chat service
+// retries; it then reports true.
+func (a *Auth) pauseJobs(ctx context.Context, actor, id string) (pending bool) {
+	p, ok := a.chat.(jobPauser)
+	if !ok {
+		return false
+	}
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancel()
+	outcome := "ok"
+	if err := p.PauseUserJobs(ctx, id); err != nil {
+		outcome, pending = "pending", true
+		if err := store.MarkJobShutdownPending(ctx, a.db, id); err != nil {
+			log.Printf("auth: could not mark the pending job shutdown: %v", err)
+		}
+	}
+	if err := store.Audit(ctx, a.db, actor, "admin.suspend_jobs", "user", id, outcome, newRequestID(), a.now()); err != nil {
+		log.Printf("auth: audit write failed: %v", err)
+	}
+	return pending
 }
 
 func (a *Auth) adminRequeue(mode string) http.HandlerFunc {

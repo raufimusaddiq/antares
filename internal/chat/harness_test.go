@@ -73,6 +73,8 @@ type fakeHermes struct {
 	holdDelete chan struct{}     // when set, DELETE /api/sessions/ waits for it to close before answering
 	sessions   map[string]string // session id -> owning profile, for DELETE /api/sessions/{id}
 
+	jobs map[string]map[string]map[string]any // profile -> job id -> record (jobs_test.go)
+
 	failNext map[string]int // "METHOD suffix" -> status to return once (sticky when negative)
 	hang     map[string]bool
 }
@@ -315,6 +317,8 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 		default:
 			http.NotFound(w, r)
 		}
+	case strings.HasPrefix(path, "/api/jobs"):
+		f.serveJobs(w, r.Method, profile, path, body)
 	case r.Method == "GET" && f.cannedBody(path) != "":
 		io.WriteString(w, f.cannedBody(path))
 	default:
