@@ -115,7 +115,7 @@ Before every migration/deploy (in addition to the daily timer above):
 
 ```
 docker exec antares /antares backup - > /var/backups/antares/antares-$(date -u +%Y%m%dT%H%M%SZ).sqlite
-docker run --rm -v /var/backups/antares:/b:ro ghcr.io/raufimusaddiq/antares:<tag> check /b/<file>   # verify it
+docker run --rm --user 0:0 --network none -v /var/backups/antares:/b:ro ghcr.io/raufimusaddiq/antares:<tag> check /b/<file>   # verify it (root: the file is root-only)
 ```
 
 The `docker exec … backup -` form has been run on the live host (deploys, the daily timer). The check needs a file the
@@ -146,10 +146,14 @@ from a **staging copy** owned by 65532, and remove it afterwards (it is a full c
      echo "$out"; echo "RESTORE DID NOT COMPLETE CLEANLY. Candidate kept in $S. Read the message above before anything else."
    fi
    ```
-   A failure means one of two different things, and the message says which:
-   - **Before the swap** (every check, the staging, moving the old files aside): the message does *not* say "HAS been
-     replaced". Nothing changed: the old database and its sessions are still live. Do not tell users they were signed
-     out; keep the candidate in `$S`, fix the cause, and run step 3 again.
+   A failure means one of three different things, and the message says which:
+   - **"COULD NOT put back"**: the swap failed and so did putting the old files back. They are still under the names the
+     message lists (`antares.sqlite.restore.old…`). **Do not start Antares and do not retry yet**: it would open an empty
+     database under the live name. Rename each listed file back to its live name (the message says which), check it with
+     `antares check`, and only then retry or start.
+   - **Any other failure before the swap** (a check, the staging, moving the old files aside): the message says neither
+     "HAS been replaced" nor "COULD NOT put back". Nothing changed: the old database and its sessions are still live. Do
+     not tell users they were signed out; keep the candidate in `$S`, fix the cause, and run step 3 again.
    - **After the swap**: the message says "the database HAS been replaced" (syncing the directory failed, or the old
      files could not be removed). The restored database **is** live and its sessions were dropped. Follow the message
      (run the restore again, or start Antares and verify; delete the listed old files once verified), then continue at
