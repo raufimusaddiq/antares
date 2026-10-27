@@ -144,8 +144,8 @@ describe("run state tells the truth", () => {
   });
 
   it("tracks tools by id", () => {
-    const s = play([ev("tool.started", { id: "t1", label: "Web search" }), ev("tool.completed", { id: "t1", summary: "3 results" })]);
-    expect(s.tools).toEqual([{ id: "t1", label: "Web search", done: true, summary: "3 results" }]);
+    const s = play([ev("tool.started", { id: "t1", label: "Web search" }), ev("tool.completed", { id: "t1", summary: "3 results", failed: false, durationMs: 1200 })]);
+    expect(s.tools).toEqual([{ id: "t1", label: "Web search", state: "done", summary: "3 results", durationMs: 1200 }]);
   });
 });
 

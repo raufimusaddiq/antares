@@ -7,11 +7,26 @@
 
 export type Phase = "streaming" | "reconnecting" | "completed" | "failed" | "cancelled" | "disconnected" | "detached";
 
+/**
+ * One tool call as far as the server reported it. "untracked" is a start or an end the stream could not tie to
+ * the other (no id, or an end with no matching start): its outcome is not known, so it is never shown as done.
+ */
+export type ToolState = "running" | "done" | "failed" | "untracked";
+
 export interface Tool {
   id: string;
   label: string;
-  done: boolean;
+  state: ToolState;
   summary: string;
+  durationMs: number | null;
+}
+
+/** At most this many tool rows are kept; older finished ones are folded into counts so a noisy stream stays bounded. */
+export const MAX_TOOL_ROWS = 40;
+
+export interface FoldedTools {
+  count: number;
+  failed: number;
 }
 
 export interface LiveRun {
@@ -19,6 +34,10 @@ export interface LiveRun {
   phase: Phase;
   text: string;
   tools: Tool[];
+  /** Finished tool calls no longer listed one by one (MAX_TOOL_ROWS). */
+  folded: FoldedTools;
+  /** The assistant reported a reasoning stage and no answer text has arrived since. Never its content. */
+  thinking: boolean;
   code: string; // failure code, when failed
   timedOut: boolean;
   /** Set after a cancel when the assistant did not confirm the stop. */
@@ -30,7 +49,8 @@ export type RunEvent =
   | { type: "run.resumed" }
   | { type: "assistant.delta"; text: string }
   | { type: "tool.started"; id: string; label: string }
-  | { type: "tool.completed"; id: string; summary: string }
+  | { type: "tool.completed"; id: string; summary: string; failed: boolean; durationMs: number | null }
+  | { type: "run.thinking" }
   | { type: "run.completed"; output: string; status: string }
   | { type: "run.failed"; code: string; status: string }
   | { type: "run.cancelled" }
@@ -45,6 +65,7 @@ export const EVENT_NAMES = [
   "assistant.delta",
   "tool.started",
   "tool.completed",
+  "run.thinking",
   "run.completed",
   "run.failed",
   "run.cancelled",
@@ -52,7 +73,7 @@ export const EVENT_NAMES = [
 ] as const;
 
 export function newRun(runId: string): LiveRun {
-  return { runId, phase: "streaming", text: "", tools: [], code: "", timedOut: false, maybeStillRunning: false };
+  return { runId, phase: "streaming", text: "", tools: [], folded: { count: 0, failed: 0 }, thinking: false, code: "", timedOut: false, maybeStillRunning: false };
 }
 
 export const isTerminal = (p: Phase) => p === "completed" || p === "failed" || p === "cancelled";
@@ -78,8 +99,12 @@ export function parseEvent(name: string, data: string): RunEvent | null {
       return typeof d.text === "string" ? { type: "assistant.delta", text: d.text } : null;
     case "tool.started":
       return { type: "tool.started", id: s("toolCallId"), label: s("label") };
-    case "tool.completed":
-      return { type: "tool.completed", id: s("toolCallId"), summary: s("summary") };
+    case "tool.completed": {
+      const ms = typeof d.durationMs === "number" && Number.isFinite(d.durationMs) && d.durationMs >= 0 ? d.durationMs : null;
+      return { type: "tool.completed", id: s("toolCallId"), summary: s("summary"), failed: d.failed === true, durationMs: ms };
+    }
+    case "run.thinking":
+      return { type: "run.thinking" };
     case "run.completed":
       // Only an explicit COMPLETED status counts as completion.
       return s("status") === "COMPLETED" ? { type: "run.completed", output: s("output"), status: s("status") } : null;
@@ -100,17 +125,31 @@ export function reduce(state: LiveRun, ev: RunEvent): LiveRun {
     case "stream.open":
       return { ...state, phase: "streaming" };
     case "run.resumed":
-      // The assistant may replay from the start: drop what we have; the final text replaces it.
-      return { ...state, phase: "streaming", text: "" };
+      // The assistant may replay from the start: drop what we have, tools included, so a replay leaves no stale rows.
+      return { ...state, phase: "streaming", text: "", tools: [], folded: { count: 0, failed: 0 }, thinking: false };
     case "assistant.delta":
-      return state.text.length >= MAX_TEXT ? state : { ...state, phase: "streaming", text: state.text + ev.text };
-    case "tool.started":
-      return { ...state, tools: [...state.tools.filter((t) => t.id === "" || t.id !== ev.id), { id: ev.id, label: ev.label, done: false, summary: "" }] };
-    case "tool.completed":
-      return {
-        ...state,
-        tools: state.tools.map((t) => (t.id !== "" && t.id === ev.id ? { ...t, done: true, summary: ev.summary } : t)),
-      };
+      return state.text.length >= MAX_TEXT ? state : { ...state, phase: "streaming", text: state.text + ev.text, thinking: false };
+    case "run.thinking":
+      return { ...state, thinking: true };
+    case "tool.started": {
+      // A start with no id can never be matched to its end: it is untracked from the first moment.
+      const row: Tool = { id: ev.id, label: ev.label, state: ev.id === "" ? "untracked" : "running", summary: "", durationMs: null };
+      // A second start for an id still running: which end belongs to which can no longer be told, so the earlier
+      // row is untracked rather than silently replaced. Finished rows keep their outcome.
+      const tools = state.tools.map((t): Tool => (ev.id !== "" && t.id === ev.id && t.state === "running" ? { ...t, state: "untracked" } : t));
+      return bound({ ...state, thinking: false, tools: [...tools, row] });
+    }
+    case "tool.completed": {
+      const i = ev.id === "" ? -1 : state.tools.findIndex((t) => t.id === ev.id && t.state === "running");
+      const end: Pick<Tool, "summary" | "durationMs"> = { summary: ev.summary, durationMs: ev.durationMs };
+      if (i < 0) {
+        // An end with nothing to tie it to: shown, but as untracked, never as a finished call.
+        return bound({ ...state, tools: [...state.tools, { id: ev.id, label: "", state: "untracked", ...end }] });
+      }
+      const tools = state.tools.slice();
+      tools[i] = { ...tools[i], state: ev.failed ? "failed" : "done", ...end };
+      return { ...state, tools };
+    }
     case "run.completed":
       return { ...state, phase: "completed", text: ev.output !== "" ? ev.output : state.text };
     case "run.failed":
@@ -124,6 +163,37 @@ export function reduce(state: LiveRun, ev: RunEvent): LiveRun {
     case "stream.lost":
       return { ...state, phase: "reconnecting" };
   }
+}
+
+/** Keeps at most MAX_TOOL_ROWS rows by folding the oldest finished ones into counts; running rows are never folded. */
+function bound(state: LiveRun): LiveRun {
+  if (state.tools.length <= MAX_TOOL_ROWS) return state;
+  const tools = state.tools.slice();
+  let { count, failed } = state.folded;
+  while (tools.length > MAX_TOOL_ROWS) {
+    const i = tools.findIndex((t) => t.state !== "running");
+    if (i < 0) break;
+    count++;
+    if (tools[i].state === "failed") failed++;
+    tools.splice(i, 1);
+  }
+  return { ...state, tools, folded: { count, failed } };
+}
+
+/** What a tool row says. After the run ends, a call still marked running had no end reported. */
+export function describeTool(t: Tool, phase: Phase): string {
+  const took = t.durationMs === null ? "" : ` in ${t.durationMs < 1000 ? `${t.durationMs} ms` : `${(t.durationMs / 1000).toFixed(1)} s`}`;
+  switch (t.state) {
+    case "done":
+      return `done${took}`;
+    case "failed":
+      return `failed${took}`;
+    case "untracked":
+      return "not tracked: its start and end could not be matched";
+  }
+  if (phase === "cancelled") return "may still be running: the reply was cancelled before it reported an end";
+  if (isTerminal(phase)) return "no end reported";
+  return "running";
 }
 
 /** The one line a run shows when it did not complete. Empty while streaming or completed. */

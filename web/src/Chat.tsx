@@ -45,7 +45,7 @@ import { describeImageReason, describeImageSend, getImageInput, imageFilesFrom, 
 import { hideMediaPaths } from "./mediaTags";
 import { planRetry } from "./retry";
 import { VirtualList } from "./VirtualList";
-import { EVENT_NAMES, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
+import { EVENT_NAMES, describeTool, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
 import type { AttachmentRef } from "./MediaPreview";
@@ -91,22 +91,14 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
   return (
     <article className={`turn assistant run-${run.phase}`} aria-label="Assistant reply">
       <h2 className="who">Assistant</h2>
-      {run.tools.length > 0 && (
-        <ul className="tools" aria-label="Tool activity">
-          {run.tools.map((t, i) => (
-            <li key={`${t.id}-${i}`}>
-              {t.label || "Tool"} — {t.done ? (t.summary ? `done: ${t.summary}` : "done") : "running"}
-            </li>
-          ))}
-        </ul>
-      )}
+      {live && run.text === "" && <p className="label">{run.thinking ? "Thinking…" : "Working…"}</p>}
+      <Activity run={run} live={live} />
       {run.text !== "" && (
         <div className={run.phase === "completed" ? "" : "partial"}>
           {run.phase !== "completed" && !live && <p className="label">Partial response</p>}
           <MessageBody text={hideMediaPaths(run.text).text} streaming={live} />
         </div>
       )}
-      {live && run.text === "" && <p className="label">Working…</p>}
       {notice && (
         <p className="notice" role={run.phase === "reconnecting" ? "status" : "alert"}>
           {notice}
@@ -128,6 +120,35 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
         </button>
       )}
     </article>
+  );
+}
+
+// Activity is one group per reply: open while the reply runs, folded once it ends, and opened again on request.
+// A row shows the tool's name, its state and duration, and the result preview only when the server sent one.
+function Activity({ run, live }: { run: LiveRun; live: boolean }) {
+  const n = run.tools.length + run.folded.count;
+  if (n === 0) return null;
+  const failed = run.folded.failed + run.tools.filter((t) => t.state === "failed").length;
+  return (
+    <details className="activity" key={live ? "live" : "ended"} open={live || undefined}>
+      <summary>
+        Activity: {n} tool {n === 1 ? "call" : "calls"}
+        {failed > 0 ? `, ${failed} failed` : ""}
+      </summary>
+      <ul className="tools" aria-label="Tool activity">
+        {run.folded.count > 0 && (
+          <li className="label">
+            {run.folded.count} earlier {run.folded.count === 1 ? "call" : "calls"} finished{run.folded.failed > 0 ? ` (${run.folded.failed} failed)` : ""}
+          </li>
+        )}
+        {run.tools.map((t, i) => (
+          <li key={`${t.id}-${i}`} data-tool={t.state}>
+            {t.label || "Tool"}: {describeTool(t, run.phase)}
+            {t.summary && <span className="plain"> {t.summary}</span>}
+          </li>
+        ))}
+      </ul>
+    </details>
   );
 }
 

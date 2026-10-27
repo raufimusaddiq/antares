@@ -290,6 +290,12 @@ func TestNormalize(t *testing.T) {
 		{ev("", `{"type":"message.delta","text":"yo"}`), Normalized{Kind: KindDelta, Text: "yo"}},
 		{ev("tool.started", `{"tool_call_id":"t1","name":"Web search"}`), Normalized{Kind: KindToolStarted, ToolID: "t1", Label: "Web search"}},
 		{ev("tool.completed", `{"id":"t1","summary":"3 results"}`), Normalized{Kind: KindToolCompleted, ToolID: "t1", Summary: "3 results"}},
+		// The deployed shape: duration in seconds, error flag, redacted preview.
+		{ev("tool.completed", `{"tool":"web_search","duration":1.234,"error":true,"preview":"timeout","tool_call_id":"t2"}`),
+			Normalized{Kind: KindToolCompleted, ToolID: "t2", Summary: "timeout", Failed: true, DurationMs: ptr(int64(1234))}},
+		{ev("tool.completed", `{"tool_call_id":"t3","duration":"soon","error":"yes"}`), Normalized{Kind: KindToolCompleted, ToolID: "t3"}},
+		// Thinking is a stage; the reasoning text itself never survives.
+		{ev("reasoning.available", `{"text":"private chain of thought"}`), Normalized{Kind: KindThinking}},
 		{ev("approval.required", `{}`), Normalized{Kind: KindApproval}},
 		{ev("run.completed", `{"output":"final"}`), Normalized{Kind: KindTerminal, State: StateCompleted, Output: "final"}},
 		{ev("run.failed", `{}`), Normalized{Kind: KindTerminal, State: StateFailed}},
@@ -347,3 +353,5 @@ func TestCreateRunSendsImagesInline(t *testing.T) {
 		t.Errorf("parts = %v", parts)
 	}
 }
+
+func ptr[T any](v T) *T { return &v }

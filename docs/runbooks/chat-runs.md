@@ -40,6 +40,17 @@ called on the live container. Every decoder fails closed:
 - An approval or question Antares can present is held for the user (`docs/runbooks/run-prompts.md`). One it
   cannot present safely fails the run (`CAPABILITY_UNAVAILABLE`) and stops it upstream; nothing is ever
   approved or denied on the user's behalf.
+- Activity (issue #163). Hermes' run stream sends `tool.started {tool, preview, tool_call_id?}`,
+  `tool.completed {tool, duration (s), error (bool), preview (redacted, ≤500 chars), tool_call_id?}` and
+  `reasoning.available {text}` (`gateway/platforms/api_server_runs.py` `_FIXED_EVENT_FIELDS`,
+  `_tool_completed_preview`; image `sha256:9c5561579f3f…`, read-only). The browser receives
+  `tool.started {toolCallId, label}`, `tool.completed {toolCallId, summary, failed, durationMs}` and
+  `run.thinking {}`. The start preview (built from the call's arguments, not redacted upstream) and the
+  reasoning text are **not** forwarded. In the browser (`web/src/runState.ts`) a start with no id, an end with
+  no matching start, or a start that repeats a still-running id is *untracked* (never shown as done);
+  `run.resumed` clears tools and the thinking stage with the text; at most `MAX_TOOL_ROWS` rows are kept and
+  older finished calls fold into a count. A call still marked running when the reply ends reads "no end
+  reported", or "may still be running" after a cancel. The group is open while the reply runs and folded after.
 - Cancel records `CANCELLED` first, closes the upstream stream, then asks Hermes to stop. If the stop is
   not accepted (or the account is no longer eligible) the answer says `upstreamStopped:false` and the UI
   says the assistant may still be working.

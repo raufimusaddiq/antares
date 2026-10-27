@@ -16,6 +16,7 @@ const (
 	KindApproval      // Hermes is waiting for the user's consent (approval.request)
 	KindClarify       // Hermes is waiting for the user's answer to a question (clarify.request)
 	KindPromptSettled // Hermes closed a pending approval or question (…settled, approval.responded)
+	KindThinking      // Hermes is reasoning (reasoning.available); the stage only, never its text
 	KindTerminal
 )
 
@@ -26,11 +27,14 @@ type Normalized struct {
 	Text    string // KindDelta
 	ToolID  string // KindToolStarted / KindToolCompleted
 	Label   string // KindToolStarted
-	Summary string // KindToolCompleted
-	State   string // KindTerminal: one of the State* constants
-	Output  string // KindTerminal: final text, when Hermes sends it
-	Intr    bool   // KindTerminal: ended by interruption
-	Usage   *Usage // KindTerminal: what Hermes reported, nil when it reported none
+	Summary string // KindToolCompleted: Hermes' redacted result preview
+	Failed  bool   // KindToolCompleted: Hermes reported the call as an error
+	// DurationMs is KindToolCompleted's duration as Hermes measured it; nil when it sent none.
+	DurationMs *int64
+	State      string // KindTerminal: one of the State* constants
+	Output     string // KindTerminal: final text, when Hermes sends it
+	Intr       bool   // KindTerminal: ended by interruption
+	Usage      *Usage // KindTerminal: what Hermes reported, nil when it reported none
 
 	// KindApproval / KindClarify / KindPromptSettled. PromptID is the exact upstream request id (empty
 	// when the frame carried none, which makes the prompt unanswerable); Gen is the execution
@@ -81,7 +85,17 @@ func Normalize(ev Event) Normalized {
 	case "tool.started", "tool_call.started", "hermes.tool.started":
 		return Normalized{Kind: KindToolStarted, ToolID: toolID(d), Label: clip(firstString(d, "label", "name", "tool"), maxLabel)}
 	case "tool.completed", "tool_call.completed", "hermes.tool.completed":
-		return Normalized{Kind: KindToolCompleted, ToolID: toolID(d), Summary: clip(firstString(d, "summary", "result", "output"), maxSummary)}
+		// Hermes sends {tool, duration (seconds), error (bool), preview (redacted, bounded)}
+		// (gateway/platforms/api_server_runs.py _FIXED_EVENT_FIELDS, _tool_completed_preview).
+		n := Normalized{Kind: KindToolCompleted, ToolID: toolID(d), Summary: clip(firstString(d, "summary", "preview", "result", "output"), maxSummary)}
+		n.Failed, _ = d["error"].(bool)
+		if sec, ok := d["duration"].(float64); ok && sec >= 0 && sec < 1e7 {
+			ms := int64(sec * 1000)
+			n.DurationMs = &ms
+		}
+		return n
+	case "reasoning.available":
+		return Normalized{Kind: KindThinking} // its text is the model's private reasoning: not forwarded
 	case "approval.request", "approval.required", "approval.requested", "run.approval_required":
 		n := promptFrame(KindApproval, d)
 		n.Text, n.Detail = clip(firstString(d, "command"), maxPrompt), clip(firstString(d, "description"), maxPrompt)
