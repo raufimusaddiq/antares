@@ -72,6 +72,27 @@ text nodes and `<mark>`, so message content is never parsed as markup.
 The index is plain SQLite text, duplicated and sensitive, **not encrypted** (PRD §21.3). It lives in the
 database file (0600, dedicated 0700 directory; see `data-layer.md`) and is in every backup of it.
 
+## Retention, export, deletion and disk (#171)
+
+- **Retention.** The index is derived data: rows exist only for the owner's `ACTIVE`/`ARCHIVED` chats and are rebuilt from
+  Hermes on demand. There is no time-based expiry; a finished run marks its chat stale (`InvalidateChatIndex` in `finish`),
+  and the next search or open re-reads it. Per-user bounds: 100,000 turns and 25M runes (above).
+- **Deletion.** Deleting a chat removes its `search_docs` and `search_state` rows in the purge transaction
+  (`store/chatmgmt.go`, `FinishDeleteChat`); both tables also cascade with the chat and the user. Proven by
+  `internal/chat/manage_test.go` ("deleted chat still searchable" check) and `internal/store/search_test.go`.
+- **Export.** The index is never exported. Chat export reads the transcript the history route returns; a backup copies
+  the database file, index included (`backup-restore.md`), so a restored backup holds the index of chats that existed then.
+- **Disk forecast**, derived from the measurement in `capacity.md` §3 (fresh DB, 10,000 runs / 20,000 turns, prompt ≈ 190 B,
+  reply 2,000 B): 636 B per run unindexed; +5.48 KB per indexed message pair, ≈ 2.5× the text; up to ~10 MB WAL while running.
+  So a fully indexed account costs ≈ 2.5 bytes per byte of chat text, and the per-user rune budget (25M runes ≈ 25 MB of
+  ASCII text) caps one account's index at roughly **60–65 MB**. One owner with 5,000 message pairs of that size: ≈ 3 MB
+  unindexed, ≈ 30 MB indexed. These are extrapolations of the recorded ratio, not new measurements.
+- **Telemetry before any cache.** Every history page reads the whole transcript from Hermes, then slices it. Antares logs
+  `chat: history page fetch_ms=… total_ms=… turns=… page=…` per page and `chat: search index write_ms=… turns=… text_bytes=…`
+  per index write: counts and durations only, no id or text (`TestHistoryAndIndexLatencyAreLoggedWithoutContent`). No
+  transcript cache is added: none is justified until those logs show it. Revisit when the p95 of `fetch_ms` on the live
+  host passes ~1 s or `turns` approaches the 20K-turn transcript bound.
+
 ## Not yet covered
 
 No chat delete/rename/archive route exists yet. When one is added it must call `store.PurgeChatIndex`

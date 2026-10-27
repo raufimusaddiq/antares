@@ -218,13 +218,19 @@ func clipRunes(s string, n int) string {
 // when the transcript was fetched, so an invalidation that happened after it
 // keeps the chat stale.
 func (s *Service) indexTranscript(ctx context.Context, userID string, chat store.Chat, msgs []hermes.Message, read time.Time) {
+	began := time.Now()
 	docs := make([]store.IndexDoc, 0, len(msgs))
+	bytes := 0
 	for _, m := range msgs {
 		docs = append(docs, store.IndexDoc{Seq: m.Seq, Role: m.Role, Text: m.Text, CreatedAt: m.CreatedAt})
+		bytes += len(m.Text)
 	}
 	if _, err := store.ReplaceChatIndex(ctx, s.db, userID, chat.ID, docs, read); err != nil {
 		log.Printf("chat: search index: %v", err)
+		return
 	}
+	// Latency telemetry (#171): counts and durations only.
+	log.Printf("chat: search index write_ms=%d turns=%d text_bytes=%d", time.Since(began).Milliseconds(), len(docs), bytes)
 }
 
 // refreshIndex reads up to limit stale chats (all, or just onlyChat) from Hermes
