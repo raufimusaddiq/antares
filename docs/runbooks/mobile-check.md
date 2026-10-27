@@ -75,8 +75,10 @@ not reachable, or Escape not closing it; a pressed capability reason not showing
 Retry and Remove and blocks Send; removing it clears the block; two images become ready; Remove tells the server and keeps the other;
 Send posts the text with exactly the remaining asset id; the composer and strip empty and the reply shows as completed (not partial, failed
 or cancelled); the phone layout verdicts hold with images attached; and on the phone a **touch tap** (no hover, no focus) shows the
-capability reason without covering text. It also reports every CSP / console message: the only ones allowed are the deliberate 415 and the
-**known, pre-existing** `img-src 'self'` block of the attached-image `blob:` thumbnail (see the PR for #139); anything else fails.
+capability reason without covering text. It also reports every CSP / console message: the only one allowed is the deliberate 415;
+anything else fails. Since #142 the page's CSP is `img-src 'self' blob:`, so the attached-image `blob:` thumbnail must actually render
+(recorded on load: a `blob:` URL with a non-zero width), and two probes prove the policy did not widen further: an image from another
+origin and a `data:` image are both refused with an `img-src` violation.
 
 `DIST=<dir>` runs the same checks against another build, e.g. the parent commit's `internal/webui/dist`, which is how the note-on-text
 check was shown to fail before the fix (`Paragraph 4 of answer 49` under the note).
