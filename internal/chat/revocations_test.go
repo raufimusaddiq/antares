@@ -5,25 +5,68 @@ import (
 	"time"
 )
 
-// #150: the in-memory sign-out record names one session or every session of a user, only from the moment it is made.
-func TestRevocationRecord(t *testing.T) {
+// #150: a sign-out marks exactly the matching open streams; sign out everywhere marks every stream of the user and
+// none of anyone else's.
+func TestSignOutMarksOnlyMatchingStreams(t *testing.T) {
 	s := &Service{}
-	before := time.Now().Add(-time.Minute)
+	a1, done1 := s.registerStream("alice", "hash-a1")
+	defer done1()
+	a2, done2 := s.registerStream("alice", "hash-a2")
+	defer done2()
+	b1, done3 := s.registerStream("bob", "hash-b1")
+	defer done3()
 	s.SessionsRevoked("alice", "hash-a1")
-	if !s.revokedSince("alice", "hash-a1", before) {
-		t.Error("the signed-out session is not revoked")
-	}
-	if s.revokedSince("alice", "hash-a2", before) || s.revokedSince("bob", "hash-b1", before) {
-		t.Error("a single sign-out reached another session or user")
+	if !a1.revoked || a2.revoked || b1.revoked {
+		t.Fatalf("single sign-out: a1=%v a2=%v b1=%v", a1.revoked, a2.revoked, b1.revoked)
 	}
 	s.SessionsRevoked("alice", "")
-	if !s.revokedSince("alice", "hash-a2", before) || s.revokedSince("bob", "hash-b1", before) {
-		t.Error("sign out everywhere must reach every session of alice and none of bob's")
+	if !a2.revoked || b1.revoked {
+		t.Fatalf("sign out everywhere: a2=%v b1=%v", a2.revoked, b1.revoked)
 	}
-	if s.revokedSince("alice", "hash-a3", time.Now().Add(time.Minute)) {
-		t.Error("a stream opened after the sign-out (a new session) must not be cut by it")
+	done1()
+	if _, still := s.streams.open[a1]; still {
+		t.Error("a closed stream stays registered")
 	}
-	if s.revokedSince("carol", "", before) {
-		t.Error("no session hash must never match a token entry")
+}
+
+// Review #186: a sign-out that arrives while a batch is being written waits for that batch, so once it returns no
+// further batch can start; a stream that never lets go holds it at most revokeWait, and is still marked afterwards.
+func TestSignOutWaitsForTheBatchInFlight(t *testing.T) {
+	s := &Service{}
+	st, done := s.registerStream("alice", "hash-a1")
+	defer done()
+	st.mu.Lock() // a batch is being written
+	released := make(chan struct{})
+	go func() {
+		time.Sleep(150 * time.Millisecond)
+		st.mu.Unlock() // the batch is done
+		close(released)
+	}()
+	began := time.Now()
+	s.SessionsRevoked("alice", "")
+	<-released
+	if took := time.Since(began); took < 100*time.Millisecond || took > time.Second {
+		t.Errorf("the sign-out did not wait for the batch in flight: %v", took)
 	}
+	st.mu.Lock()
+	if !st.revoked {
+		t.Error("the stream is not marked after the sign-out returned")
+	}
+	st.mu.Unlock()
+
+	stuck, done2 := s.registerStream("alice", "hash-a2")
+	defer done2()
+	stuck.mu.Lock() // a write that never finishes
+	began = time.Now()
+	s.SessionsRevoked("alice", "")
+	if took := time.Since(began); took > revokeWait+time.Second {
+		t.Errorf("a stuck stream held the sign-out for %v", took)
+	}
+	stuck.mu.Unlock()
+	time.Sleep(50 * time.Millisecond)
+	stuck.mu.Lock()
+	if !stuck.revoked {
+		t.Error("the stuck stream was not marked once it let go")
+	}
+	stuck.mu.Unlock()
 }

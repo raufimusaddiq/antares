@@ -363,13 +363,21 @@ func (a *Auth) revoked(userID, tokenHash string) {
 }
 
 // SessionLive reports whether the request's session cookie still names a live session. A long-lived response (the
-// run event stream) calls it while it is open, so a sign-out, a sign-out everywhere or a revocation ends it.
+// run event stream) calls it while it is open, so a sign-out, a sign-out everywhere or a revocation ends it. Only a
+// session the database says is gone is "not live": a lookup that failed (a busy database, a cancelled request) proves
+// nothing, and the stream's next check asks again.
 func SessionLive(ctx context.Context, db *sql.DB, r *http.Request, now time.Time) bool {
 	c, err := r.Cookie(sessionCookie)
 	if err != nil || c.Value == "" {
 		return false
 	}
-	_, err = store.SessionUser(ctx, db, hashToken(c.Value), now)
+	// Not cancelled with the request: a client that leaves mid-query must not interrupt a database read (an interrupted
+	// read can leave its connection in a state that makes the next write on it fail).
+	_, err = store.SessionUser(context.WithoutCancel(ctx), db, hashToken(c.Value), now)
+	if err != nil && !errors.Is(err, store.ErrNoSession) {
+		log.Printf("auth: session re-check failed: %v", err)
+		return true
+	}
 	return err == nil
 }
 

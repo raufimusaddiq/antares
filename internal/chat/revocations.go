@@ -5,52 +5,71 @@ import (
 	"time"
 )
 
-// Sign-outs, held in memory so an open run stream can check before every batch of events without reading the
-// database (#150). auth calls SessionsRevoked after it has revoked in the database; the stream's heartbeat still reads
-// the database, which covers revocations made elsewhere (an admin suspension, a newer login on the same browser).
-type revocations struct {
-	mu     sync.Mutex
-	users  map[string]time.Time // every session of the user, revoked at
-	tokens map[string]time.Time // one session (its stored hash), revoked at
+// Open run streams and the sign-outs they must obey at once (#150). A stream registers itself with its user and
+// session before it re-checks that session in the database, and writes every batch of events while holding its own
+// lock. A sign-out (auth calls SessionsRevoked after revoking in the database) marks each matching stream under that
+// lock. So a sign-out that happened before registration is seen by the re-check, one after it is seen by the mark, and
+// once SessionsRevoked returns no stream can begin another batch for a signed-out session.
+//
+// The limit: a batch already being written when the sign-out arrives finishes first; SessionsRevoked waits for it, but
+// at most revokeWait per stream, so a client that stopped reading cannot hold a sign-out open. Such a stream is still
+// marked and stops before its next batch.
+type openStream struct {
+	userID, session string
+	mu              sync.Mutex
+	revoked         bool
 }
 
-// keepRevocations bounds the record: a stream older than this has met its heartbeat's database check many times.
-const keepRevocations = time.Hour
+const revokeWait = 2 * time.Second
 
-// SessionsRevoked records that tokenHash's session, or with tokenHash "" every session of userID, has ended.
+type streamSet struct {
+	mu   sync.Mutex
+	open map[*openStream]struct{}
+}
+
+func (s *Service) registerStream(userID, session string) (*openStream, func()) {
+	st := &openStream{userID: userID, session: session}
+	s.streams.mu.Lock()
+	if s.streams.open == nil {
+		s.streams.open = map[*openStream]struct{}{}
+	}
+	s.streams.open[st] = struct{}{}
+	s.streams.mu.Unlock()
+	return st, func() {
+		s.streams.mu.Lock()
+		delete(s.streams.open, st)
+		s.streams.mu.Unlock()
+	}
+}
+
+// SessionsRevoked marks every open stream of tokenHash's session, or with tokenHash "" of every session of userID,
+// and returns once each has finished the batch it was writing (or revokeWait passed).
 func (s *Service) SessionsRevoked(userID, tokenHash string) {
-	r := &s.revoked
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	now := time.Now()
-	if r.users == nil {
-		r.users, r.tokens = map[string]time.Time{}, map[string]time.Time{}
-	}
-	for k, t := range r.users {
-		if now.Sub(t) > keepRevocations {
-			delete(r.users, k)
+	s.streams.mu.Lock()
+	var hit []*openStream
+	for st := range s.streams.open {
+		if st.userID == userID && (tokenHash == "" || st.session == tokenHash) {
+			hit = append(hit, st)
 		}
 	}
-	for k, t := range r.tokens {
-		if now.Sub(t) > keepRevocations {
-			delete(r.tokens, k)
-		}
+	s.streams.mu.Unlock()
+	var wg sync.WaitGroup
+	for _, st := range hit {
+		marked := make(chan struct{})
+		go func() {
+			st.mu.Lock()
+			st.revoked = true
+			st.mu.Unlock()
+			close(marked)
+		}()
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			select {
+			case <-marked:
+			case <-time.After(revokeWait):
+			}
+		}()
 	}
-	if tokenHash == "" {
-		r.users[userID] = now
-	} else {
-		r.tokens[tokenHash] = now
-	}
-}
-
-// revokedSince reports a sign-out of this stream's session, or of all of its user's sessions, after since.
-func (s *Service) revokedSince(userID, tokenHash string, since time.Time) bool {
-	r := &s.revoked
-	r.mu.Lock()
-	defer r.mu.Unlock()
-	if t, ok := r.users[userID]; ok && !t.Before(since) {
-		return true
-	}
-	t, ok := r.tokens[tokenHash]
-	return ok && tokenHash != "" && !t.Before(since)
+	wg.Wait()
 }

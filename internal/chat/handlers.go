@@ -654,14 +654,25 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 	last := l.parseEventID(r.Header.Get("Last-Event-ID"))
 	tick := time.NewTicker(s.heartbeat)
 	defer tick.Stop()
-	session, opened := auth.SessionHash(r), time.Now() // the guard has just found this session live
+	// #150: register, then re-check the session once. A sign-out before this point is in the database; one after it
+	// marks this stream, and the mark is taken under the same lock the batch is written under.
+	if s.streamOpenHook != nil {
+		s.streamOpenHook()
+	}
+	st, unregister := s.registerStream(uid, auth.SessionHash(r))
+	defer unregister()
+	if !auth.SessionLive(r.Context(), s.db, r, s.now()) {
+		writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
+		fl.Flush()
+		return
+	}
 	for {
 		evs, lost, done, wait := l.since(last)
-		// A signed-out session gets nothing more, not one more delta nor a terminal event (#150): before every batch the
-		// stream asks the in-memory sign-out record, which costs no database read. The heartbeat below reads the database.
-		if (len(evs) > 0 || lost || done) && s.revokedSince(uid, session, opened) {
+		st.mu.Lock()
+		if st.revoked {
 			writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
 			fl.Flush()
+			st.mu.Unlock()
 			return
 		}
 		if lost {
@@ -672,6 +683,7 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 			last = e.seq
 		}
 		fl.Flush()
+		st.mu.Unlock()
 		if done {
 			return
 		}

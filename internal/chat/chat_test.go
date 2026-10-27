@@ -927,6 +927,33 @@ func TestRevokedSessionStopsAContinuousStream(t *testing.T) {
 	}
 }
 
+// Review #186: a sign-out that lands after the guard admitted the stream and before the stream registered (database
+// revoked, no stream to mark yet) is caught by the stream's own re-check: nothing of the run is sent.
+func TestSignOutBetweenGuardAndStreamStartSendsNothing(t *testing.T) {
+	a := newApp(t, appOpts{heartbeat: time.Hour})
+	u := a.user("alice")
+	run := u.send(u.newChat(), "q")
+	_, fr := a.hx.runWithInput(t, "q")
+	recv(t, fr.opens, "upstream stream")
+	a.hx.push(fr, "assistant.delta", `{"delta":"PRIVATE-DELTA"}`)
+	time.Sleep(50 * time.Millisecond)
+	a.svc.streamOpenHook = func() {
+		if _, err := store.RevokeUserSessions(a.svc.base, a.db, u.id, time.Now()); err != nil {
+			t.Error(err)
+		}
+		a.svc.SessionsRevoked(u.id, "") // what auth does next: no stream is registered yet, so nothing is marked
+	}
+	s := u.open(run, "")
+	select {
+	case <-s.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("a stream on a revoked session stayed open")
+	}
+	if strings.Contains(s.text(), "PRIVATE-DELTA") || s.has("assistant.delta") || s.has("run.completed") || !s.has("run.disconnected") {
+		t.Errorf("a revoked session received %v", s.names())
+	}
+}
+
 func TestMessagesAreProxiedFromTheOwnedSessionOnly(t *testing.T) {
 	a := newApp(t)
 	alice, bob := a.user("alice"), a.user("bobby")
