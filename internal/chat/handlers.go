@@ -19,8 +19,9 @@ import (
 )
 
 const (
-	maxBodyBytes = 64 << 10
-	maxInput     = 32 << 10
+	maxBodyBytes   = 64 << 10
+	maxInput       = 32 << 10
+	sessionRecheck = time.Second // how stale a run stream's last session check may be before it sends more events
 )
 
 var (
@@ -654,13 +655,19 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 	last := l.parseEventID(r.Header.Get("Last-Event-ID"))
 	tick := time.NewTicker(s.heartbeat)
 	defer tick.Stop()
+	checked := time.Now() // the guard admitted this request with a live session just now
 	for {
 		evs, lost, done, wait := l.since(last)
 		// A revoked session gets nothing more, not even a terminal event that arrived before the next heartbeat (#150).
-		if (len(evs) > 0 || lost) && !auth.SessionLive(r.Context(), s.db, r, s.now()) {
+		// Checked before a terminal event always, and otherwise at most once a second, so a fast stream of deltas does not
+		// turn into a database read per token.
+		if (done || ((len(evs) > 0 || lost) && time.Since(checked) >= sessionRecheck)) && !auth.SessionLive(r.Context(), s.db, r, s.now()) {
 			writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
 			fl.Flush()
 			return
+		}
+		if len(evs) > 0 || lost || done {
+			checked = time.Now()
 		}
 		if lost {
 			writeEvent(w, "", "run.resumed", []byte(`{"replace":true}`))

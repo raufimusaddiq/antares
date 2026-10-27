@@ -620,7 +620,7 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
 
 // ---- the app --------------------------------------------------------------------
 
-export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatId = null }: { email: string; onSignOut: (everywhere?: boolean) => void; canAdmin?: boolean; onAdmin?: () => void; initialChatId?: string | null }) {
+export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatId = null, signOutError = "" }: { email: string; onSignOut: (everywhere?: boolean) => void; canAdmin?: boolean; onAdmin?: () => void; initialChatId?: string | null; signOutError?: string }) {
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [listState, setListState] = useState<"loading" | "ready" | "error">("loading");
   const [current, setCurrent] = useState<string | null>(null);
@@ -1346,6 +1346,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             <button type="button" className="quiet" data-icon="logout" onClick={() => onSignOut(true)}>
               Sign out everywhere
             </button>
+            {signOutError && <p role="alert">{signOutError}</p>}
           </div>
         </div>
       </header>
