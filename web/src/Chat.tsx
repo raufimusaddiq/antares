@@ -38,6 +38,7 @@ import { Markdown } from "./Markdown";
 import { MAX_REPLY, ReplyContext } from "./openui/reply";
 import { Artifacts } from "./Artifacts";
 import { ExportChat } from "./ExportChat";
+import { VisualizeToggle } from "./VisualizeToggle";
 import { MemorySkillsPanel } from "./MemorySkills";
 import { fenceSelection, inFence, indentInFence, toggleList, wrapSelection, type Edit } from "./composerEdit";
 import { Notifications } from "./Notifications";
@@ -1480,6 +1481,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
               />
             </details>
           )}
+          {(() => {
+            const open = chats.find((c) => c.id === current);
+            return open ? <VisualizeToggle chat={open} onChanged={(c) => setChats((l) => l.map((x) => (x.id === c.id ? { ...x, visualize: c.visualize } : x)))} /> : null;
+          })()}
           <Recorder />
           <Templates own={ownTemplates} onChange={setOwnTemplates} />
           <p className="label" data-policy="drafts">

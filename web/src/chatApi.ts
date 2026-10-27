@@ -18,6 +18,8 @@ export interface ChatSummary {
   archived: boolean;
   /** A delete that did not complete: the chat still exists and the delete can be retried. */
   deleteFailed: boolean;
+  /** Visualize: the assistant is told it may answer with charts, tables and cards in this chat (#153). */
+  visualize: boolean;
 }
 
 export interface Turn {
@@ -168,6 +170,7 @@ export function parseChat(v: unknown): ChatSummary | null {
     pinned: o.pinned === true,
     archived: o.archived === true,
     deleteFailed: o.deleteFailed === true,
+    visualize: o.visualize === true,
   };
 }
 
@@ -238,7 +241,7 @@ export const listChats = (cursor?: string, archived = false) =>
 export const getChat = (chatId: string) => call("GET", `/api/chats/${encodeURIComponent(chatId)}`, parseChat);
 
 /** Exactly one change per call, as the server requires; it answers with the chat as it now is. */
-export type ChatChange = { title: string } | { pinned: boolean } | { archived: boolean };
+export type ChatChange = { title: string } | { pinned: boolean } | { archived: boolean } | { visualize: boolean };
 
 export const changeChat = (chatId: string, change: ChatChange) => call("PATCH", `/api/chats/${encodeURIComponent(chatId)}`, parseChat, change);
 

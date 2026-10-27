@@ -55,6 +55,22 @@ func SetChatPinned(ctx context.Context, db *sql.DB, userID, chatID string, pinne
 	return missOrState(ctx, db, userID, chatID)
 }
 
+// SetChatVisualize turns the user's own chat's Visualize toggle on or off (#153). Repeating it is not an error.
+func SetChatVisualize(ctx context.Context, db *sql.DB, userID, chatID string, on bool) error {
+	v := 0
+	if on {
+		v = 1
+	}
+	res, err := db.ExecContext(ctx, `UPDATE chats SET visualize = ? WHERE id = ? AND user_id = ? AND status IN `+liveChat, v, chatID, userID)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n > 0 {
+		return nil
+	}
+	return missOrState(ctx, db, userID, chatID)
+}
+
 // SetChatArchived moves the user's own chat into or out of the archive. Archiving also unpins it.
 // Repeating the request is not an error. A chat whose delete is under way or has failed is not
 // archived (ErrChatState): it has one thing to settle first.

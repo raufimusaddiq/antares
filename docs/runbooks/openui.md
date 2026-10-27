@@ -70,3 +70,15 @@ package is installed. `web/.npmrc` therefore sets `ignore-scripts=true`.
 - The §7.5 malicious-action rows (`/admin/*` from a block, cross-chat form submit) hold because no component can issue a
   request: the only action writes to a local draft. `Rich.test.tsx` pins that no `fetch` happens on click.
 - Hermes exposes no OpenUI route (PRD UI-001, `docs/hermes/PHASE0-FINDINGS.md` has none), so the registry stays client-side.
+
+## Visualize toggle (#153, LLM-008)
+
+Per chat, off by default: `PATCH /api/chats/{chatId}` with `{"visualize": true|false}` (owner only; the chat view
+carries `visualize`), stored in `chats.visualize` (migration 0021); the composer shows the checkbox. While it is on,
+each run of that chat sends the versioned instruction `[antares-openui v1]` (`internal/chat/personality.go`,
+`openUIInstruction`) as the `instructions` field of `POST /v1/runs`, before the user's own preferences (#111). Hermes
+reads it into the run's ephemeral system prompt (`gateway/platforms/api_server_runs.py` `_resolve_conversation_history`
+→ `ephemeral_system_prompt`), so nothing global or profile-wide changes. The instruction lists exactly what
+`library.tsx`/`validate.ts` accept; change them together and bump the tag. Whatever the model sends is still validated
+and rendered by the strict gate above. `TestVisualizeIsPerChatAndReachesOnlyItsRuns` checks the instruction reaches only
+that chat's runs, another user cannot set it, and turning it off stops it.

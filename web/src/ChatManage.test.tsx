@@ -32,6 +32,7 @@ const chat = (id: string, title: string, extra: Partial<ChatSummary> = {}): Chat
   pinned: false,
   archived: false,
   deleteFailed: false,
+  visualize: false,
   ...extra,
 });
 const ok = <T,>(value: T) => ({ ok: true as const, value });

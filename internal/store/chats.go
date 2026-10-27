@@ -85,14 +85,15 @@ type Chat struct {
 	ActiveRunID     string // the chat's non-terminal run, if any
 	PinnedAt        string // empty when not pinned
 	DeleteFailed    bool   // the last delete of this chat did not finish; it can be retried
+	Visualize       bool   // runs carry the OpenUI instruction (#153)
 }
 
 const chatCols = `c.id, c.user_id, c.hermes_binding_id, c.hermes_session_id, COALESCE(c.title,''), c.status, c.created_at, c.updated_at,
-	COALESCE((SELECT r.id FROM runs r WHERE r.chat_id = c.id AND r.user_id = c.user_id AND r.status IN ` + nonTerminal + ` LIMIT 1),''), COALESCE(c.pinned_at,''), c.delete_failed_at IS NOT NULL`
+	COALESCE((SELECT r.id FROM runs r WHERE r.chat_id = c.id AND r.user_id = c.user_id AND r.status IN ` + nonTerminal + ` LIMIT 1),''), COALESCE(c.pinned_at,''), c.delete_failed_at IS NOT NULL, c.visualize = 1`
 
 func scanChat(row interface{ Scan(...any) error }) (Chat, error) {
 	var c Chat
-	err := row.Scan(&c.ID, &c.UserID, &c.BindingID, &c.HermesSessionID, &c.Title, &c.Status, &c.CreatedAt, &c.UpdatedAt, &c.ActiveRunID, &c.PinnedAt, &c.DeleteFailed)
+	err := row.Scan(&c.ID, &c.UserID, &c.BindingID, &c.HermesSessionID, &c.Title, &c.Status, &c.CreatedAt, &c.UpdatedAt, &c.ActiveRunID, &c.PinnedAt, &c.DeleteFailed, &c.Visualize)
 	return c, err
 }
 
