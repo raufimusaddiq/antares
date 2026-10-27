@@ -130,6 +130,30 @@ func RevokeUserSessions(ctx context.Context, db *sql.DB, userID string, now time
 	return n, tx.Commit()
 }
 
+// AdminRevokeSessions is RevokeUserSessions done by an admin (#113): the revocation and its audit row
+// (admin.revoke_sessions, metadata only) commit together, so the action is never done without being recorded.
+// The admin must still be an active admin at that moment (requireAdmin).
+func AdminRevokeSessions(ctx context.Context, db *sql.DB, actor, target, reqID string, now time.Time) error {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if err := requireAdmin(ctx, tx, actor); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE app_sessions SET revoked_at = ? WHERE user_id = ? AND revoked_at IS NULL`, ts(now), target); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM push_subscriptions WHERE user_id = ?`, target); err != nil {
+		return err
+	}
+	if err := audit(ctx, tx, actor, "admin.revoke_sessions", target, "ok", reqID, now); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 // Audit appends to audit_log. actor may be empty when no account is known yet
 // (a login that failed before identity was established).
 func Audit(ctx context.Context, db *sql.DB, actor, action, targetKind, targetID, outcome, requestID string, now time.Time) error {

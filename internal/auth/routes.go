@@ -35,6 +35,8 @@ var ChatRoutes = []Route{
 	{"GET", "/api/chats/{chatId}/input"},
 	{"GET", "/api/me/budget"},
 	{"PUT", "/api/me/budget"},
+	{"GET", "/api/me/spending-limits"},
+	{"PUT", "/api/me/spending-limits"},
 	{"GET", "/api/search/chats"},
 	{"PUT", "/api/chats/{chatId}/model"},
 	{"GET", "/api/chats/{chatId}/settings"},

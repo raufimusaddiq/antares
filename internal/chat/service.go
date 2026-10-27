@@ -74,6 +74,9 @@ type Service struct {
 	// streamOpenHook, when set by a test, runs in a run stream after the guard admitted it and before the stream
 	// registers, to place a sign-out exactly in that window.
 	streamOpenHook func()
+	// admitHook, when set by a test, runs in a send after the chat was read and before the admission transaction, to
+	// finish the chat's run (and reach a limit) exactly in that window.
+	admitHook func()
 
 	jobs          bool
 	jobLocks      sync.Map // user id -> *sync.Mutex (jobs.go jobLock)

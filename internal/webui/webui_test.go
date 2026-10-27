@@ -98,7 +98,7 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		// #60 chat search: /api/search/chats; the per-chat form is /api/chats/{id}/search, covered above.
 		"/api/search/chats": true,
 		// #81 per-user opt-in token limit.
-		"/api/me/budget": true,
+		"/api/me/budget": true, "/api/me/spending-limits": true,
 		// #100 model picker inventory; the per-chat choice is /api/chats/{id}/model, covered above.
 		"/api/models": true,
 		// #115 the account's own model visibility; the per-chat settings are /api/chats/{id}/settings, covered above.
@@ -113,6 +113,9 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		// #105 scheduled tasks: the caller's own list/create and /api/jobs/{id}[/pause|/resume|/run], owner-scoped by
 		// the caller's own workspace.
 		"/api/jobs": true, "/api/jobs/": true,
+		// #113 diagnostics: the running build's commit, public, nothing else. The admin "sign out everywhere" is
+		// /api/admin/users/{id}/revoke-sessions, covered above.
+		"/api/version":           true,
 		"/api/me/new-chat-draft": true, "/api/me/templates": true, "/api/me/templates/": true,
 	}
 	pathRe := regexp.MustCompile(`/api/[A-Za-z0-9_/.-]*`)

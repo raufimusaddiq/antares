@@ -99,6 +99,7 @@ func (a *Auth) registerAdmin(mux *http.ServeMux) {
 	for _, act := range []string{store.ActionApprove, store.ActionReject, store.ActionSuspend, store.ActionReactivate} {
 		mux.Handle("POST /api/admin/users/{userId}/"+act, a.adminRoute(true, a.adminDecide(act)))
 	}
+	mux.Handle("POST /api/admin/users/{userId}/revoke-sessions", a.adminRoute(true, a.adminRevokeSessions))
 	mux.Handle("POST /api/admin/users/{userId}/tenant-binding", a.adminRoute(true, a.adminRequeue(store.RequeueProvision)))
 	mux.Handle("POST /api/admin/users/{userId}/tenant-verify", a.adminRoute(true, a.adminRequeue(store.RequeueVerify)))
 	mux.Handle("GET /api/admin/audit", a.adminRoute(false, a.adminAudit))
@@ -261,6 +262,38 @@ func (a *Auth) pauseJobs(ctx context.Context, actor, id string) (pending bool) {
 		log.Printf("auth: audit write failed: %v", err)
 	}
 	return pending
+}
+
+// adminRevokeSessions signs the user out everywhere (#113): every session ends, devices stop getting alerts, open run
+// streams stop at once. The account and its data are untouched. Audited as metadata only (actor, target, action).
+func (a *Auth) adminRevokeSessions(w http.ResponseWriter, r *http.Request) {
+	id, ok := targetID(w, r, a)
+	if !ok {
+		return
+	}
+	var body struct{}
+	if !decodeBody(w, r, &body) {
+		a.apiError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "This action takes no body")
+		return
+	}
+	if _, err := store.GetAdminUser(r.Context(), a.db, id); err != nil { // an unknown user is the same 404 as elsewhere
+		a.adminError(w, r, err)
+		return
+	}
+	actor, _ := UserFrom(r.Context())
+	now := a.now()
+	// Revocation and audit commit together; a failure of either changes nothing.
+	if err := store.AdminRevokeSessions(r.Context(), a.db, actor.ID, id, newRequestID(), now); err != nil {
+		a.adminError(w, r, err)
+		return
+	}
+	a.revoked(id, "")
+	u, err := store.GetAdminUser(r.Context(), a.db, id)
+	if err != nil {
+		a.adminError(w, r, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, adminView(u))
 }
 
 func (a *Auth) adminRequeue(mode string) http.HandlerFunc {
