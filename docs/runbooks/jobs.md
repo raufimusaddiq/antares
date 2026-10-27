@@ -29,7 +29,8 @@ with another user's id.
   so no global delivery channel). A request carrying any other field is a 400.
 - At most 10 tasks per account (`JOB_LIMIT`).
 - A manual "run now" counts against the hourly bound, read from Hermes' own `last_run_at` (scheduled runs count, a
-  restart of Antares does not reset it) and refused while an execution is running (429 `RATE_LIMITED`).
+  restart of Antares does not reset it) refused while an execution is running or when the next scheduled run is under an hour away (429
+  `RATE_LIMITED`).
 - At most once an hour: a single time, an interval of 60 minutes or more, or a five-field cron expression with one
   fixed minute. A task is created **paused**, its parsed schedule is checked, and it is resumed only if it passes;
   otherwise it is deleted (`SCHEDULE_TOO_FREQUENT`). Changing a schedule means deleting the task and adding it again.

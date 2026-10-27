@@ -36,6 +36,10 @@ func (f *fakeHermes) serveJobs(w http.ResponseWriter, method, profile, path stri
 	if path == "/api/jobs" {
 		switch method {
 		case "GET":
+			if f.jobsList != "" {
+				_, _ = w.Write([]byte(f.jobsList))
+				return
+			}
 			list := []map[string]any{}
 			for _, j := range mine {
 				list = append(list, j)
@@ -522,8 +526,44 @@ func TestManualRunIsLimitedToOncePerHour(t *testing.T) {
 		t.Errorf("while an execution is running: %d", c)
 	}
 	a.hx.setJob(alice.profile, job.ID, "latest_execution", map[string]any{"status": "completed"})
+	a.hx.setJob(alice.profile, job.ID, "next_run_at", time.Now().UTC().Add(20*time.Minute).Format(time.RFC3339Nano))
+	if c := run(); c != 429 {
+		t.Errorf("with the scheduled run due in 20 minutes: %d", c)
+	}
+	a.hx.setJob(alice.profile, job.ID, "next_run_at", time.Now().UTC().Add(90*time.Minute).Format(time.RFC3339Nano))
 	if c := run(); c != 200 {
-		t.Errorf("two hours later: %d", c)
+		t.Errorf("last run two hours ago, next in 90 minutes: %d", c)
+	}
+}
+
+// #194 review: a job list Hermes answers without a list (or with a malformed job) is not "no jobs": the suspension
+// stays pending.
+func TestMalformedJobListKeepsTheShutdownPending(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	createJob(t, alice, "one", "every 2h")
+	for _, body := range []string{`{}`, `{"jobs":null}`, `{"jobs":[{"id":"not-an-id"}]}`} {
+		a.hx.mu.Lock()
+		a.hx.jobsList = body
+		a.hx.mu.Unlock()
+		a.svc.retryJobShutdowns(context.Background())
+	}
+	a.hx.mu.Lock()
+	a.hx.jobsList = `{}`
+	a.hx.mu.Unlock()
+	if v := suspend(t, a, alice); v["tenantDetail"] != store.JobShutdownPending {
+		t.Fatalf("suspension with a malformed job list: detail %v", v["tenantDetail"])
+	}
+	a.svc.retryJobShutdowns(context.Background())
+	if ids, _ := store.PendingJobShutdowns(context.Background(), a.db, "", 10); len(ids) != 1 {
+		t.Fatalf("cleared on a malformed list: %v", ids)
+	}
+	a.hx.mu.Lock()
+	a.hx.jobsList = ""
+	a.hx.mu.Unlock()
+	a.svc.retryJobShutdowns(context.Background())
+	if ids, _ := store.PendingJobShutdowns(context.Background(), a.db, "", 10); len(ids) != 0 {
+		t.Errorf("still pending with a good list: %v", ids)
 	}
 }
 

@@ -78,6 +78,19 @@ func ranWithinTheHour(last *string, now time.Time) bool {
 	return now.Sub(t) < time.Hour
 }
 
+// dueWithinTheHour reads a job's next_run_at: a manual run now and the scheduled one would be under an hour apart.
+// An unreadable time counts as due.
+func dueWithinTheHour(next *string, now time.Time) bool {
+	if next == nil || *next == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339Nano, *next)
+	if err != nil {
+		return true
+	}
+	return t.Sub(now) < time.Hour
+}
+
 func jobError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, hermes.ErrJobGone):
@@ -270,8 +283,8 @@ func (s *Service) jobAction(action string) http.HandlerFunc {
 				jobError(w, err)
 				return
 			}
-			if cur.Running() || ranWithinTheHour(cur.LastRunAt, s.now()) {
-				apiError(w, http.StatusTooManyRequests, hermes.CodeRateLimited, "This task ran less than an hour ago or is running now")
+			if cur.Running() || ranWithinTheHour(cur.LastRunAt, s.now()) || dueWithinTheHour(cur.NextRunAt, s.now()) {
+				apiError(w, http.StatusTooManyRequests, hermes.CodeRateLimited, "This task ran less than an hour ago, is running now, or is due within the hour")
 				return
 			}
 		}

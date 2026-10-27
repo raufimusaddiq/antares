@@ -73,7 +73,8 @@ type fakeHermes struct {
 	holdDelete chan struct{}     // when set, DELETE /api/sessions/ waits for it to close before answering
 	sessions   map[string]string // session id -> owning profile, for DELETE /api/sessions/{id}
 
-	jobs map[string]map[string]map[string]any // profile -> job id -> record (jobs_test.go)
+	jobs     map[string]map[string]map[string]any // profile -> job id -> record (jobs_test.go)
+	jobsList string                               // when set, the raw body of GET /api/jobs
 
 	failNext map[string]int // "METHOD suffix" -> status to return once (sticky when negative)
 	hang     map[string]bool

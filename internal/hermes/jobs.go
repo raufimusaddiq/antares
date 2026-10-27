@@ -57,12 +57,21 @@ func ValidJobID(s string) bool { return jobIDRE.MatchString(s) }
 // ListJobs returns every job of the binding's profile, paused ones included.
 func (c *Client) ListJobs(ctx context.Context, b Binding) ([]Job, error) {
 	var out struct {
-		Jobs []Job `json:"jobs"`
+		Jobs *[]Job `json:"jobs"`
 	}
 	if err := c.jobCall(ctx, b, http.MethodGet, "/api/jobs?include_disabled=true", nil, &out); err != nil {
 		return nil, err
 	}
-	return out.Jobs, nil
+	// A success without a list, or with a job that has no valid id, is not an empty list: suspension relies on it.
+	if out.Jobs == nil {
+		return nil, fail(CodeHermesUnavailable)
+	}
+	for _, j := range *out.Jobs {
+		if !ValidJobID(j.ID) {
+			return nil, fail(CodeHermesUnavailable)
+		}
+	}
+	return *out.Jobs, nil
 }
 
 // CreateJob creates a job that delivers locally (no messaging channel) and starts paused: the caller checks how
