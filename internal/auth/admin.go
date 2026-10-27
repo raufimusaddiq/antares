@@ -241,14 +241,12 @@ func (a *Auth) adminRevokeSessions(w http.ResponseWriter, r *http.Request) {
 	}
 	actor, _ := UserFrom(r.Context())
 	now := a.now()
-	if _, err := store.RevokeUserSessions(r.Context(), a.db, id, now); err != nil {
+	// Revocation and audit commit together; a failure of either changes nothing.
+	if err := store.AdminRevokeSessions(r.Context(), a.db, actor.ID, id, newRequestID(), now); err != nil {
 		a.adminError(w, r, err)
 		return
 	}
 	a.revoked(id, "")
-	if err := store.Audit(r.Context(), a.db, actor.ID, "admin.revoke_sessions", "user", id, "ok", newRequestID(), now); err != nil {
-		log.Printf("auth: audit write failed: %v", err)
-	}
 	u, err := store.GetAdminUser(r.Context(), a.db, id)
 	if err != nil {
 		a.adminError(w, r, err)

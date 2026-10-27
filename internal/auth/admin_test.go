@@ -685,3 +685,30 @@ func TestAuditPagesByCursor(t *testing.T) {
 		t.Fatalf("paged through only %d entries", len(seen))
 	}
 }
+
+// #193 review: the revocation and its audit row commit together. When the audit insert fails, nothing is revoked.
+func TestAdminRevokeSessionsRollsBackWhenTheAuditFails(t *testing.T) {
+	h := newHarness(t)
+	admin, _, _ := h.adminWithKicks()
+	target := h.userIn("act", "APPROVED", "READY", "USER", true)
+	id := h.userID("act")
+	if _, err := h.db.Exec(`CREATE TRIGGER fail_revoke_audit BEFORE INSERT ON audit_log
+		WHEN NEW.action = 'admin.revoke_sessions' BEGIN SELECT RAISE(ABORT, 'audit unavailable'); END`); err != nil {
+		t.Fatal(err)
+	}
+	if w := admin.act(id, "revoke-sessions", ``); w.Code < 500 {
+		t.Fatalf("revoke with the audit failing: %d %s", w.Code, w.Body.String())
+	}
+	if w := target.get("/api/chats"); w.Code != http.StatusNotImplemented {
+		t.Fatalf("the session was revoked although the audit failed: %d", w.Code)
+	}
+	if _, err := h.db.Exec(`DROP TRIGGER fail_revoke_audit`); err != nil {
+		t.Fatal(err)
+	}
+	if w := admin.act(id, "revoke-sessions", ``); w.Code != 200 {
+		t.Fatalf("revoke: %d", w.Code)
+	}
+	if w := target.get("/api/chats"); w.Code != 401 {
+		t.Fatalf("after a good revoke: %d", w.Code)
+	}
+}

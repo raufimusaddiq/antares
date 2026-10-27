@@ -728,7 +728,9 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 @media (min-width: 40.01rem) {
   :root[data-sidebar="narrow"] .chat-app { grid-template-columns: 13rem minmax(0, 1fr); }
   :root[data-sidebar="wide"] .chat-app { grid-template-columns: 22rem minmax(0, 1fr); }
-  :root[data-focus] .chat-app > .side { display: none; }
+  /* Focus: the conversation takes the whole width; brand above, account (and this menu) below, still reachable. */
+  :root[data-focus] .chat-app { grid-template-columns: minmax(0, 1fr); grid-template-areas: "brand" "pane" "account"; }
+  :root[data-focus] .chat-app::before, :root[data-focus] .chat-app > .side { display: none; }
 }
 .settings { margin: 0.25rem 0; }
 .settings summary { cursor: pointer; }
