@@ -42,6 +42,7 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"GET /api/me/new-chat-draft":                                   newGet,
 		"PUT /api/me/new-chat-draft":                                   newPut,
 		"DELETE /api/me/new-chat-draft":                                newDel,
+		"GET /api/me/usage":                                            http.HandlerFunc(s.getUsageRange),
 		"GET /api/me/templates":                                        http.HandlerFunc(s.listTemplates),
 		"POST /api/me/templates":                                       http.HandlerFunc(s.createTemplate),
 		"PUT /api/me/templates/{templateId}":                           http.HandlerFunc(s.putTemplate),
