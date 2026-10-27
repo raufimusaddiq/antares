@@ -1,7 +1,6 @@
 package chat
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/hex"
 	"encoding/json"
@@ -411,23 +410,20 @@ func (s *Service) admit(w http.ResponseWriter, r *http.Request, uid, chatID, ide
 			return store.Run{}, false
 		}
 	}
-	// Budget: a free chat at or over its limit takes no new message (a reply
-	// already running is not interrupted). A busy chat answers RUN_CONFLICT as
-	// before, and AdmitRunWithin hands a replayed key its original run.
-	var budget int64
-	if chat.ActiveRunID == "" {
-		if budget, err = store.TokenBudget(r.Context(), s.db, uid); err != nil {
-			internalError(w, "token budget", err)
-			return store.Run{}, false
-		}
+	// The token budget and the daily hard spending limit (#152): a user at or over either takes no new message (a
+	// reply already running is not interrupted). Both are decided in the admission transaction, after the insert, so
+	// a busy chat still answers RUN_CONFLICT, and whatever the chat looked like above (a run that was active then may
+	// have finished since) cannot skip them. A replay of an existing key is answered before either; a soft limit never
+	// blocks.
+	budget, err := store.TokenBudget(r.Context(), s.db, uid)
+	if err != nil {
+		internalError(w, "token budget", err)
+		return store.Run{}, false
 	}
-	// The daily hard spending limit (#152): a free chat whose user is at or over it takes no new message, decided in the
-	// same transaction as the insert. A soft limit never blocks; a replay of an existing key is answered before the gate.
-	var gate func(context.Context, store.Querier) error
-	if chat.ActiveRunID == "" {
-		gate = s.hardLimitGate(uid)
+	if s.admitHook != nil {
+		s.admitHook()
 	}
-	run, created, err := store.AdmitRunGated(r.Context(), s.db, uid, chatID, idem, s.now(), budget, gate)
+	run, created, err := store.AdmitRunGated(r.Context(), s.db, uid, chatID, idem, s.now(), budget, s.hardLimitGate(uid))
 	switch {
 	case errors.Is(err, store.ErrBudget):
 		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "This conversation has reached the token limit you set; raise or remove it to continue")

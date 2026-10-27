@@ -248,10 +248,11 @@ func AdmitRunWithin(ctx context.Context, db *sql.DB, userID, chatID, idemKey str
 	return AdmitRunGated(ctx, db, userID, chatID, idemKey, now, maxTokens, nil)
 }
 
-// AdmitRunGated is AdmitRunWithin with an extra admission gate (the daily hard spending limit, #152). The budget
-// check, gate and insert share one immediate transaction, so they hold the write lock together: usage recorded
+// AdmitRunGated is AdmitRunWithin with an extra admission gate (the daily hard spending limit, #152). The insert,
+// budget check and gate share one immediate transaction, so they hold the write lock together: usage recorded
 // by a reply finishing meanwhile is either seen by the gate or written after the run exists, never in between.
-// A non-nil error from gate refuses the run and is returned as is. A replay is still decided first and never gated.
+// A busy chat is ErrRunActive before any limit is read; a non-nil error from gate refuses the run and is returned
+// as is. A replay is still decided first and never gated.
 func AdmitRunGated(ctx context.Context, db *sql.DB, userID, chatID, idemKey string, now time.Time, maxTokens int64,
 	gate func(ctx context.Context, q Querier) error) (run Run, created bool, err error) {
 	if _, err := GetChat(ctx, db, userID, chatID); err != nil {
@@ -288,6 +289,22 @@ func admitTx(ctx context.Context, db *sql.DB, userID, chatID, idemKey string, no
 		return "", err
 	}
 	defer tx.Rollback()
+	id := NewID()
+	t := ts(now)
+	// The insert goes first, so a busy chat answers ErrRunActive whatever the limits say. The chat must still be
+	// usable at this moment: a delete that started meanwhile has already moved it to PENDING_DELETE, and no run may
+	// join a chat on its way out.
+	res, err := tx.ExecContext(ctx, `INSERT INTO runs (id, user_id, chat_id, idempotency_key, status, created_at, updated_at)
+		SELECT ?, ?, ?, ?, 'PENDING', ?, ? WHERE EXISTS (SELECT 1 FROM chats WHERE id = ? AND user_id = ? AND status IN `+liveChat+`)`,
+		id, userID, chatID, idemKey, t, t, chatID, userID)
+	if err != nil {
+		return "", err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return "", ErrNoChat
+	}
+	// Then the limits, still under the write lock: a refusal rolls the insert back. The new run reported nothing,
+	// so it adds nothing to what they count.
 	if maxTokens > 0 {
 		var used int64
 		if err := tx.QueryRowContext(ctx, `SELECT COALESCE(SUM(input_tokens + output_tokens), 0) FROM runs
@@ -307,19 +324,6 @@ func admitTx(ctx context.Context, db *sql.DB, userID, chatID, idemKey string, no
 		if err := gate(ctx, tx); err != nil {
 			return "", err
 		}
-	}
-	id := NewID()
-	t := ts(now)
-	// The chat must still be usable at the moment of the insert: a delete that started after the
-	// check above has already moved it to PENDING_DELETE, and no run may join a chat on its way out.
-	res, err := tx.ExecContext(ctx, `INSERT INTO runs (id, user_id, chat_id, idempotency_key, status, created_at, updated_at)
-		SELECT ?, ?, ?, ?, 'PENDING', ?, ? WHERE EXISTS (SELECT 1 FROM chats WHERE id = ? AND user_id = ? AND status IN `+liveChat+`)`,
-		id, userID, chatID, idemKey, t, t, chatID, userID)
-	if err != nil {
-		return "", err
-	}
-	if n, _ := res.RowsAffected(); n == 0 {
-		return "", ErrNoChat
 	}
 	// A message into the archive brings the chat back: archived means out of the way, not closed.
 	if _, err := tx.ExecContext(ctx, `UPDATE chats SET updated_at = ?, status = CASE WHEN status = 'ARCHIVED' THEN 'ACTIVE' ELSE status END

@@ -213,3 +213,32 @@ func TestDeletingAChatDoesNotResetSpending(t *testing.T) {
 		t.Fatalf("a deleted chat reset the daily limit: send = %d", got)
 	}
 }
+
+// #152 review: a send that read the chat while its run was active, and is admitted after that run finished and took the
+// day past the hard limit, is still refused: the gate is decided in the admission transaction, never skipped.
+func TestHardLimitHoldsWhenTheChatsRunFinishesDuringTheSend(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	putSpending(t, alice, map[string]any{"dailySoft": nil, "monthlySoft": nil, "dailyHard": 5500})
+	w := alice.do("POST", "/api/chats/"+chat+"/messages", map[string]string{"Idempotency-Key": nextIdem()}, map[string]string{"input": "first"})
+	if w.Code != 202 {
+		t.Fatalf("first send: %d", w.Code)
+	}
+	first := decodeBody[struct{ RunID string }](t, w).RunID
+	_, fr := a.hx.runWithInput(t, "first")
+	s := alice.open(first, "")
+	recv(t, fr.opens, "stream")
+	a.svc.admitHook = func() {
+		a.svc.admitHook = nil
+		a.hx.push(fr, "run.completed", `{"output":"ok"}`)
+		s.waitFor(t, "run.completed")
+		eventually(t, func() bool { return alice.runStatus(first) == store.RunCompleted }, "the first run to finish")
+		if err := store.RecordRunUsage(context.Background(), a.db, alice.id, first, store.RunUsage{Output: 1_000_000, Model: "deepseek-v4-1-flash"}); err != nil {
+			t.Error(err)
+		}
+	}
+	if got := send(alice, chat, nextIdem()); got != 403 {
+		t.Fatalf("send admitted past the hard limit: %d", got)
+	}
+}

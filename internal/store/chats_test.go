@@ -332,7 +332,9 @@ func TestAdmissionGateIsAtomicWithTheInsert(t *testing.T) {
 		if err := gate(ctx, q); err != nil {
 			return err
 		}
-		go func() { recorded <- RecordRunUsage(context.Background(), db, u.a, first.ID, RunUsage{Output: 10, Model: "m"}) }()
+		go func() {
+			recorded <- RecordRunUsage(context.Background(), db, u.a, first.ID, RunUsage{Output: 10, Model: "m"})
+		}()
 		select {
 		case err := <-recorded:
 			t.Errorf("usage was written inside the admission (err %v)", err)
@@ -352,6 +354,10 @@ func TestAdmissionGateIsAtomicWithTheInsert(t *testing.T) {
 	}
 	if _, _, err := AdmitRunGated(ctx, db, u.a, third.ID, "idem-gate-3", t0, 0, gate); !errors.Is(err, errSpent) {
 		t.Fatalf("admission after the usage landed = %v, want the gate's refusal", err)
+	}
+	// A busy chat is a conflict before any limit is read: the gate's refusal does not replace it.
+	if _, _, err := AdmitRunGated(ctx, db, u.a, second.ID, "idem-gate-4", t0, 0, gate); !errors.Is(err, ErrRunActive) {
+		t.Fatalf("busy chat at the limit = %v, want ErrRunActive", err)
 	}
 	// A replay of an admitted key is answered before the gate.
 	if r, created, err := AdmitRunGated(ctx, db, u.a, second.ID, "idem-gate-2", t0, 0, gate); err != nil || created || r.ChatID != second.ID {
