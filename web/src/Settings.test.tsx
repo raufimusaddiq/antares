@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { applyAppearance, DEFAULT_APPEARANCE, loadAppearance, saveAppearance } from "./appearance";
+import { APPEARANCE_KEY, applyAppearance, DEFAULT_APPEARANCE, loadAppearance, saveAppearance } from "./appearance";
 import { AppearancePanel, DiagnosticsPanel } from "./Settings";
 
 const root = document.documentElement;
@@ -23,10 +23,11 @@ afterEach(() => {
 // #113: appearance is per device, survives a reload, and refuses values it does not know.
 describe("appearance", () => {
   it("defaults when nothing or garbage is stored, and keeps only known values", () => {
+    expect(APPEARANCE_KEY).toBe("antares:appearance:v1"); // the documented key (docs/runbooks/identity.md)
     expect(loadAppearance()).toEqual(DEFAULT_APPEARANCE);
-    localStorage.setItem("antares:appearance:v1", "{not json");
+    localStorage.setItem(APPEARANCE_KEY, "{not json");
     expect(loadAppearance()).toEqual(DEFAULT_APPEARANCE);
-    localStorage.setItem("antares:appearance:v1", JSON.stringify({ theme: "neon", text: "huge", focus: "yes", sidebar: "wide" }));
+    localStorage.setItem(APPEARANCE_KEY, JSON.stringify({ theme: "neon", text: "huge", focus: "yes", sidebar: "wide" }));
     expect(loadAppearance()).toEqual({ ...DEFAULT_APPEARANCE, sidebar: "wide" });
   });
 

@@ -15,13 +15,13 @@ export interface Appearance {
 }
 
 export const DEFAULT_APPEARANCE: Appearance = { theme: "system", text: "normal", focus: false, sidebar: "normal" };
-const KEY = "antares:appearance:v1";
+export const APPEARANCE_KEY = "antares:appearance:v1";
 
 const pick = <T extends string>(v: unknown, allowed: readonly T[], fallback: T): T => (allowed.includes(v as T) ? (v as T) : fallback);
 
 export function loadAppearance(): Appearance {
   try {
-    const raw = JSON.parse(localStorage.getItem(KEY) ?? "{}") as Record<string, unknown>;
+    const raw = JSON.parse(localStorage.getItem(APPEARANCE_KEY) ?? "{}") as Record<string, unknown>;
     return {
       theme: pick(raw.theme, ["system", "light", "dark"], DEFAULT_APPEARANCE.theme),
       text: pick(raw.text, ["normal", "large", "larger"], DEFAULT_APPEARANCE.text),
@@ -35,7 +35,7 @@ export function loadAppearance(): Appearance {
 
 export function saveAppearance(a: Appearance): void {
   try {
-    localStorage.setItem(KEY, JSON.stringify(a));
+    localStorage.setItem(APPEARANCE_KEY, JSON.stringify(a));
   } catch {
     // Storage unavailable: the choice holds for this page only.
   }
