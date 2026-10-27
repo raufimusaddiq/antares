@@ -8,13 +8,15 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
-// #169: what the capture writes is shape only. Ids, text, keys and URLs never survive; event and status names do.
+// #169: what the capture writes is shape only, by allowlist. Ids, text, keys and URLs never survive; known event,
+// status, role and object names do; an unknown key is dropped and counted, and an unlisted value is redacted.
 func TestSanitizeKeepsShapeAndDropsContent(t *testing.T) {
 	raw := `{"event":"tool.completed","run_id":"run_SECRET1","tool":"web_search","duration":2.5,"error":true,"preview":"sk-SECRET2 https://x.example/a",
-		"usage":{"input_tokens":120,"status":"completed"},"items":[{"role":"user","content":"SECRET3"},{"role":"assistant"},{"role":"tool"},{"role":"user"}],"none":null,
-		"status":"Some Free Text"}`
+		"usage":{"input_tokens":120,"status":"completed"},"messages":[{"role":"user","content":"SECRET3"},{"role":"assistant"},{"role":"tool"},{"role":"user"}],
+		"output":null,"status":"Some Free Text"}`
 	got := string(Sanitize([]byte(raw)))
 	for _, secret := range []string{"SECRET1", "SECRET2", "SECRET3", "x.example", "web_search", "Some Free Text"} {
 		if strings.Contains(got, secret) {
@@ -25,13 +27,13 @@ func TestSanitizeKeepsShapeAndDropsContent(t *testing.T) {
 	if err := json.Unmarshal([]byte(got), &v); err != nil {
 		t.Fatal(err)
 	}
-	if v["event"] != "tool.completed" || v["duration"] != float64(0) || v["error"] != true || v["preview"] != "<string>" || v["none"] != nil || v["status"] != "<string>" {
+	if v["event"] != "tool.completed" || v["duration"] != float64(0) || v["error"] != true || v["preview"] != "<string>" || v["output"] != nil || v["status"] != "<string>" {
 		t.Errorf("shape: %s", got)
 	}
 	if u := v["usage"].(map[string]any); u["status"] != "completed" || u["input_tokens"] != float64(0) {
 		t.Errorf("nested: %v", u)
 	}
-	if items := v["items"].([]any); len(items) != 3 || items[0].(map[string]any)["role"] != "user" {
+	if items := v["messages"].([]any); len(items) != 3 || items[0].(map[string]any)["role"] != "user" {
 		t.Errorf("array: %v", items)
 	}
 	if string(Sanitize([]byte("not json"))) != `"<not json>"` {
@@ -39,23 +41,56 @@ func TestSanitizeKeepsShapeAndDropsContent(t *testing.T) {
 	}
 }
 
-// Only an allowed profile is recorded; a nil or unconfigured capture records nothing and never panics.
+// Review #185: data can hide in a key or in an enum-shaped value. Neither survives.
+func TestSanitizeRedactsAdversarialKeysAndValues(t *testing.T) {
+	for _, raw := range []string{
+		`{"status":"secret_token","data":{"secret_token":"x"}}`,
+		`{"event":"ghp_abcdef0123456789","type":"sk_live_key","role":"admin_password_hunter2"}`,
+		`{"tool":{"AKIAIOSFODNN7EXAMPLE":{"nested_secret_key":1}},"usage":{"user_email_jo@example.com":5}}`,
+		`{"choices":["sk_live_key", {"secret_token": true}]}`,
+	} {
+		got := string(Sanitize([]byte(raw)))
+		for _, s := range []string{"secret_token", "ghp_", "sk_live", "admin_password", "AKIA", "nested_secret", "example.com", "hunter2"} {
+			if strings.Contains(got, s) {
+				t.Errorf("%s -> %s keeps %q", raw, got, s)
+			}
+		}
+	}
+	got := string(Sanitize([]byte(`{"status":"secret_token","data":{"secret_token":"x","delta":"y"}}`)))
+	if got != `{"data":{"\u003credacted keys\u003e":1,"delta":"\u003cstring\u003e"},"status":"\u003cstring\u003e"}` {
+		t.Errorf("unexpected shape %s", got)
+	}
+}
+
+// Only an allowed profile is recorded, into this process's own capture directory; a nil or unconfigured capture
+// records nothing and never panics.
 func TestCaptureRecordsOnlyAllowedProfiles(t *testing.T) {
 	dir := t.TempDir()
 	c := &Capture{Dir: dir, Allow: func(_ context.Context, p string) bool { return p == "u_synthetic" }}
 	ev := Event{Name: "message.delta", Data: []byte(`{"delta":"REAL-USER-TEXT"}`)}
 	c.frame(context.Background(), Binding{Profile: "u_realuser"}, ev)
-	if _, err := os.Stat(filepath.Join(dir, "run-events.jsonl")); !os.IsNotExist(err) {
-		t.Fatalf("a real user's frame was recorded: %v", err)
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("a real user's frame was recorded: %v", entries)
 	}
 	c.frame(context.Background(), Binding{Profile: "u_synthetic"}, ev)
 	c.body(context.Background(), Binding{Profile: "u_synthetic"}, "run-create", []byte(`{"run_id":"run_X","status":"queued"}`))
-	got, err := os.ReadFile(filepath.Join(dir, "run-events.jsonl"))
+	runs, _ := os.ReadDir(dir)
+	if len(runs) != 1 || !runs[0].IsDir() {
+		t.Fatalf("want one capture directory, got %v", runs)
+	}
+	got, err := os.ReadFile(filepath.Join(dir, runs[0].Name(), "run-events.jsonl"))
 	if err != nil || strings.Contains(string(got), "REAL-USER-TEXT") || !strings.Contains(string(got), `"event":"message.delta"`) {
 		t.Errorf("frame: %s %v", got, err)
 	}
-	if fi, err := os.Stat(filepath.Join(dir, "run-create.json")); err != nil || fi.Mode().Perm() != 0o600 {
+	if fi, err := os.Stat(filepath.Join(dir, runs[0].Name(), "run-create.json")); err != nil || fi.Mode().Perm() != 0o600 {
 		t.Errorf("body file: %v %v", fi, err)
+	}
+	// A new process (a new Capture) never appends to an earlier capture.
+	time.Sleep(1100 * time.Millisecond)
+	next := &Capture{Dir: dir, Allow: c.Allow}
+	next.frame(context.Background(), Binding{Profile: "u_synthetic"}, ev)
+	if runs, _ := os.ReadDir(dir); len(runs) != 2 {
+		t.Errorf("a second capture reused the first directory: %v", runs)
 	}
 	var off *Capture
 	off.frame(context.Background(), Binding{Profile: "u_synthetic"}, ev) // nil: off

@@ -6,25 +6,52 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
-	"regexp"
 	"sync"
+	"time"
 )
 
 // Capture records Hermes wire data as sanitized test fixtures (issue #169). It is off unless the operator sets
 // ANTARES_WIRE_CAPTURE_DIR, and even then it records only calls whose profile Allow accepts: in production that is a
 // profile owned by a synthetic smoke account, so the capture rides the normal smoke run and never sees a real user.
 //
-// What is written is shape, not content: every object key is kept, every string value becomes "<string>" except the
-// enum-like members that name an event, a type, a status or a role, which keep a short lowercase value. Numbers become
-// 0, booleans and nulls stay, arrays keep at most three sanitized elements. Ids, text, keys and URLs never survive.
+// What is written is shape, not content, by allowlist: an object keeps only keys Antares knows from the Hermes contract
+// (knownKeys); any other keys are dropped and counted as "<redacted keys>": N, because a key can itself be data (tool
+// output keyed by a secret). A string becomes "<string>" unless it sits under an enum key and is one of the values listed
+// for it (knownValues). Numbers become 0, booleans and nulls stay, arrays keep at most three sanitized elements.
+// Each process start writes into its own timestamped subdirectory, so an old or interrupted capture is never mixed in.
 type Capture struct {
 	Dir   string
 	Allow func(ctx context.Context, profile string) bool
 	mu    sync.Mutex
+	run   string // the subdirectory of this process's capture, made on first write
 }
 
-var enumKeys = map[string]bool{"event": true, "type": true, "object": true, "status": true, "role": true, "method": true, "kind": true}
-var enumValue = regexp.MustCompile(`^[a-z][a-z0-9_.]{0,63}$`)
+// knownKeys are the members Antares reads or documents in Hermes' run stream, run, session and message payloads.
+var knownKeys = setOf("event", "type", "object", "status", "role", "run_id", "session_id", "id", "data", "messages",
+	"delta", "text", "content", "output", "tool", "tool_call_id", "duration", "error", "preview", "already_streamed",
+	"usage", "runtime", "input_tokens", "output_tokens", "total_tokens", "cache_read_tokens", "cache_write_tokens",
+	"provider", "model", "request_id", "prompt_id", "execution_generation", "choices", "multi_select", "command",
+	"description", "question", "accepted", "message", "created_at", "timestamp", "last_event", "pending_steer")
+
+// knownValues are the enum values that may be kept verbatim, per key.
+var knownValues = map[string]map[string]bool{
+	"event": setOf("message.delta", "message.interim", "tool.started", "tool.completed", "reasoning.available",
+		"run.queued", "run.started", "run.completed", "run.failed", "run.cancelled", "run.interrupted", "run.steered",
+		"run.stopping", "subagent.start", "subagent.complete", "approval.request", "approval.required",
+		"approval.requested", "approval.settled", "approval.responded", "clarify.request", "clarify.settled"),
+	"status": setOf("queued", "pending", "started", "running", "in_progress", "stopping", "waiting", "completed",
+		"failed", "cancelled", "interrupted", "succeeded"),
+	"role":   setOf("user", "assistant", "tool", "system"),
+	"object": setOf("hermes.run", "hermes.run.steer", "list"),
+}
+
+func setOf(v ...string) map[string]bool {
+	m := make(map[string]bool, len(v))
+	for _, s := range v {
+		m[s] = true
+	}
+	return m
+}
 
 // Sanitize returns the shape of a JSON document as described on Capture. Anything that is not JSON becomes a marker.
 func Sanitize(raw []byte) json.RawMessage {
@@ -39,9 +66,17 @@ func Sanitize(raw []byte) json.RawMessage {
 func shape(key string, v any) any {
 	switch x := v.(type) {
 	case map[string]any:
-		m := make(map[string]any, len(x))
+		m := map[string]any{}
+		dropped := 0
 		for k, e := range x {
-			m[k] = shape(k, e)
+			if knownKeys[k] {
+				m[k] = shape(k, e)
+			} else {
+				dropped++
+			}
+		}
+		if dropped > 0 {
+			m["<redacted keys>"] = dropped
 		}
 		return m
 	case []any:
@@ -52,7 +87,7 @@ func shape(key string, v any) any {
 		}
 		return a
 	case string:
-		if enumKeys[key] && enumValue.MatchString(x) {
+		if knownValues[cmp.Or(map[string]string{"type": "event"}[key], key)][x] {
 			return x
 		}
 		return "<string>"
@@ -96,14 +131,17 @@ func (c *Capture) body(ctx context.Context, b Binding, name string, raw []byte) 
 func (c *Capture) write(name string, data []byte, appendTo bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if err := os.MkdirAll(c.Dir, 0o700); err != nil {
+	if c.run == "" {
+		c.run = filepath.Join(c.Dir, time.Now().UTC().Format("20060102T150405Z"))
+	}
+	if err := os.MkdirAll(c.run, 0o700); err != nil {
 		return
 	}
 	flag := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
 	if appendTo {
 		flag = os.O_CREATE | os.O_WRONLY | os.O_APPEND
 	}
-	f, err := os.OpenFile(filepath.Join(c.Dir, name), flag, 0o600)
+	f, err := os.OpenFile(filepath.Join(c.run, name), flag, 0o600)
 	if err != nil {
 		return // a capture is best effort: it never fails a user's request
 	}

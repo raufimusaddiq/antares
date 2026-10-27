@@ -17,9 +17,14 @@ calls whose profile belongs to a synthetic smoke account (`google_issuer = https
 | `run-create.json` | the answer of `POST /v1/runs` |
 | `session-messages.json` | the answer of `GET /api/sessions/{id}/messages` |
 
-Everything is **shape only** (`hermes.Sanitize`): keys are kept; every string becomes `"<string>"` except short
-lowercase values of `event`, `type`, `object`, `status`, `role`, `method`, `kind`; numbers become `0`; booleans and nulls
-stay; arrays keep three elements. Ids, text, previews, keys and URLs never reach a file. Files are `0600`.
+Everything is **shape only, by allowlist** (`hermes.Sanitize`): an object keeps only the keys Antares knows from the
+Hermes contract (`knownKeys`); any other key is dropped and counted as `"<redacted keys>": N`, because a key can itself be
+data. A string becomes `"<string>"` unless it is a listed event, status, role or object name (`knownValues`); numbers
+become `0`; booleans and nulls stay; arrays keep three elements. Ids, text, previews, secrets and URLs never reach a file,
+whether as a value or as a key (`TestSanitizeRedactsAdversarialKeysAndValues`). Files are `0600`.
+
+Each Antares process writes into its own subdirectory, `<dir>/<UTC start time>/`, so an older or interrupted capture is
+never mixed into a new one and cannot satisfy the contract check on its behalf.
 
 ## Capture procedure (owner, on the Antares host)
 
@@ -27,7 +32,8 @@ stay; arrays keep three elements. Ids, text, previews, keys and URLs never reach
    except `/data`).
 2. Run the synthetic smoke as usual, with a prompt that makes the assistant use a tool so the tool events appear, for
    example `--prompt "Use web search to find today's date in Jakarta, then answer in one line."`
-3. Copy the files out: `docker cp antares:/data/wire-capture/. docs/hermes/fixtures/wire/` and write the Hermes image id
+3. Copy the **newest** subdirectory's files out (`docker exec antares ls /data/wire-capture` lists them by start time):
+   `docker cp antares:/data/wire-capture/<newest>/. docs/hermes/fixtures/wire/` and write the Hermes image id
    (`docker inspect -f '{{.Image}}' hermes`) and the capture date into `docs/hermes/fixtures/wire/VERSION`.
 4. Remove the variable, redeploy, and delete `/data/wire-capture` in the container.
 5. Read the files before committing (they are shape only, so a review is quick) and open a PR.
