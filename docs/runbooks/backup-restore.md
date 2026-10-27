@@ -139,11 +139,17 @@ from a **staging copy** owned by 65532, and remove it afterwards (it is a full c
    ```
    vol=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' antares)
    O=$(mktemp -d /var/backups/antares/restore-old.XXXXXX) && chown 65532:65532 "$O"
-   docker run --rm --network none -v "$vol":/data -v "$S":/b:ro -v "$O":/old -e ANTARES_DB_PATH=/data/antares.sqlite \
-     --user 65532:65532 ghcr.io/raufimusaddiq/antares:<tag> restore -keep-old /old /b/restore.sqlite
-   rm -f "$S/restore.sqlite" && rmdir "$S"                            # the staging copy goes
+   if docker run --rm --network none -v "$vol":/data -v "$S":/b:ro -v "$O":/old -e ANTARES_DB_PATH=/data/antares.sqlite \
+        --user 65532:65532 ghcr.io/raufimusaddiq/antares:<tag> restore -keep-old /old /b/restore.sqlite; then
+     rm -f "$S/restore.sqlite" && rmdir "$S"                          # restored: the staging copy goes
+   else
+     echo "RESTORE FAILED: nothing was swapped; the old database is still live. Candidate kept in $S. Read the error above; do not start Antares as if restored."
+   fi
    ```
-   `$O` keeps the replaced database until the restored one is confirmed; delete it then. This exact path (stage → check →
+   **Only after `restored …` printed** go on to step 4. A refused or failed restore changes nothing (restore checks
+   everything before it swaps), so the old database and its sessions are still in place: do not tell users they were
+   signed out, keep the candidate in `$S`, and fix the cause first. `$O` keeps the replaced database until the restored
+   one is confirmed; delete it then. This exact path (stage → check →
    restore → check → remove the stage) was run on 2026-10-27 against a scheduled backup into a scratch directory
    (`restored …`, `ok`, staging removed).
 4. Restore signs every user out (it clears `app_sessions`). Start Antares: `docker compose up -d antares`; wait for `/readyz` 200 (it applies any newer
