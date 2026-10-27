@@ -151,3 +151,62 @@ func SetTokenBudget(ctx context.Context, db *sql.DB, userID string, limit int64,
 		userID, v, ts(now))
 	return err
 }
+
+// SpendingLimits are a user's optional money limits in the price list's currency (#152). Zero means not set.
+type SpendingLimits struct {
+	DailySoft, MonthlySoft, DailyHard float64
+}
+
+// GetSpendingLimits reads the caller's limits; a user who set none gets the zero value.
+func GetSpendingLimits(ctx context.Context, db Querier, userID string) (SpendingLimits, error) {
+	var a, b, c sql.NullFloat64
+	err := db.QueryRowContext(ctx, `SELECT daily_soft_idr, monthly_soft_idr, daily_hard_idr FROM user_preferences WHERE user_id = ?`, userID).Scan(&a, &b, &c)
+	if err == sql.ErrNoRows {
+		return SpendingLimits{}, nil
+	}
+	return SpendingLimits{DailySoft: a.Float64, MonthlySoft: b.Float64, DailyHard: c.Float64}, err
+}
+
+// SetSpendingLimits replaces the caller's three limits at once (zero clears one). Repeating it is harmless.
+func SetSpendingLimits(ctx context.Context, db *sql.DB, userID string, l SpendingLimits, now time.Time) error {
+	v := func(f float64) any {
+		if f > 0 {
+			return f
+		}
+		return nil
+	}
+	_, err := db.ExecContext(ctx, `INSERT INTO user_preferences (user_id, daily_soft_idr, monthly_soft_idr, daily_hard_idr, updated_at) VALUES (?,?,?,?,?)
+		ON CONFLICT(user_id) DO UPDATE SET daily_soft_idr = excluded.daily_soft_idr, monthly_soft_idr = excluded.monthly_soft_idr,
+		daily_hard_idr = excluded.daily_hard_idr, updated_at = excluded.updated_at`,
+		userID, v(l.DailySoft), v(l.MonthlySoft), v(l.DailyHard), ts(now))
+	return err
+}
+
+// UserModelUsage sums the user's finished replies that reported usage and started at or after since, per model, across
+// all of the user's chats (#152 spending windows, #151 usage dashboard), deleted chats included (deleted_run_usage,
+// kept per UTC day: for a deleted chat the window starts at since's day).
+func UserModelUsage(ctx context.Context, db Querier, userID string, since time.Time) ([]ModelUsage, error) {
+	// Live runs, plus what deleted chats' runs cost (kept per UTC day, so the window is compared by day).
+	rows, err := db.QueryContext(ctx, `SELECT model, SUM(n), SUM(i), SUM(o), SUM(cr), SUM(cw) FROM (
+		SELECT COALESCE(usage_model,'') AS model, COUNT(*) AS n, SUM(input_tokens) AS i, SUM(output_tokens) AS o,
+			SUM(COALESCE(cache_read_tokens,0)) AS cr, SUM(COALESCE(cache_write_tokens,0)) AS cw FROM runs
+		WHERE user_id = ? AND input_tokens IS NOT NULL AND created_at >= ?
+		AND status IN ('COMPLETED','FAILED','CANCELLED','TIMED_OUT') GROUP BY usage_model
+		UNION ALL
+		SELECT model, SUM(runs), SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens), SUM(cache_write_tokens)
+		FROM deleted_run_usage WHERE user_id = ? AND day >= ? GROUP BY model
+	) GROUP BY model ORDER BY model`, userID, ts(since), userID, since.UTC().Format("2006-01-02"))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ModelUsage
+	for rows.Next() {
+		var m ModelUsage
+		if err := rows.Scan(&m.Model, &m.Runs, &m.Input, &m.Output, &m.CacheRead, &m.CacheWrite); err != nil {
+			return nil, err
+		}
+		out = append(out, m)
+	}
+	return out, rows.Err()
+}

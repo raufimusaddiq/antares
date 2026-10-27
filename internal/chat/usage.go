@@ -99,6 +99,8 @@ type usageView struct {
 		Basis       string `json:"basis"`
 		AtLimit     string `json:"atLimit"`
 	} `json:"budget"`
+	// Spending is the user's estimated spend today and this month against their money limits (#152).
+	Spending *spendingView `json:"spending"`
 	// Turns is per-reply usage for the chat's newest finished runs, oldest first.
 	// Tokens is null for a reply that reported none.
 	Turns          []turnView `json:"turns"`
@@ -211,7 +213,14 @@ func (s *Service) chatUsage(w http.ResponseWriter, r *http.Request) {
 		internalError(w, "user usage", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, buildUsage(chatID, cu, limit, used, known))
+	v := buildUsage(chatID, cu, limit, used, known)
+	sp, err := s.spending(r.Context(), s.db, uid)
+	if err != nil {
+		internalError(w, "spending", err)
+		return
+	}
+	v.Spending = &sp
+	writeJSON(w, http.StatusOK, v)
 }
 
 // recordUsage stores what Hermes reported for a finished run. Nothing reported
@@ -224,7 +233,10 @@ func (s *Service) recordUsage(userID, runID string, u *hermes.Usage) {
 	defer cancel()
 	if err := store.RecordRunUsage(ctx, s.db, userID, runID, store.RunUsage{Input: u.Input, Output: u.Output, CacheRead: u.CacheRead, CacheWrite: u.CacheWrite, Model: u.Model}); err != nil {
 		log.Printf("chat: run %s: could not record usage: %v", runID, err)
+		return
 	}
+	// The model is an upstream string, so it is not logged: it is stored with the run and shown to its owner.
+	log.Printf("run usage run=%s input_tokens=%d output_tokens=%d cache_read_tokens=%d", runID, u.Input, u.Output, u.CacheRead)
 }
 
 type budgetView struct {

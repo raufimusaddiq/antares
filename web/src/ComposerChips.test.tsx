@@ -8,7 +8,7 @@ vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi"
 import { Chat } from "./Chat";
 
 const ok = <T,>(value: T) => ({ ok: true as const, value });
-const usage = { tokens: { input: 900, output: 100, cacheRead: 0, cacheWrite: 0, total: 1000 }, finishedRuns: 1, reportedRuns: 1, costIDR: null, unpricedRuns: 0, unknownModelRuns: 0, turns: [], turnsTruncated: false, priceListDate: "", windowTokens: 128000, carriedTokens: null, budget: { limit: null, used: null, enforced: false, reached: false, basis: "" } };
+const usage = { tokens: { input: 900, output: 100, cacheRead: 0, cacheWrite: 0, total: 1000 }, finishedRuns: 1, reportedRuns: 1, costIDR: null, unpricedRuns: 0, unknownModelRuns: 0, turns: [], turnsTruncated: false, priceListDate: "", windowTokens: 128000, carriedTokens: null, spending: null, budget: { limit: null, used: null, enforced: false, reached: false, basis: "" } };
 
 beforeEach(() => {
   api.listChats.mockResolvedValue(ok({ chats: [{ id: "c1", title: "Talk", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false }], nextCursor: "" }));

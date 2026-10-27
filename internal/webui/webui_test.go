@@ -98,7 +98,7 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		// #60 chat search: /api/search/chats; the per-chat form is /api/chats/{id}/search, covered above.
 		"/api/search/chats": true,
 		// #81 per-user opt-in token limit.
-		"/api/me/budget": true,
+		"/api/me/budget": true, "/api/me/spending-limits": true,
 		// #100 model picker inventory; the per-chat choice is /api/chats/{id}/model, covered above.
 		"/api/models": true,
 		// #115 the account's own model visibility; the per-chat settings are /api/chats/{id}/settings, covered above.
