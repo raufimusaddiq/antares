@@ -890,6 +890,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   // A search result: the owning chat, at the matching turn. The turn may be in an
   // older page than the newest one, so pages are fetched back until it is held.
+  const visualizeSave = useRef<Promise<unknown> | null>(null); // the latest pending Visualize save, awaited by submit
   const [unlisted, setUnlisted] = useState<ChatSummary | null>(null); // the open chat when it came from search, not the list
   const openResult = useCallback(
     async (r: SearchResult) => {
@@ -1033,6 +1034,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
       // This submission owns `hold` and ends it exactly once, whichever way it leaves (SendHold.release ignores repeats).
       try {
         setBanner("");
+        // A Visualize change still being saved decides how this message runs: wait for it, so the run reads it.
+        await visualizeSave.current;
         let chat = current;
         if (!chat) {
           const c = await newChat();
@@ -1508,6 +1511,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           {/* A new, still blank chat is real and listed: its toggle shows, so the first message can ask for visuals. */}
           {current && (
             <OpenChatVisualize
+              onSaving={(p) => (visualizeSave.current = p.catch(() => undefined))}
               chat={chats.find((c) => c.id === current) ?? (unlisted?.id === current ? unlisted : undefined)}
               onChanged={(c) => {
                 setChats((l) => l.map((x) => (x.id === c.id ? { ...x, visualize: c.visualize } : x)));

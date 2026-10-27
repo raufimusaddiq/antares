@@ -366,3 +366,23 @@ describe("Visualize for a chat opened from search", () => {
     expect(api.getChat).toHaveBeenCalledWith("c9");
   });
 });
+
+// #198 review: a message sent while a Visualize change is still being saved waits for the save, so its run reads the
+// new setting rather than the old one.
+describe("Visualize and sending", () => {
+  it("a send waits for a pending Visualize save", async () => {
+    await mount([chat("c1", "One")]);
+    fireEvent.click(screen.getByText("One"));
+    let saved!: (v: unknown) => void;
+    api.changeChat.mockReturnValue(new Promise((r) => (saved = r)));
+    api.sendMessage.mockResolvedValue(ok({ runId: "r1", status: "PENDING" }));
+    fireEvent.click(await screen.findByRole("checkbox", { name: /Visualize/ }));
+    await waitFor(() => expect(api.changeChat).toHaveBeenCalledWith("c1", { visualize: true }));
+    fireEvent.change(document.getElementById("composer-input")!, { target: { value: "chart it" } });
+    fireEvent.click(screen.getByRole("button", { name: /^Send/ }));
+    await new Promise((r) => setTimeout(r, 50));
+    expect(api.sendMessage).not.toHaveBeenCalled();
+    saved(ok(chat("c1", "One", { visualize: true })));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
+  });
+});
