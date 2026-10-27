@@ -228,7 +228,7 @@ export function TurnControls({ inv, kinds, seq, reuse }: { inv: Inventory | null
         );
       })}
       {reuse && (
-        <button type="button" className="quiet" data-control="reuse" onClick={reuse.onClick}>
+        <button type="button" className="quiet" data-control="reuse" data-icon="edit" onClick={reuse.onClick}>
           {reuse.label}
         </button>
       )}
@@ -1490,7 +1490,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           <div className="chat-actions-slot" ref={setActionsSlot} />
           {usage && (
             <details className="usage" open={usage.budget.reached}>
-              <summary>{usage.budget.reached ? "Token limit reached" : usage.spending?.hardReached ? "Daily spending limit reached" : usage.spending?.warnings.length ? "Usage: spending warning reached" : usage.tokens ? `${usage.tokens.total.toLocaleString("en-US")} tokens used` : "Usage unknown"}</summary>
+              <summary>{usage.budget.reached ? "Token limit reached" : usage.spending?.hardReached ? "Daily spending limit reached" : usage.spending?.warnings.length ? "Usage: spending warning reached" : "Usage details and limits"}</summary>
               <ul>
                 {[...describeUsage(usage), ...(usage.spending ? describeSpending(usage.spending) : [])].map((l) => (
                   <li key={l}>{l}</li>
@@ -1529,10 +1529,12 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
               }}
             />
           )}
-          <Dictation onText={(t) => onDraft(draft.trim() === "" ? t : `${draft.replace(/\s*$/, "")} ${t}`)} />
-          <Recorder />
+          <div className="extras-row" role="group" aria-label="Voice">
+            <Dictation onText={(t) => onDraft(draft.trim() === "" ? t : `${draft.replace(/\s*$/, "")} ${t}`)} />
+            <Recorder />
+          </div>
           <Templates own={ownTemplates} onChange={setOwnTemplates} />
-          <p className="label" data-policy="drafts">
+          <p className="label extras-foot" data-policy="drafts">
             Unsent text is kept on this device until you sign out or your session ends, and text older than 7 days is cleared the next time you open Antares. Your account keeps a copy for your other devices.
           </p>
         </div>
