@@ -239,7 +239,9 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 			case hermes.KindToolStarted:
 				l.emit("tool.started", map[string]string{"toolCallId": n.ToolID, "label": n.Label}, false)
 			case hermes.KindToolCompleted:
-				l.emit("tool.completed", map[string]string{"toolCallId": n.ToolID, "summary": n.Summary}, false)
+				l.emit("tool.completed", map[string]any{"toolCallId": n.ToolID, "summary": n.Summary, "failed": n.Failed, "durationMs": n.DurationMs}, false)
+			case hermes.KindThinking:
+				l.emit("run.thinking", map[string]any{}, false)
 			case hermes.KindApproval, hermes.KindClarify:
 				if !s.holdPrompt(ctx, l, userID, runID, b, n) {
 					failClosed = true
