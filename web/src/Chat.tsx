@@ -45,7 +45,7 @@ import { describeImageReason, describeImageSend, getImageInput, imageFilesFrom, 
 import { hideMediaPaths } from "./mediaTags";
 import { planRetry } from "./retry";
 import { VirtualList } from "./VirtualList";
-import { EVENT_NAMES, describeTool, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
+import { EVENT_NAMES, describeFolded, describeTool, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
 import type { AttachmentRef } from "./MediaPreview";
@@ -137,9 +137,7 @@ function Activity({ run, live }: { run: LiveRun; live: boolean }) {
       </summary>
       <ul className="tools" aria-label="Tool activity">
         {run.folded.count > 0 && (
-          <li className="label">
-            {run.folded.count} earlier {run.folded.count === 1 ? "call" : "calls"} finished{run.folded.failed > 0 ? ` (${run.folded.failed} failed)` : ""}
-          </li>
+          <li className="label">{describeFolded(run.folded)}</li>
         )}
         {run.tools.map((t, i) => (
           <li key={`${t.id}-${i}`} data-tool={t.state}>

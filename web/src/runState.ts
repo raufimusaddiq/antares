@@ -27,6 +27,8 @@ export const MAX_TOOL_ROWS = 40;
 export interface FoldedTools {
   count: number;
   failed: number;
+  /** Folded rows whose outcome was never known: counted apart, never as finished. */
+  untracked: number;
 }
 
 export interface LiveRun {
@@ -73,7 +75,7 @@ export const EVENT_NAMES = [
 ] as const;
 
 export function newRun(runId: string): LiveRun {
-  return { runId, phase: "streaming", text: "", tools: [], folded: { count: 0, failed: 0 }, thinking: false, code: "", timedOut: false, maybeStillRunning: false };
+  return { runId, phase: "streaming", text: "", tools: [], folded: { count: 0, failed: 0, untracked: 0 }, thinking: false, code: "", timedOut: false, maybeStillRunning: false };
 }
 
 export const isTerminal = (p: Phase) => p === "completed" || p === "failed" || p === "cancelled";
@@ -126,7 +128,7 @@ export function reduce(state: LiveRun, ev: RunEvent): LiveRun {
       return { ...state, phase: "streaming" };
     case "run.resumed":
       // The assistant may replay from the start: drop what we have, tools included, so a replay leaves no stale rows.
-      return { ...state, phase: "streaming", text: "", tools: [], folded: { count: 0, failed: 0 }, thinking: false };
+      return { ...state, phase: "streaming", text: "", tools: [], folded: { count: 0, failed: 0, untracked: 0 }, thinking: false };
     case "assistant.delta":
       return state.text.length >= MAX_TEXT ? state : { ...state, phase: "streaming", text: state.text + ev.text, thinking: false };
     case "run.thinking":
@@ -169,15 +171,25 @@ export function reduce(state: LiveRun, ev: RunEvent): LiveRun {
 function bound(state: LiveRun): LiveRun {
   if (state.tools.length <= MAX_TOOL_ROWS) return state;
   const tools = state.tools.slice();
-  let { count, failed } = state.folded;
+  let { count, failed, untracked } = state.folded;
   while (tools.length > MAX_TOOL_ROWS) {
     const i = tools.findIndex((t) => t.state !== "running");
     if (i < 0) break;
     count++;
     if (tools[i].state === "failed") failed++;
+    if (tools[i].state === "untracked") untracked++;
     tools.splice(i, 1);
   }
-  return { ...state, tools, folded: { count, failed } };
+  return { ...state, tools, folded: { count, failed, untracked } };
+}
+
+/** The line standing for folded rows. Untracked ones are named as such, never counted as finished. */
+export function describeFolded(f: FoldedTools): string {
+  const known = f.count - f.untracked;
+  const parts: string[] = [];
+  if (known > 0) parts.push(`${known} earlier ${known === 1 ? "call" : "calls"} finished${f.failed > 0 ? ` (${f.failed} failed)` : ""}`);
+  if (f.untracked > 0) parts.push(`${f.untracked} earlier ${f.untracked === 1 ? "call" : "calls"} not tracked`);
+  return parts.join("; ");
 }
 
 /** What a tool row says. After the run ends, a call still marked running had no end reported. */

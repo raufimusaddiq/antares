@@ -211,7 +211,7 @@ describe("generated media paths (MEDIA-EXT-006)", () => {
       <Transcript
         turns={[{ seq: 0, role: "assistant", text }]}
         pending={null}
-        run={{ runId: "r", phase: "streaming", text, tools: [], folded: { count: 0, failed: 0 }, thinking: false, seenEvent: true } as never}
+        run={{ runId: "r", phase: "streaming", text, tools: [], folded: { count: 0, failed: 0, untracked: 0 }, thinking: false, seenEvent: true } as never}
         onCancel={noop}
         onRetry={noop}
         onReconnect={noop}

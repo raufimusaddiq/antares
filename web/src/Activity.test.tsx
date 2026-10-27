@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { RunView } from "./Chat";
-import { MAX_TOOL_ROWS, describeTool, newRun, parseEvent, reduce, type LiveRun, type RunEvent } from "./runState";
+import { MAX_TOOL_ROWS, describeFolded, describeTool, newRun, parseEvent, reduce, type LiveRun, type RunEvent } from "./runState";
 
 afterEach(cleanup);
 
@@ -69,6 +69,15 @@ describe("tool activity is truthful (#163)", () => {
     expect(s.tools[0]).toMatchObject({ id: "keep", state: "running" });
     expect(s.folded.count + s.tools.length).toBe(501);
     expect(s.folded.failed + s.tools.filter((t) => t.state === "failed").length).toBe(50);
+  });
+
+  it("folded untracked rows are named as untracked, never counted as finished", () => {
+    const events: RunEvent[] = [];
+    for (let i = 0; i < MAX_TOOL_ROWS + 5; i++) events.push(i < 5 ? started("") : started(`t${i}`), ...(i < 5 ? [] : [ended(`t${i}`, { failed: i === 7 })]));
+    const s = play(events);
+    expect(s.folded).toEqual({ count: 5, failed: 0, untracked: 5 });
+    expect(describeFolded(s.folded)).toBe("5 earlier calls not tracked");
+    expect(describeFolded({ count: 4, failed: 1, untracked: 1 })).toBe("3 earlier calls finished (1 failed); 1 earlier call not tracked");
   });
 
   it("after the reply ends, a call with no reported end says so; after a cancel it may still be running", () => {
