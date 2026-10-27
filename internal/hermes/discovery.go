@@ -36,6 +36,7 @@ const (
 	CapEditTurn     = "edit_turn"
 	CapRewind       = "rewind"
 	CapChatDelete   = "chat_delete"
+	CapSteer        = "steer"
 )
 
 const (
@@ -330,7 +331,17 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 		chatDelete = available(CapChatDelete, "Delete conversations")
 	}
 
-	inv.Capabilities = []Capability{models, lock, settings, tools, skills, progress, approvals, clarify, regenerate, editTurn, rewind, chatDelete}
+	// Steering a running run (PRD §21.5, issue #149) needs both the feature flag and the POST route; the
+	// web control is shown only when this is available (docs/runbooks/turn-controls.md).
+	steer := unsupported(CapSteer, "Steer a running reply", why("run_steer"))
+	if capsOK && caps.flag("run_steer") {
+		steer.Reason = "Hermes does not advertise a steer route"
+		if caps.hasPost("run_steer") {
+			steer = available(CapSteer, "Steer a running reply")
+		}
+	}
+
+	inv.Capabilities = []Capability{models, lock, settings, tools, skills, progress, approvals, clarify, regenerate, editTurn, rewind, chatDelete, steer}
 	return inv, nil
 }
 

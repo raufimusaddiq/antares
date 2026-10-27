@@ -89,6 +89,8 @@ func TestDiscoverDerivesFromTheRealCapturedPayloads(t *testing.T) {
 		// run_approval_response, approval_events and the run_approval route are all in the capture;
 		// no clarify route is, so clarification is unsupported (docs/runbooks/run-prompts.md).
 		CapApprovals: StatusAvailable, CapClarify: StatusUnsupported,
+		// run_steer and its POST route are both in the capture.
+		CapSteer: StatusAvailable,
 	}
 	for id, st := range want {
 		if got := byID(inv, id); got.Status != st {
@@ -141,7 +143,7 @@ func TestDiscoverNeverDefaultsToAvailable(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if len(inv.Capabilities) != 12 {
+			if len(inv.Capabilities) != 13 {
 				t.Fatalf("want a verdict for every capability, got %d", len(inv.Capabilities))
 			}
 			for _, cp := range inv.Capabilities {
@@ -173,6 +175,12 @@ func TestDiscoverEachSourceFailsAlone(t *testing.T) {
 			m["/v1/toolsets"] = `{"object":"list","data":[{"name":"web","tools":["web_search"]}]}`
 		}, CapToolsets},
 		{"model options without providers key", func(m map[string]string) { m["/api/model/options"] = `{"model":"x"}` }, CapModels},
+		{"steer flag off", func(m map[string]string) {
+			m["/v1/capabilities"] = strings.Replace(m["/v1/capabilities"], `"run_steer": true`, `"run_steer": false`, 1)
+		}, CapSteer},
+		{"steer route not advertised", func(m map[string]string) {
+			m["/v1/capabilities"] = strings.Replace(m["/v1/capabilities"], `"path": "/v1/runs/{run_id}/steer"`, `"path": "/v1/other"`, 1)
+		}, CapSteer},
 		{"no authenticated provider", func(m map[string]string) {
 			m["/api/model/options"] = `{"providers":[{"slug":"a","authenticated":false,"models":["m"]},{"slug":"b","models":["m"]},{"slug":"c","authenticated":"true","models":["m"]}]}`
 		}, CapModels},

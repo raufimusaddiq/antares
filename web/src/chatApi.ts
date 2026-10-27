@@ -54,6 +54,7 @@ const CODES = [
   "OPTION_UNSUPPORTED",
   "CATALOGUE_UNAVAILABLE",
   "CHAT_STATE",
+  "STEER_REFUSED",
 ] as const;
 
 /** Words shown for a code. The server's own message is never displayed. */
@@ -264,6 +265,11 @@ export const cancelRun = (runId: string) =>
     const r = parseRunRef(b);
     return r ? { ...r, upstreamStopped: obj(b)?.upstreamStopped === true } : null;
   });
+
+/** Guidance into the caller's own running run (PRD §21.5). Success is Hermes' acceptance; STEER_REFUSED means the run
+ *  had ended or Hermes declined it. Nothing is added to the transcript either way. */
+export const steerRun = (runId: string, input: string) =>
+  call("POST", `/api/runs/${encodeURIComponent(runId)}/steer`, (b) => (obj(b)?.accepted === true ? true : null), { input });
 
 export const getRun = (runId: string) => call("GET", `/api/runs/${encodeURIComponent(runId)}`, parseRunRef);
 
