@@ -77,17 +77,49 @@ The database holds Hermes keys only as AES-GCM ciphertext (data-layer runbook). 
 usable only with the same `ANTARES_SECRET_KEY`; keep that key in the secret store, not next to the
 backups. Treat a backup file as sensitive anyway (accounts, bindings, chat metadata).
 
+## Live operation, verified on the host (#175, 2026-10-27)
+
+**Schedule.** Until 2026-10-27 there was no scheduled backup on the host: no cron entry, no systemd timer; backups were
+taken by hand at deploys. Since then `antares-backup.timer` (`deploy/antares-backup.{sh,service,timer}`, installed as
+`/opt/antares/bin/antares-backup.sh` and `/etc/systemd/system/antares-backup.{service,timer}`) runs daily at 02:30 local
+(±15 min, `Persistent=true` so a missed run catches up). Each run takes `antares backup -`, verifies the file with
+`antares check` from the running image, and only then names it `/var/backups/antares/scheduled/antares-<UTC>.sqlite`
+(dir `0700 root`, file `0600`); a failure exits non-zero and systemd records the run as failed
+(`systemctl status antares-backup.service`, `journalctl -u antares-backup`). **Retention:** the newest 14 verified
+backups. First run, verbatim (journal):
+
+```
+ok /b/.antares-20261027T082145Z.sqlite.partial
+antares-backup: verified /var/backups/antares/scheduled/antares-20261027T082145Z.sqlite (524288 bytes) from ghcr.io/raufimusaddiq/antares:b0707458ef0946abefb91bf00516258627912b19
+```
+
+**Restore drill** (the backup taken before the `b070745` deploy, restored with that image into a scratch directory, never
+the live volume): `check` on the backup → `ok`; `restore -keep-old` → `restored …`; `check` on the result → `ok`; the
+restored database holds **0** `app_sessions` rows (everyone signs in again, as designed); schema at migration 16, so
+start-up migrates it forward to 18. **Reconciliation** against a fresh backup of the live database: 0 accounts changed
+state, 0 created, 0 removed since the backup, so nothing would have to be re-applied. Counts only are recorded; the
+repository is public. The drill's container ran as uid 65532 and could not read the root-only backup; the drill copies
+the file into a directory owned by 65532 first (the scheduled check runs as root, read-only, instead).
+
+**Secret recovery path.** The database alone is not a working Antares: `ANTARES_SECRET_KEY` decrypts the stored Hermes
+keys. It lives only in `/opt/antares/antares.env` (`0600 root`) on this host, beside the Google OIDC client secret
+(recoverable from the Google Cloud console) and the provisioner token and shared inference key in
+`/opt/antares/provisioner.env`. **Gap, recorded rather than hidden:** neither the backups nor `/opt/antares` are copied off
+this host. Losing the host loses both; recovery is then a fresh install, a new `ANTARES_SECRET_KEY`, and re-provisioning
+every tenant (bindings re-created; Hermes keeps the transcripts). Losing only the key, with a backup in hand, has the
+same remedy for the bindings while accounts and chats survive.
+
 ## Take a backup
 
-Before every migration/deploy, and on whatever schedule the owner sets (there is no scheduler here):
+Before every migration/deploy (in addition to the daily timer above):
 
 ```
 docker exec antares /antares backup - > /var/backups/antares/antares-$(date -u +%Y%m%dT%H%M%SZ).sqlite
 docker run --rm -v /var/backups/antares:/b:ro ghcr.io/raufimusaddiq/antares:<tag> check /b/<file>   # verify it
 ```
 
-The `docker` forms are the intended host procedure and have **not** been run on the live host. The
-subcommands themselves were run against a scratch database, as below.
+The `docker exec … backup -` form has been run on the live host (deploys, the daily timer). The check needs a file the
+container user can read: run it with `--user 0:0` and a read-only mount, as `antares-backup.sh` does.
 
 ## Restore
 
