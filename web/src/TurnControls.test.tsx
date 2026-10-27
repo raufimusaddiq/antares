@@ -66,3 +66,18 @@ describe("capability reasons on touch", () => {
     expect(regen.getAttribute("data-control")).toBe("regenerate");
   });
 });
+
+describe("a working alternative beside the controls the assistant cannot honour (#166)", () => {
+  it("offers the alternative as a real button and names it in the disabled controls' reason, not in Rewind's", () => {
+    let used = 0;
+    render(<TurnControls inv={inv} kinds={["regenerate", "rewind"]} seq={3} reuse={{ label: "Ask again", onClick: () => used++ }} />);
+    const regen = screen.getByRole("button", { name: "Regenerate" });
+    expect(document.getElementById(regen.getAttribute("aria-describedby")!)?.textContent).toBe("no retry route Instead, use “Ask again”: it writes a new message for you to send.");
+    const rewind = screen.getByRole("button", { name: "Rewind" });
+    expect(document.getElementById(rewind.getAttribute("aria-describedby")!)?.textContent).toBe("no truncate route");
+    const ask = screen.getByRole("button", { name: "Ask again" });
+    expect(ask.getAttribute("aria-disabled")).toBeNull();
+    fireEvent.click(ask);
+    expect(used).toBe(1);
+  });
+});
