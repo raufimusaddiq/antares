@@ -35,7 +35,7 @@ var (
 func (s *Service) Handlers() map[string]http.Handler {
 	chatGet, chatPut, chatDel := s.chatDraftAPI().handlers(s)
 	newGet, newPut, newDel := s.newChatDraftAPI().handlers(s)
-	return map[string]http.Handler{
+	h := map[string]http.Handler{
 		"GET /api/chats/{chatId}/draft":                                chatGet,
 		"PUT /api/chats/{chatId}/draft":                                chatPut,
 		"DELETE /api/chats/{chatId}/draft":                             chatDel,
@@ -90,6 +90,10 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"POST /api/chats/{chatId}/edit-turn":  http.HandlerFunc(s.noTurnMutation("edit-turn")),
 		"POST /api/chats/{chatId}/rewind":     http.HandlerFunc(s.noTurnMutation("rewind")),
 	}
+	for k, v := range s.jobHandlers() {
+		h[k] = v
+	}
+	return h
 }
 
 // ---- answers -------------------------------------------------------------------
