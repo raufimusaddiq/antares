@@ -125,9 +125,9 @@ describe("Recorder", () => {
     expect(screen.getByRole("timer")).toBeTruthy();
   });
 
-  it("states that speech-to-text is unavailable rather than offering it", () => {
+  it("states that recordings are not transcribed rather than offering it", () => {
     render(<Recorder />);
-    expect(screen.getByText(/Speech-to-text is unavailable/)).toBeTruthy();
-    expect(screen.queryByText(/transcribe/i)).toBeNull();
+    expect(screen.getByText(/Recordings are not transcribed/)).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /transcri/i })).toBeNull();
   });
 });
