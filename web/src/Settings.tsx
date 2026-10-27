@@ -57,11 +57,13 @@ interface Diag {
   worker: string;
 }
 
-/** What is running and whether this device can reach it. Reads only public, secret-free endpoints. */
+/** What is running and whether this device can reach it. Reads only public, secret-free endpoints, and only while open. */
 export function DiagnosticsPanel() {
+  const [open, setOpen] = useState(false);
   const [d, setD] = useState<Diag | null>(null);
   const [tick, setTick] = useState(0);
   useEffect(() => {
+    if (!open) return;
     let live = true;
     void (async () => {
       const text = async (path: string) => {
@@ -98,11 +100,11 @@ export function DiagnosticsPanel() {
     return () => {
       live = false;
     };
-  }, [tick]);
+  }, [open, tick]);
   return (
-    <details className="settings">
+    <details className="settings" onToggle={(e) => setOpen(e.currentTarget.open)}>
       <summary>Diagnostics</summary>
-      {!d ? (
+      {!open ? null : !d ? (
         <p className="label">Checking…</p>
       ) : (
         <dl className="facts">
@@ -123,9 +125,11 @@ export function DiagnosticsPanel() {
           <dd>{d.worker}</dd>
         </dl>
       )}
-      <button type="button" className="quiet" onClick={() => setTick((n) => n + 1)}>
-        Check again
-      </button>
+      {open && (
+        <button type="button" className="quiet" onClick={() => setTick((n) => n + 1)}>
+          Check again
+        </button>
+      )}
     </details>
   );
 }

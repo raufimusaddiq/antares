@@ -5,6 +5,11 @@ import { applyAppearance, DEFAULT_APPEARANCE, loadAppearance, saveAppearance } f
 import { AppearancePanel, DiagnosticsPanel } from "./Settings";
 
 const root = document.documentElement;
+const openPanel = (c: HTMLElement) => {
+  const d = c.querySelector("details")!;
+  d.open = true;
+  fireEvent(d, new Event("toggle"));
+};
 
 beforeEach(() => {
   localStorage.clear();
@@ -59,6 +64,8 @@ describe("diagnostics", () => {
       }),
     );
     const { container } = render(<DiagnosticsPanel />);
+    expect(asked).toEqual([]); // nothing is fetched until the panel is opened
+    openPanel(container);
     await waitFor(() => expect(container.textContent).toContain("0123456789ab"));
     const text = container.textContent ?? "";
     expect(text).toContain("fedcba987654");
@@ -71,6 +78,7 @@ describe("diagnostics", () => {
   it("says unknown or unreachable instead of guessing", async () => {
     vi.stubGlobal("fetch", vi.fn(async () => Promise.reject(new TypeError("offline"))));
     const { container } = render(<DiagnosticsPanel />);
+    openPanel(container);
     await waitFor(() => expect(container.textContent).toContain("unreachable"));
     expect(container.textContent).toContain("unknown");
   });
