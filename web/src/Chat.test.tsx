@@ -4,7 +4,7 @@ import { Composer, Transcript } from "./Chat";
 import { parseInventory } from "./chatApi";
 import { Markdown, safeHref } from "./Markdown";
 import { indentInFence, wrapSelection } from "./composerEdit";
-import { describeCode, describeGlance, describeTurns, describeUsage, getMessages, listChats, parseLimitInput, parseUsage, sendMessage } from "./chatApi";
+import { describeCode, describeGlance, describeSpending, describeTurns, describeUsage, parseSpending, reconcileSpending, spendingFields, parseRupiah, getMessages, listChats, parseLimitInput, parseUsage, sendMessage } from "./chatApi";
 import { isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 
 const md = (text: string) => renderToStaticMarkup(<Markdown text={text} />);
@@ -309,7 +309,7 @@ describe("api client", () => {
 });
 
 describe("usage text", () => {
-  const base = { tokens: { input: 1000, output: 200, cacheRead: 400, cacheWrite: 0, total: 1200 }, finishedRuns: 2, reportedRuns: 1, costIDR: 3.4, unpricedRuns: 0, unknownModelRuns: 0, turns: [] as { runId: string; status: string; tokens: { input: number; output: number; total: number } | null }[], turnsTruncated: false, priceListDate: "2026-10-23", windowTokens: 1000000, carriedTokens: null as number | null, budget: { limit: 2000000 as number | null, used: 1200 as number | null, enforced: true, reached: false, basis: "" } };
+  const base = { tokens: { input: 1000, output: 200, cacheRead: 400, cacheWrite: 0, total: 1200 }, finishedRuns: 2, reportedRuns: 1, costIDR: 3.4, unpricedRuns: 0, unknownModelRuns: 0, turns: [] as { runId: string; status: string; tokens: { input: number; output: number; total: number } | null }[], turnsTruncated: false, priceListDate: "2026-10-23", windowTokens: 1000000, carriedTokens: null as number | null, spending: null, budget: { limit: 2000000 as number | null, used: 1200 as number | null, enforced: true, reached: false, basis: "" } };
 
   it("labels cost as an estimate with its price date, and shows unknowns as a dash", () => {
     const t = describeUsage(base).join("\n");
@@ -344,6 +344,41 @@ describe("usage text", () => {
     expect(describeGlance({ ...base, carriedTokens: 250000 })).toBe("1,200 tokens used · context 25% full");
     expect(describeGlance({ ...base, budget: { ...base.budget, reached: true } })).toBe("Token limit reached");
     expect(describeGlance(base)).not.toMatch(/0%/);
+  });
+
+  it("spending: estimates in rupiah, unknown never zero, warnings never block, the hard limit says it does (#152)", () => {
+    const sp = parseSpending({ currency: "IDR", day: { spent: 5500, unpricedRuns: 1 }, month: { spent: null, unpricedRuns: 2 }, dailySoft: 1000, monthlySoft: null, dailyHard: 5500, warnings: ["daily"], hardReached: true })!;
+    const t = describeSpending(sp).join("\n");
+    expect(t).toContain("Estimated spend today (UTC): about Rp 5,500, plus 1 reply with no known price (not counted)");
+    expect(t).toContain("Estimated spend this month: — (no priced reply)");
+    expect(t).toContain("Daily warning at Rp 1,000: reached (a warning only; messages still go through)");
+    expect(t).toContain("Daily spending limit of Rp 5,500 reached: new messages are refused");
+    expect(t).not.toMatch(/Rp 0\b/);
+    expect(describeGlance({ ...base, spending: sp })).toBe("Daily spending limit reached");
+    expect(describeGlance({ ...base, spending: { ...sp, hardReached: false, warnings: ["daily", "monthly"] } })).toBe("Spending warning: daily and monthly limit reached");
+    expect(describeSpending({ ...sp, dailySoft: null, monthlySoft: null, dailyHard: null, warnings: [], hardReached: false }).join("\n")).toContain("No spending limits set");
+    expect(parseSpending({ day: {}, month: {} })?.day.spent).toBeNull();
+    expect(parseSpending(null)).toBeNull();
+  });
+
+  it("spending form: a limit is whole rupiah, grouped consistently or not at all; a fraction is refused (#152)", () => {
+    for (const [typed, want] of [["50000", 50000], ["50.000", 50000], ["50,000", 50000], ["1 500 000", 1500000], ["1.500.000", 1500000], ["", null], ["  ", null]] as const) {
+      expect(parseRupiah(typed)).toBe(want);
+    }
+    for (const bad of ["1.5", "1,5", "1,50", "12.34", "1.500,00", "1,500.000", "1.5000", "0", "-5", "5e3", "Rp 5000", "1.000.0000", "2000000000000"]) {
+      expect(parseRupiah(bad)).toBeUndefined();
+    }
+  });
+
+  it("spending form: a refresh updates untouched fields and keeps unsaved edits (#152)", () => {
+    const before = spendingFields({ dailySoft: 1000, monthlySoft: null, dailyHard: 5500.4 });
+    expect(before).toEqual({ dailySoft: "1000", monthlySoft: "", dailyHard: "5500" });
+    const after = spendingFields({ dailySoft: 2000, monthlySoft: 9000, dailyHard: null });
+    // The user is typing a new daily limit; the other two are as the server last said.
+    const typed = { ...before, dailyHard: "7000" };
+    expect(reconcileSpending(before, after, typed)).toEqual({ dailySoft: "2000", monthlySoft: "9000", dailyHard: "7000" });
+    expect(reconcileSpending(before, after, before)).toEqual(after);
+    expect(reconcileSpending(after, after, typed)).toEqual(typed);
   });
 
   it("states the limit, its basis and what happens at it", () => {
