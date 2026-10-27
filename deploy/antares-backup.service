@@ -1,0 +1,12 @@
+[Unit]
+Description=Antares database backup (verified, retained)
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/antares/bin/antares-backup.sh
+# Root: reads the container, writes /var/backups/antares (0700 root). No network beyond the local Docker socket.
+User=root
+Nice=10
+IOSchedulingClass=idle
