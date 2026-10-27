@@ -75,6 +75,15 @@ describe("New chat", () => {
     expect(document.activeElement?.id).toBe("composer-input");
   });
 
+  it("the new, blank chat already has its Visualize toggle, so the first message can use it (#198)", async () => {
+    await mount([]);
+    api.createChat.mockResolvedValue(ok(chat("c2")));
+    api.getMessages.mockResolvedValue(page());
+    fireEvent.click(newChatButton());
+    const box = (await screen.findByRole("checkbox", { name: /Visualize/ })) as HTMLInputElement;
+    expect(box.checked).toBe(false);
+  });
+
   it("pressing it again on a blank chat does not pile up empty chats", async () => {
     await mount([]);
     api.createChat.mockResolvedValue(ok(chat("c2")));

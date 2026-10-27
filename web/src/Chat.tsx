@@ -1505,7 +1505,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
               )}
             </details>
           )}
-          {current && current !== blankChat.current && (
+          {/* A new, still blank chat is real and listed: its toggle shows, so the first message can ask for visuals. */}
+          {current && (
             <OpenChatVisualize
               chat={chats.find((c) => c.id === current) ?? (unlisted?.id === current ? unlisted : undefined)}
               onChanged={(c) => {
