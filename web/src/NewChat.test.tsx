@@ -16,7 +16,7 @@ vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi"
 
 import { Chat } from "./Chat";
 
-const chat = (id: string, extra: Partial<ChatSummary> = {}): ChatSummary => ({ id, title: "", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false, ...extra });
+const chat = (id: string, extra: Partial<ChatSummary> = {}): ChatSummary => ({ id, title: "", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false, visualize: false, ...extra });
 const ok = <T,>(value: T) => ({ ok: true as const, value });
 const page = (texts: string[] = []) => ok({ turns: texts.map((text, seq) => ({ seq, role: seq % 2 ? "assistant" : "user", text })), nextCursor: "", total: texts.length });
 
@@ -73,6 +73,15 @@ describe("New chat", () => {
     expect(screen.queryByText("hi there")).toBeNull();
     expect(screen.getByText("New conversation. Write a message below.")).toBeTruthy();
     expect(document.activeElement?.id).toBe("composer-input");
+  });
+
+  it("the new, blank chat already has its Visualize toggle, so the first message can use it (#198)", async () => {
+    await mount([]);
+    api.createChat.mockResolvedValue(ok(chat("c2")));
+    api.getMessages.mockResolvedValue(page());
+    fireEvent.click(newChatButton());
+    const box = (await screen.findByRole("checkbox", { name: /Visualize/ })) as HTMLInputElement;
+    expect(box.checked).toBe(false);
   });
 
   it("pressing it again on a blank chat does not pile up empty chats", async () => {

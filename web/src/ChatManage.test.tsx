@@ -16,6 +16,7 @@ const api = vi.hoisted(() => ({
   getRun: vi.fn(),
   sendMessage: vi.fn(),
   getCapabilities: vi.fn(),
+  searchChats: vi.fn(),
 }));
 
 vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi")>()), ...api }));
@@ -32,6 +33,7 @@ const chat = (id: string, title: string, extra: Partial<ChatSummary> = {}): Chat
   pinned: false,
   archived: false,
   deleteFailed: false,
+  visualize: false,
   ...extra,
 });
 const ok = <T,>(value: T) => ({ ok: true as const, value });
@@ -345,5 +347,71 @@ describe("a message into an archived chat", () => {
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
     await waitFor(() => expect(rows()).toEqual(["Old talk", "Live"]));
     await waitFor(() => expect(within(screen.getByRole("region", { name: "Archived conversations" })).queryByText("Old talk")).toBeNull());
+  });
+});
+
+// #198 review: a chat opened from a search result outside the loaded list shows its own Visualize state.
+describe("Visualize for a chat opened from search", () => {
+  it("shows the toggle for an out-of-page result, as the server stored it", async () => {
+    await mount([chat("c1", "One")]);
+    api.searchChats.mockResolvedValue(
+      ok({ results: [{ chatId: "c9", chatTitle: "Far away", kind: "title", turn: null, role: "title", createdAt: "", snippet: [] }], nextCursor: "", index: { complete: true, chats: 2, pending: 0, failed: 0, partial: 0 } }),
+    );
+    api.getChat.mockResolvedValue(ok(chat("c9", "Far away", { visualize: true })));
+    fireEvent.change(screen.getByRole("searchbox"), { target: { value: "far away" } });
+    fireEvent.submit(screen.getByRole("search"));
+    fireEvent.click(await screen.findByRole("button", { name: /Far away/ }));
+    const box = (await screen.findByRole("checkbox", { name: /Visualize/ })) as HTMLInputElement;
+    expect(box.checked).toBe(true);
+    expect(api.getChat).toHaveBeenCalledWith("c9");
+  });
+});
+
+// #198 review: while a Visualize change is being saved nothing is sent; the text stays in the chat's box, and sending
+// works once the save has settled (with whatever setting is then stored).
+describe("Visualize and sending", () => {
+  for (const outcome of ["stored", "failed"] as const) {
+    it(`a send during a pending Visualize save is held, then goes after the save (${outcome})`, async () => {
+      await mount([chat("c1", "One")]);
+      fireEvent.click(screen.getByText("One"));
+      let saved!: (v: unknown) => void;
+      api.changeChat.mockReturnValue(new Promise((r) => (saved = r)));
+      api.sendMessage.mockResolvedValue(ok({ runId: "r1", status: "PENDING" }));
+      fireEvent.click(await screen.findByRole("checkbox", { name: /Visualize/ }));
+      await waitFor(() => expect(api.changeChat).toHaveBeenCalledWith("c1", { visualize: true }));
+      const box = document.getElementById("composer-input") as HTMLTextAreaElement;
+      fireEvent.change(box, { target: { value: "chart it" } });
+      fireEvent.click(screen.getByRole("button", { name: /^Send/ }));
+      fireEvent.click(screen.getByRole("button", { name: /^Send/ })); // a second press meets the same refusal
+      await waitFor(() => expect(screen.getByText(/still being saved/)).toBeTruthy());
+      expect(api.sendMessage).not.toHaveBeenCalled();
+      expect(box.value).toBe("chart it");
+      saved(outcome === "stored" ? ok(chat("c1", "One", { visualize: true })) : { ok: false, code: "HERMES_UNAVAILABLE", status: 503 });
+      await waitFor(() => expect((screen.getByRole("checkbox", { name: /Visualize/ }) as HTMLInputElement).disabled).toBe(false));
+      expect((screen.getByRole("checkbox", { name: /Visualize/ }) as HTMLInputElement).checked).toBe(outcome === "stored");
+      fireEvent.click(screen.getByRole("button", { name: /^Send/ }));
+      await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(1));
+    });
+  }
+
+  it("an archived chat, opened from Archived or archived while open, keeps its toggle", async () => {
+    api.getCapabilities.mockResolvedValue(ok(inventory(true)));
+    api.listChats.mockImplementation((_c?: string, archived?: boolean) =>
+      Promise.resolve(ok({ chats: archived ? [chat("c2", "Old", { archived: true, visualize: true })] : [chat("c1", "One")], nextCursor: "" })),
+    );
+    render(<Chat email={EMAIL} onSignOut={() => {}} />);
+    await waitFor(() => expect(rows()).toEqual(["One"]));
+    // Opened from Archived.
+    fireEvent.click(screen.getByRole("button", { name: "Show archived" }));
+    const archive = await screen.findByRole("region", { name: "Archived conversations" });
+    fireEvent.click(await within(archive).findByText("Old"));
+    expect(((await screen.findByRole("checkbox", { name: /Visualize/ })) as HTMLInputElement).checked).toBe(true);
+    // Archived while open.
+    fireEvent.click(screen.getByText("One"));
+    await waitFor(() => expect((screen.getByRole("checkbox", { name: /Visualize/ }) as HTMLInputElement).checked).toBe(false));
+    api.changeChat.mockResolvedValue(ok(chat("c1", "One", { archived: true })));
+    fireEvent.click(within(openMenu("One")).getByRole("menuitem", { name: "Archive" }));
+    await waitFor(() => expect(rows()).toEqual([]));
+    expect(screen.getByRole("checkbox", { name: /Visualize/ })).toBeTruthy();
   });
 });

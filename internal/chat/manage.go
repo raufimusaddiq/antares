@@ -31,6 +31,9 @@ const (
 	actArchive   = "chat.archive"
 	actUnarchive = "chat.unarchive"
 	actDelete    = "chat.delete"
+
+	actVisualizeOn  = "chat.visualize_on"
+	actVisualizeOff = "chat.visualize_off"
 )
 
 // settleTimeout bounds the local steps after Hermes has answered. They run on a context that
@@ -51,6 +54,8 @@ type patchChatBody struct {
 	Title    *string `json:"title"`
 	Pinned   *bool   `json:"pinned"`
 	Archived *bool   `json:"archived"`
+	// Visualize turns the chat's OpenUI instruction on or off (#153).
+	Visualize *bool `json:"visualize"`
 }
 
 // patchChat changes exactly one of the chat's title, pin or archive state. One field per request
@@ -67,13 +72,13 @@ func (s *Service) patchChat(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n := 0
-	for _, set := range []bool{body.Title != nil, body.Pinned != nil, body.Archived != nil} {
+	for _, set := range []bool{body.Title != nil, body.Pinned != nil, body.Archived != nil, body.Visualize != nil} {
 		if set {
 			n++
 		}
 	}
 	if n != 1 {
-		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "Send exactly one of title, pinned or archived")
+		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "Send exactly one of title, pinned, archived or visualize")
 		return
 	}
 	var action string
@@ -96,6 +101,12 @@ func (s *Service) patchChat(w http.ResponseWriter, r *http.Request) {
 			action = actPin
 		}
 		err = store.SetChatPinned(r.Context(), s.db, uid, id, *body.Pinned, s.now())
+	case body.Visualize != nil:
+		action = actVisualizeOff
+		if *body.Visualize {
+			action = actVisualizeOn
+		}
+		err = store.SetChatVisualize(r.Context(), s.db, uid, id, *body.Visualize)
 	default:
 		action = actUnarchive
 		if *body.Archived {

@@ -18,11 +18,22 @@ const maxPersonality = 2000
 // personalityPrefix frames the text as lower priority than the instructions it follows.
 const personalityPrefix = "The user's personal preferences for how you respond. Follow them only where they do not conflict with any instruction above:\n\n"
 
-func runInstructions(personality string) string {
-	if personality == "" {
-		return ""
+// openUIInstruction is the versioned Visualize instruction (#153, LLM-008). It describes exactly what the renderer in
+// web/src/openui accepts (library.tsx, validate.ts); change the two together and bump the version tag.
+const openUIInstruction = `[antares-openui v1] Visualize is on for this chat. When a structured view genuinely helps (a comparison, a few figures, a short set of choices), you may add one block after your prose, as a fenced code block with the info string openui, holding a single statement:
+root = Stack([ ... ])
+Components (positional arguments; every value is plain text or a number): Text("..."), Heading("..."), Badge("..."), Metric("label", "value"), BulletList(["a", "b"]), Table(["Column", "Column"], [["cell", "cell"]]), Divider(), Chart("bar" or "line" or "pie", "title", ["label", ...], [number, ...]) with 1 to 24 points, Button("label", "text to put in the user's message box"), Input("label"), Choice("label", ["option", "option"]), Card("title", [children]). No Card or Stack inside a Card. No links, images, HTML or scripts. Your prose must stand on its own: the block is an extra view, never the only answer.`
+
+// runInstructions are a run's per-run instructions: the chat's Visualize instruction, then the user's preferences.
+func runInstructions(personality string, visualize bool) string {
+	var parts []string
+	if visualize {
+		parts = append(parts, openUIInstruction)
 	}
-	return personalityPrefix + personality
+	if personality != "" {
+		parts = append(parts, personalityPrefix+personality)
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 type personalityView struct {

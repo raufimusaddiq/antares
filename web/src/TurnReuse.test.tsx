@@ -9,7 +9,7 @@ vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi"
 import { Chat } from "./Chat";
 
 const ok = <T,>(value: T) => ({ ok: true as const, value });
-const chat: ChatSummary = { id: "c1", title: "Talk", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false };
+const chat: ChatSummary = { id: "c1", title: "Talk", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false, visualize: false };
 const box = () => screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
 
 beforeEach(() => {
