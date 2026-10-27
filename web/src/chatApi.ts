@@ -58,6 +58,9 @@ const CODES = [
   "STEER_REFUSED",
   "QUEUE_FULL",
   "QUEUE_EMPTY",
+  "JOB_LIMIT",
+  "SCHEDULE_TOO_FREQUENT",
+  "JOB_REFUSED",
 ] as const;
 
 /** Words shown for a code. The server's own message is never displayed. */
@@ -901,3 +904,58 @@ export function parseUsageRange(v: unknown): UsageRange | null {
 }
 
 export const getUsageRange = (days: 7 | 30 | 90) => call("GET", `/api/me/usage?days=${days}`, parseUsageRange);
+/** A scheduled task (#105), as the server shows it: no model, delivery target or workspace detail. */
+export interface Job {
+  id: string;
+  name: string;
+  prompt: string;
+  schedule: string;
+  state: string;
+  paused: boolean;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastStatus: string | null;
+}
+
+const strOrNull = (v: unknown): string | null => (typeof v === "string" ? v : null);
+
+export function parseJob(v: unknown): Job | null {
+  if (typeof v !== "object" || v === null) return null;
+  const o = v as Record<string, unknown>;
+  const id = strOrNull(o.id);
+  if (!id || typeof o.paused !== "boolean") return null;
+  return { id, name: str(o.name), prompt: str(o.prompt), schedule: str(o.schedule), state: str(o.state), paused: o.paused, nextRunAt: strOrNull(o.nextRunAt), lastRunAt: strOrNull(o.lastRunAt), lastStatus: strOrNull(o.lastStatus) };
+}
+
+export function parseJobs(v: unknown): { jobs: Job[]; max: number } | null {
+  if (typeof v !== "object" || v === null || !Array.isArray((v as { jobs?: unknown }).jobs)) return null;
+  const jobs = ((v as { jobs: unknown[] }).jobs).map(parseJob);
+  if (jobs.some((j) => j === null)) return null;
+  const max = (v as { max?: unknown }).max;
+  return { jobs: jobs as Job[], max: typeof max === "number" ? max : 10 };
+}
+
+export const listJobs = () => call("GET", "/api/jobs", parseJobs);
+export const createJob = (j: { name: string; schedule: string; prompt: string }) => call("POST", "/api/jobs", parseJob, j);
+export const jobAction = (id: string, action: "pause" | "resume" | "run") => call("POST", `/api/jobs/${encodeURIComponent(id)}/${action}`, parseJob, {});
+export const deleteJob = (id: string) => call("DELETE", `/api/jobs/${encodeURIComponent(id)}`, () => true);
+
+/** Words for a scheduled-task failure; anything else is describeCode's. */
+export function describeJobCode(code: string): string {
+  switch (code) {
+    case "JOB_LIMIT":
+      return "You have the maximum of 10 scheduled tasks. Delete one first.";
+    case "SCHEDULE_TOO_FREQUENT":
+      return "A task can run at most once an hour, for example \"every 2h\", \"0 9 * * *\" (09:00 UTC daily) or a single date and time.";
+    case "JOB_REFUSED":
+      return "The assistant did not accept this task. Check the schedule and the instructions.";
+    case "NOT_FOUND":
+      return "That task no longer exists.";
+    case "CAPABILITY_UNAVAILABLE":
+      return "Scheduled tasks are not available on this assistant.";
+    case "INVALID_REQUEST":
+      return "A task needs a name, a schedule and instructions.";
+    default:
+      return describeCode(code);
+  }
+}
