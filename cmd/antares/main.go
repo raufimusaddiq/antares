@@ -151,7 +151,8 @@ func run() error {
 		return err
 	}
 	defer pusher.Close() // after chats.Close below has stopped the workers that call it
-	chats, err := chat.New(chat.Options{DB: db, Box: box, Hermes: hermesClient, Kenari: kenari.New(kenari.DefaultURL, nil), Notifier: pusher})
+	chats, err := chat.New(chat.Options{DB: db, Box: box, Hermes: hermesClient, Kenari: kenari.New(kenari.DefaultURL, nil), Notifier: pusher,
+		Jobs: os.Getenv("ANTARES_JOBS") == "on"}) // scheduled tasks: off until proven on the deployed Hermes (docs/runbooks/jobs.md)
 	if err != nil {
 		return err
 	}

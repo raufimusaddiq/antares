@@ -35,13 +35,16 @@ var (
 func (s *Service) Handlers() map[string]http.Handler {
 	chatGet, chatPut, chatDel := s.chatDraftAPI().handlers(s)
 	newGet, newPut, newDel := s.newChatDraftAPI().handlers(s)
-	return map[string]http.Handler{
+	h := map[string]http.Handler{
 		"GET /api/chats/{chatId}/draft":                                chatGet,
 		"PUT /api/chats/{chatId}/draft":                                chatPut,
 		"DELETE /api/chats/{chatId}/draft":                             chatDel,
 		"GET /api/me/new-chat-draft":                                   newGet,
 		"PUT /api/me/new-chat-draft":                                   newPut,
 		"DELETE /api/me/new-chat-draft":                                newDel,
+		"GET /api/me/personality":                                      http.HandlerFunc(s.getPersonality),
+		"PUT /api/me/personality":                                      http.HandlerFunc(s.putPersonality),
+		"GET /api/me/usage":                                            http.HandlerFunc(s.getUsageRange),
 		"GET /api/me/templates":                                        http.HandlerFunc(s.listTemplates),
 		"POST /api/me/templates":                                       http.HandlerFunc(s.createTemplate),
 		"PUT /api/me/templates/{templateId}":                           http.HandlerFunc(s.putTemplate),
@@ -63,6 +66,8 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"GET /api/me/model-visibility":                                 http.HandlerFunc(s.getModelVisibility),
 		"PUT /api/me/model-visibility":                                 http.HandlerFunc(s.putModelVisibility),
 		"GET /api/me/budget":                                           http.HandlerFunc(s.getBudget),
+		"GET /api/me/spending-limits":                                  http.HandlerFunc(s.getSpending),
+		"PUT /api/me/spending-limits":                                  http.HandlerFunc(s.putSpending),
 		"PUT /api/me/budget":                                           http.HandlerFunc(s.putBudget),
 		"GET /api/search/chats":                                        http.HandlerFunc(s.searchAll),
 		"GET /api/capabilities":                                        http.HandlerFunc(s.capabilities),
@@ -88,6 +93,10 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"POST /api/chats/{chatId}/edit-turn":  http.HandlerFunc(s.noTurnMutation("edit-turn")),
 		"POST /api/chats/{chatId}/rewind":     http.HandlerFunc(s.noTurnMutation("rewind")),
 	}
+	for k, v := range s.jobHandlers() {
+		h[k] = v
+	}
+	return h
 }
 
 // ---- answers -------------------------------------------------------------------
@@ -409,20 +418,26 @@ func (s *Service) admit(w http.ResponseWriter, r *http.Request, uid, chatID, ide
 			return store.Run{}, false
 		}
 	}
-	// Budget: a free chat at or over its limit takes no new message (a reply
-	// already running is not interrupted). A busy chat answers RUN_CONFLICT as
-	// before, and AdmitRunWithin hands a replayed key its original run.
-	var budget int64
-	if chat.ActiveRunID == "" {
-		if budget, err = store.TokenBudget(r.Context(), s.db, uid); err != nil {
-			internalError(w, "token budget", err)
-			return store.Run{}, false
-		}
+	// The token budget and the daily hard spending limit (#152): a user at or over either takes no new message (a
+	// reply already running is not interrupted). Both are decided in the admission transaction, after the insert, so
+	// a busy chat still answers RUN_CONFLICT, and whatever the chat looked like above (a run that was active then may
+	// have finished since) cannot skip them. A replay of an existing key is answered before either; a soft limit never
+	// blocks.
+	budget, err := store.TokenBudget(r.Context(), s.db, uid)
+	if err != nil {
+		internalError(w, "token budget", err)
+		return store.Run{}, false
 	}
-	run, created, err := store.AdmitRunWithin(r.Context(), s.db, uid, chatID, idem, s.now(), budget)
+	if s.admitHook != nil {
+		s.admitHook()
+	}
+	run, created, err := store.AdmitRunGated(r.Context(), s.db, uid, chatID, idem, s.now(), budget, s.hardLimitGate(uid))
 	switch {
 	case errors.Is(err, store.ErrBudget):
 		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "This conversation has reached the token limit you set; raise or remove it to continue")
+		return store.Run{}, false
+	case errors.Is(err, errSpendLimit):
+		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "You have reached the daily spending limit you set; raise or remove it to continue")
 		return store.Run{}, false
 	case errors.Is(err, store.ErrNoChat):
 		notFound(w)

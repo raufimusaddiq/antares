@@ -58,6 +58,9 @@ const CODES = [
   "STEER_REFUSED",
   "QUEUE_FULL",
   "QUEUE_EMPTY",
+  "JOB_LIMIT",
+  "SCHEDULE_TOO_FREQUENT",
+  "JOB_REFUSED",
 ] as const;
 
 /** Words shown for a code. The server's own message is never displayed. */
@@ -91,7 +94,7 @@ export function describeCode(code: string): string {
     case "SEARCH_TIMEOUT":
       return "The search took too long. Try more specific words.";
     case "BUDGET_REACHED":
-      return "This conversation has reached the token limit you set, so it takes no new messages. Raise or remove the limit under Usage to continue.";
+      return "You have reached a limit you set (the token limit or the daily spending limit), so no new message was sent. Raise or remove it under Options to continue.";
     case "MODEL_UNAVAILABLE":
       return "That model or option is not available right now. Nothing was changed.";
     case "MODEL_TRANSPORT_UNAVAILABLE":
@@ -445,6 +448,8 @@ export interface ChatUsage {
   windowTokens: number | null;
   /** How much of the window the conversation fills now. null is unknown (the assistant does not report it): never 0. */
   carriedTokens: number | null;
+  /** Estimated spend today and this month against the user's money limits (#152); null when the server sent none. */
+  spending: Spending | null;
   /** limit null: the user set none. used null: no finished reply reported usage (unknown, not zero). enforced: a limit is set and usage is known. */
   budget: { limit: number | null; used: number | null; enforced: boolean; reached: boolean; basis: string };
 }
@@ -495,6 +500,7 @@ export function parseUsage(v: unknown): ChatUsage | null {
     // Only an explicit REPORTED state makes a number an occupancy; anything else stays unknown.
     carriedTokens: ctx.occupancy === "REPORTED" ? num(ctx.carriedTokens) : null,
     budget: { limit, used, enforced: b.enforced === true, reached: b.reached === true, basis: str(b.basis) },
+    spending: parseSpending(o.spending),
   };
 }
 
@@ -523,6 +529,9 @@ export function describeUsage(u: ChatUsage): string[] {
 /** The usage chip beside the composer (#164): lifetime use and context occupancy at a glance. Unknown stays unknown. */
 export function describeGlance(u: ChatUsage): string {
   if (u.budget.reached) return "Token limit reached";
+  if (u.spending?.hardReached) return "Daily spending limit reached";
+  // A reached warning is shown where the reader looks, not only inside the closed usage panel (review #190).
+  if (u.spending?.warnings.length) return `Spending warning: ${u.spending.warnings.join(" and ")} limit reached`;
   const used = u.tokens ? `${fmt(u.tokens.total)} tokens used` : "Usage unknown";
   const ctx = u.carriedTokens !== null && u.windowTokens ? `context ${Math.min(100, Math.round((u.carriedTokens / u.windowTokens) * 100))}% full` : "context in use unknown";
   return `${used} · ${ctx}`;
@@ -549,6 +558,86 @@ const parseBudget = (v: unknown): { limit: number | null; min: number; max: numb
   if ((o.limitTokens !== null && limit === null) || min === null || max === null) return null;
   return { limit, min, max };
 };
+
+/** A user's money limits and what they spent (#152). Amounts are estimates in the price list's currency; spent null is
+ *  unknown (no reply could be priced), never zero. Soft limits only warn; the daily hard limit refuses new messages. */
+export interface Spending {
+  currency: string;
+  day: { spent: number | null; unpricedRuns: number };
+  month: { spent: number | null; unpricedRuns: number };
+  dailySoft: number | null;
+  monthlySoft: number | null;
+  dailyHard: number | null;
+  warnings: string[];
+  hardReached: boolean;
+}
+
+const amount = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
+
+export function parseSpending(v: unknown): Spending | null {
+  const o = obj(v);
+  const d = obj(o?.day);
+  const m = obj(o?.month);
+  if (!o || !d || !m) return null;
+  return {
+    currency: str(o.currency) || "IDR",
+    day: { spent: amount(d.spent), unpricedRuns: amount(d.unpricedRuns) ?? 0 },
+    month: { spent: amount(m.spent), unpricedRuns: amount(m.unpricedRuns) ?? 0 },
+    dailySoft: amount(o.dailySoft),
+    monthlySoft: amount(o.monthlySoft),
+    dailyHard: amount(o.dailyHard),
+    warnings: strings(o.warnings),
+    hardReached: o.hardReached === true,
+  };
+}
+
+const rp = (n: number) => `Rp ${fmt(Math.round(n))}`;
+
+/** The spending lines: estimates, unknown stays unknown, warnings and the hard limit said differently. */
+export function describeSpending(s: Spending): string[] {
+  const spent = (w: Spending["day"]) =>
+    (w.spent === null ? "— (no priced reply)" : `about ${rp(w.spent)}`) + (w.unpricedRuns > 0 ? `, plus ${w.unpricedRuns} ${w.unpricedRuns === 1 ? "reply" : "replies"} with no known price (not counted)` : "");
+  const lines = [`Estimated spend today (UTC): ${spent(s.day)}`, `Estimated spend this month: ${spent(s.month)}`];
+  if (s.dailySoft !== null) lines.push(`Daily warning at ${rp(s.dailySoft)}${s.warnings.includes("daily") ? ": reached (a warning only; messages still go through)" : ""}`);
+  if (s.monthlySoft !== null) lines.push(`Monthly warning at ${rp(s.monthlySoft)}${s.warnings.includes("monthly") ? ": reached (a warning only; messages still go through)" : ""}`);
+  if (s.dailyHard !== null)
+    lines.push(
+      s.hardReached
+        ? `Daily spending limit of ${rp(s.dailyHard)} reached: new messages are refused until tomorrow (UTC) or until you raise or remove it. A reply already running finishes.`
+        : `Daily spending limit at ${rp(s.dailyHard)}: at the limit new messages are refused. It is an estimate, not a provider cap.`,
+    );
+  if (s.dailySoft === null && s.monthlySoft === null && s.dailyHard === null) lines.push("No spending limits set. They are optional.");
+  return lines;
+}
+
+/** A whole-rupiah limit as typed: digits, optionally grouped in threes with one separator used throughout ("50000",
+ * "50.000", "50,000", "50 000"). Empty is null (no limit). Anything else, including a fraction ("1.5", "1,50") or mixed
+ * separators, is undefined: refused, never guessed. */
+export function parseRupiah(t: string): number | null | undefined {
+  const s = t.trim();
+  if (s === "") return null;
+  if (!/^\d+$/.test(s) && !/^\d{1,3}(?:([.,  ])\d{3})(?:\1\d{3})*$/.test(s)) return undefined;
+  const n = Number(s.replace(/\D/g, ""));
+  return Number.isSafeInteger(n) && n > 0 && n <= 1e12 ? n : undefined;
+}
+
+export type SpendingFields = { dailySoft: string; monthlySoft: string; dailyHard: string };
+
+/** The form text for the server's limits: whole rupiah, empty for none. */
+export function spendingFields(s: Pick<Spending, "dailySoft" | "monthlySoft" | "dailyHard">): SpendingFields {
+  const show = (n: number | null) => (n === null ? "" : String(Math.round(n)));
+  return { dailySoft: show(s.dailySoft), monthlySoft: show(s.monthlySoft), dailyHard: show(s.dailyHard) };
+}
+
+/** A refresh of the server's limits updates each field the user has not edited since the last refresh and keeps their
+ * unsaved edits in the others. */
+export function reconcileSpending(before: SpendingFields, after: SpendingFields, typed: SpendingFields): SpendingFields {
+  const pick = (k: keyof SpendingFields) => (typed[k] === before[k] ? after[k] : typed[k]);
+  return { dailySoft: pick("dailySoft"), monthlySoft: pick("monthlySoft"), dailyHard: pick("dailyHard") };
+}
+
+export const putSpending = (l: { dailySoft: number | null; monthlySoft: number | null; dailyHard: number | null }) =>
+  call("PUT", "/api/me/spending-limits", parseSpending, l);
 
 export const putBudget = (limitTokens: number | null) => call("PUT", "/api/me/budget", parseBudget, { limitTokens });
 
@@ -767,3 +856,120 @@ export const getCapabilities = (signal?: AbortSignal) => call("GET", "/api/capab
 
 /** True only when the server reported this capability as available. Unknown ids are not offered. */
 export const offers = (inv: Inventory | null, id: string): boolean => inv?.capabilities.find((c) => c.id === id)?.available === true;
+
+/** The user's own additional instructions (#111). */
+export interface Personality {
+  text: string;
+  max: number;
+}
+
+export function parsePersonality(v: unknown): Personality | null {
+  if (typeof v !== "object" || v === null) return null;
+  const o = v as Record<string, unknown>;
+  return typeof o.text === "string" && typeof o.max === "number" ? { text: o.text, max: o.max } : null;
+}
+
+export const getPersonality = () => call("GET", "/api/me/personality", parsePersonality);
+export const putPersonality = (text: string) => call("PUT", "/api/me/personality", parsePersonality, { text });
+/** One group of the usage dashboard (#151). estimate is null when nothing in it could be priced. */
+export interface UsageTotals {
+  runs: number;
+  unreported: number;
+  unpriced: number;
+  input: number;
+  output: number;
+  cacheRead: number;
+  estimate: number | null;
+}
+export interface UsageRange {
+  days: number;
+  since: string;
+  currency: string;
+  priceDate: string;
+  total: UsageTotals;
+  byModel: (UsageTotals & { model: string })[];
+  byChat: (UsageTotals & { chatId: string; title: string; deleted: boolean })[];
+  byDay: (UsageTotals & { day: string })[];
+}
+
+function totals(v: unknown): UsageTotals | null {
+  if (typeof v !== "object" || v === null) return null;
+  const o = v as Record<string, unknown>;
+  const n = (k: string) => (typeof o[k] === "number" ? (o[k] as number) : NaN);
+  const t = { runs: n("runs"), unreported: n("unreported"), unpriced: n("unpriced"), input: n("input"), output: n("output"), cacheRead: n("cacheRead") };
+  if (Object.values(t).some(Number.isNaN)) return null;
+  const e = o.estimate;
+  if (e !== null && typeof e !== "number") return null;
+  return { ...t, estimate: e as number | null };
+}
+
+export function parseUsageRange(v: unknown): UsageRange | null {
+  if (typeof v !== "object" || v === null) return null;
+  const o = v as Record<string, unknown>;
+  const total = totals(o.total);
+  const list = <T,>(x: unknown, extra: (r: Record<string, unknown>) => T | null) =>
+    Array.isArray(x) ? x.map((r) => { const t = totals(r); const e = typeof r === "object" && r ? extra(r as Record<string, unknown>) : null; return t && e ? { ...t, ...e } : null; }) : null;
+  const byModel = list(o.byModel, (r) => (typeof r.model === "string" ? { model: r.model } : null));
+  const byChat = list(o.byChat, (r) => (typeof r.chatId === "string" && typeof r.title === "string" && typeof r.deleted === "boolean" ? { chatId: r.chatId, title: r.title, deleted: r.deleted } : null));
+  const byDay = list(o.byDay, (r) => (typeof r.day === "string" ? { day: r.day } : null));
+  if (!total || !byModel || !byChat || !byDay || [byModel, byChat, byDay].some((l) => l.some((x) => x === null))) return null;
+  if (typeof o.days !== "number" || typeof o.since !== "string" || typeof o.currency !== "string" || typeof o.priceDate !== "string") return null;
+  return { days: o.days, since: o.since, currency: o.currency, priceDate: o.priceDate, total, byModel: byModel as UsageRange["byModel"], byChat: byChat as UsageRange["byChat"], byDay: byDay as UsageRange["byDay"] };
+}
+
+export const getUsageRange = (days: 7 | 30 | 90) => call("GET", `/api/me/usage?days=${days}`, parseUsageRange);
+/** A scheduled task (#105), as the server shows it: no model, delivery target or workspace detail. */
+export interface Job {
+  id: string;
+  name: string;
+  prompt: string;
+  schedule: string;
+  state: string;
+  paused: boolean;
+  nextRunAt: string | null;
+  lastRunAt: string | null;
+  lastStatus: string | null;
+}
+
+const strOrNull = (v: unknown): string | null => (typeof v === "string" ? v : null);
+
+export function parseJob(v: unknown): Job | null {
+  if (typeof v !== "object" || v === null) return null;
+  const o = v as Record<string, unknown>;
+  const id = strOrNull(o.id);
+  if (!id || typeof o.paused !== "boolean") return null;
+  return { id, name: str(o.name), prompt: str(o.prompt), schedule: str(o.schedule), state: str(o.state), paused: o.paused, nextRunAt: strOrNull(o.nextRunAt), lastRunAt: strOrNull(o.lastRunAt), lastStatus: strOrNull(o.lastStatus) };
+}
+
+export function parseJobs(v: unknown): { jobs: Job[]; max: number } | null {
+  if (typeof v !== "object" || v === null || !Array.isArray((v as { jobs?: unknown }).jobs)) return null;
+  const jobs = ((v as { jobs: unknown[] }).jobs).map(parseJob);
+  if (jobs.some((j) => j === null)) return null;
+  const max = (v as { max?: unknown }).max;
+  return { jobs: jobs as Job[], max: typeof max === "number" ? max : 10 };
+}
+
+export const listJobs = () => call("GET", "/api/jobs", parseJobs);
+export const createJob = (j: { name: string; schedule: string; prompt: string }) => call("POST", "/api/jobs", parseJob, j);
+export const jobAction = (id: string, action: "pause" | "resume" | "run") => call("POST", `/api/jobs/${encodeURIComponent(id)}/${action}`, parseJob, {});
+export const deleteJob = (id: string) => call("DELETE", `/api/jobs/${encodeURIComponent(id)}`, () => true);
+
+/** Words for a scheduled-task failure; anything else is describeCode's. */
+export function describeJobCode(code: string): string {
+  switch (code) {
+    case "JOB_LIMIT":
+      return "You have the maximum of 10 scheduled tasks. Delete one first.";
+    case "SCHEDULE_TOO_FREQUENT":
+      return "A task can run at most once an hour, for example \"every 2h\", \"0 9 * * *\" (09:00 UTC daily) or a single date and time.";
+    case "JOB_REFUSED":
+      return "The assistant did not accept this task. Check the schedule and the instructions.";
+    case "NOT_FOUND":
+      return "That task no longer exists.";
+    case "CAPABILITY_UNAVAILABLE":
+      return "Scheduled tasks are not available on this assistant.";
+    case "INVALID_REQUEST":
+      return "A task needs a name, a schedule and instructions.";
+    default:
+      return describeCode(code);
+  }
+}

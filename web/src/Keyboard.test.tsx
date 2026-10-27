@@ -19,7 +19,7 @@ it.each(["M", "Â"])("reaches the composer with Alt+Shift+M (key %s) outside fie
   const shortcut = { key, code: "KeyM", altKey: true, shiftKey: true };
   expect(fireEvent.keyDown(newChat, shortcut)).toBe(false);
   expect(document.activeElement).toBe(composer);
-  for (const field of [screen.getByRole("searchbox"), screen.getByRole("combobox"), composer]) {
+  for (const field of [screen.getByRole("searchbox"), ...screen.getAllByRole("combobox"), composer]) {
     field.focus();
     expect(fireEvent.keyDown(field, shortcut)).toBe(true);
     expect(document.activeElement).toBe(field);

@@ -1,6 +1,10 @@
 package chat
 
-import "net/http"
+import (
+	"net/http"
+
+	"github.com/raufimusaddiq/antares/internal/hermes"
+)
 
 // capabilities answers GET /api/capabilities: what the deployed Hermes can do for
 // this account, discovered live under the caller's own binding. Nothing is cached
@@ -18,5 +22,10 @@ func (s *Service) capabilities(w http.ResponseWriter, r *http.Request) {
 		upstreamError(w, err)
 		return
 	}
+	jobs := hermes.Capability{ID: "jobs", Label: "Scheduled tasks", Status: hermes.StatusAvailable}
+	if !s.jobs {
+		jobs = hermes.Capability{ID: "jobs", Label: "Scheduled tasks", Status: hermes.StatusUnsupported, Reason: "Switched off on this server until their isolation is proven on the deployed assistant"}
+	}
+	inv.Capabilities = append(inv.Capabilities, jobs)
 	writeJSON(w, http.StatusOK, inv)
 }

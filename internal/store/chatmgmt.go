@@ -174,6 +174,23 @@ func FinishDeleteChat(ctx context.Context, db *sql.DB, userID, chatID string) (D
 			WHERE chat_id = ? AND user_id = ? AND input_tokens IS NOT NULL HAVING COUNT(*) > 0
 			ON CONFLICT(user_id) DO UPDATE SET input_tokens = input_tokens + excluded.input_tokens, output_tokens = output_tokens + excluded.output_tokens`,
 			[]any{userID, chatID, userID}, nil},
+		// What the runs cost stays countable per day and model (#152): a deleted chat cannot reset a spending limit.
+		{`INSERT INTO deleted_run_usage (user_id, day, model, runs, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+			SELECT ?, substr(created_at, 1, 10), COALESCE(usage_model, ''), COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
+			COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_write_tokens),0) FROM runs
+			WHERE chat_id = ? AND user_id = ? AND input_tokens IS NOT NULL AND status IN ('COMPLETED','FAILED','CANCELLED','TIMED_OUT')
+			GROUP BY substr(created_at, 1, 10), COALESCE(usage_model, '')
+			ON CONFLICT(user_id, day, model) DO UPDATE SET runs = runs + excluded.runs, input_tokens = input_tokens + excluded.input_tokens,
+			output_tokens = output_tokens + excluded.output_tokens, cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
+			cache_write_tokens = cache_write_tokens + excluded.cache_write_tokens`,
+			[]any{userID, chatID, userID}, nil},
+		// Replies that reported nothing are counted per day (#151): unknown, but not vanished.
+		{`INSERT INTO deleted_unreported_runs (user_id, day, runs)
+			SELECT ?, substr(created_at, 1, 10), COUNT(*) FROM runs
+			WHERE chat_id = ? AND user_id = ? AND input_tokens IS NULL AND status IN ('COMPLETED','FAILED','CANCELLED','TIMED_OUT')
+			GROUP BY substr(created_at, 1, 10)
+			ON CONFLICT(user_id, day) DO UPDATE SET runs = runs + excluded.runs`,
+			[]any{userID, chatID, userID}, nil},
 		// A staged image is the owner's; it goes only when no other chat's run sent it too.
 		{`DELETE FROM assets WHERE user_id = ?
 			AND id IN (SELECT ri.asset_id FROM run_images ri JOIN runs r ON r.id = ri.run_id AND r.user_id = ri.user_id WHERE r.chat_id = ? AND r.user_id = ?)

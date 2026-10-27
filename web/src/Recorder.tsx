@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
-// Voice capture (PRD §21.4, UXP-004). Dictation is not offered: the backend has no
-// speech-to-text route to use (docs/runbooks/voice.md) and Antares will not call a provider itself. What works is recording
-// and checking a take on this device. Nothing is uploaded and nothing reaches the composer.
+// Voice capture (PRD §21.4, UXP-004). Recording and checking a take on this device; nothing is uploaded and nothing
+// reaches the composer. Dictation to text is Dictation.tsx (the browser's own speech service, with disclosure): the
+// backend has no speech-to-text route (docs/runbooks/voice.md) and Antares calls no provider itself.
 export const MAX_SECONDS = 300;
 
 const TYPES = ["audio/webm;codecs=opus", "audio/webm", "audio/ogg;codecs=opus", "audio/mp4"];
@@ -118,7 +118,7 @@ export function Recorder() {
         </>
       )}
       {phase.name === "error" && <span role="alert">{phase.message}</span>}
-      <span className="recorder-note">Stays on this device. Speech-to-text is unavailable: no transcription service is connected.</span>
+      <span className="recorder-note">Stays on this device. Recordings are not transcribed: use Dictate for text.</span>
     </div>
   );
 }

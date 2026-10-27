@@ -42,6 +42,10 @@ type Options struct {
 	Kenari *kenari.Catalogue
 	// Notifier, if set, is told when a run reaches a terminal status (UXP-002).
 	Notifier Notifier
+	// Jobs turns the scheduled-task routes on (PRD §12 rule 6: only once owner isolation and suspension are proven on
+	// the deployed Hermes). Off, the routes stay the 501 placeholder and the capability is reported unsupported;
+	// suspension still pauses any jobs an account has.
+	Jobs bool
 }
 
 // Notifier receives the stored terminal status of a run. It gets identifiers and
@@ -70,6 +74,15 @@ type Service struct {
 	// streamOpenHook, when set by a test, runs in a run stream after the guard admitted it and before the stream
 	// registers, to place a sign-out exactly in that window.
 	streamOpenHook func()
+	// admitHook, when set by a test, runs in a send after the chat was read and before the admission transaction, to
+	// finish the chat's run (and reach a limit) exactly in that window.
+	admitHook func()
+
+	jobs          bool
+	jobLocks      sync.Map // user id -> *sync.Mutex (jobs.go jobLock)
+	jobRetryAfter string   // where the next pending job shutdown retry starts; only the retry loop touches it
+	// jobHook, when set by a test, runs inside a job change after its gate, holding the account's job lock.
+	jobHook func()
 
 	base context.Context
 	stop context.CancelFunc
@@ -92,8 +105,11 @@ func New(o Options) (*Service, error) {
 		o.Heartbeat = 15 * time.Second
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari,
-		base: ctx, stop: cancel, live: map[string]*liveRun{}}, nil
+	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs,
+		base: ctx, stop: cancel, live: map[string]*liveRun{}}
+	s.wg.Add(1)
+	go s.jobShutdownLoop()
+	return s, nil
 }
 
 // Close stops every worker and waits for them. Runs left in flight are
@@ -173,9 +189,15 @@ func (s *Service) runNew(ctx context.Context, l *liveRun, run store.Run, input s
 		s.finish(l, store.RunFailed, hermes.CodeHermesUnavailable, "")
 		return
 	}
+	personality, err := store.Personality(ctx, s.db, run.UserID)
+	if err != nil {
+		s.finish(l, store.RunFailed, hermes.CodeHermesUnavailable, "")
+		return
+	}
 	req := hermes.RunRequest{
 		SessionID: run.HermesSession, Input: input, SessionKey: sessionKey(run.UserID), IdempotencyKey: "antares-" + run.ID,
 		Provider: choice.Provider, Model: choice.Model, Reasoning: choice.Reasoning, ServiceTier: choice.ServiceTier,
+		Instructions: runInstructions(personality),
 	}
 	if imgs != nil {
 		// The model that was checked for image input is the model that runs: named explicitly,

@@ -38,7 +38,7 @@ export interface AuditEntry {
 export type AdminResult<T> = { ok: true; value: T } | { ok: false; code: string; status: number };
 
 export type Decision = "approve" | "reject" | "suspend" | "reactivate";
-export type Requeue = "tenant-binding" | "tenant-verify";
+export type Requeue = "tenant-binding" | "tenant-verify" | "revoke-sessions";
 
 export const USERS_PAGE = 200;
 export const AUDIT_PAGE = 50;
@@ -142,6 +142,21 @@ export function listAudit(before: string, signal?: AbortSignal) {
   return call("GET", `/api/admin/audit?${p}`, parseAudit, undefined, signal);
 }
 export const decide = (id: string, action: Decision, reason: string) => call("POST", `/api/admin/users/${id}/${action}`, parseAdminUser, reason ? { reason } : {});
+/** Every audit entry, newest first, by walking the pages (#113 export). Metadata only: the server never returns content.
+ * A log longer than maxPages is refused rather than exported in part. */
+export async function loadAllAudit(maxPages = 400): Promise<AdminResult<AuditEntry[]>> {
+  const all: AuditEntry[] = [];
+  let before = "";
+  for (let i = 0; i < maxPages; i++) {
+    const r = await listAudit(before);
+    if (!r.ok) return r;
+    all.push(...r.value.entries);
+    if (r.value.next === "") return { ok: true, value: all };
+    before = r.value.next;
+  }
+  return { ok: false, code: "EXPORT_TOO_LARGE", status: 0 };
+}
+
 export const requeue = (id: string, mode: Requeue) => call("POST", `/api/admin/users/${id}/${mode}`, parseAdminUser, {});
 
 /** Words shown for a code. The server's own message is never displayed. */
@@ -159,6 +174,8 @@ export function describeAdminCode(code: string, status: number): string {
       return "That account no longer exists.";
     case "REASON_REQUIRED":
       return "A reason is required for this action.";
+    case "EXPORT_TOO_LARGE":
+      return "The audit log is too long to export from the browser. Nothing was saved.";
     case "STATE_CONFLICT":
       return "The account's state changed, so that action is not allowed now. Reload to see its current state.";
     case "NO_BINDING":
