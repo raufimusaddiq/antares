@@ -51,6 +51,9 @@ function transcript(rich) {
     let body = Array.from({ length: paras }, (_, p) => `Paragraph ${p + 1} of answer ${i}. ` + "Words ".repeat(12 + ((i + p) % 20))).join("\n\n");
     if (rich && i === TURNS - 2) body += "\n\n```openui\n" + HOSTILE + "\n```";
     if (rich && i === TURNS - 1) body += "\n\n```openui\n" + TABLE + "\n```";
+    // #173: Markdown mixed around the OpenUI fence, with a very long code line and a wide table, so the phone layouts
+    // prove neither pushes the page sideways (they scroll inside their own box).
+    if (rich && i === TURNS - 1) body += "\n\n```sh\n" + "echo " + "very-long-argument-".repeat(40) + "\n```\n\n| " + Array.from({ length: 12 }, (_, k) => `column ${k}`).join(" | ") + " |\n|" + "---|".repeat(12) + "\n| " + Array.from({ length: 12 }, (_, k) => `value ${k} ${"w".repeat(14)}`).join(" | ") + " |\n\nAfter the table.";
     m.push({ seq: 2 * i, role: "user", text: `question ${i}` }, { seq: 2 * i + 1, role: "assistant", text: `answer ${i}\n\n${body}` });
   }
   return m;
