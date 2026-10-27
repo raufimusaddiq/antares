@@ -475,3 +475,54 @@ func TestSuspensionWithoutAPauseIsRecoveredByTheRetry(t *testing.T) {
 		t.Errorf("still pending: %v", ids)
 	}
 }
+
+// PRD §12 rule 6 (#194 review): off by default. The routes stay the 501 placeholder and the capability says why.
+func TestJobsAreOffUnlessSwitchedOn(t *testing.T) {
+	a := newApp(t, appOpts{noJobs: true})
+	alice := a.user("alice")
+	if w := alice.get("/api/jobs"); w.Code != http.StatusNotImplemented {
+		t.Errorf("GET /api/jobs while off: %d", w.Code)
+	}
+	if _, ok := a.svc.Handlers()["POST /api/jobs"]; ok {
+		t.Error("job routes mounted while off")
+	}
+	w := alice.get("/api/capabilities")
+	if !strings.Contains(w.Body.String(), `"id":"jobs"`) || !strings.Contains(w.Body.String(), "Switched off") {
+		t.Errorf("capability while off: %s", w.Body.String())
+	}
+}
+
+// #194 review: a manual run counts against the hourly bound.
+func TestManualRunIsLimitedToOncePerHour(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	job := createJob(t, alice, "one", "every 2h")
+	if w := alice.do("POST", "/api/jobs/"+job.ID+"/run", nil, map[string]any{}); w.Code != 200 {
+		t.Fatalf("first run: %d", w.Code)
+	}
+	if w := alice.do("POST", "/api/jobs/"+job.ID+"/run", nil, map[string]any{}); w.Code != 429 {
+		t.Errorf("second run within the hour: %d", w.Code)
+	}
+}
+
+// #194 review: an account whose jobs are not yet verified paused cannot be reactivated, so the retry never loses it.
+func TestReactivationWaitsForTheJobShutdown(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	createJob(t, alice, "one", "every 2h")
+	a.hx.mu.Lock()
+	a.hx.failNext["POST /api/jobs/"] = -503
+	a.hx.mu.Unlock()
+	suspend(t, a, alice)
+	admin := a.users["carol"]
+	if w := admin.do("POST", "/api/admin/users/"+alice.id+"/reactivate", nil, map[string]any{}); w.Code != 409 {
+		t.Fatalf("reactivate with jobs still running: %d %s", w.Code, w.Body.String())
+	}
+	a.hx.mu.Lock()
+	delete(a.hx.failNext, "POST /api/jobs/")
+	a.hx.mu.Unlock()
+	a.svc.retryJobShutdowns(context.Background())
+	if w := admin.do("POST", "/api/admin/users/"+alice.id+"/reactivate", nil, map[string]any{}); w.Code != 200 {
+		t.Fatalf("reactivate after the shutdown: %d %s", w.Code, w.Body.String())
+	}
+}

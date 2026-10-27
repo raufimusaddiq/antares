@@ -251,7 +251,9 @@ func Decide(ctx context.Context, db *sql.DB, actor, target, action, reason, reqI
 		}
 		res, err = tx.ExecContext(ctx, `UPDATE users SET approval_status = ?, tenant_status = ?, tenant_detail = NULL,
 			tenant_attempts = 0, tenant_next_attempt_at = NULL, approved_at = ?, approved_by = ?
-			WHERE id = ? AND approval_status = ?`, t.to, next, ts(now), actor, target, from)
+			WHERE id = ? AND approval_status = ? AND tenant_detail IS NOT ?`, t.to, next, ts(now), actor, target, from, JobShutdownPending)
+		// A suspended account whose scheduled jobs are not yet verified paused is not reactivated (ErrConflict): the
+		// retry loop only reconciles suspended accounts, so reactivating would abandon jobs that may still run.
 	case ActionSuspend:
 		// The pending job shutdown is recorded with the suspension itself (PRD §12 rule 3): it is cleared only once
 		// the account's scheduled jobs are verified paused, so a restart in between still leaves it to the retry loop.

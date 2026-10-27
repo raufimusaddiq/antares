@@ -1,5 +1,13 @@
 # Runbook — scheduled tasks (PRD §12, issue #105)
 
+## Switched off by default
+
+`ANTARES_JOBS=on` in `/opt/antares/antares.env` mounts the routes and reports the `jobs` capability, which shows the
+menu panel. Off (the default), the routes stay the 501 placeholder and the capability says it is switched off
+(PRD §12 rule 6). It is turned on only after the owner-isolation and suspension probe against the deployed Hermes
+passes and is recorded in `docs/hermes/` (the fake-upstream tests here prove the app's side, not Hermes'). Suspension
+pauses any jobs an account has whether or not the switch is on.
+
 ## What exists
 
 The account menu's **Scheduled tasks** panel lists, adds, pauses, resumes, runs now and deletes the caller's own
@@ -20,6 +28,7 @@ with another user's id.
 - Antares builds the request body itself: name, schedule, instructions, `deliver: "local"` (no messaging channel,
   so no global delivery channel). A request carrying any other field is a 400.
 - At most 10 tasks per account (`JOB_LIMIT`).
+- A manual "run now" counts against the hourly bound: once per task per hour (429 `RATE_LIMITED`).
 - At most once an hour: a single time, an interval of 60 minutes or more, or a five-field cron expression with one
   fixed minute. A task is created **paused**, its parsed schedule is checked, and it is resumed only if it passes;
   otherwise it is deleted (`SCHEDULE_TOO_FREQUENT`). Changing a schedule means deleting the task and adding it again.
@@ -35,7 +44,8 @@ The outcome is audited as `admin.suspend_jobs` (`ok` or `pending`). The suspensi
 once the pause is verified. So if Hermes cannot be reached, or the process stops before the pause runs, the admin user
 screen shows it and the chat service retries every 5 minutes; a retry that succeeds clears it and audits
 `system.suspend_jobs ok` (`TestSuspensionWithoutAPauseIsRecoveredByTheRetry`). Reactivating
-leaves the tasks paused: the user resumes them. Tests: `TestSuspensionPausesTheUsersJobsUpstream`,
+leaves the tasks paused: the user resumes them. An account still marked pending cannot be reactivated (409) until a
+retry verifies its jobs paused, so the retry never loses it (`TestReactivationWaitsForTheJobShutdown`). Tests: `TestSuspensionPausesTheUsersJobsUpstream`,
 `TestSuspensionWithUnreachableJobsIsPendingThenRetried`.
 
 ## Not here

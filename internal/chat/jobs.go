@@ -87,6 +87,22 @@ func (s *Service) jobLock(userID string) func() {
 	return mu.Unlock
 }
 
+// jobHandlers are the scheduled-task routes, mounted only when Options.Jobs is on.
+func (s *Service) jobHandlers() map[string]http.Handler {
+	if !s.jobs {
+		return nil
+	}
+	return map[string]http.Handler{
+		"GET /api/jobs":                 http.HandlerFunc(s.listJobs),
+		"POST /api/jobs":                http.HandlerFunc(s.createJob),
+		"GET /api/jobs/{jobId}":         http.HandlerFunc(s.getJob),
+		"DELETE /api/jobs/{jobId}":      http.HandlerFunc(s.deleteJob),
+		"POST /api/jobs/{jobId}/pause":  s.jobAction("pause"),
+		"POST /api/jobs/{jobId}/resume": s.jobAction("resume"),
+		"POST /api/jobs/{jobId}/run":    s.jobAction("run"),
+	}
+}
+
 func (s *Service) listJobs(w http.ResponseWriter, r *http.Request) {
 	uid, _ := user(r)
 	b, _, err := s.gate(r.Context(), uid)
@@ -234,6 +250,15 @@ func (s *Service) jobAction(action string) http.HandlerFunc {
 				apiError(w, http.StatusBadRequest, "SCHEDULE_TOO_FREQUENT", "This task runs more than once an hour, so it cannot be resumed. Delete it and add it again with a slower schedule.")
 				return
 			}
+		}
+		if action == "run" { // a manual run counts against the same hourly bound as the schedule
+			uid, _ := user(r)
+			key := uid + "/" + id
+			if last, ok := s.jobRuns.Load(key); ok && s.now().Sub(last.(time.Time)) < time.Hour {
+				apiError(w, http.StatusTooManyRequests, hermes.CodeRateLimited, "This task was run by hand less than an hour ago")
+				return
+			}
+			defer func() { s.jobRuns.Store(key, s.now()) }()
 		}
 		j, err := s.hx.JobAction(r.Context(), b, id, action)
 		if err != nil {

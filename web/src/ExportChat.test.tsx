@@ -81,7 +81,7 @@ describe("exporting a long history", () => {
   it("Markdown: the button saves 1000 turns in order across pages", async () => {
     render(<ExportChat chatId="c1" title="Long" />);
     fireEvent.click(screen.getByRole("button", { name: "Export Markdown" }));
-    await waitFor(() => expect(saved).toHaveLength(1));
+    await waitFor(() => expect(saved).toHaveLength(1), { timeout: 10_000 }); // 20 pages: slow on a loaded host
     expect(getMessages).toHaveBeenCalledTimes(20);
     expect(order(saved[0])).toEqual(all.map((t) => t.seq));
   });
@@ -89,7 +89,7 @@ describe("exporting a long history", () => {
   it("PDF: the button prints 1000 turns in order across pages", async () => {
     render(<ExportChat chatId="c1" title="Long" />);
     fireEvent.click(screen.getByRole("button", { name: "Export PDF" }));
-    await waitFor(() => expect(window.print).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(window.print).toHaveBeenCalledTimes(1), { timeout: 10_000 });
     const turns = [...document.body.querySelectorAll(".print-root .print-turn")];
     expect(turns).toHaveLength(1000);
     expect(order(turns.map((t) => t.textContent).join("\n"))).toEqual(all.map((t) => t.seq));

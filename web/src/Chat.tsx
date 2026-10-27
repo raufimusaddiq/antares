@@ -1334,7 +1334,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           </button>
           <div id="bar-actions" className={menuOpen ? "bar-actions open" : "bar-actions"}>
             <Notifications />
-            <JobsPanel />
+            {offers(inventory, "jobs") && <JobsPanel />}
             {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? openTitle.current} />}
             {canAdmin && onAdmin && (
               <button type="button" className="quiet" data-icon="shield" onClick={onAdmin}>

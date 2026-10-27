@@ -13,7 +13,8 @@
             {"id": "rewind", "label": "Rewind the last turn", "status": "unsupported", "reason": "Hermes has no route to remove the last turn; start a new chat instead"},
             {"id": "chat_delete", "label": "Delete conversations", "status": "unsupported", "reason": "Hermes does not advertise a session delete route"},
             {"id": "steer", "label": "Steer a running reply", "status": "unsupported", "reason": "Hermes does not report run_steer as enabled"},
-            {"id": "compaction", "label": "Compact the conversation", "status": "unsupported", "reason": "Hermes has no compaction route and does not report how full the context window is"}
+            {"id": "compaction", "label": "Compact the conversation", "status": "unsupported", "reason": "Hermes has no compaction route and does not report how full the context window is"},
+    {"id": "jobs", "label": "Scheduled tasks", "status": "available"}
   ],
   "toolsets": [],
   "providers": [],

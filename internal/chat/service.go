@@ -42,6 +42,10 @@ type Options struct {
 	Kenari *kenari.Catalogue
 	// Notifier, if set, is told when a run reaches a terminal status (UXP-002).
 	Notifier Notifier
+	// Jobs turns the scheduled-task routes on (PRD §12 rule 6: only once owner isolation and suspension are proven on
+	// the deployed Hermes). Off, the routes stay the 501 placeholder and the capability is reported unsupported;
+	// suspension still pauses any jobs an account has.
+	Jobs bool
 }
 
 // Notifier receives the stored terminal status of a run. It gets identifiers and
@@ -71,7 +75,9 @@ type Service struct {
 	// registers, to place a sign-out exactly in that window.
 	streamOpenHook func()
 
+	jobs          bool
 	jobLocks      sync.Map // user id -> *sync.Mutex (jobs.go jobLock)
+	jobRuns       sync.Map // user id + "/" + job id -> time.Time of the last manual run
 	jobRetryAfter string   // where the next pending job shutdown retry starts; only the retry loop touches it
 	// jobHook, when set by a test, runs inside a job change after its gate, holding the account's job lock.
 	jobHook func()
@@ -97,7 +103,7 @@ func New(o Options) (*Service, error) {
 		o.Heartbeat = 15 * time.Second
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari,
+	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs,
 		base: ctx, stop: cancel, live: map[string]*liveRun{}}
 	s.wg.Add(1)
 	go s.jobShutdownLoop()
