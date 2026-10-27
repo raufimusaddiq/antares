@@ -9,6 +9,7 @@ import {
   describeUsage,
   describeSpending,
   reconcileSpending,
+  parseRupiah,
   spendingFields,
   putSpending,
   type Spending,
@@ -1537,11 +1538,7 @@ function SpendingForm({ spending, onSaved }: { spending: Spending; onSaved: () =
     setV((typed) => reconcileSpending(before, server, typed));
   }, [key]);
   const [err, setErr] = useState("");
-  const read = (t: string): number | null | undefined => {
-    if (t.trim() === "") return null;
-    const n = Number(t.replace(/[,.\s]/g, ""));
-    return Number.isInteger(n) && n > 0 && n <= 1e12 ? n : undefined;
-  };
+  const read = parseRupiah;
   return (
     <form
       onSubmit={(e) => {
