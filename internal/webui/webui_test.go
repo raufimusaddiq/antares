@@ -110,6 +110,8 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		// #101 staged image and audio assets: upload/preview/delete by the server-issued asset id. Owner-checked
 		// on every call; the page never builds one from message text.
 		"/api/assets": true, "/api/assets/": true,
+		// #111 the caller's own additional instructions.
+		"/api/me/personality": true,
 		// #151 the caller's own usage over 7/30/90 days.
 		"/api/me/usage": true,
 		// #105 scheduled tasks: the caller's own list/create and /api/jobs/{id}[/pause|/resume|/run], owner-scoped by

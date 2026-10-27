@@ -189,9 +189,15 @@ func (s *Service) runNew(ctx context.Context, l *liveRun, run store.Run, input s
 		s.finish(l, store.RunFailed, hermes.CodeHermesUnavailable, "")
 		return
 	}
+	personality, err := store.Personality(ctx, s.db, run.UserID)
+	if err != nil {
+		s.finish(l, store.RunFailed, hermes.CodeHermesUnavailable, "")
+		return
+	}
 	req := hermes.RunRequest{
 		SessionID: run.HermesSession, Input: input, SessionKey: sessionKey(run.UserID), IdempotencyKey: "antares-" + run.ID,
 		Provider: choice.Provider, Model: choice.Model, Reasoning: choice.Reasoning, ServiceTier: choice.ServiceTier,
+		Instructions: runInstructions(personality),
 	}
 	if imgs != nil {
 		// The model that was checked for image input is the model that runs: named explicitly,

@@ -367,6 +367,9 @@ type RunRequest struct {
 	// Optional per-run model choice, sent as body provider/model/model_options (the fields
 	// _request_agent_overrides reads). Empty means the profile's default.
 	Provider, Model, Reasoning, ServiceTier string
+	// Instructions are the user's own per-run instructions (#111), sent as body "instructions": Hermes appends them
+	// to the profile's system prompt for this run only. Empty sends nothing.
+	Instructions string
 	// Images are the user's own staged images for this turn, already validated and owner-resolved
 	// by the caller. They travel inline as data URLs (gateway/platforms/api_server.py accepts
 	// data:image/... only); Hermes receives nothing it can fetch from Antares.
@@ -821,6 +824,9 @@ func contentText(v any) string {
 // chat with no choice sends exactly what it always did.
 func runBody(r RunRequest) map[string]any {
 	body := map[string]any{"session_id": r.SessionID, "input": r.Input}
+	if r.Instructions != "" {
+		body["instructions"] = r.Instructions
+	}
 	if len(r.Images) > 0 {
 		// POST /v1/runs reads the last message's content and hands it to the agent without
 		// normalising it (api_server_runs.py _run_user_message), so the canonical parts the
