@@ -17,9 +17,11 @@ import {
   type KenariUsageView,
   type UsageSection,
   type Requeue,
+  loadAllAudit,
 } from "./adminApi";
 import { getCapabilities, type Inventory } from "./chatApi";
 import { userPath, type AdminRoute } from "./route";
+import { saveText } from "./exportChat";
 import { AntaresMark } from "./brand/AntaresMark";
 
 // ---- load state: every screen renders all four of these ----------------------
@@ -315,6 +317,10 @@ export const REQUEUES: Record<Requeue, ActionCopy> = {
     label: "Requeue provisioning",
     effect: "Clears the recorded failure detail and the attempt count, then queues provisioning of the workspace again. The failure text above will no longer be shown, so read it first. Not undone by reloading the page.",
   },
+  "revoke-sessions": {
+    label: "Sign out all sessions",
+    effect: "Ends every session of this account on every device, stops its alerts and closes any open reply stream. The account, its chats and its workspace stay as they are; the person signs in again. Recorded in the audit log.",
+  },
   "tenant-verify": {
     label: "Requeue verification",
     effect: "Clears the recorded failure detail and the attempt count, then re-runs the checks on the existing binding. Needs a binding: the server refuses it for an account that has none. Not undone by reloading the page.",
@@ -440,13 +446,20 @@ export function UserDetail({ user, onDecide, onRequeue }: { user: AdminUser; onD
 
       <h2>Provisioning</h2>
       <div className="actions">
-        {(Object.keys(REQUEUES) as Requeue[]).map((m) => (
+        {(["tenant-binding", "tenant-verify"] as Requeue[]).map((m) => (
           <button key={m} type="button" className="quiet" onClick={() => choose({ kind: "requeue", action: m })}>
             {REQUEUES[m].label}
           </button>
         ))}
       </div>
       <p className="label">Both are refused by the server unless the account is approved.</p>
+
+      <h2>Sessions</h2>
+      <div className="actions">
+        <button type="button" className="quiet" onClick={() => choose({ kind: "requeue", action: "revoke-sessions" })}>
+          {REQUEUES["revoke-sessions"].label}
+        </button>
+      </div>
 
       {pick && <ActionPanel key={`${pick.kind}-${pick.action}`} pick={pick} busy={busy} error={error} onCancel={() => setPick(null)} onConfirm={(r) => void confirm(r)} />}
       {done && (
@@ -537,7 +550,38 @@ export function AuditScreen() {
   if (state.kind === "forbidden") return <Forbidden />;
   if (state.kind === "error") return <Problem message={state.message} onRetry={reload} />;
   const { entries, next } = state.value;
-  return <AuditTable entries={entries} hasOlder={next !== ""} hasNewer={trail.length > 1} onOlder={() => setTrail((t) => [...t, next])} onNewer={() => setTrail((t) => t.slice(0, -1))} />;
+  return (
+    <>
+      <AuditExport />
+      <AuditTable entries={entries} hasOlder={next !== ""} hasNewer={trail.length > 1} onOlder={() => setTrail((t) => [...t, next])} onNewer={() => setTrail((t) => t.slice(0, -1))} />
+    </>
+  );
+}
+
+/** Downloads the whole audit log as JSON (#113): actor, action, target, outcome, request id and time; never content. */
+export function AuditExport() {
+  const [state, setState] = useState<"" | "working" | "done" | string>("");
+  const run = async () => {
+    setState("working");
+    const r = await loadAllAudit();
+    if (!r.ok) {
+      setState(describeAdminCode(r.code, r.status));
+      return;
+    }
+    const now = new Date().toISOString();
+    saveText(`antares-audit-${now.slice(0, 10)}.json`, JSON.stringify({ exportedAt: now, entries: r.value }, null, 2), "application/json");
+    setState("done");
+  };
+  return (
+    <p className="actions">
+      <button type="button" className="quiet" disabled={state === "working"} onClick={() => void run()}>
+        Export audit log (JSON)
+      </button>{" "}
+      <span role="status" className="label">
+        {state === "working" ? "Reading every page…" : state === "done" ? "Exported. Metadata only: no conversation content." : state}
+      </span>
+    </p>
+  );
 }
 
 export function CapabilitiesTable({ inv }: { inv: Inventory }) {

@@ -108,6 +108,7 @@ func uncleanSegments(p string) bool {
 func (s *Server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /healthz", s.healthz)
+	mux.HandleFunc("GET /api/version", s.version)
 	mux.HandleFunc("GET /readyz", s.readyz)
 	// The slash forms are probes too; without these they fall through to the
 	// SPA shell and report healthy with the database down.
@@ -122,6 +123,20 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("/", s.static)
 	return mux
 }
+
+// version answers which build is running (#113 diagnostics): the commit the image was built from (stamped at build
+// time; "unknown" for a local build) and nothing else. No configuration, no dependency state.
+func (s *Server) version(w http.ResponseWriter, r *http.Request) {
+	rev := Revision
+	if rev == "" {
+		rev = "unknown"
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]string{"revision": rev})
+}
+
+// Revision is the commit this binary was built from, set with -ldflags "-X …/internal/server.Revision=<sha>".
+var Revision string
 
 // healthz says the process is up. It checks nothing else, by design.
 func (s *Server) healthz(w http.ResponseWriter, r *http.Request) {

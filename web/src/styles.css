@@ -51,7 +51,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --canvas: #0d1024;
     --rail: #11153a;
     --card: #171b3f;
@@ -74,6 +74,30 @@
     --search-glyph: url("/icons/search-paper.svg");
     --tag-glyph: url("/icons/mark-dark.svg");
   }
+}
+/* An explicit choice wins over the OS (#113): dark here, and light by the :not() above. */
+:root[data-theme="dark"] {
+    --canvas: #0d1024;
+    --rail: #11153a;
+    --card: #171b3f;
+    --ink: #eef0ff;
+    --ink-2: #a4aad0;
+    --hair: #2a3070;
+    --cobalt: #7c93ff;
+    --cobalt-ink: #0d1024;
+    --mark-ink: #0d1024;
+    --peri: #2a3270;
+    --mint: #14403a;
+    --blush: #4b1f36;
+    --code: #080a1a;
+    --code-ink: #e9ecff;
+    --focus: #eef0ff;
+    --marker: linear-gradient(transparent 40%, color-mix(in srgb, var(--mark) 42%, transparent) 40% 94%, transparent 94%);
+    --marker-thin: linear-gradient(transparent 66%, color-mix(in srgb, var(--mark) 60%, transparent) 66% 94%, transparent 94%);
+    --marker-ink: var(--ink);
+    --dots: url("/icons/dots-paper.svg");
+    --search-glyph: url("/icons/search-paper.svg");
+    --tag-glyph: url("/icons/mark-dark.svg");
 }
 
 * { box-sizing: border-box; }
@@ -697,3 +721,15 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   *, *::before, *::after { transition: none !important; animation: none !important; }
   .run-streaming::after, .run-reconnecting::after { width: calc(100% - 1rem); opacity: 0.6; }
 }
+
+/* Per-device appearance (#113, web/src/appearance.ts). Text size scales every rem. */
+:root[data-text="large"] { font-size: 112.5%; }
+:root[data-text="larger"] { font-size: 125%; }
+@media (min-width: 40.01rem) {
+  :root[data-sidebar="narrow"] .chat-app { grid-template-columns: 13rem minmax(0, 1fr); }
+  :root[data-sidebar="wide"] .chat-app { grid-template-columns: 22rem minmax(0, 1fr); }
+  :root[data-focus] .chat-app > .side { display: none; }
+}
+.settings { margin: 0.25rem 0; }
+.settings summary { cursor: pointer; }
+.settings label { display: block; margin: 0.25rem 0; }
