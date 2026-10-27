@@ -18,6 +18,7 @@ import (
 	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/kenari"
 	"github.com/raufimusaddiq/antares/internal/push"
+	"github.com/raufimusaddiq/antares/internal/redact"
 	"github.com/raufimusaddiq/antares/internal/secrets"
 	"github.com/raufimusaddiq/antares/internal/store"
 	"github.com/raufimusaddiq/antares/internal/tenant"
@@ -35,7 +36,7 @@ func main() {
 		return
 	}
 	if isAdminCmd(os.Args) {
-		if err := runAdminCmd(context.Background(), os.Args, os.Getenv, os.Stdout, os.Stderr); err != nil {
+		if err := runAdminCmd(context.Background(), os.Args, os.Getenv, os.Stdout, redact.Writer(os.Stderr)); err != nil { // stdout: `backup -` streams the database there, raw
 			log.Fatal(err)
 		}
 		return
@@ -46,6 +47,9 @@ func main() {
 }
 
 func run() error {
+	// Every log line leaves through the redactor (#114): a session cookie, bearer token, JWT or provider key that ends
+	// up in a message is replaced before it is written.
+	log.SetOutput(redact.Writer(os.Stderr))
 	cfg, err := config.Load(os.Getenv)
 	if err != nil {
 		return err
