@@ -415,3 +415,36 @@ func TestPendingShutdownRetriesRotate(t *testing.T) {
 		t.Errorf("after two ticks: %d pending, good one cleared %v", len(ids), !slices.Contains(ids, good.id))
 	}
 }
+
+// #194 review: a too-frequent task whose delete failed stays paused upstream, and resuming it is refused on its stored
+// schedule, so the hourly limit cannot be bypassed.
+func TestATooFrequentTaskLeftBehindCannotBeResumed(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	a.hx.mu.Lock()
+	a.hx.failNext["DELETE /api/jobs/"] = 500
+	a.hx.mu.Unlock()
+	if w := alice.do("POST", "/api/jobs", nil, map[string]string{"name": "fast", "schedule": "every 5m", "prompt": "x"}); w.Code != 400 {
+		t.Fatalf("create: %d %s", w.Code, w.Body.String())
+	}
+	var left string
+	for id, j := range a.hx.jobsOf(alice.profile) {
+		if j["enabled"] != false {
+			t.Fatalf("the refused task is enabled upstream")
+		}
+		left = id
+	}
+	if left == "" {
+		t.Fatal("expected the refused task to remain after its delete failed")
+	}
+	w := alice.do("POST", "/api/jobs/"+left+"/resume", nil, map[string]any{})
+	if w.Code != 400 || !strings.Contains(w.Body.String(), "SCHEDULE_TOO_FREQUENT") {
+		t.Errorf("resume: %d %s", w.Code, w.Body.String())
+	}
+	if a.hx.jobsOf(alice.profile)[left]["enabled"] != false {
+		t.Error("the task was resumed")
+	}
+	if w := alice.do("DELETE", "/api/jobs/"+left, nil, nil); w.Code != 204 {
+		t.Errorf("the owner can still delete it: %d", w.Code)
+	}
+}

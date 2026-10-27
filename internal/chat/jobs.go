@@ -224,6 +224,17 @@ func (s *Service) jobAction(action string) http.HandlerFunc {
 		if s.jobHook != nil {
 			s.jobHook()
 		}
+		if action == "resume" { // the stored schedule is checked again: a refused task whose delete failed stays paused
+			cur, err := s.hx.GetJob(r.Context(), b, id)
+			if err != nil {
+				jobError(w, err)
+				return
+			}
+			if !hourlyAtMost(cur.Schedule) {
+				apiError(w, http.StatusBadRequest, "SCHEDULE_TOO_FREQUENT", "This task runs more than once an hour, so it cannot be resumed. Delete it and add it again with a slower schedule.")
+				return
+			}
+		}
 		j, err := s.hx.JobAction(r.Context(), b, id, action)
 		if err != nil {
 			jobError(w, err)

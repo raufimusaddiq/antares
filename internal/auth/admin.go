@@ -220,9 +220,17 @@ func (a *Auth) adminDecide(action string) http.HandlerFunc {
 		if (action == store.ActionApprove || action == store.ActionReactivate) && a.tenants != nil {
 			a.tenants.Kick(id)
 		}
-		if action == store.ActionSuspend && a.pauseJobs(r.Context(), actor.ID, id) {
-			if again, err := store.GetAdminUser(r.Context(), a.db, id); err == nil {
-				u = again // shows the pending job shutdown
+		if action == store.ActionSuspend {
+			pending, err := a.pauseJobs(r.Context(), actor.ID, id)
+			if err != nil {
+				a.apiError(w, r, http.StatusInternalServerError, "JOB_SHUTDOWN_UNRECORDED",
+					"The account is suspended, but its scheduled tasks could not be paused and that could not be recorded. They may still run; check the server log.")
+				return
+			}
+			if pending {
+				if again, err := store.GetAdminUser(r.Context(), a.db, id); err == nil {
+					u = again // shows the pending job shutdown
+				}
 			}
 		}
 		writeJSON(w, http.StatusOK, adminView(u))
@@ -234,28 +242,35 @@ type jobPauser interface {
 	PauseUserJobs(ctx context.Context, userID string) error
 }
 
-// pauseJobs pauses a suspended account's jobs and audits the outcome (admin.suspend_jobs, ok or pending). When it
-// fails the account is marked SUSPENSION_PENDING_JOB_SHUTDOWN, which the admin screen shows and the chat service
-// retries; it then reports true.
-func (a *Auth) pauseJobs(ctx context.Context, actor, id string) (pending bool) {
+// pauseJobs pauses a suspended account's jobs and audits the outcome (admin.suspend_jobs, ok or pending). When the
+// pause fails the account is marked SUSPENSION_PENDING_JOB_SHUTDOWN, which the admin screen shows and the chat service
+// retries. The mark and the audit get their own deadline, so a pause that used all of its time is still recorded.
+// It returns errJobShutdownUnrecorded when even the mark could not be written.
+func (a *Auth) pauseJobs(ctx context.Context, actor, id string) (pending bool, err error) {
 	p, ok := a.chat.(jobPauser)
 	if !ok {
-		return false
+		return false, nil
 	}
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-	defer cancel()
+	pctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	perr := p.PauseUserJobs(pctx, id)
+	cancel()
+	rctx, rcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+	defer rcancel()
 	outcome := "ok"
-	if err := p.PauseUserJobs(ctx, id); err != nil {
+	if perr != nil {
 		outcome, pending = "pending", true
-		if err := store.MarkJobShutdownPending(ctx, a.db, id); err != nil {
-			log.Printf("auth: could not mark the pending job shutdown: %v", err)
+		if merr := store.MarkJobShutdownPending(rctx, a.db, id); merr != nil {
+			log.Printf("auth: SECURITY: user %s is suspended but its scheduled jobs are not paused and the pending mark could not be written: %v", id, merr)
+			err = errJobShutdownUnrecorded
 		}
 	}
-	if err := store.Audit(ctx, a.db, actor, "admin.suspend_jobs", "user", id, outcome, newRequestID(), a.now()); err != nil {
-		log.Printf("auth: audit write failed: %v", err)
+	if aerr := store.Audit(rctx, a.db, actor, "admin.suspend_jobs", "user", id, outcome, newRequestID(), a.now()); aerr != nil {
+		log.Printf("auth: audit write failed: %v", aerr)
 	}
-	return pending
+	return pending, err
 }
+
+var errJobShutdownUnrecorded = errors.New("auth: pending job shutdown not recorded")
 
 func (a *Auth) adminRequeue(mode string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
