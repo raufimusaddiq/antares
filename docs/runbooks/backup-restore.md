@@ -123,15 +123,29 @@ container user can read: run it with `--user 0:0` and a read-only mount, as `ant
 
 ## Restore
 
+Backups are root-only (`0700` directory, `0600` file) and the image runs as uid 65532, which cannot read them. Restore
+from a **staging copy** owned by 65532, and remove it afterwards (it is a full copy of the database). Run as root:
+
 1. Stop Antares: `docker compose stop antares`.
-2. Check the candidate: `antares check <backup>` must print `ok`.
-3. Restore into the volume, keeping the old files outside the data directory (which must hold only the
-   database files):
+2. Stage and check the candidate:
    ```
-   docker run --rm -v antares-data:/data -v /var/backups/antares:/b -v /var/backups/antares-old:/old \
-     -e ANTARES_DB_PATH=/data/antares.sqlite --user 65532:65532 \
-     ghcr.io/raufimusaddiq/antares:<tag> restore -keep-old /old /b/<file>
+   F=/var/backups/antares/scheduled/antares-<UTC>.sqlite          # or a deploy backup
+   S=$(mktemp -d /var/backups/antares/restore-stage.XXXXXX)          # 0700, root
+   chown 65532:65532 "$S" && install -m 0600 -o 65532 -g 65532 "$F" "$S/restore.sqlite"
+   docker run --rm --network none -v "$S":/b:ro --user 65532:65532 ghcr.io/raufimusaddiq/antares:<tag> check /b/restore.sqlite   # must print ok
    ```
+3. Restore into the volume actually mounted at `/data`, keeping the old files outside it (the data directory must hold
+   only the database files):
+   ```
+   vol=$(docker inspect -f '{{range .Mounts}}{{if eq .Destination "/data"}}{{.Name}}{{end}}{{end}}' antares)
+   O=$(mktemp -d /var/backups/antares/restore-old.XXXXXX) && chown 65532:65532 "$O"
+   docker run --rm --network none -v "$vol":/data -v "$S":/b:ro -v "$O":/old -e ANTARES_DB_PATH=/data/antares.sqlite \
+     --user 65532:65532 ghcr.io/raufimusaddiq/antares:<tag> restore -keep-old /old /b/restore.sqlite
+   rm -f "$S/restore.sqlite" && rmdir "$S"                            # the staging copy goes
+   ```
+   `$O` keeps the replaced database until the restored one is confirmed; delete it then. This exact path (stage → check →
+   restore → check → remove the stage) was run on 2026-10-27 against a scheduled backup into a scratch directory
+   (`restored …`, `ok`, staging removed).
 4. Restore signs every user out (it clears `app_sessions`). Start Antares: `docker compose up -d antares`; wait for `/readyz` 200 (it applies any newer
    migrations first). Confirm a known account and a chat are present, and re-apply any suspension or revocation made since
    the backup (see "Sessions are dropped on restore").

@@ -26,7 +26,7 @@ trap - EXIT
 echo "antares-backup: verified $final ($(stat -c %s "$final") bytes) from $image"
 
 # Retention: newest $KEEP verified backups stay; partial files never count.
-mapfile -t old < <(ls -1t "$DIR"/antares-*.sqlite 2>/dev/null | tail -n +$((KEEP + 1)))
+mapfile -t old < <(find "$DIR" -maxdepth 1 -name 'antares-*.sqlite' -printf '%T@ %p\n' | sort -nr | tail -n +$((KEEP + 1)) | cut -d' ' -f2-)
 for f in "${old[@]}"; do
   rm -f -- "$f"
   echo "antares-backup: removed old $f"
