@@ -135,38 +135,42 @@ describe("Memory & Skills", () => {
     expect((screen.getByRole("button", { name: "Save instructions" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
-  it("a read started while a save is pending cannot overwrite what was saved", async () => {
-    let put: ((r: Response) => void) | null = null;
-    let lateRead: ((r: Response) => void) | null = null;
-    let reads = 0;
-    vi.stubGlobal(
-      "fetch",
-      vi.fn((path: string, init?: RequestInit) => {
-        if (path === "/api/capabilities") return Promise.resolve(json(200, inventory));
-        if (init?.method === "PUT") return new Promise<Response>((r) => (put = r));
-        reads++;
-        if (reads === 1) return Promise.resolve(json(200, { text: "old", max: 2000 }));
-        return new Promise<Response>((r) => (lateRead = r));
-      }),
-    );
-    const { container } = render(<MemorySkillsPanel />);
-    open(container);
-    const box = () => screen.getByLabelText("Instructions") as HTMLTextAreaElement;
-    await waitFor(() => expect(box().value).toBe("old"));
-    fireEvent.change(box(), { target: { value: "new" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save instructions" }));
-    await waitFor(() => expect(put).not.toBeNull());
-    const d = container.querySelector("details")!;
-    d.open = false;
-    fireEvent(d, new Event("toggle"));
-    open(container); // a read starts while the save is still pending
-    await waitFor(() => expect(lateRead).not.toBeNull());
-    put!(json(200, { text: "new", max: 2000 }));
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("applies from your next message"));
-    lateRead!(json(200, { text: "old", max: 2000 })); // answered after the save, with what the server had before it
-    await new Promise((r) => setTimeout(r, 20));
-    expect(box().value).toBe("new");
-  });
+  for (const outcome of ["saved", "failed"] as const) {
+    it(`a reopen during a pending save reads nothing over the edit (save ${outcome})`, async () => {
+      let put: ((r: Response) => void) | null = null;
+      let reads = 0;
+      vi.stubGlobal(
+        "fetch",
+        vi.fn((path: string, init?: RequestInit) => {
+          if (path === "/api/capabilities") return Promise.resolve(json(200, inventory));
+          if (init?.method === "PUT") return new Promise<Response>((r) => (put = r));
+          reads++;
+          return Promise.resolve(json(200, { text: "old", max: 2000 }));
+        }),
+      );
+      const { container } = render(<MemorySkillsPanel />);
+      open(container);
+      const box = () => screen.getByLabelText("Instructions") as HTMLTextAreaElement;
+      await waitFor(() => expect(box().value).toBe("old"));
+      fireEvent.change(box(), { target: { value: "new" } });
+      fireEvent.click(screen.getByRole("button", { name: "Save instructions" }));
+      await waitFor(() => expect(put).not.toBeNull());
+      const d = container.querySelector("details")!;
+      d.open = false;
+      fireEvent(d, new Event("toggle"));
+      open(container); // reopened while the save is pending
+      await screen.findByText("arxiv");
+      expect(reads).toBe(1); // no second read
+      expect(box().value).toBe("new");
+      put!(outcome === "saved" ? json(200, { text: "new", max: 2000 }) : json(503, { error: { code: "HERMES_UNAVAILABLE", message: "x" } }));
+      await waitFor(() => expect(box().readOnly).toBe(false));
+      expect(box().value).toBe("new"); // saved, or kept to retry
+      if (outcome === "failed") {
+        expect(screen.getByRole("status").textContent).toContain("Not saved");
+        expect((screen.getByRole("button", { name: "Save instructions" }) as HTMLButtonElement).disabled).toBe(false);
+      }
+    });
+  }
 
   it("says so when no skills are available", async () => {
     vi.stubGlobal(

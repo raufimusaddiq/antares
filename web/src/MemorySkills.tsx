@@ -17,6 +17,7 @@ export function MemorySkillsPanel() {
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
   const seq = useRef(0); // orders reads and writes of the instructions: only the newest one's answer is applied
+  const savingRef = useRef(false);
 
   useEffect(() => {
     if (!open) return;
@@ -28,6 +29,12 @@ export function MemorySkillsPanel() {
       if (r.ok) setInv(r.value);
       else setInvError(describeCode(r.code));
     });
+    // A save still pending owns the box: no read replaces the edit it is sending, and if it fails the edit stays to retry.
+    if (savingRef.current) {
+      return () => {
+        live = false;
+      };
+    }
     // Until this read succeeds there is no baseline, so Save stays off: stale text cannot overwrite another session.
     setSaved(null);
     const mine = ++seq.current;
@@ -46,10 +53,12 @@ export function MemorySkillsPanel() {
 
   const save = async () => {
     setSaving(true); // the editor is read-only until the server answers, so nothing typed meanwhile is overwritten
+    savingRef.current = true;
     setStatus("Saving…");
     ++seq.current; // any read already in flight is older than this write: its answer is dropped
     const r = await putPersonality(text);
     ++seq.current; // and so is any read that started while the write was pending
+    savingRef.current = false;
     setSaving(false);
     if (r.ok) {
       setText(r.value.text);
