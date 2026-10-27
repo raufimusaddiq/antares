@@ -21,7 +21,7 @@ import path from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
 import { measure, verdicts, CURRENT, pointerCheck } from "../web/scripts/mobile-layout.mjs";
-import { knownBlobConsole, unexpectedMessages } from "../web/scripts/known-csp.mjs";
+import { unexpectedMessages } from "../web/scripts/known-csp.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const dist = process.env.DIST ? path.resolve(process.env.DIST) : path.join(here, "..", "internal", "webui", "dist");
@@ -198,6 +198,12 @@ const INSTRUMENT = () => {
   requestAnimationFrame(tick);
   window.__csp = [];
   document.addEventListener("securitypolicyviolation", (e) => window.__csp.push(e.violatedDirective + " " + e.blockedURI));
+  // Every attached-image thumbnail that loads (#142): it must be a blob: URL that really rendered.
+  window.__thumbs = [];
+  document.addEventListener("load", (e) => {
+    const t = e.target;
+    if (t instanceof HTMLImageElement && t.dataset.media === "thumb") window.__thumbs.push({ blob: t.src.startsWith("blob:"), w: t.naturalWidth });
+  }, true);
 };
 
 const scrollerInfo = () => {
@@ -775,13 +781,26 @@ async function images(browser) {
       check(`images ${label}: a TAP (no hover, no focus) shows the capability reason, and it covers no text`, reason === "shown" && ro.size[0] > 20 && ro.hits.length === 0, `reason ${ro.size.join("x")} covers ${JSON.stringify(ro.hits)}`);
       await page.screenshot({ path: path.join(outDir, `phone-reason-tapped.png`) });
     }
-    // KNOWN, pre-existing, not caused by #139: the attached-image thumbnail is a blob: URL and the page's CSP is img-src 'self', so the
-    // browser blocks it (the file name and Remove still work). It is the ONLY console/CSP message this flow is allowed to produce, together
-    // with the deliberate 415 of the failed-upload step. Anything else fails; the day the policy allows blob: images this check is tightened.
-    const csp = await page.evaluate(() => window.__csp);
-    const unexpected = unexpectedMessages(consoleErrors, csp, base);
-    const blobBlocked = consoleErrors.filter((m) => knownBlobConsole(m, base)).length;
-    check(`images ${label}: no console error or CSP violation other than the known blocked blob: thumbnail (${blobBlocked} blocked) and the deliberate 415`, unexpected.length === 0, JSON.stringify(unexpected.slice(0, 2)));
+    // #142: the page's CSP is img-src 'self' blob:, so the attached-image thumbnail (a blob: URL the page made) must actually render,
+    // while an image from anywhere else is still refused. Nothing in this flow may produce a CSP message except the probes below.
+    const csp = await page.evaluate(() => window.__csp.splice(0));
+    const unexpected = unexpectedMessages(consoleErrors, csp);
+    check(`images ${label}: no console error or CSP violation other than the deliberate 415`, unexpected.length === 0, JSON.stringify(unexpected.slice(0, 2)));
+    const rendered = await page.evaluate(() => window.__thumbs ?? []);
+    check(`images ${label}: the attached-image thumbnail rendered (blob: allowed by img-src)`, rendered.length > 0 && rendered.every((t) => t.blob && t.w > 0), JSON.stringify(rendered.slice(0, 3)));
+    const probes = await page.evaluate(async () => {
+      const load = (src) => new Promise((res) => {
+        const img = new Image();
+        img.onload = () => res("loaded");
+        img.onerror = () => res("blocked");
+        img.src = src;
+      });
+      const remote = await load("https://example.invalid/probe.png");
+      const data = await load("data:image/gif;base64,R0lGODlhAQABAAAAACw=");
+      await new Promise((r) => setTimeout(r, 100));
+      return { remote, data, events: window.__csp.splice(0) };
+    });
+    check(`images ${label}: an image from another origin and a data: image are still refused by img-src`, probes.remote === "blocked" && probes.data === "blocked" && probes.events.some((e) => /^img-src(-elem)? https:\/\/example\.invalid/.test(e)) && probes.events.some((e) => /^img-src(-elem)? data/.test(e)), JSON.stringify(probes));
     await ctx.close();
   }
 }
