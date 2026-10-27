@@ -660,13 +660,13 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 		evs, lost, done, wait := l.since(last)
 		// A revoked session gets nothing more, not even a terminal event that arrived before the next heartbeat (#150).
 		// Checked before a terminal event always, and otherwise at most once a second, so a fast stream of deltas does not
-		// turn into a database read per token.
-		if (done || ((len(evs) > 0 || lost) && time.Since(checked) >= sessionRecheck)) && !auth.SessionLive(r.Context(), s.db, r, s.now()) {
-			writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
-			fl.Flush()
-			return
-		}
-		if len(evs) > 0 || lost || done {
+		// turn into a database read per token. checked moves only after a check that passed.
+		if done || ((len(evs) > 0 || lost) && time.Since(checked) >= sessionRecheck) {
+			if !auth.SessionLive(r.Context(), s.db, r, s.now()) {
+				writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
+				fl.Flush()
+				return
+			}
 			checked = time.Now()
 		}
 		if lost {

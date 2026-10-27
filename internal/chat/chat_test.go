@@ -892,6 +892,41 @@ func TestRevokedSessionGetsNoTerminalEventEvenBeforeAHeartbeat(t *testing.T) {
 	}
 }
 
+// Review #186: deltas arriving faster than the recheck interval must not postpone the session check forever. After
+// revocation a steady stream of deltas (heartbeat an hour away, no terminal event) ends within about a second.
+func TestRevokedSessionStopsAContinuousStream(t *testing.T) {
+	a := newApp(t, appOpts{heartbeat: time.Hour})
+	u := a.user("alice")
+	run := u.send(u.newChat(), "q")
+	_, fr := a.hx.runWithInput(t, "q")
+	s := u.open(run, "")
+	recv(t, fr.opens, "stream")
+	s.waitFor(t, "run.started")
+	if _, err := store.RevokeUserSessions(a.svc.base, a.db, u.id, time.Now()); err != nil {
+		t.Fatal(err)
+	}
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(50 * time.Millisecond):
+				a.hx.push(fr, "assistant.delta", `{"delta":"d"}`)
+			}
+		}
+	}()
+	select {
+	case <-s.done:
+	case <-time.After(3 * time.Second):
+		t.Fatal("a continuous stream outlived the revoked session")
+	}
+	if !s.has("run.disconnected") || s.has("run.completed") {
+		t.Errorf("events: %v", s.names())
+	}
+}
+
 func TestMessagesAreProxiedFromTheOwnedSessionOnly(t *testing.T) {
 	a := newApp(t)
 	alice, bob := a.user("alice"), a.user("bobby")
