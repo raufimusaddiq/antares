@@ -36,20 +36,22 @@ func section(prd, n string) string {
 	return rest
 }
 
-var idRE = regexp.MustCompile("`((?:UXP|LLM-ACC|LLM|CTX|MEDIA-EXT|QUEUE|KNOW|IMPORT)-[0-9]{3})`")
+var idRE = regexp.MustCompile("`((?:UXP-ACC|UXP|LLM-ACC|LLM|CTX|MEDIA-EXT|QUEUE|KNOW|IMPORT)-[0-9]{3})`")
 
 // required lists the row ids the PRD defines in the covered sections.
-func required(t *testing.T) []string {
+// required lists the requirement rows the PRD defines in the covered sections, with the priority the PRD gives each
+// ("" where its definition states none).
+func required(t *testing.T) (ids []string, pri map[string]string) {
 	prd := read(t, "docs/PRD.md")
-	seen := map[string]bool{}
-	var ids []string
-	add := func(id string) {
-		if !seen[id] {
-			seen[id] = true
+	pri = map[string]string{}
+	priRE := regexp.MustCompile(`\bP[0-3]\b`)
+	add := func(id, line string) {
+		if _, ok := pri[id]; !ok {
 			ids = append(ids, id)
+			pri[id] = priRE.FindString(line)
 		}
 	}
-	for _, n := range []string{"21", "27", "28", "29"} {
+	for _, n := range []string{"21", "25", "27", "28", "29"} {
 		s := section(prd, n)
 		if s == "" {
 			t.Fatalf("PRD §%s not found", n)
@@ -57,31 +59,39 @@ func required(t *testing.T) []string {
 		for _, line := range strings.Split(s, "\n") {
 			// Definitions only: a table row or a list item that starts with the id.
 			if m := regexp.MustCompile("^(?:\\| |- )`([A-Z-]+-[0-9]{3})`").FindStringSubmatch(line); m != nil && idRE.MatchString("`"+m[1]+"`") {
-				add(m[1])
+				add(m[1], line)
 			}
 		}
 	}
-	s26 := section(prd, "26")
-	inTable := false
-	for _, line := range strings.Split(s26, "\n") {
-		if strings.HasPrefix(line, "| Domain |") {
-			inTable = true
-			continue
-		}
-		if inTable {
+	// Domain rows have no id: §26.1 (by domain) and §29.1 (by UI capability).
+	for _, tbl := range []struct{ sec, header, prefix string }{{"26", "| Domain |", "§26/"}, {"29", "| UI capability |", "§29.1/"}} {
+		in := false
+		for _, line := range strings.Split(section(prd, tbl.sec), "\n") {
+			if strings.HasPrefix(line, tbl.header) {
+				in = true
+				continue
+			}
+			if !in {
+				continue
+			}
 			if !strings.HasPrefix(line, "|") {
 				break
 			}
 			cells := strings.Split(line, "|")
 			if d := strings.TrimSpace(cells[1]); d != "" && !strings.HasPrefix(d, "---") {
-				add("§26/" + d)
+				p := ""
+				if tbl.sec == "26" {
+					p = priRE.FindString(cells[len(cells)-2]) // "Priority / integration gate"
+				}
+				add(tbl.prefix+d, "")
+				pri[tbl.prefix+d] = p
 			}
 		}
 	}
-	return ids
+	return ids, pri
 }
 
-type row struct{ id, status, evidence, source string }
+type row struct{ id, pri, status, evidence, source string }
 
 // rows reads the table's rows by header name, so adding or moving a column cannot silently drop them.
 func rows(t *testing.T) []row {
@@ -102,7 +112,7 @@ func rows(t *testing.T) []row {
 			for i, h := range cells {
 				col[h] = i
 			}
-			for _, h := range []string{"ID", "Source module", "Owner", "Status", "Evidence"} {
+			for _, h := range []string{"ID", "Pri", "Source module", "Owner", "Status", "Evidence"} {
 				if _, ok := col[h]; !ok {
 					t.Fatalf("a requirements table has no %q column", h)
 				}
@@ -118,7 +128,7 @@ func rows(t *testing.T) []row {
 		if cells[col["Owner"]] == "" {
 			t.Errorf("%s has no owner", cells[0])
 		}
-		out = append(out, row{id: cells[0], status: cells[col["Status"]], evidence: cells[col["Evidence"]], source: cells[col["Source module"]]})
+		out = append(out, row{id: cells[0], pri: cells[col["Pri"]], status: cells[col["Status"]], evidence: cells[col["Evidence"]], source: cells[col["Source module"]]})
 	}
 	return out
 }
@@ -161,13 +171,16 @@ var (
 )
 
 func TestTableIsComplete(t *testing.T) {
-	want := required(t)
-	if len(want) < 80 {
+	want, pri := required(t)
+	if len(want) < 100 {
 		t.Fatalf("only %d PRD rows found: the PRD headings or tables moved", len(want))
 	}
 	got := map[string]int{}
 	for _, r := range rows(t) {
 		got[r.id]++
+		if p, ok := pri[r.id]; ok && p != "" && !strings.HasPrefix(r.pri, p) {
+			t.Errorf("%s has priority %q in the table, %s in the PRD", r.id, r.pri, p)
+		}
 	}
 	for _, id := range want {
 		if got[id] != 1 {
@@ -180,7 +193,7 @@ func TestTableIsComplete(t *testing.T) {
 	}
 	for id := range got {
 		if !wanted[id] {
-			t.Errorf("%s is in the table but is not a requirement row of PRD §§21, 26.1, 27-29", id)
+			t.Errorf("%s is in the table but is not a requirement row of PRD §§21, 25, 26.1, 27-29, 29.1", id)
 		}
 	}
 }
@@ -216,8 +229,9 @@ func TestEveryRowHasItsEvidence(t *testing.T) {
 				t.Errorf("%s is UPSTREAM_BLOCKED but does not name the probed endpoint and cite the route probe", r.id)
 			}
 		case "OWNER_ACCEPTED_EXCEPTION":
-			if len(strings.TrimSpace(r.evidence)) < 20 {
-				t.Errorf("%s is an exception with no recorded reason", r.id)
+			// An exception is an owner decision or a divergence the PRD itself states; an upstream gap is not one.
+			if !regexp.MustCompile(`[Oo]wner decision|PRD §`).MatchString(r.evidence) {
+				t.Errorf("%s is an owner exception but cites no owner decision or PRD divergence", r.id)
 			}
 		default:
 			t.Errorf("%s has status %q, not one of TESTED, IMPLEMENTED, UPSTREAM_BLOCKED, OWNER_ACCEPTED_EXCEPTION", r.id, r.status)
@@ -247,6 +261,52 @@ func TestTableMatchesTheRouteProbe(t *testing.T) {
 	for _, r := range probe.Routes {
 		if absent.MatchString(r.Path) {
 			t.Errorf("Hermes now has %s %s: revisit the UPSTREAM_BLOCKED rows that say it does not", r.Method, r.Path)
+		}
+	}
+}
+
+// LLM-ACC-015 / UXP-ACC-020: what goes into the image (internal/, cmd/) has no Hermes data path or database, no local
+// media pipeline, no process spawning, and no LLM provider request. The one provider host it may name is kenari.id, for
+// the model catalogue and the admin-only account read (#146), never a completion route. The image is distroless and
+// the container mounts only its own data volume.
+func TestImageHasNoForbiddenUpstreamAccess(t *testing.T) {
+	forbidden := regexp.MustCompile(`/opt/data|memory_store|state\.db|\.hermes/|ffmpeg|"os/exec"|chat/completions|/v1/responses|/v1/messages|api\.openai\.com|anthropic\.com|generativelanguage`)
+	for _, dir := range []string{"internal", "cmd"} {
+		err := filepath.WalkDir(filepath.Join(root, dir), func(p string, d fs.DirEntry, err error) error {
+			if err != nil || d.IsDir() || !strings.HasSuffix(p, ".go") || strings.HasSuffix(p, "_test.go") {
+				return err
+			}
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return err
+			}
+			for i, line := range strings.Split(string(b), "\n") {
+				if forbidden.MatchString(line) {
+					t.Errorf("%s:%d: %s", p, i+1, strings.TrimSpace(line))
+				}
+				if strings.Contains(line, "kenari.id") && !strings.Contains(p, "internal/kenari") && !strings.HasPrefix(strings.TrimSpace(line), "//") &&
+					!strings.Contains(line, "usageSource") {
+					t.Errorf("%s:%d: names the provider outside internal/kenari: %s", p, i+1, strings.TrimSpace(line))
+				}
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	froms := regexp.MustCompile(`(?m)^FROM\s+(\S+)`).FindAllStringSubmatch(read(t, "Dockerfile"), -1)
+	if len(froms) == 0 || !strings.HasPrefix(froms[len(froms)-1][1], "gcr.io/distroless/static") {
+		t.Errorf("the final image stage is %v, not distroless static (no runtime Python or Node)", froms)
+	}
+	// The service's volumes: block (indented under the service), item by item.
+	block := regexp.MustCompile(`(?m)^    volumes:\n((?:      - .*\n)+)`).FindStringSubmatch(read(t, "deploy/compose.yml"))
+	if block == nil {
+		t.Fatal("no volumes block for the antares service in deploy/compose.yml")
+	}
+	for _, line := range strings.Split(strings.TrimSpace(block[1]), "\n") {
+		if src := strings.SplitN(strings.TrimPrefix(strings.TrimSpace(line), "- "), ":", 2)[0]; src != "antares-data" {
+			t.Errorf("the antares container mounts %q; only its own data volume is allowed", line)
 		}
 	}
 }

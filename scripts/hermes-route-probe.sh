@@ -8,13 +8,16 @@ C=${HERMES_CONTAINER:-hermes}
 version=$(docker exec -u hermes "$C" hermes --version | sed -n 1p)
 image=$(docker inspect -f '{{.Image}}' "$C")
 health=$(docker exec "$C" sh -c 'curl -s -m 5 localhost:8642/health')
-routes=$(docker exec -u hermes "$C" sh -c 'cd /opt/hermes && grep -rnoE "\(\"(GET|POST|PUT|PATCH|DELETE)\", \"/[^\"]*\"" gateway/platforms/api_server*.py; grep -rnoE "add_(get|post|put|patch|delete|route)\(\s*\"[^\"]+\"" gateway/platforms/api_server*.py' | sort -u)
+routes=$(docker exec -u hermes "$C" sh -c 'cd /opt/hermes && grep -rHnoE "\(\"(GET|POST|PUT|PATCH|DELETE)\", \"/[^\"]*\"" gateway/platforms/api_server*.py; grep -rHnoE "add_(get|post|put|patch|delete|route)\(\s*\"[^\"]+\"" gateway/platforms/api_server*.py' | sort -u)
 read -r -d '' PY <<'PYEOF' || true
 import json, re, sys
 version, image, health = sys.argv[1], sys.argv[2], json.loads(sys.argv[3])
 rows = []
 for line in sys.stdin.read().splitlines():
-    f, n, rest = line.split(":", 2)
+    parts = line.split(":", 2)
+    if len(parts) != 3:
+        sys.exit(f"unexpected grep line (want file:line:match): {line!r}")
+    f, n, rest = parts
     m = re.search(r'\("(\w+)", "([^"]*)"', rest) or re.search(r'add_(\w+)\(\s*"([^"]+)"', rest)
     if m:
         rows.append({"method": m.group(1).upper().replace("ROUTE", "*"), "path": m.group(2), "source": f"{f}:{n}"})
