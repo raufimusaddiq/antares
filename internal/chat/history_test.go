@@ -357,9 +357,18 @@ func TestHistoryAndIndexLatencyAreLoggedWithoutContent(t *testing.T) {
 			t.Errorf("log lacks %q:\n%s", want, got)
 		}
 	}
-	for _, secret := range []string{"TELEMETRY-SECRET-77", chat, u.id} {
-		if strings.Contains(got, secret) {
-			t.Errorf("telemetry logged %q:\n%s", secret, got)
+	// The access log line (#114) names the internal user id by design; the telemetry lines carry no id at all.
+	for _, line := range strings.Split(got, "\n") {
+		if !strings.Contains(line, "chat: history page") && !strings.Contains(line, "chat: search index") {
+			continue
 		}
+		for _, secret := range []string{"TELEMETRY-SECRET-77", chat, u.id} {
+			if strings.Contains(line, secret) {
+				t.Errorf("telemetry logged %q: %s", secret, line)
+			}
+		}
+	}
+	if strings.Contains(got, "TELEMETRY-SECRET-77") {
+		t.Errorf("transcript text reached the log:\n%s", got)
 	}
 }
