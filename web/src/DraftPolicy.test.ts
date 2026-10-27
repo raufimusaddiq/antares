@@ -51,6 +51,17 @@ describe("local drafts follow the session (#172)", () => {
     expect(loadDraft(A, "c1")).toBe("signed in again");
   });
 
+  it("the seal holds in every tab: another tab's composer cannot write the draft back", async () => {
+    seed();
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(null, { status: 204 })));
+    await signOut(); // tab 1
+    // Tab 2 shares localStorage but not module state: a fresh copy of the module stands in for it.
+    vi.resetModules();
+    const tab2 = await import("./drafts");
+    tab2.saveDraft(A, "c1", "typed in the other tab");
+    expect(drafts()).toEqual([]);
+  });
+
   it("another account signing in on the same browser finds nothing of the first", async () => {
     seed();
     vi.stubGlobal("fetch", vi.fn(async () => Response.json({ state: "ACTIVE", email: B })));

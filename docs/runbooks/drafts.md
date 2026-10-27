@@ -23,7 +23,8 @@ so nothing can be purged at that moment; the next start either sees the 401 (eve
 (other accounts' text goes, and nothing older than a week stays). The server copy restores a purged draft after sign-in.
 
 After any purge the device is **sealed**: `saveDraft` writes nothing until a session loads for an account again
-(`purgeStaleDrafts`), so text typed into a composer still on screen after a 401 does not recreate the purged draft.
+(`purgeStaleDrafts`), so text typed into a composer still on screen after a 401 does not recreate the purged draft. The seal is
+a `localStorage` key (`antares:drafts-sealed`), so every open tab obeys it, not only the tab that saw the 401 or the sign-out.
 
 The 7 days are not a timer: nothing runs while the app is closed, so an old draft is cleared at the next start, not on its
 seventh day. The product says exactly that in the Options drawer ("text older than 7 days is cleared the next time you open

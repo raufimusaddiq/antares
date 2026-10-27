@@ -24,12 +24,28 @@ export const DRAFT_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const stampKey = (email: string, chatId: string | null) => `${PREFIX}at:${keyOf(email, chatId).slice(PREFIX.length)}`;
 
 // After a purge (sign-out, an ended or suspended session) this device writes no draft until a session loads for an
-// account again: text typed into a composer still on screen after a 401 must not recreate what was just removed.
-let sealed = false;
+// account again: text typed into a composer still on screen after a 401 must not recreate what was just removed. The
+// seal is stored beside the drafts, so every open tab obeys it, not only the one that saw the 401.
+const SEAL = "antares:drafts-sealed";
+const sealed = (): boolean => {
+  try {
+    return localStorage.getItem(SEAL) === "1";
+  } catch {
+    return false; // no storage, so no draft can be written anyway
+  }
+};
+const seal = (on: boolean) => {
+  try {
+    if (on) localStorage.setItem(SEAL, "1");
+    else localStorage.removeItem(SEAL);
+  } catch {
+    // Storage unavailable: nothing is written to seal.
+  }
+};
 
 /** Empty text removes the entry rather than storing "". */
 export function saveDraft(email: string, chatId: string | null, text: string, now = Date.now()): void {
-  if (sealed && text !== "") return;
+  if (text !== "" && sealed()) return;
   try {
     if (text === "") {
       localStorage.removeItem(keyOf(email, chatId));
@@ -103,7 +119,7 @@ export function forgetChatDrafts(email: string, chatId: string): void {
  * shared browser, and nothing outlives a week on the device.
  */
 export function purgeStaleDrafts(email: string, now = Date.now()): void {
-  sealed = false; // a session is live for this account: its drafts may be kept again
+  seal(false); // a session is live for this account: its drafts may be kept again
   const own = `${encodeURIComponent(email)}:`;
   try {
     const doomed: string[] = [];
@@ -127,7 +143,7 @@ export function purgeStaleDrafts(email: string, now = Date.now()): void {
 
 /** Sign-out, an expired session and suspension: the next person on this browser inherits nothing. */
 export function purgeDrafts(): void {
-  sealed = true;
+  seal(true);
   try {
     for (let i = localStorage.length - 1; i >= 0; i--) {
       const k = localStorage.key(i);
