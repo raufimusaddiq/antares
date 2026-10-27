@@ -22,10 +22,11 @@ func ClearJobShutdownPending(ctx context.Context, db *sql.DB, userID string) err
 	return err
 }
 
-// PendingJobShutdowns lists the suspended accounts still marked, oldest id first, at most limit.
-func PendingJobShutdowns(ctx context.Context, db *sql.DB, limit int) ([]string, error) {
-	rows, err := db.QueryContext(ctx, `SELECT id FROM users WHERE approval_status = 'SUSPENDED' AND tenant_detail = ? ORDER BY id LIMIT ?`,
-		JobShutdownPending, limit)
+// PendingJobShutdowns lists the suspended accounts still marked with an id after `after` ("" from the start), in id
+// order, at most limit.
+func PendingJobShutdowns(ctx context.Context, db *sql.DB, after string, limit int) ([]string, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id FROM users WHERE approval_status = 'SUSPENDED' AND tenant_detail = ? AND id > ?
+		ORDER BY id LIMIT ?`, JobShutdownPending, after, limit)
 	if err != nil {
 		return nil, err
 	}

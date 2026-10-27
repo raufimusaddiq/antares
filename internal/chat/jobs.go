@@ -6,7 +6,9 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"slices"
 	"strings"
+	"sync"
 	"time"
 	"unicode/utf8"
 
@@ -74,6 +76,17 @@ func jobError(w http.ResponseWriter, err error) {
 	}
 }
 
+// jobLock serialises one account's job changes with each other and with its suspension (PauseUserJobs): a change
+// takes the lock, then checks the account is still allowed (s.gate), so it either finishes before the suspension
+// lists and pauses the jobs, or is refused. In-process only: Antares is one container. Creation's count-then-create
+// is atomic under it too, so the account limit holds against concurrent creates.
+func (s *Service) jobLock(userID string) func() {
+	m, _ := s.jobLocks.LoadOrStore(userID, &sync.Mutex{})
+	mu := m.(*sync.Mutex)
+	mu.Lock()
+	return mu.Unlock
+}
+
 func (s *Service) listJobs(w http.ResponseWriter, r *http.Request) {
 	uid, _ := user(r)
 	b, _, err := s.gate(r.Context(), uid)
@@ -117,6 +130,7 @@ func (s *Service) createJob(w http.ResponseWriter, r *http.Request) {
 		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "A task needs a name (up to 100 characters), a schedule and instructions (up to 4,000 characters)")
 		return
 	}
+	defer s.jobLock(uid)()
 	b, _, err := s.gate(r.Context(), uid)
 	if err != nil {
 		upstreamError(w, err)
@@ -132,6 +146,9 @@ func (s *Service) createJob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Created paused, so nothing runs before the parsed schedule is checked; resumed only when it passes.
+	if s.jobHook != nil {
+		s.jobHook()
+	}
 	j, err := s.hx.CreateJob(r.Context(), b, in.Name, in.Schedule, in.Prompt)
 	if err != nil {
 		jobError(w, err)
@@ -151,27 +168,31 @@ func (s *Service) createJob(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, viewJob(j))
 }
 
-// jobRoute resolves the caller's binding and the job id; a malformed id is the same 404 as an unknown one.
-func (s *Service) jobRoute(w http.ResponseWriter, r *http.Request) (hermes.Binding, string, bool) {
+// jobRoute resolves the caller's binding and the job id under the account's job lock; a malformed id is the same
+// 404 as an unknown one. The caller runs the returned unlock when done.
+func (s *Service) jobRoute(w http.ResponseWriter, r *http.Request) (hermes.Binding, string, func(), bool) {
 	uid, _ := user(r)
 	id := r.PathValue("jobId")
 	if !hermes.ValidJobID(id) {
 		notFound(w)
-		return hermes.Binding{}, "", false
+		return hermes.Binding{}, "", nil, false
 	}
+	unlock := s.jobLock(uid)
 	b, _, err := s.gate(r.Context(), uid)
 	if err != nil {
+		unlock()
 		upstreamError(w, err)
-		return hermes.Binding{}, "", false
+		return hermes.Binding{}, "", nil, false
 	}
-	return b, id, true
+	return b, id, unlock, true
 }
 
 func (s *Service) getJob(w http.ResponseWriter, r *http.Request) {
-	b, id, ok := s.jobRoute(w, r)
+	b, id, unlock, ok := s.jobRoute(w, r)
 	if !ok {
 		return
 	}
+	defer unlock()
 	j, err := s.hx.GetJob(r.Context(), b, id)
 	if err != nil {
 		jobError(w, err)
@@ -181,10 +202,11 @@ func (s *Service) getJob(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Service) deleteJob(w http.ResponseWriter, r *http.Request) {
-	b, id, ok := s.jobRoute(w, r)
+	b, id, unlock, ok := s.jobRoute(w, r)
 	if !ok {
 		return
 	}
+	defer unlock()
 	if err := s.hx.DeleteJob(r.Context(), b, id); err != nil {
 		jobError(w, err)
 		return
@@ -194,9 +216,13 @@ func (s *Service) deleteJob(w http.ResponseWriter, r *http.Request) {
 
 func (s *Service) jobAction(action string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		b, id, ok := s.jobRoute(w, r)
+		b, id, unlock, ok := s.jobRoute(w, r)
 		if !ok {
 			return
+		}
+		defer unlock()
+		if s.jobHook != nil {
+			s.jobHook()
 		}
 		j, err := s.hx.JobAction(r.Context(), b, id, action)
 		if err != nil {
@@ -211,6 +237,7 @@ func (s *Service) jobAction(action string) http.HandlerFunc {
 // the binding's status now, and then reads the list back: success means Hermes reports none still enabled. An
 // account with no binding, or a Hermes without jobs, has nothing to pause.
 func (s *Service) PauseUserJobs(ctx context.Context, userID string) error {
+	defer s.jobLock(userID)()
 	cred, err := store.BindingCredential(ctx, s.db, userID)
 	if errors.Is(err, store.ErrNoBinding) {
 		return nil
@@ -249,10 +276,23 @@ func (s *Service) PauseUserJobs(ctx context.Context, userID string) error {
 // retryJobShutdowns pauses the jobs of suspended accounts marked SUSPENSION_PENDING_JOB_SHUTDOWN and clears the
 // mark once Hermes reports them paused.
 func (s *Service) retryJobShutdowns(ctx context.Context) {
-	ids, err := store.PendingJobShutdowns(ctx, s.db, jobRetryPerTick)
+	// Rotate through the marked accounts, so ones that keep failing cannot starve the rest.
+	ids, err := store.PendingJobShutdowns(ctx, s.db, s.jobRetryAfter, jobRetryPerTick)
+	if err == nil && len(ids) < jobRetryPerTick && s.jobRetryAfter != "" {
+		var more []string
+		more, err = store.PendingJobShutdowns(ctx, s.db, "", jobRetryPerTick-len(ids))
+		for _, id := range more {
+			if !slices.Contains(ids, id) {
+				ids = append(ids, id)
+			}
+		}
+	}
 	if err != nil {
 		log.Printf("chat: pending job shutdowns: %v", err)
 		return
+	}
+	if len(ids) > 0 {
+		s.jobRetryAfter = ids[len(ids)-1]
 	}
 	for _, id := range ids {
 		if err := s.PauseUserJobs(ctx, id); err != nil {

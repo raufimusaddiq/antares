@@ -71,6 +71,11 @@ type Service struct {
 	// registers, to place a sign-out exactly in that window.
 	streamOpenHook func()
 
+	jobLocks      sync.Map // user id -> *sync.Mutex (jobs.go jobLock)
+	jobRetryAfter string   // where the next pending job shutdown retry starts; only the retry loop touches it
+	// jobHook, when set by a test, runs inside a job change after its gate, holding the account's job lock.
+	jobHook func()
+
 	base context.Context
 	stop context.CancelFunc
 	wg   sync.WaitGroup

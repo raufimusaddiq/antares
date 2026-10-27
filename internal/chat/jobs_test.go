@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
+	"slices"
+	"sort"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/raufimusaddiq/antares/internal/store"
 )
@@ -295,7 +299,7 @@ func TestSuspensionWithUnreachableJobsIsPendingThenRetried(t *testing.T) {
 		t.Errorf("audit: %v", got)
 	}
 	a.svc.retryJobShutdowns(context.Background()) // still failing: stays marked
-	if ids, _ := store.PendingJobShutdowns(context.Background(), a.db, 10); len(ids) != 1 {
+	if ids, _ := store.PendingJobShutdowns(context.Background(), a.db, "", 10); len(ids) != 1 {
 		t.Fatalf("pending after a failed retry: %v", ids)
 	}
 	a.hx.mu.Lock()
@@ -307,10 +311,107 @@ func TestSuspensionWithUnreachableJobsIsPendingThenRetried(t *testing.T) {
 			t.Error("job still enabled after the retry")
 		}
 	}
-	if ids, _ := store.PendingJobShutdowns(context.Background(), a.db, 10); len(ids) != 0 {
+	if ids, _ := store.PendingJobShutdowns(context.Background(), a.db, "", 10); len(ids) != 0 {
 		t.Errorf("still pending after a good retry: %v", ids)
 	}
 	if got := auditOutcomes(t, a, "system.suspend_jobs", alice.id); len(got) != 1 || got[0] != "ok" {
 		t.Errorf("retry audit: %v", got)
+	}
+}
+
+// #194 review: a job change that passed its gate before a suspension finishes before the suspension pauses the jobs
+// (both hold the account's job lock), so a resume racing a suspension cannot leave a job enabled.
+func TestResumeRacingASuspensionEndsPaused(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	job := createJob(t, alice, "one", "every 2h")
+	if w := alice.do("POST", "/api/jobs/"+job.ID+"/pause", nil, map[string]any{}); w.Code != 200 {
+		t.Fatalf("pause: %d", w.Code)
+	}
+	admin := a.user("carol")
+	if _, err := a.db.Exec(`UPDATE users SET role = 'ADMIN' WHERE id = ?`, admin.id); err != nil {
+		t.Fatal(err)
+	}
+	suspended := make(chan int, 1)
+	a.svc.jobHook = func() {
+		a.svc.jobHook = nil
+		go func() {
+			suspended <- admin.do("POST", "/api/admin/users/"+alice.id+"/suspend", nil, map[string]string{"reason": "abuse"}).Code
+		}()
+		select {
+		case code := <-suspended:
+			t.Errorf("the suspension finished (%d) while a job change held the lock", code)
+			suspended <- code // for the read below
+		case <-time.After(300 * time.Millisecond):
+		}
+	}
+	if w := alice.do("POST", "/api/jobs/"+job.ID+"/resume", nil, map[string]any{}); w.Code != 200 {
+		t.Fatalf("resume: %d %s", w.Code, w.Body.String())
+	}
+	if code := <-suspended; code != 200 {
+		t.Fatalf("suspend: %d", code)
+	}
+	if j := a.hx.jobsOf(alice.profile)[job.ID]; j["enabled"] != false {
+		t.Errorf("the job resumed during the suspension is still enabled")
+	}
+	if got := auditOutcomes(t, a, "admin.suspend_jobs", alice.id); len(got) != 1 || got[0] != "ok" {
+		t.Errorf("audit: %v", got)
+	}
+}
+
+// #194 review: concurrent creates cannot take an account past its limit.
+func TestConcurrentCreatesKeepTheLimit(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	var wg sync.WaitGroup
+	codes := make(chan int, maxJobs+5)
+	for i := 0; i < maxJobs+5; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			codes <- alice.do("POST", "/api/jobs", nil, map[string]string{"name": fmt.Sprintf("j%d", i), "schedule": "every 2h", "prompt": "x"}).Code
+		}(i)
+	}
+	wg.Wait()
+	close(codes)
+	created := 0
+	for c := range codes {
+		if c == 201 {
+			created++
+		} else if c != 409 {
+			t.Errorf("unexpected status %d", c)
+		}
+	}
+	if up := len(a.hx.jobsOf(alice.profile)); created != maxJobs || up != maxJobs {
+		t.Errorf("created %d, upstream %d, want %d", created, up, maxJobs)
+	}
+}
+
+// #194 review: accounts whose shutdown keeps failing cannot starve the others: retries rotate through all of them.
+func TestPendingShutdownRetriesRotate(t *testing.T) {
+	a := newApp(t)
+	var people []*person
+	for i := 0; i <= jobRetryPerTick; i++ {
+		people = append(people, a.user(fmt.Sprintf("u%02d", i)))
+	}
+	sort.Slice(people, func(i, j int) bool { return people[i].id < people[j].id })
+	good := people[len(people)-1] // the highest id: last in line
+	for _, p := range people {
+		if _, err := a.db.Exec(`UPDATE users SET approval_status = 'SUSPENDED', tenant_detail = ? WHERE id = ?`, store.JobShutdownPending, p.id); err != nil {
+			t.Fatal(err)
+		}
+		if p != good { // a credential that cannot be opened: this one fails on every retry
+			if _, err := a.db.Exec(`UPDATE tenant_bindings SET credential_ciphertext = 'garbage' WHERE user_id = ?`, p.id); err != nil {
+				t.Fatal(err)
+			}
+		}
+	}
+	ctx := context.Background()
+	for tick := 0; tick < 2; tick++ {
+		a.svc.retryJobShutdowns(ctx)
+	}
+	ids, _ := store.PendingJobShutdowns(ctx, a.db, "", 100)
+	if slices.Contains(ids, good.id) || len(ids) != jobRetryPerTick {
+		t.Errorf("after two ticks: %d pending, good one cleared %v", len(ids), !slices.Contains(ids, good.id))
 	}
 }
