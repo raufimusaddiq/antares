@@ -91,7 +91,7 @@ export function describeCode(code: string): string {
     case "SEARCH_TIMEOUT":
       return "The search took too long. Try more specific words.";
     case "BUDGET_REACHED":
-      return "This conversation has reached the token limit you set, so it takes no new messages. Raise or remove the limit under Usage to continue.";
+      return "You have reached a limit you set (the token limit or the daily spending limit), so no new message was sent. Raise or remove it under Options to continue.";
     case "MODEL_UNAVAILABLE":
       return "That model or option is not available right now. Nothing was changed.";
     case "MODEL_TRANSPORT_UNAVAILABLE":
@@ -445,6 +445,8 @@ export interface ChatUsage {
   windowTokens: number | null;
   /** How much of the window the conversation fills now. null is unknown (the assistant does not report it): never 0. */
   carriedTokens: number | null;
+  /** Estimated spend today and this month against the user's money limits (#152); null when the server sent none. */
+  spending: Spending | null;
   /** limit null: the user set none. used null: no finished reply reported usage (unknown, not zero). enforced: a limit is set and usage is known. */
   budget: { limit: number | null; used: number | null; enforced: boolean; reached: boolean; basis: string };
 }
@@ -495,6 +497,7 @@ export function parseUsage(v: unknown): ChatUsage | null {
     // Only an explicit REPORTED state makes a number an occupancy; anything else stays unknown.
     carriedTokens: ctx.occupancy === "REPORTED" ? num(ctx.carriedTokens) : null,
     budget: { limit, used, enforced: b.enforced === true, reached: b.reached === true, basis: str(b.basis) },
+    spending: parseSpending(o.spending),
   };
 }
 
@@ -523,6 +526,9 @@ export function describeUsage(u: ChatUsage): string[] {
 /** The usage chip beside the composer (#164): lifetime use and context occupancy at a glance. Unknown stays unknown. */
 export function describeGlance(u: ChatUsage): string {
   if (u.budget.reached) return "Token limit reached";
+  if (u.spending?.hardReached) return "Daily spending limit reached";
+  // A reached warning is shown where the reader looks, not only inside the closed usage panel (review #190).
+  if (u.spending?.warnings.length) return `Spending warning: ${u.spending.warnings.join(" and ")} limit reached`;
   const used = u.tokens ? `${fmt(u.tokens.total)} tokens used` : "Usage unknown";
   const ctx = u.carriedTokens !== null && u.windowTokens ? `context ${Math.min(100, Math.round((u.carriedTokens / u.windowTokens) * 100))}% full` : "context in use unknown";
   return `${used} · ${ctx}`;
@@ -549,6 +555,86 @@ const parseBudget = (v: unknown): { limit: number | null; min: number; max: numb
   if ((o.limitTokens !== null && limit === null) || min === null || max === null) return null;
   return { limit, min, max };
 };
+
+/** A user's money limits and what they spent (#152). Amounts are estimates in the price list's currency; spent null is
+ *  unknown (no reply could be priced), never zero. Soft limits only warn; the daily hard limit refuses new messages. */
+export interface Spending {
+  currency: string;
+  day: { spent: number | null; unpricedRuns: number };
+  month: { spent: number | null; unpricedRuns: number };
+  dailySoft: number | null;
+  monthlySoft: number | null;
+  dailyHard: number | null;
+  warnings: string[];
+  hardReached: boolean;
+}
+
+const amount = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) && v >= 0 ? v : null);
+
+export function parseSpending(v: unknown): Spending | null {
+  const o = obj(v);
+  const d = obj(o?.day);
+  const m = obj(o?.month);
+  if (!o || !d || !m) return null;
+  return {
+    currency: str(o.currency) || "IDR",
+    day: { spent: amount(d.spent), unpricedRuns: amount(d.unpricedRuns) ?? 0 },
+    month: { spent: amount(m.spent), unpricedRuns: amount(m.unpricedRuns) ?? 0 },
+    dailySoft: amount(o.dailySoft),
+    monthlySoft: amount(o.monthlySoft),
+    dailyHard: amount(o.dailyHard),
+    warnings: strings(o.warnings),
+    hardReached: o.hardReached === true,
+  };
+}
+
+const rp = (n: number) => `Rp ${fmt(Math.round(n))}`;
+
+/** The spending lines: estimates, unknown stays unknown, warnings and the hard limit said differently. */
+export function describeSpending(s: Spending): string[] {
+  const spent = (w: Spending["day"]) =>
+    (w.spent === null ? "— (no priced reply)" : `about ${rp(w.spent)}`) + (w.unpricedRuns > 0 ? `, plus ${w.unpricedRuns} ${w.unpricedRuns === 1 ? "reply" : "replies"} with no known price (not counted)` : "");
+  const lines = [`Estimated spend today (UTC): ${spent(s.day)}`, `Estimated spend this month: ${spent(s.month)}`];
+  if (s.dailySoft !== null) lines.push(`Daily warning at ${rp(s.dailySoft)}${s.warnings.includes("daily") ? ": reached (a warning only; messages still go through)" : ""}`);
+  if (s.monthlySoft !== null) lines.push(`Monthly warning at ${rp(s.monthlySoft)}${s.warnings.includes("monthly") ? ": reached (a warning only; messages still go through)" : ""}`);
+  if (s.dailyHard !== null)
+    lines.push(
+      s.hardReached
+        ? `Daily spending limit of ${rp(s.dailyHard)} reached: new messages are refused until tomorrow (UTC) or until you raise or remove it. A reply already running finishes.`
+        : `Daily spending limit at ${rp(s.dailyHard)}: at the limit new messages are refused. It is an estimate, not a provider cap.`,
+    );
+  if (s.dailySoft === null && s.monthlySoft === null && s.dailyHard === null) lines.push("No spending limits set. They are optional.");
+  return lines;
+}
+
+/** A whole-rupiah limit as typed: digits, optionally grouped in threes with one separator used throughout ("50000",
+ * "50.000", "50,000", "50 000"). Empty is null (no limit). Anything else, including a fraction ("1.5", "1,50") or mixed
+ * separators, is undefined: refused, never guessed. */
+export function parseRupiah(t: string): number | null | undefined {
+  const s = t.trim();
+  if (s === "") return null;
+  if (!/^\d+$/.test(s) && !/^\d{1,3}(?:([.,  ])\d{3})(?:\1\d{3})*$/.test(s)) return undefined;
+  const n = Number(s.replace(/\D/g, ""));
+  return Number.isSafeInteger(n) && n > 0 && n <= 1e12 ? n : undefined;
+}
+
+export type SpendingFields = { dailySoft: string; monthlySoft: string; dailyHard: string };
+
+/** The form text for the server's limits: whole rupiah, empty for none. */
+export function spendingFields(s: Pick<Spending, "dailySoft" | "monthlySoft" | "dailyHard">): SpendingFields {
+  const show = (n: number | null) => (n === null ? "" : String(Math.round(n)));
+  return { dailySoft: show(s.dailySoft), monthlySoft: show(s.monthlySoft), dailyHard: show(s.dailyHard) };
+}
+
+/** A refresh of the server's limits updates each field the user has not edited since the last refresh and keeps their
+ * unsaved edits in the others. */
+export function reconcileSpending(before: SpendingFields, after: SpendingFields, typed: SpendingFields): SpendingFields {
+  const pick = (k: keyof SpendingFields) => (typed[k] === before[k] ? after[k] : typed[k]);
+  return { dailySoft: pick("dailySoft"), monthlySoft: pick("monthlySoft"), dailyHard: pick("dailyHard") };
+}
+
+export const putSpending = (l: { dailySoft: number | null; monthlySoft: number | null; dailyHard: number | null }) =>
+  call("PUT", "/api/me/spending-limits", parseSpending, l);
 
 export const putBudget = (limitTokens: number | null) => call("PUT", "/api/me/budget", parseBudget, { limitTokens });
 

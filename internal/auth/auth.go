@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/raufimusaddiq/antares/internal/kenari"
+	"github.com/raufimusaddiq/antares/internal/obs"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -446,6 +447,7 @@ func (a *Auth) current(r *http.Request) (store.User, bool) {
 		}
 		return store.User{}, false
 	}
+	obs.From(r.Context()).SetUser(u.ID) // the access log's user field: the internal id, nothing else
 	return u, true
 }
 

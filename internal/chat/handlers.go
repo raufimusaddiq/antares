@@ -15,6 +15,7 @@ import (
 
 	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/hermes"
+	"github.com/raufimusaddiq/antares/internal/obs"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -62,6 +63,8 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"GET /api/me/model-visibility":                                 http.HandlerFunc(s.getModelVisibility),
 		"PUT /api/me/model-visibility":                                 http.HandlerFunc(s.putModelVisibility),
 		"GET /api/me/budget":                                           http.HandlerFunc(s.getBudget),
+		"GET /api/me/spending-limits":                                  http.HandlerFunc(s.getSpending),
+		"PUT /api/me/spending-limits":                                  http.HandlerFunc(s.putSpending),
 		"PUT /api/me/budget":                                           http.HandlerFunc(s.putBudget),
 		"GET /api/search/chats":                                        http.HandlerFunc(s.searchAll),
 		"GET /api/capabilities":                                        http.HandlerFunc(s.capabilities),
@@ -408,20 +411,26 @@ func (s *Service) admit(w http.ResponseWriter, r *http.Request, uid, chatID, ide
 			return store.Run{}, false
 		}
 	}
-	// Budget: a free chat at or over its limit takes no new message (a reply
-	// already running is not interrupted). A busy chat answers RUN_CONFLICT as
-	// before, and AdmitRunWithin hands a replayed key its original run.
-	var budget int64
-	if chat.ActiveRunID == "" {
-		if budget, err = store.TokenBudget(r.Context(), s.db, uid); err != nil {
-			internalError(w, "token budget", err)
-			return store.Run{}, false
-		}
+	// The token budget and the daily hard spending limit (#152): a user at or over either takes no new message (a
+	// reply already running is not interrupted). Both are decided in the admission transaction, after the insert, so
+	// a busy chat still answers RUN_CONFLICT, and whatever the chat looked like above (a run that was active then may
+	// have finished since) cannot skip them. A replay of an existing key is answered before either; a soft limit never
+	// blocks.
+	budget, err := store.TokenBudget(r.Context(), s.db, uid)
+	if err != nil {
+		internalError(w, "token budget", err)
+		return store.Run{}, false
 	}
-	run, created, err := store.AdmitRunWithin(r.Context(), s.db, uid, chatID, idem, s.now(), budget)
+	if s.admitHook != nil {
+		s.admitHook()
+	}
+	run, created, err := store.AdmitRunGated(r.Context(), s.db, uid, chatID, idem, s.now(), budget, s.hardLimitGate(uid))
 	switch {
 	case errors.Is(err, store.ErrBudget):
 		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "This conversation has reached the token limit you set; raise or remove it to continue")
+		return store.Run{}, false
+	case errors.Is(err, errSpendLimit):
+		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "You have reached the daily spending limit you set; raise or remove it to continue")
 		return store.Run{}, false
 	case errors.Is(err, store.ErrNoChat):
 		notFound(w)
@@ -648,6 +657,15 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Accel-Buffering", "no")
 	h.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
+	obs.StreamOpened(r.Header.Get("Last-Event-ID") != "")
+	// One count per stream that did not see its run to the end: the browser left, the server ended it, or it carried
+	// a lost upstream (run.disconnected).
+	finished, cut := false, false
+	defer func() {
+		if !finished || cut {
+			obs.StreamDisconnected()
+		}
+	}()
 	_, _ = io.WriteString(w, "retry: 3000\n\n")
 	fl.Flush()
 
@@ -662,7 +680,7 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 	st, unregister := s.registerStream(uid, auth.SessionHash(r))
 	defer unregister()
 	if !auth.SessionLive(r.Context(), s.db, r, s.now()) {
-		writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
+		streamDisconnected(w, []byte(`{"code":"UNAUTHENTICATED"}`))
 		fl.Flush()
 		return
 	}
@@ -670,7 +688,7 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 		evs, lost, done, wait := l.since(last)
 		st.mu.Lock()
 		if st.revoked {
-			writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
+			streamDisconnected(w, []byte(`{"code":"UNAUTHENTICATED"}`))
 			fl.Flush()
 			st.mu.Unlock()
 			return
@@ -681,10 +699,12 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 		for _, e := range evs {
 			writeEvent(w, l.eventID(e.seq), e.name, e.data)
 			last = e.seq
+			cut = cut || e.name == "run.disconnected"
 		}
 		fl.Flush()
 		st.mu.Unlock()
 		if done {
+			finished = true
 			return
 		}
 		select {
@@ -693,13 +713,13 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 		case <-tick.C:
 			// Re-check the account while a stream is open: a suspension must end it.
 			if _, err := store.ActiveBinding(r.Context(), s.db, uid); err != nil {
-				writeEvent(w, "", "run.disconnected", []byte(`{"code":"TENANT_NOT_READY"}`))
+				streamDisconnected(w, []byte(`{"code":"TENANT_NOT_READY"}`))
 				fl.Flush()
 				return
 			}
 			// And the session: a sign-out (here or everywhere) or a revocation must end it too (#150).
 			if !auth.SessionLive(r.Context(), s.db, r, s.now()) {
-				writeEvent(w, "", "run.disconnected", []byte(`{"code":"UNAUTHENTICATED"}`))
+				streamDisconnected(w, []byte(`{"code":"UNAUTHENTICATED"}`))
 				fl.Flush()
 				return
 			}
@@ -711,6 +731,11 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// streamDisconnected ends a run stream from the server side (suspension, sign-out); the stream's own defer counts it.
+func streamDisconnected(w io.Writer, data []byte) {
+	writeEvent(w, "", "run.disconnected", data)
 }
 
 func writeEvent(w io.Writer, id, name string, data []byte) {

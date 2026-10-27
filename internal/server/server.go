@@ -5,16 +5,22 @@ package server
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"encoding/json"
 	"io"
 	"io/fs"
+	"log"
 	"mime"
 	"net/http"
 	"os"
 	"path"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/raufimusaddiq/antares/internal/obs"
 )
 
 // Checker reports whether a dependency is usable right now.
@@ -51,7 +57,97 @@ func (s *Server) WithAuth(a Auth) *Server {
 }
 
 func (s *Server) Routes() http.Handler {
-	return reserve(s.routes())
+	mux := s.routes()
+	return accessLog(mux, reserve(mux))
+}
+
+// accessLog writes one line per /api request with the PRD §13.2 field set (issue #114): request id, method, route
+// pattern (never the raw path, which carries ids and query text), status, latency, bytes, the internal user id, and the
+// error code of a refusal. No header, body, cookie or query value is logged; the line also passes through the
+// redacting log writer. 401 and 403 answers are counted as denials.
+func accessLog(mux *http.ServeMux, next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			next.ServeHTTP(w, r)
+			return
+		}
+		rec := &obs.Request{ID: newID()}
+		sw := &statusWriter{ResponseWriter: w, status: http.StatusOK}
+		began := time.Now()
+		next.ServeHTTP(sw, r.WithContext(obs.With(r.Context(), rec)))
+		_, route := mux.Handler(r)
+		if route == "" {
+			route = "(none)"
+		}
+		user, _ := rec.Fields()
+		if user == "" {
+			user = "-"
+		}
+		category := "-"
+		if sw.status >= 400 {
+			category = errorCode(sw.head.Bytes())
+		}
+		if sw.status == http.StatusUnauthorized || sw.status == http.StatusForbidden {
+			obs.Denied()
+		}
+		log.Printf("http req=%s method=%s route=%q status=%d ms=%d bytes=%d user=%s error=%s",
+			rec.ID, logMethod(r.Method), route, sw.status, time.Since(began).Milliseconds(), sw.bytes, user, category)
+	})
+}
+
+// logMethod is the request method as logged: a client chooses it, so anything but a standard method is OTHER.
+func logMethod(m string) string {
+	switch m {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete, http.MethodOptions:
+		return m
+	}
+	return "OTHER"
+}
+
+// statusWriter keeps the status, the byte count and the first bytes of an error body (for its code). It passes
+// Flush through, so streams stay streams.
+type statusWriter struct {
+	http.ResponseWriter
+	status int
+	bytes  int
+	head   bytes.Buffer
+}
+
+func (s *statusWriter) WriteHeader(code int) {
+	s.status = code
+	s.ResponseWriter.WriteHeader(code)
+}
+
+func (s *statusWriter) Write(b []byte) (int, error) {
+	if s.status >= 400 && s.head.Len() < 512 {
+		s.head.Write(b[:min(len(b), 512-s.head.Len())])
+	}
+	n, err := s.ResponseWriter.Write(b)
+	s.bytes += n
+	return n, err
+}
+
+func (s *statusWriter) Flush() {
+	if f, ok := s.ResponseWriter.(http.Flusher); ok {
+		f.Flush()
+	}
+}
+
+func (s *statusWriter) Unwrap() http.ResponseWriter { return s.ResponseWriter }
+
+var codeRE = regexp.MustCompile(`"code"\s*:\s*"([A-Z_]{2,40})"`)
+
+func errorCode(body []byte) string {
+	if m := codeRE.FindSubmatch(body); m != nil {
+		return string(m[1])
+	}
+	return "-"
+}
+
+func newID() string {
+	b := make([]byte, 8)
+	_, _ = rand.Read(b)
+	return hex.EncodeToString(b)
 }
 
 // reserve answers 404 JSON for the whole /api tree (any case) and for every
