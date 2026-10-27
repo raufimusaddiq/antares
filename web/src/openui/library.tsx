@@ -119,13 +119,23 @@ const Chart = defineComponent({
   ),
 });
 
-// Without a composer to write into (no provider) the button is disabled, not pretending.
+// Without a composer to write into (no provider) the button is disabled, not pretending. The label is the model's, so
+// it may say "Submit" or "Order": after a click the block says what really happened (#173), so it never reads as an API
+// action that completed.
 function ReplyButton({ label, text: reply, disabled }: { label: string; text: string; disabled?: boolean }) {
   const add = useContext(ReplyContext);
+  const [added, setAdded] = useState(false);
   return (
-    <button type="button" className="ou-button" disabled={!add || disabled} onClick={() => runAction("reply", reply, { reply: add })}>
-      {label}
-    </button>
+    <>
+      <button type="button" className="ou-button" disabled={!add || disabled} onClick={() => setAdded(runAction("reply", reply, { reply: add }).ok)}>
+        {label}
+      </button>
+      {added && (
+        <span className="label" role="status">
+          Added to your message. Nothing was sent.
+        </span>
+      )}
+    </>
   );
 }
 

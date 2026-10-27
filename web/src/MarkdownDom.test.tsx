@@ -75,3 +75,16 @@ describe("Markdown in a real DOM", () => {
     expect(host.textContent).toContain("<u>two</u>");
   });
 });
+
+describe("long code blocks (#173)", () => {
+  it("label the language and copy the whole block, however long", async () => {
+    const body = Array.from({ length: 400 }, (_, i) => `const line${i} = "${"x".repeat(180)}";`).join("\n");
+    const written: string[] = [];
+    Object.defineProperty(navigator, "clipboard", { configurable: true, value: { writeText: (t: string) => (written.push(t), Promise.resolve()) } });
+    render(<Markdown text={"```TypeScript\n" + body + "\n```"} />);
+    expect(screen.getByRole("region", { name: "typescript code" })).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Copy" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Copied" })).toBeTruthy());
+    expect(written).toEqual([body]);
+  });
+});
