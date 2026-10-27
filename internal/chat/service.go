@@ -77,7 +77,6 @@ type Service struct {
 
 	jobs          bool
 	jobLocks      sync.Map // user id -> *sync.Mutex (jobs.go jobLock)
-	jobRuns       sync.Map // user id + "/" + job id -> time.Time of the last manual run
 	jobRetryAfter string   // where the next pending job shutdown retry starts; only the retry loop touches it
 	// jobHook, when set by a test, runs inside a job change after its gate, holding the account's job lock.
 	jobHook func()

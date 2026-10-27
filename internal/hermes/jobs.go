@@ -28,6 +28,15 @@ type Job struct {
 	LastRunAt       *string     `json:"last_run_at"`
 	LastStatus      *string     `json:"last_status"`
 	Deliver         string      `json:"deliver"`
+	// LatestExecution is the job's most recent execution (cron/executions.py), when Hermes reports one.
+	LatestExecution *struct {
+		Status string `json:"status"` // claimed | running | completed | failed | unknown
+	} `json:"latest_execution"`
+}
+
+// Running reports whether the job's latest execution has not finished. Hermes has no route to cancel one.
+func (j Job) Running() bool {
+	return j.LatestExecution != nil && (j.LatestExecution.Status == "claimed" || j.LatestExecution.Status == "running")
 }
 
 // JobSchedule is how Hermes parsed the schedule text.

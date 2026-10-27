@@ -81,7 +81,7 @@ func (f *fakeHermes) serveJobs(w http.ResponseWriter, method, profile, path stri
 	case action == "resume":
 		j["enabled"], j["state"] = true, "scheduled"
 	case action == "run":
-		j["last_status"] = "ok"
+		j["last_status"], j["last_run_at"] = "ok", time.Now().UTC().Format(time.RFC3339Nano)
 	}
 	out(map[string]any{"job": j})
 }
@@ -492,16 +492,58 @@ func TestJobsAreOffUnlessSwitchedOn(t *testing.T) {
 	}
 }
 
-// #194 review: a manual run counts against the hourly bound.
+func (f *fakeHermes) setJob(profile, id, key string, v any) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.jobs[profile][id][key] = v
+}
+
+// #194 review: a manual run counts against the hourly bound, read from Hermes' own last_run_at, so a scheduled run
+// counts too and a restart of Antares does not reset it; a running execution refuses another.
 func TestManualRunIsLimitedToOncePerHour(t *testing.T) {
 	a := newApp(t)
 	alice := a.user("alice")
 	job := createJob(t, alice, "one", "every 2h")
-	if w := alice.do("POST", "/api/jobs/"+job.ID+"/run", nil, map[string]any{}); w.Code != 200 {
-		t.Fatalf("first run: %d", w.Code)
+	run := func() int { return alice.do("POST", "/api/jobs/"+job.ID+"/run", nil, map[string]any{}).Code }
+	if c := run(); c != 200 {
+		t.Fatalf("first run: %d", c)
 	}
-	if w := alice.do("POST", "/api/jobs/"+job.ID+"/run", nil, map[string]any{}); w.Code != 429 {
-		t.Errorf("second run within the hour: %d", w.Code)
+	if c := run(); c != 429 {
+		t.Errorf("second run within the hour: %d", c)
+	}
+	// A scheduled execution ten minutes ago (Hermes' record, which survives a restart of Antares).
+	a.hx.setJob(alice.profile, job.ID, "last_run_at", time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339Nano))
+	if c := run(); c != 429 {
+		t.Errorf("after a scheduled run 10 minutes ago: %d", c)
+	}
+	a.hx.setJob(alice.profile, job.ID, "last_run_at", time.Now().UTC().Add(-2*time.Hour).Format(time.RFC3339Nano))
+	a.hx.setJob(alice.profile, job.ID, "latest_execution", map[string]any{"status": "running"})
+	if c := run(); c != 429 {
+		t.Errorf("while an execution is running: %d", c)
+	}
+	a.hx.setJob(alice.profile, job.ID, "latest_execution", map[string]any{"status": "completed"})
+	if c := run(); c != 200 {
+		t.Errorf("two hours later: %d", c)
+	}
+}
+
+// #194 review: Hermes cannot cancel an execution in flight, so a suspension during one stays pending until it ends.
+func TestSuspensionDuringAnExecutionStaysPendingUntilItEnds(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	job := createJob(t, alice, "one", "every 2h")
+	a.hx.setJob(alice.profile, job.ID, "latest_execution", map[string]any{"status": "running"})
+	if v := suspend(t, a, alice); v["tenantDetail"] != store.JobShutdownPending {
+		t.Fatalf("suspended during a run: detail %v", v["tenantDetail"])
+	}
+	a.svc.retryJobShutdowns(context.Background())
+	if ids, _ := store.PendingJobShutdowns(context.Background(), a.db, "", 10); len(ids) != 1 {
+		t.Fatalf("cleared while still running: %v", ids)
+	}
+	a.hx.setJob(alice.profile, job.ID, "latest_execution", map[string]any{"status": "completed"})
+	a.svc.retryJobShutdowns(context.Background())
+	if ids, _ := store.PendingJobShutdowns(context.Background(), a.db, "", 10); len(ids) != 0 {
+		t.Errorf("still pending after the execution ended: %v", ids)
 	}
 }
 

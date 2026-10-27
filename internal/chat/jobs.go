@@ -65,6 +65,19 @@ func hourlyAtMost(s hermes.JobSchedule) bool {
 	return false
 }
 
+// ranWithinTheHour reads a job's last_run_at (any execution, scheduled or manual). An unreadable time counts as recent:
+// unknown is not "long ago".
+func ranWithinTheHour(last *string, now time.Time) bool {
+	if last == nil || *last == "" {
+		return false
+	}
+	t, err := time.Parse(time.RFC3339Nano, *last)
+	if err != nil {
+		return true
+	}
+	return now.Sub(t) < time.Hour
+}
+
 func jobError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, hermes.ErrJobGone):
@@ -251,14 +264,16 @@ func (s *Service) jobAction(action string) http.HandlerFunc {
 				return
 			}
 		}
-		if action == "run" { // a manual run counts against the same hourly bound as the schedule
-			uid, _ := user(r)
-			key := uid + "/" + id
-			if last, ok := s.jobRuns.Load(key); ok && s.now().Sub(last.(time.Time)) < time.Hour {
-				apiError(w, http.StatusTooManyRequests, hermes.CodeRateLimited, "This task was run by hand less than an hour ago")
+		if action == "run" { // a manual run counts against the same hourly bound, read from Hermes' own record of the job
+			cur, err := s.hx.GetJob(r.Context(), b, id)
+			if err != nil {
+				jobError(w, err)
 				return
 			}
-			defer func() { s.jobRuns.Store(key, s.now()) }()
+			if cur.Running() || ranWithinTheHour(cur.LastRunAt, s.now()) {
+				apiError(w, http.StatusTooManyRequests, hermes.CodeRateLimited, "This task ran less than an hour ago or is running now")
+				return
+			}
 		}
 		j, err := s.hx.JobAction(r.Context(), b, id, action)
 		if err != nil {
@@ -304,6 +319,11 @@ func (s *Service) PauseUserJobs(ctx context.Context, userID string) error {
 	for _, j := range jobs {
 		if j.Enabled {
 			return errors.New("chat: a job is still enabled after pausing")
+		}
+		// Hermes cannot cancel an execution in flight, so the shutdown is verified only once none is running;
+		// until then the account stays marked and the retry checks again.
+		if j.Running() {
+			return errors.New("chat: a job execution is still running")
 		}
 	}
 	return nil

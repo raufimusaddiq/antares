@@ -28,7 +28,8 @@ with another user's id.
 - Antares builds the request body itself: name, schedule, instructions, `deliver: "local"` (no messaging channel,
   so no global delivery channel). A request carrying any other field is a 400.
 - At most 10 tasks per account (`JOB_LIMIT`).
-- A manual "run now" counts against the hourly bound: once per task per hour (429 `RATE_LIMITED`).
+- A manual "run now" counts against the hourly bound, read from Hermes' own `last_run_at` (scheduled runs count, a
+  restart of Antares does not reset it) and refused while an execution is running (429 `RATE_LIMITED`).
 - At most once an hour: a single time, an interval of 60 minutes or more, or a five-field cron expression with one
   fixed minute. A task is created **paused**, its parsed schedule is checked, and it is resumed only if it passes;
   otherwise it is deleted (`SCHEDULE_TOO_FREQUENT`). Changing a schedule means deleting the task and adding it again.
@@ -38,7 +39,10 @@ with another user's id.
 
 ## Suspension (PRD §12 rule 3)
 
-Suspending an account pauses every enabled task in its workspace through its own binding, then reads the list back. Every job change holds a per-account lock and re-checks the account after taking it, and the suspension takes the same lock, so a change racing a suspension either finishes first (and is then paused) or is refused; the 10-task count and the create are atomic under it too. Retries rotate through the marked accounts, 20 per tick.
+Suspending an account pauses every enabled task in its workspace through its own binding, then reads the list back.
+Hermes has no route to cancel an execution in flight, so the shutdown counts as verified only when no task's latest
+execution is still claimed or running; until then the account stays marked and the retry checks again
+(`TestSuspensionDuringAnExecutionStaysPendingUntilItEnds`). Every job change holds a per-account lock and re-checks the account after taking it, and the suspension takes the same lock, so a change racing a suspension either finishes first (and is then paused) or is refused; the 10-task count and the create are atomic under it too. Retries rotate through the marked accounts, 20 per tick.
 The outcome is audited as `admin.suspend_jobs` (`ok` or `pending`). The suspension itself records
 `SUSPENSION_PENDING_JOB_SHUTDOWN: …` as the account's tenant detail in the same transaction, and it is cleared only
 once the pause is verified. So if Hermes cannot be reached, or the process stops before the pause runs, the admin user
