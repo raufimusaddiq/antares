@@ -132,10 +132,15 @@ func (c *Capture) write(name string, data []byte, appendTo bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.run == "" {
-		c.run = filepath.Join(c.Dir, time.Now().UTC().Format("20060102T150405Z"))
-	}
-	if err := os.MkdirAll(c.run, 0o700); err != nil {
-		return
+		if err := os.MkdirAll(c.Dir, 0o700); err != nil {
+			return
+		}
+		// Unique even for two processes started in the same second.
+		run, err := os.MkdirTemp(c.Dir, time.Now().UTC().Format("20060102T150405Z")+"-")
+		if err != nil {
+			return
+		}
+		c.run = run
 	}
 	flag := os.O_CREATE | os.O_WRONLY | os.O_TRUNC
 	if appendTo {
