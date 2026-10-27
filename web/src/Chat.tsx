@@ -1475,6 +1475,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           )}
           <Recorder />
           <Templates own={ownTemplates} onChange={setOwnTemplates} />
+          <p className="label" data-policy="drafts">
+            Unsent text is kept on this device until you sign out or your session ends, and text older than 7 days is cleared the next time you open Antares. Your account keeps a copy for your other devices.
+          </p>
         </div>
         {current && current !== blankChat.current && (
           <QueuePanel chatId={current} busy={busy} tick={queueTick} onSent={onQueueSent} onQueue={(q) => (queueRef.current = q)} />

@@ -1,4 +1,4 @@
-import { purgeDrafts } from "./drafts";
+import { purgeDrafts, purgeStaleDrafts } from "./drafts";
 import { purgeUserState } from "./pwa";
 
 // The browser's whole view of the backend for this slice: who am I, and sign out.
@@ -38,6 +38,8 @@ export async function loadSession(loginFailed: boolean, signal?: AbortSignal): P
     if (account?.state === "SUSPENDED") {
       purgeUserState();
       purgeDrafts();
+    } else if (account) {
+      purgeStaleDrafts(account.email); // another account's drafts, and this one's older than a week, leave the device
     }
     return account ? { kind: "account", account } : { kind: "unreachable" };
   } catch {

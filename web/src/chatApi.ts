@@ -3,6 +3,7 @@
 // those). Every failure comes back as a code from the fixed API vocabulary.
 
 import { purgeUserState } from "./pwa";
+import { purgeDrafts } from "./drafts";
 import type { AttachmentRef } from "./MediaPreview";
 
 export interface ChatSummary {
@@ -133,7 +134,10 @@ async function call<T>(method: string, path: string, parse: (b: unknown) => T | 
   }
   if (!res.ok) {
     const code = codeOf(json);
-    if (code === "ACCOUNT_SUSPENDED" || res.status === 401) purgeUserState();
+    if (code === "ACCOUNT_SUSPENDED" || res.status === 401) {
+      purgeUserState();
+      purgeDrafts(); // the session ended mid-use: unsent text leaves the device too (#172)
+    }
     return { ok: false, code: code ?? "HERMES_UNAVAILABLE", status: res.status };
   }
   const value = parse(json);
