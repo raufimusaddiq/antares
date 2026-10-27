@@ -226,7 +226,8 @@ func (s *Service) recordUsage(userID, runID string, u *hermes.Usage) {
 		log.Printf("chat: run %s: could not record usage: %v", runID, err)
 		return
 	}
-	log.Printf("run usage run=%s input_tokens=%d output_tokens=%d cache_read_tokens=%d model=%q", runID, u.Input, u.Output, u.CacheRead, u.Model)
+	// The model is an upstream string, so it is not logged: it is stored with the run and shown to its owner.
+	log.Printf("run usage run=%s input_tokens=%d output_tokens=%d cache_read_tokens=%d", runID, u.Input, u.Output, u.CacheRead)
 }
 
 type budgetView struct {

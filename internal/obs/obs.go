@@ -65,7 +65,7 @@ func (r *Request) Fields() (userID, category string) {
 // Counters that only the running process knows. Read with Snapshot.
 var (
 	streamsOpened       atomic.Int64
-	streamsDisconnected atomic.Int64 // ended by the server as run.disconnected (lost upstream, suspension, sign-out)
+	streamsDisconnected atomic.Int64 // did not see the run to its end: browser left, server ended it, or lost upstream
 	streamsResumed      atomic.Int64 // opened with Last-Event-ID
 	denials             atomic.Int64 // 401 and 403 answers
 	upstreamCalls       atomic.Int64

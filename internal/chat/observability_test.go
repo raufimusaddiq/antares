@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/raufimusaddiq/antares/internal/obs"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -109,5 +110,89 @@ func TestAdminMetricsAreAggregateAndAdminOnly(t *testing.T) {
 		if strings.Contains(w.Body.String(), leak) {
 			t.Errorf("metrics carry %q: %s", leak, w.Body.String())
 		}
+	}
+}
+
+// The usage line carries counts only: the model is an upstream string, so text Hermes put there never reaches the log.
+func TestUsageLogCarriesNoUpstreamText(t *testing.T) {
+	a := newApp(t)
+	u := a.user("alice")
+	before := len(logBuf.String())
+	frame := strings.Replace(usageFrame, "deepseek-v4-1-flash", "PRIVATE-PROMPT-77 password hunter2", 1)
+	run := runWithUsage(t, a, u, u.newChat(), "q", frame)
+	eventually(t, func() bool { return strings.Contains(logBuf.String()[before:], "run usage run="+run) }, "the usage line")
+	got := logBuf.String()[before:]
+	if !strings.Contains(got, "input_tokens=1000 output_tokens=200") {
+		t.Errorf("usage line: %s", got)
+	}
+	for _, leak := range []string{"PRIVATE-PROMPT-77", "hunter2", "model="} {
+		if strings.Contains(got, leak) {
+			t.Errorf("log carries %q:\n%s", leak, got)
+		}
+	}
+}
+
+// Every stream that does not see its run to the end is counted once: the browser leaving, a lost upstream, and the
+// server ending it on sign-out. A stream that saw its run finish is not.
+func TestStreamDisconnectsAreCountedOnEveryPath(t *testing.T) {
+	a := newApp(t, appOpts{backoff: fastBackoff})
+	u := a.user("alice")
+	disconnects := func() int64 { return obs.Snapshot().StreamsDisconnected }
+	opened := func(s *stream) {
+		eventually(t, func() bool { s.mu.Lock(); defer s.mu.Unlock(); return strings.Contains(s.buf.String(), "retry:") }, "the stream to open")
+	}
+
+	// Finished: not counted.
+	n := disconnects()
+	run := u.send(u.newChat(), "finishes")
+	_, fr := a.hx.runWithInput(t, "finishes")
+	s := u.open(run, "")
+	recv(t, fr.opens, "stream")
+	a.hx.push(fr, "run.completed", `{"output":"ok"}`)
+	s.waitFor(t, "run.completed")
+	<-s.done
+	if got := disconnects() - n; got != 0 {
+		t.Fatalf("a finished stream counted %d", got)
+	}
+
+	// The browser leaves.
+	n = disconnects()
+	run = u.send(u.newChat(), "browser leaves")
+	_, fr = a.hx.runWithInput(t, "browser leaves")
+	s = u.open(run, "")
+	recv(t, fr.opens, "stream")
+	opened(s)
+	s.close()
+	if got := disconnects() - n; got != 1 {
+		t.Fatalf("browser leaving counted %d, want 1", got)
+	}
+
+	// The upstream is lost: the stream carries run.disconnected and is counted once, also after the browser leaves.
+	n = disconnects()
+	run = u.send(u.newChat(), "upstream lost")
+	_, fr = a.hx.runWithInput(t, "upstream lost")
+	s = u.open(run, "")
+	recv(t, fr.opens, "stream")
+	a.hx.setStatus(fr, "weird-unknown-state", "")
+	a.hx.dropStream(fr)
+	s.waitFor(t, "run.disconnected")
+	s.close()
+	if got := disconnects() - n; got != 1 {
+		t.Fatalf("lost upstream counted %d, want 1", got)
+	}
+
+	// The server ends it: sign-out.
+	n = disconnects()
+	run = u.send(u.newChat(), "signed out")
+	_, fr = a.hx.runWithInput(t, "signed out")
+	s = u.open(run, "")
+	recv(t, fr.opens, "stream")
+	if w := u.do("POST", "/api/auth/logout", nil, nil); w.Code >= 300 {
+		t.Fatalf("logout: %d", w.Code)
+	}
+	s.waitFor(t, "run.disconnected")
+	<-s.done
+	if got := disconnects() - n; got != 1 {
+		t.Fatalf("sign-out counted %d, want 1", got)
 	}
 }

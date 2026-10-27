@@ -650,6 +650,14 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	w.WriteHeader(http.StatusOK)
 	obs.StreamOpened(r.Header.Get("Last-Event-ID") != "")
+	// One count per stream that did not see its run to the end: the browser left, the server ended it, or it carried
+	// a lost upstream (run.disconnected).
+	finished, cut := false, false
+	defer func() {
+		if !finished || cut {
+			obs.StreamDisconnected()
+		}
+	}()
 	_, _ = io.WriteString(w, "retry: 3000\n\n")
 	fl.Flush()
 
@@ -683,10 +691,12 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 		for _, e := range evs {
 			writeEvent(w, l.eventID(e.seq), e.name, e.data)
 			last = e.seq
+			cut = cut || e.name == "run.disconnected"
 		}
 		fl.Flush()
 		st.mu.Unlock()
 		if done {
+			finished = true
 			return
 		}
 		select {
@@ -715,9 +725,8 @@ func (s *Service) runEvents(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// streamDisconnected ends a run stream from the server side (lost upstream, suspension, sign-out) and counts it.
+// streamDisconnected ends a run stream from the server side (suspension, sign-out); the stream's own defer counts it.
 func streamDisconnected(w io.Writer, data []byte) {
-	obs.StreamDisconnected()
 	writeEvent(w, "", "run.disconnected", data)
 }
 

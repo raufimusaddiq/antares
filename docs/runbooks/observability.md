@@ -16,7 +16,7 @@ No log line carries a prompt, a reply, a draft, a title, a cookie, a header, a q
 |---|---|
 | `http …` (every `/api` request) | `req` (request id), `method`, `route` (the route pattern, never the raw path), `status`, `ms`, `bytes`, `user` (internal opaque id, or `-`), `error` (the API error code of a refusal, or `-`) |
 | `run …` (every run that ends, is cancelled or is disconnected) | `user`, `chat`, `run`, `binding` (the binding id, never its key), `state`, `outcome` (`success`/`failure`/`cancelled`/`unknown`), `error` |
-| `run usage …` | `run`, input / output / cache-read tokens, model, when Hermes reported them |
+| `run usage …` | `run`, input / output / cache-read tokens, when Hermes reported them (not the model: it is an upstream string) |
 | `chat: history page …`, `chat: search index …` | durations and counts only (#171) |
 
 A `DISCONNECTED` run is logged `outcome=unknown`, never as success (PRD §24.3).
@@ -28,7 +28,8 @@ A `DISCONNECTED` run is logged `outcome=unknown`, never as success (PRD §24.3).
 - `database`: accounts by approval status (pending registrations), tenants by status (Hermes tenant readiness), runs by
   status all time and in the last 24 h (success/failure/cancel), admin decisions by action (approvals/rejections), open
   tool approvals and questions, stored assets and their bytes, queued messages;
-- `process` (since `processSince`): streams opened / resumed / ended by the server (`run.disconnected`), denials (401/403
+- `process` (since `processSince`): streams opened / resumed / disconnected (a stream that did not see its run to the end: the browser left, the
+  server ended it on sign-out or suspension, or it carried a lost upstream as `run.disconnected`; counted once per stream), denials (401/403
   answers), Hermes calls with mean and max latency to the response headers.
 
 Job reconciliation failures are not reported: the Jobs UI (#105) is not built.
