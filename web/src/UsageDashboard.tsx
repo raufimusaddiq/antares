@@ -41,7 +41,7 @@ export function UsageDashboard() {
   const peak = data ? Math.max(1, ...data.byDay.map((d) => d.input + d.output)) : 1;
 
   return (
-    <details className="usage-panel" onToggle={(e) => setOpen(e.currentTarget.open)}>
+    <details className="usage-panel" onToggle={(e) => e.target === e.currentTarget && setOpen(e.currentTarget.open)}>
       <summary>Usage</summary>
       {open && (
         <>

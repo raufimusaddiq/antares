@@ -56,6 +56,13 @@ describe("usage dashboard", () => {
     expect(text).toContain("Deleted chats");
     expect(text).not.toMatch(/Rp 0\b/);
     expect(container.querySelectorAll(".usage-bar")).toHaveLength(7);
+    // The per-day table is its own <details>: opening and closing it leaves the dashboard open.
+    const inner = container.querySelectorAll("details")[1] as HTMLDetailsElement;
+    for (const state of [true, false]) {
+      inner.open = state;
+      fireEvent(inner, new Event("toggle", { bubbles: true }));
+      expect(container.querySelectorAll(".usage-bar")).toHaveLength(7);
+    }
     fireEvent.click(screen.getByRole("button", { name: "30 days" }));
     await waitFor(() => expect(container.querySelectorAll(".usage-bar")).toHaveLength(30));
     expect(asked).toContain("/api/me/usage?days=30");
