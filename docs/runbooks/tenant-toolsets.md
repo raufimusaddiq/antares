@@ -68,6 +68,11 @@ list minus B's `agent.disabled_toolsets`), calls them directly under B's `HERMES
 in a real chat to fetch A's canary file. Every result, the Hermes version and the container image are in the report;
 a different Hermes build invalidates it (the #175 staleness check).
 
+Writes inside the Hermes container: the canaries and one skill, as the `hermes` user, only in the two disposable fixture
+profiles that `smoke_fixtures.py` deletes afterwards. That is more than the profile create/delete AGENTS.md allows by
+default; the owner authorised it on 2026-10-28 (full control, test in production while Antares has no users). Running
+the probe again needs the same authorisation.
+
     sudo python3 -I scripts/smoke_fixtures.py run --db <antares.sqlite> --workdir /var/backups/antares/smoke-fixtures \
       --timeout 1500 -- python3 -I scripts/tool_isolation_probe.py https://<origin> <antares.sqlite> <result.json>
 
