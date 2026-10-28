@@ -813,7 +813,7 @@ details[open] > summary::after { transform: none; }
 .settings-page { padding: 1rem 1.25rem 1.5rem; overflow-y: auto; }
 .settings-page > h3 { margin: 1.25rem 0 0.5rem; font-size: 0.95rem; }
 .settings-page > h3:first-child { margin-top: 0; }
-.settings-body section { border: 0; padding: 0; margin: 0; background: none; box-shadow: none; }
+.settings-body section:not(.settings-page) { border: 0; padding: 0; margin: 0; background: none; box-shadow: none; }
 .settings-body label { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-height: 2.75rem; }
 @media (max-width: 640px) {
   .settings-dialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; box-shadow: none; }

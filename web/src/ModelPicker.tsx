@@ -291,7 +291,7 @@ function badges(m: ModelEntry): string {
     `Output: ${m.modalities ? kinds(m.modalities.output) : "unknown"}`,
     `Reasoning: ${m.reasoning === null ? "unknown" : m.reasoning ? "yes" : "no"}`,
     `Context window: ${m.contextWindow === null ? "unknown" : `${m.contextWindow.toLocaleString("en-US")} tokens`}`,
-    describePrice(m.price),
+    mediaPrice(m) ?? describePrice(m.price),
   ].join(" · ");
 }
 
@@ -299,3 +299,11 @@ const withHidden = (c: ModelCatalog, ids: Set<string>): ModelCatalog => ({
   ...c,
   providers: c.providers.map((p) => ({ ...p, models: p.models.map((m) => ({ ...m, hidden: ids.has(m.id) })) })),
 });
+
+/** Kenari's API prices models per token; an image, video or speech model is priced per unit on its catalogue page
+ * instead, and the API reports 0 for it. That 0 is not the price, so it is never shown. */
+function mediaPrice(m: ModelEntry): string | null {
+  const out = m.modalities?.output ?? [];
+  const unit = out.includes("video") ? "per second" : out.includes("image") ? "per image" : out.includes("audio") ? "per use" : null;
+  return unit ? `Price: ${unit}, on Kenari's catalogue (not in its API)` : null;
+}
