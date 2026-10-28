@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 // Behaviour of the phone-layout toggles (#138). jsdom applies no CSS, so this proves the state, ARIA and keyboard
-// contract only; the layout itself is measured in a real browser by scripts/mobile-check.mjs.
+// contract only; the layout itself is checked in a real browser by scripts/browser-check.mjs (ONLY=mobile-layout).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 

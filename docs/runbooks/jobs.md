@@ -4,28 +4,10 @@
 
 `ANTARES_JOBS=on` in `/opt/antares/antares.env` mounts the routes and reports the `jobs` capability, which shows the
 menu panel. Off (the default), the routes stay the 501 placeholder and the capability says it is switched off
-(PRD §12 rule 6). It is turned on only after the owner-isolation and suspension probe against the deployed Hermes
-passes and is recorded in `docs/hermes/` (the fake-upstream tests here prove the app's side, not Hermes'). Suspension
+(PRD §12 rule 6). It was turned on (2026-10-28, Hermes 0.22.5) after owner isolation and suspension were checked live against the
+deployed Hermes; the fake-upstream tests here prove the app's side. After a Hermes upgrade, check by hand that another
+account gets 404 on a job and that suspending an account pauses its jobs in Hermes' store. Suspension
 pauses any jobs an account has whether or not the switch is on.
-
-**Live probe, 2026-10-28, Hermes 0.22.5, production `0a52064`: passed 23/23; `ANTARES_JOBS=on` since.**
-`scripts/jobs_isolation_probe.py`, run through `scripts/smoke_fixtures.py` (disposable accounts and profiles, removed
-after: cleanup clean), result `docs/hermes/fixtures/jobs-isolation-probe-2026-10-28.json`. It proved, against the real
-Hermes: another account's job is absent from B's list and 404 on GET, DELETE, pause, resume and run, and unchanged after;
-a real cron run of A's job, asked to use the terminal or else reply with exactly the marker, replied with exactly the
-marker (the run document after `## Response`, so not the prompt that names it; any command output beside it fails the
-check): the run's own answer, not a read of the toolset Hermes granted it; suspending A paused the
-job, verified by Antares (no pending mark, `admin.suspend_jobs ok`) and in Hermes' own store (`enabled: false`).
-Re-run it after a Hermes upgrade:
-
-    sudo python3 -I scripts/smoke_fixtures.py run --db <antares.sqlite> --workdir /var/backups/antares/smoke-fixtures \
-      --timeout 1500 -- python3 -I scripts/jobs_isolation_probe.py https://<origin> <antares.sqlite> <result.json>
-
-It reads Hermes inside the container named by `HERMES_CONTAINER` (default `hermes`), as the `hermes` user, read-only.
-`scripts/test_jobs_isolation_probe.py` checks its verdicts offline (fake Antares, fake container), including that a
-leak to B on any job route, command output in the reply, a job left enabled upstream, a missing binding and an
-unexpected response body each fail it, and that it always writes its report, also when Antares does not answer at all (an "Antares answers" check, added after
-the recorded live run, fails first and the run stops there).
 
 ## What exists
 

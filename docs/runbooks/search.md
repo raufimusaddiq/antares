@@ -82,11 +82,6 @@ database file (0600, dedicated 0700 directory; see `data-layer.md`) and is in ev
   `internal/chat/manage_test.go` ("deleted chat still searchable" check) and `internal/store/search_test.go`.
 - **Export.** The index is never exported. Chat export reads the transcript the history route returns; a backup copies
   the database file, index included (`backup-restore.md`), so a restored backup holds the index of chats that existed then.
-- **Disk forecast**, derived from the measurement in `capacity.md` §3 (fresh DB, 10,000 runs / 20,000 turns, prompt ≈ 190 B,
-  reply 2,000 B): 636 B per run unindexed; +5.48 KB per indexed message pair, ≈ 2.5× the text; up to ~10 MB WAL while running.
-  So a fully indexed account costs ≈ 2.5 bytes per byte of chat text, and the per-user rune budget (25M runes ≈ 25 MB of
-  ASCII text) caps one account's index at roughly **60–65 MB**. One owner with 5,000 message pairs of that size: ≈ 3 MB
-  unindexed, ≈ 30 MB indexed. These are extrapolations of the recorded ratio, not new measurements.
 - **Telemetry before any cache.** Every history page reads the whole transcript from Hermes, then slices it. Antares logs
   `chat: history page fetch_ms=… total_ms=… turns=… page=…` per page and `chat: search index write_ms=… turns=… text_bytes=…`
   per index write: counts and durations only, no id or text (`TestHistoryAndIndexLatencyAreLoggedWithoutContent`). No
