@@ -17,6 +17,20 @@ export const MAX_STATEMENTS = 300;
 export const MAX_ARRAY = 200;
 export const MAX_TEXT = 20_000;
 
+// A component with an image address makes the browser fetch it with the reader's cookies (CSP allows same-origin
+// images), so no image is accepted: no image field (src, bgImageSrc, a gallery's or list item's image) and no Markdown
+// image. A Markdown link is a click, not a fetch, but it must still be an absolute http(s) address.
+const IMAGE_FIELD = /^src$|Src$/;
+const MD_IMAGE = /!\[/;
+const MD_LINK_TARGET = /\]\(\s*<?([^)\s>]*)|^\s{0,3}\[[^\]]+\]:\s*<?(\S*)/gm;
+function badLink(text: string): boolean {
+  for (const m of text.matchAll(MD_LINK_TARGET)) {
+    const url = m[1] ?? m[2] ?? "";
+    if (!/^https?:\/\//i.test(url)) return true;
+  }
+  return false;
+}
+
 export type Verdict = { ok: true } | { ok: false; reason: string };
 
 let parser: ReturnType<typeof createParser> | undefined;
@@ -56,12 +70,18 @@ export function check(source: string, partial = false): Verdict {
 
   const known = new Set(Object.keys(openuiChatLibrary.components));
   let nodes = 0;
-  const visit = (v: unknown, depth: number): string | null => {
-    if (typeof v === "string") return v.length > MAX_TEXT ? "text too long" : null;
+  const visit = (v: unknown, depth: number, key = ""): string | null => {
+    if (typeof v === "string") {
+      if (v.length > MAX_TEXT) return "text too long";
+      if ((IMAGE_FIELD.test(key) && v.trim() !== "") || MD_IMAGE.test(v)) return "images are not allowed";
+      // A link still streaming in may be cut short ("htt"), so links are judged once the reply is complete.
+      if (!partial && badLink(v)) return "links must be absolute http(s) addresses";
+      return null;
+    }
     if (Array.isArray(v)) {
       if (v.length > MAX_ARRAY) return "list too long";
       for (const x of v) {
-        const bad = visit(x, depth);
+        const bad = visit(x, depth, key);
         if (bad) return bad;
       }
       return null;
@@ -72,14 +92,14 @@ export function check(source: string, partial = false): Verdict {
       if (!known.has(String(n.typeName))) return `component ${String(n.typeName)}`;
       if (++nodes > MAX_NODES) return "too many components";
       if (depth > MAX_DEPTH) return "nested too deeply";
-      for (const val of Object.values(n.props ?? {})) {
-        const inner = visit(val, depth + 1);
+      for (const [k, val] of Object.entries(n.props ?? {})) {
+        const inner = visit(val, depth + 1, k);
         if (inner) return inner;
       }
       return null;
     }
-    for (const val of Object.values(v as Record<string, unknown>)) {
-      const inner = visit(val, depth);
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      const inner = visit(val, depth, k);
       if (inner) return inner;
     }
     return null;

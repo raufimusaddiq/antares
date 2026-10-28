@@ -26,7 +26,13 @@ const examples = openuiChatExamples.map((e) => e.slice(e.indexOf("root =")).spli
 
 describe("the gate over the chat library", () => {
   it("accepts OpenUI's own example programs", () => {
-    for (const src of examples) expect(check(src), src.slice(0, 60)).toEqual({ ok: true });
+    // Some examples show pictures, which Antares refuses (see the image test); every other one is accepted.
+    const verdicts = examples.map((src) => check(src));
+    for (const [i, v] of verdicts.entries()) {
+      if (!v.ok && v.reason === "images are not allowed") continue;
+      expect(v, examples[i].slice(0, 60)).toEqual({ ok: true });
+    }
+    expect(verdicts.filter((v) => v.ok).length).toBeGreaterThanOrEqual(2);
   });
   it("refuses what is not a complete, plain program of the library", () => {
     expect(check('root = Card([Bogus("x")])').ok).toBe(false);
@@ -104,6 +110,32 @@ describe("rendering", () => {
       unmount();
     }
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+  it("never renders an image: no image address, gallery, background or Markdown image, final or streaming", () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const images = [
+      'root = Card([ImageBlock("/api/admin/users")])',
+      'root = Card([Image("/api/admin/users", "x")])',
+      'root = Card([ImageGallery([{src: "/api/admin/users", alt: "x"}])])',
+      'root = Card([ListBlock([ListItem("t", "s", {src: "/api/me", alt: "x"})])])',
+      'root = Card([TextContent("see ![x](/api/admin/users)")])',
+      'root = Card([MarkDownRenderer("![x](https://example.com/a.png)")])',
+    ];
+    for (const source of images) {
+      expect(check(source), source).toEqual({ ok: false, reason: "images are not allowed" });
+      expect(check(source + "\nmore = TextContent(\"y", true).ok, source).toBe(false);
+      const { container, unmount } = render(<RichBlock source={source} />);
+      expect(container.querySelector("img"), source).toBeNull();
+      unmount();
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+  it("accepts absolute http(s) Markdown links and refuses relative or other ones", () => {
+    expect(check('root = Card([TextContent("[docs](https://example.com/docs)")])')).toEqual({ ok: true });
+    for (const link of ["[x](/api/admin/users)", "[x](javascript:alert(1))", "[x](mailto:a@b.c)", "[x]: /api/me"]) {
+      expect(check(`root = Card([TextContent(${JSON.stringify(link)})])`), link).toEqual({ ok: false, reason: "links must be absolute http(s) addresses" });
+    }
   });
   it("labels a block from the earlier Antares component set instead of calling it broken", () => {
     render(<RichBlock source={'root = Stack([Text("old answer")])'} />);

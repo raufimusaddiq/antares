@@ -23,6 +23,11 @@ Antares-specific component set to keep in step with the prompt.
   first (`check(source, true)`): root, unknown components, no query/mutation/state and every size limit. Only
   completeness, parse errors and dangling references wait for the end. A partial program that fails is shown as source
   at once (those failures cannot be fixed by more text). A reply that ends with a fenced block still open shows the source.
+- **No images, absolute links only**: a component with an image address would make the browser fetch it with the
+  reader's cookies (the CSP allows same-origin images), so the gate refuses any non-empty image field (`src`,
+  `bgImageSrc`, a gallery's or list item's image) and any Markdown image, while streaming too. Markdown links must be
+  absolute http(s). The prompt says so (`ANTARES_RULES` in `web/scripts/openui-prompt.mjs`). Generated pictures still
+  reach the chat as media (`/api/media`), outside OpenUI.
 - **Earlier blocks**: blocks written for Antares' first component set (`[antares-openui v1]`, root `Stack`) are not
   rendered by the native library; they are shown as source, labelled "made by an earlier version of rich replies".
   At the switch, production held one such block (an owner test), so no v1 renderer was kept.

@@ -237,3 +237,5 @@ Before finishing, walk your output and verify:
 - Every Button label must accurately describe what clicking it does; use "primary" for the main action and "secondary"/"tertiary" only for lower-emphasis supporting actions.
 - Icon: always include the category argument — it enables fallback matching when the exact lucide name is unavailable.
 - Pass sources on Card ONLY when the answer relies on real references you actually have, and cite them inline in TextContent as [1], [2] (1-based index into sources).
+- Never show images: do not use Image, ImageBlock, ImageGallery, ImageText or ImageTextLarge, leave every src, bgImageSrc and ListItem image empty, and write no Markdown images (![...](...)).
+- Links in text must be absolute https:// addresses.
