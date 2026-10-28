@@ -4,11 +4,13 @@ import {
   decide,
   describeAdminCode,
   getKenariUsage,
+  getToolPolicy,
   getUser,
   isForbidden,
   listAudit,
   listUsers,
   requeue,
+  setToolPolicy,
   type AdminResult,
   type AdminUser,
   type AuditEntry,
@@ -17,6 +19,7 @@ import {
   type KenariUsageView,
   type UsageSection,
   type Requeue,
+  type ToolPolicy,
   loadAllAudit,
 } from "./adminApi";
 import { getCapabilities, type Inventory } from "./chatApi";
@@ -611,7 +614,7 @@ export function CapabilitiesTable({ inv }: { inv: Inventory }) {
           </tbody>
         </table>
       </div>
-      <h2>Toolsets</h2>
+      <h2>Toolsets on the backend</h2>
       {inv.toolsets.length === 0 ? (
         <p className="label">The backend reported no toolsets.</p>
       ) : (
@@ -651,10 +654,111 @@ function detailOf(id: string, inv: Inventory): string {
 
 export function CapabilitiesScreen() {
   const [state, reload] = useLoad((s) => getCapabilities(s), "capabilities");
-  if (state.kind === "loading") return <Loading what="Assistant capabilities" />;
-  if (state.kind === "forbidden") return <Forbidden />;
-  if (state.kind === "error") return <Problem message={state.message} onRetry={reload} />;
-  return <CapabilitiesTable inv={state.value} />;
+  const [tools, reloadTools] = useLoad((s) => getToolPolicy(s), "tool-policy");
+  return (
+    <>
+      {tools.kind === "loading" ? (
+        <Loading what="Assistant tools" />
+      ) : tools.kind === "forbidden" ? (
+        <Forbidden />
+      ) : tools.kind === "error" ? (
+        <Problem message={tools.message} onRetry={reloadTools} />
+      ) : (
+        <AssistantTools policy={tools.value} onSave={setToolPolicy} />
+      )}
+      {state.kind === "loading" ? (
+        <Loading what="Assistant capabilities" />
+      ) : state.kind === "forbidden" ? null : state.kind === "error" ? (
+        <Problem message={state.message} onRetry={reload} />
+      ) : (
+        <CapabilitiesTable inv={state.value} />
+      )}
+    </>
+  );
+}
+
+/**
+ * Admin → Assistant tools: which tools every account's assistant has. Offered tools are checkboxes; the rest are
+ * listed, locked, with the reason. Saving re-checks every account so the change takes effect.
+ */
+export function AssistantTools({ policy, onSave }: { policy: ToolPolicy; onSave: (allowed: string[]) => Promise<AdminResult<ToolPolicy>> }) {
+  const [saved, setSaved] = useState(policy);
+  const onNames = (p: ToolPolicy) => p.tools.filter((t) => t.state === "on" && t.reason === "").map((t) => t.name);
+  const [chosen, setChosen] = useState(() => new Set(onNames(policy)));
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const offered = saved.tools.filter((t) => t.reason === "");
+  const locked = saved.tools.filter((t) => t.reason !== "");
+  const before = onNames(saved);
+  const changed = before.length !== chosen.size || before.some((n) => !chosen.has(n));
+  const toggle = (name: string) => {
+    const next = new Set(chosen);
+    if (next.has(name)) next.delete(name);
+    else next.add(name);
+    setChosen(next);
+    setStatus("");
+  };
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const r = await onSave(offered.filter((t) => chosen.has(t.name)).map((t) => t.name));
+    setBusy(false);
+    if (!r.ok) {
+      setError(describeAdminCode(r.code, r.status));
+      return;
+    }
+    setSaved(r.value);
+    setChosen(new Set(onNames(r.value)));
+    const n = r.value.reverifying ?? 0;
+    setStatus(`Saved. ${n === 1 ? "1 account is" : `${n} accounts are`} being re-checked; each one's chat pauses for about a minute while it is.`);
+  };
+  return (
+    <section aria-labelledby="tools-h">
+      <h1 id="tools-h">Assistant tools</h1>
+      <p className="label">
+        What every account's assistant can use. {saved.custom ? "Set here by an admin." : "This is the server's default until you save a choice."}
+      </p>
+      <form onSubmit={save} aria-label="Assistant tools">
+        <ul className="tool-list">
+          {offered.map((t) => (
+            <li key={t.name}>
+              <input type="checkbox" id={`tool-${t.name}`} checked={chosen.has(t.name)} disabled={busy} onChange={() => toggle(t.name)} />
+              <label htmlFor={`tool-${t.name}`}>
+                <strong>{t.label}</strong>
+                {t.description && <small>{t.description}</small>}
+              </label>
+            </li>
+          ))}
+        </ul>
+        {error && (
+          <p className="notice" role="alert">
+            {error}
+          </p>
+        )}
+        <p className="tool-actions">
+          <button type="submit" disabled={busy || !changed || chosen.size === 0}>
+            {busy ? "Saving…" : "Save tools"}
+          </button>
+          <span role="status" className="label">
+            {chosen.size === 0 ? "Choose at least one tool." : changed ? "Not saved yet." : status}
+          </span>
+        </p>
+      </form>
+      <details className="tool-locked">
+        <summary>Not available to accounts ({locked.length})</summary>
+        <ul>
+          {locked.map((t) => (
+            <li key={t.name}>
+              <code>{t.name}</code>
+              {t.state === "on" && <span className="badge bad">On by the server default</span>} {t.reason}
+            </li>
+          ))}
+        </ul>
+      </details>
+    </section>
+  );
 }
 
 // ---- provider account usage (#146) ---------------------------------------------

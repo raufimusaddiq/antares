@@ -120,30 +120,37 @@ func NewHelper(baseURL, token string, client *http.Client) (*Helper, error) {
 	return &Helper{base: &url.URL{Scheme: u.Scheme, Host: u.Host}, token: token, client: &c}, nil
 }
 
-// Provision creates the profile (if absent) and returns its key once. On the
-// helper's 409 (a profile that already has a key) it returns ErrKeyExists; use
-// Rotate to obtain a fresh one.
-func (h *Helper) Provision(ctx context.Context, slug string) (Credential, error) {
-	return h.issue(ctx, "/provision", slug)
+// Provision creates the profile (if absent), applies the tenant toolset policy and returns its key once. On the
+// helper's 409 (a profile that already has a key) it returns ErrKeyExists; use Rotate to obtain a fresh one.
+// toolsets is the admin's tenant policy (OfferedToolsets); nil leaves the helper's own default.
+func (h *Helper) Provision(ctx context.Context, slug string, toolsets []string) (Credential, error) {
+	return h.issue(ctx, "/provision", slug, toolsets)
 }
 
-// Rotate replaces the profile's key and returns the new one once.
-func (h *Helper) Rotate(ctx context.Context, slug string) (Credential, error) {
-	return h.issue(ctx, "/rotate", slug)
+// Rotate reapplies the toolset policy, replaces the profile's key and returns the new one once.
+func (h *Helper) Rotate(ctx context.Context, slug string, toolsets []string) (Credential, error) {
+	return h.issue(ctx, "/rotate", slug, toolsets)
 }
 
-func (h *Helper) issue(ctx context.Context, path, slug string) (Credential, error) {
+func (h *Helper) issue(ctx context.Context, path, slug string, toolsets []string) (Credential, error) {
 	if !ValidSlug(slug) {
 		return Credential{}, permanent("invalid profile name")
 	}
-	body, _ := json.Marshal(map[string]string{"slug": slug})
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.base.String()+path, bytes.NewReader(body))
+	if toolsets != nil && ValidateOfferedToolsets(toolsets) != nil {
+		return Credential{}, permanent("invalid tenant tool policy")
+	}
+	req := struct {
+		Slug     string   `json:"slug"`
+		Toolsets []string `json:"toolsets,omitempty"`
+	}{slug, toolsets}
+	body, _ := json.Marshal(req)
+	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, h.base.String()+path, bytes.NewReader(body))
 	if err != nil {
 		return Credential{}, permanent("could not build helper request")
 	}
-	req.Header.Set("Authorization", "Bearer "+h.token)
-	req.Header.Set("Content-Type", "application/json")
-	resp, err := h.client.Do(req)
+	hr.Header.Set("Authorization", "Bearer "+h.token)
+	hr.Header.Set("Content-Type", "application/json")
+	resp, err := h.client.Do(hr)
 	if err != nil {
 		// err can echo the URL; the URL holds no secret, but the text is dropped anyway.
 		return Credential{}, transient("provisioning helper unreachable")

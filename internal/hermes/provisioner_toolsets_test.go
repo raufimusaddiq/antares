@@ -92,6 +92,17 @@ func TestProvisionerToolsetListsMatchAntares(t *testing.T) {
 	if got := stringsVar(t, "floorToolsets"); !sameSet(got, DeniedToolsets) {
 		t.Errorf("floorToolsets %v != DeniedToolsets %v", got, DeniedToolsets)
 	}
+	if got := stringsVar(t, "offeredToolsets"); !sameSet(got, OfferedToolsets) {
+		t.Errorf("offeredToolsets %v != OfferedToolsets %v", got, OfferedToolsets)
+	}
+	for _, n := range OfferedToolsets {
+		if ValidateAllowedToolsets([]string{n}) != nil {
+			t.Errorf("offered toolset %s is unknown or in the floor", n)
+		}
+	}
+	if ValidateOfferedToolsets(DefaultAllowedToolsets) != nil {
+		t.Errorf("the default tenant set is not inside the offer")
+	}
 	if got := stringsVar(t, "defaultAllowed"); !sameSet(got, DefaultAllowedToolsets) {
 		t.Errorf("defaultAllowed %v != DefaultAllowedToolsets %v", got, DefaultAllowedToolsets)
 	}

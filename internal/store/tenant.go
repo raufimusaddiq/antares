@@ -22,6 +22,7 @@ var (
 	ErrReasonInvalid = errors.New("store: the reason is too long or contains control characters")
 	ErrNoBinding     = errors.New("store: user has no tenant binding")
 	ErrSuperseded    = errors.New("store: user changed state while the run was in flight")
+	ErrPolicyChanged = errors.New("store: the tenant tool policy changed while the run was in flight")
 	ErrNotClaimable  = errors.New("store: nothing to provision for this user")
 )
 
@@ -366,6 +367,9 @@ type Claim struct {
 	Profile   string // the server-chosen slug, stable across retries
 	BindingID string // empty until a credential has been stored
 	Attempts  int
+	// ToolPolicy is the version of the tenant tool policy this run applied (TenantToolPolicy; "" for none).
+	// MarkReady refuses if it is no longer current.
+	ToolPolicy string
 }
 
 // DueTenants lists approved accounts whose provisioning should run now:
@@ -590,6 +594,13 @@ func MarkReady(ctx context.Context, db *sql.DB, c Claim, now time.Time) error {
 	}
 	if n, err := res.RowsAffected(); err != nil || n != 1 {
 		return ErrSuperseded
+	}
+	// Read after the write above: this transaction now holds the write lock, so no policy save can commit between
+	// this check and the commit. A run that applied an older policy never unlocks the account.
+	if _, v, err := toolPolicy(ctx, tx); err != nil {
+		return err
+	} else if v != c.ToolPolicy {
+		return ErrPolicyChanged
 	}
 	res, err = tx.ExecContext(ctx, `UPDATE tenant_bindings SET status = 'READY', verified_at = ?
 		WHERE user_id = ? AND profile_name = ? AND status = 'CONFIGURING'`, ts(now), c.UserID, c.Profile)

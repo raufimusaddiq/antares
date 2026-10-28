@@ -453,6 +453,18 @@ button.quiet.on { background: var(--ink); color: var(--canvas); font-weight: 700
 .facts dd { margin: 0; }
 .failure pre { max-width: 40rem; margin: 0.25rem 0 0; padding: 0.65rem 0.85rem; overflow: auto; font-family: var(--font-mono); font-size: 0.85rem; background: var(--card); border: 1px solid var(--hair); border-radius: var(--r-sm); }
 .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
+/* Admin → Assistant tools: one row per tool, a 44px checkbox target, the description under the name. */
+.tool-list { list-style: none; margin: 0.75rem 0; padding: 0; display: grid; gap: 0.25rem; max-width: 44rem; }
+.tool-list li { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 0.75rem; padding: 0.55rem 0.75rem; border-radius: var(--r-lg); }
+.tool-list li:hover { background: var(--rail); }
+.tool-list input { width: 1.2rem; height: 1.2rem; margin: 0.15rem 0 0; }
+.tool-list label { display: grid; gap: 0.1rem; min-height: 2.75rem; cursor: pointer; }
+.tool-list small { color: var(--ink-2); font-size: 0.85rem; line-height: 1.4; }
+.tool-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
+.tool-locked { margin: 1rem 0 2rem; max-width: 44rem; }
+.tool-locked summary { cursor: pointer; min-height: 2.75rem; display: flex; align-items: center; }
+.tool-locked ul { margin: 0.25rem 0 0; padding-left: 1.25rem; display: grid; gap: 0.4rem; color: var(--ink-2); }
+.tool-locked code { margin-right: 0.4rem; color: var(--ink); }
 .confirm { max-width: 40rem; margin: 1rem 0; padding: 0.9rem 1.25rem; border: 2px solid var(--ink); border-radius: var(--r-lg); background: var(--card); box-shadow: var(--hard); }
 .confirm h3 { margin: 0 0 0.4rem; font-size: 1rem; }
 .confirm p { color: var(--ink); }

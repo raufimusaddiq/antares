@@ -12,7 +12,7 @@ export PROVISIONER_INFERENCE_API_KEY=... # required: operator-managed shared lau
 export PROVISIONER_INFERENCE_BASE_URL=... # required: exact matching OpenAI-compatible endpoint
 export PROVISIONER_ADDR=127.0.0.1:8750   # optional (default shown)
 export HERMES_CONTAINER=hermes           # optional (default shown)
-export PROVISIONER_ALLOWED_TOOLSETS=...  # optional; toolsets a tenant keeps (default web,vision,image_gen,skills,memory,todo,clarify)
+export PROVISIONER_ALLOWED_TOOLSETS=...  # optional; toolsets a tenant keeps when a request names none (default web,vision,image_gen,skills,memory,todo,clarify)
 go build -o hermes-provisioner . && ./hermes-provisioner
 ```
 
@@ -24,8 +24,8 @@ All endpoints except `/health` need `Authorization: Bearer $PROVISIONER_TOKEN`.
 
 | Endpoint | Body | Result |
 | --- | --- | --- |
-| `POST /provision` | `{"slug":"u_xxxxxxxx"}` | creates the profile if absent, bootstraps the declared shared inference key/endpoint for a new profile, writes a distinct fresh `API_SERVER_KEY` to its `.env`, returns `{profile,key,created_at}` once. `409` if the profile already has a key. |
-| `POST /rotate` | `{"slug":...}` | replaces the key, returns it once. `404` if the profile is absent. |
+| `POST /provision` | `{"slug":"u_xxxxxxxx","toolsets":[...]}` (`toolsets` optional) | creates the profile if absent, bootstraps the declared shared inference key/endpoint for a new profile, writes a distinct fresh `API_SERVER_KEY` to its `.env`, returns `{profile,key,created_at}` once. `409` if the profile already has a key. |
+| `POST /rotate` | `{"slug":...,"toolsets":[...]}` (`toolsets` optional) | reapplies the toolset policy, replaces the key, returns it once. `404` if the profile is absent. |
 | `POST /deprovision` | `{"slug":...}` | `hermes profile delete` then `purge-identity`. Idempotent. Returns no key. |
 | `GET /health` | – | unauthenticated; `200` when the container answers `hermes --version`, else `503`. Body: `{"status","revision","modified"}`, the build's `vcs.revision` (`"unavailable"` without a VCS stamp). Deploys compare it to the deployed commit: `deploy/verify-helper-revision.sh`. The exact deployed commit is visible to anything that can reach the bind address (the docker bridge), which is why the bind must never be public. |
 
@@ -37,8 +37,10 @@ All endpoints except `/health` need `Authorization: Bearer $PROVISIONER_TOKEN`.
 - Fail closed: if `profile create` fails nothing is written.
 - Tenant toolset policy (issue #41): before any key is issued, `/provision` runs
   `hermes -p <slug> config set agent.disabled_toolsets '[...]'` for the profile, disabling every toolset Hermes
-  reports that is not in `PROVISIONER_ALLOWED_TOOLSETS` (`toolsets.go`; floor toolsets and unknown names refuse to start). Set
-  the same value as `ANTARES_TENANT_ALLOWED_TOOLSETS`. `/rotate` reapplies it, so an edit to a profile's
+  reports that is not allowed. The allowed set is the request's `toolsets` (the admin's Assistant tools policy,
+  sent by Antares; every name must be in `offeredToolsets`, so never a floor toolset, else `400` before anything
+  runs), or else `PROVISIONER_ALLOWED_TOOLSETS` (`toolsets.go`; floor toolsets and unknown names refuse to start). Set
+  that to the same value as `ANTARES_TENANT_ALLOWED_TOOLSETS`. `/rotate` reapplies it, so an edit to a profile's
   `agent.disabled_toolsets` is overwritten by the next provision or rotate. Hermes applies that list last,
   over every platform list. If it fails, no key is written (`502`).
 - New-profile bootstrap (#132) writes only the declared `OPENAI_API_KEY`/`OPENAI_BASE_URL` pair in addition to the distinct inbound key. It never reads a user profile as its source.

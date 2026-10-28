@@ -55,6 +55,9 @@ type Options struct {
 	// KenariUsage reads the shared provider account's usage. It is mounted on the admin tree only
 	// (GET /api/admin/kenari-usage); nil leaves the route answering "not configured".
 	KenariUsage AccountUsage
+	// DefaultToolsets is the tenant toolset policy while an admin has set none (ANTARES_TENANT_ALLOWED_TOOLSETS),
+	// shown in Admin → Assistant tools.
+	DefaultToolsets []string
 }
 
 // AccountUsage is the provider account reader the admin route calls.
@@ -86,6 +89,7 @@ type Auth struct {
 	push     ChatHandlers
 	usage    AccountUsage
 	limits   *requestLimits
+	tools    []string // DefaultToolsets
 }
 
 func New(o Options) (*Auth, error) {
@@ -107,7 +111,7 @@ func New(o Options) (*Auth, error) {
 		return nil, errors.New("request limits must be positive integers")
 	}
 	a := &Auth{limits: newRequestLimits(limits), db: o.DB, ep: o.Endpoints, clientID: o.ClientID, secret: o.ClientSecret,
-		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat, push: o.Push, usage: o.KenariUsage}
+		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat, push: o.Push, usage: o.KenariUsage, tools: o.DefaultToolsets}
 	a.ver = &verifier{ep: o.Endpoints, clientID: o.ClientID, client: o.HTTPClient, now: o.Now}
 	return a, nil
 }

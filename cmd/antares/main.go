@@ -110,7 +110,8 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	tenants, err := tenant.New(tenant.Options{DB: db, Box: box, Helper: helper, Verifier: verifier})
+	tenants, err := tenant.New(tenant.Options{DB: db, Box: box, Helper: helper, Verifier: verifier,
+		ToolPolicy: func(ctx context.Context) ([]string, string, error) { return store.TenantToolPolicy(ctx, db) }})
 	if err != nil {
 		return err
 	}
@@ -170,6 +171,8 @@ func run() error {
 		Push:         pusher,
 		KenariUsage:  kenari.NewAccount(kenari.DefaultAccountBase, cfg.KenariAPIKey, nil),
 		Limits:       &cfg.Limits,
+		// Admin → Assistant tools shows this while no policy is saved.
+		DefaultToolsets: cfg.TenantToolsets,
 	})
 	if err != nil {
 		return err

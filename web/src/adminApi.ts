@@ -100,7 +100,7 @@ export function parseAudit(v: unknown): AuditPage | null {
   return entries ? { entries, next: str(obj(v)?.next) } : null;
 }
 
-async function call<T>(method: "GET" | "POST", path: string, parse: (b: unknown) => T | null, body?: unknown, signal?: AbortSignal): Promise<AdminResult<T>> {
+async function call<T>(method: "GET" | "POST" | "PUT", path: string, parse: (b: unknown) => T | null, body?: unknown, signal?: AbortSignal): Promise<AdminResult<T>> {
   let res: Response;
   try {
     res = await fetch(path, {
@@ -284,3 +284,35 @@ export function parseKenariUsage(v: unknown): KenariUsageView | null {
 export function getKenariUsage(refresh: boolean, signal?: AbortSignal) {
   return call("GET", `/api/admin/kenari-usage${refresh ? "?refresh=1" : ""}`, parseKenariUsage, undefined, signal);
 }
+
+// ---- Assistant tools: the toolsets every account has --------------------------------------------------------------
+
+/** One toolset. "on"/"off" can be chosen; "locked" cannot (reason says why). */
+export interface ToolItem {
+  name: string;
+  label: string;
+  description: string;
+  state: "on" | "off" | "locked";
+  reason: string;
+}
+/** custom is false while the server's configured default applies; reverifying is set after a save. */
+export interface ToolPolicy {
+  tools: ToolItem[];
+  custom: boolean;
+  reverifying: number | null;
+}
+
+export function parseToolPolicy(v: unknown): ToolPolicy | null {
+  const o = obj(v);
+  if (!o || !Array.isArray(o.tools)) return null;
+  const tools: ToolItem[] = [];
+  for (const t of o.tools) {
+    const to = obj(t);
+    if (!to || !str(to.name) || (to.state !== "on" && to.state !== "off" && to.state !== "locked")) return null;
+    tools.push({ name: str(to.name), label: str(to.label) || str(to.name), description: str(to.description), state: to.state, reason: str(to.reason) });
+  }
+  return { tools, custom: o.custom === true, reverifying: num(o.reverifying) };
+}
+
+export const getToolPolicy = (signal?: AbortSignal) => call("GET", "/api/admin/tool-policy", parseToolPolicy, undefined, signal);
+export const setToolPolicy = (allowed: string[]) => call("PUT", "/api/admin/tool-policy", parseToolPolicy, { allowed });

@@ -49,7 +49,7 @@ OWNED = {
     # Kept: audit evidence. Only the actor is nulled, so the hash excludes exactly the rows touched (fxa).
     "audit_log": "id IN (SELECT id FROM fxa)",
     # Shared or the original admin's: never deleted, and a fixture appearing here is a refusal.
-    "admin_bootstrap": "0", "model_blocked": "0", "schema_migrations": "0",
+    "admin_bootstrap": "0", "model_blocked": "0", "tenant_tool_policy": "0", "schema_migrations": "0",
 }
 DELETE_ORDER = ["push_delivery_events", "push_subscriptions", "run_images", "run_prompts", "messages",
                 "search_docs", "search_state", "chat_drafts", "queue_items", "runs", "chats", "assets", "prompt_templates",
@@ -58,6 +58,7 @@ DELETE_ORDER = ["push_delivery_events", "push_subscriptions", "run_images", "run
 SHARED_REFS = [  # (table, predicate that must find no row): evidence or shared state a fixture must not own
     ("admin_bootstrap", f"user_id IN {FX}"),
     ("model_blocked", f"blocked_by IN {FX}"),
+    ("tenant_tool_policy", f"updated_by IN {FX}"),
     ("users", f"approved_by IN {FX} AND id NOT IN {FX}"),
     ("approvals", f"(target_user_id IN {FX}) != (actor_user_id IN {FX})"),
 ]
@@ -340,7 +341,7 @@ def residue(conn, ids, hermes, slugs_):
     """What is still there, as counts and short ids only."""
     left = {}
     for t in tables(conn):
-        if t in ("admin_bootstrap", "model_blocked", "schema_migrations"):
+        if t in ("admin_bootstrap", "model_blocked", "tenant_tool_policy", "schema_migrations"):
             continue
         n = count(conn, t, OWNED[t] if t != "audit_log" else f"actor_user_id IN {FX}")
         if n:

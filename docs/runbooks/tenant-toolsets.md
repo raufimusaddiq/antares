@@ -1,9 +1,26 @@
 # Runbook — tenant toolset policy
 
-Issue #13, applied by issue #41. The allowed set is **operator configuration**, not a constant in
-Antares code: `ANTARES_TENANT_ALLOWED_TOOLSETS` (Antares, enforced by verification) and
-`PROVISIONER_ALLOWED_TOOLSETS` (the provisioner, applied to each profile) take the same comma list,
-default `web,vision,image_gen,skills,memory,todo,clarify`. The floor below can never be allowed. Set both
+Issue #13, applied by issue #41. **An admin chooses the tenant toolsets in Admin → Capabilities → Assistant
+tools** (`GET`/`PUT /api/admin/tool-policy`, stored in `tenant_tool_policy`, audited as `tool_policy.set`). Only
+`hermes.OfferedToolsets` can be chosen: `web, vision, image_gen, video_gen, video, tts, stt, x_search, skills,
+memory, todo, clarify`. The floor below is shown locked with its reason, and so are the toolsets not reviewed for
+shared tenants (`discord, discord_admin, yuanbao, computer_use, a2a, kanban, context_engine`). Saving sends every
+approved account with a ready or failed binding back through verification (the same as an admin's tenant-verify):
+each run passes the policy to the provisioner's `/rotate`, which writes it to the profile, and the verifier's
+`toolset_policy` check uses the same list. A run that started before the change is not marked ready: `MarkReady`
+compares the policy version the run applied with the current one inside the READY transaction, after taking the
+write lock, so no save can slip between the check and the commit (`the tenant tool policy changed during setup`);
+it retries with the new policy. While re-verifying, an account's
+chat pauses for about a minute.
+
+The provisioner trusts the list only within its own copy of the offer (`offeredToolsets`, pinned to Antares' by
+`TestProvisionerToolsetListsMatchAntares`): any other name, a floor toolset included, is a 400 and nothing runs.
+So a caller holding the provisioner token still cannot enable the floor or an unreviewed toolset.
+
+Until an admin saves a policy, the operator configuration below applies:
+`ANTARES_TENANT_ALLOWED_TOOLSETS` (Antares, enforced by verification) and
+`PROVISIONER_ALLOWED_TOOLSETS` (the provisioner, applied to each profile when a request names no toolsets) take
+the same comma list, default `web,vision,image_gen,skills,memory,todo,clarify`. The floor below can never be allowed. Set both
 variables to the same value; if the provisioner allows more than Antares, `toolset_policy` fails.
 Both refuse the same bad input at startup: an unknown name, a floor toolset, or a set-but-blank value
 (`" "`, `","`). Only an empty or unset variable means the default.
@@ -75,8 +92,9 @@ unverified.
 
 `tools/hermes-provisioner` applies the policy on `/provision` and `/rotate` with
 `hermes -p <slug> config set agent.disabled_toolsets '[...]'`, in the profile's own `config.yaml`, never
-`default`'s. To change the policy, change `PROVISIONER_ALLOWED_TOOLSETS` and
-`ANTARES_TENANT_ALLOWED_TOOLSETS` together, restart the provisioner, and rotate the affected profiles.
+`default`'s. To change the policy, use Admin → Assistant tools (above). Without a saved policy, change
+`PROVISIONER_ALLOWED_TOOLSETS` and `ANTARES_TENANT_ALLOWED_TOOLSETS` together, restart the provisioner, and
+rotate the affected profiles.
 Verify by reading `/p/<profile>/v1/toolsets` with the profile's key: every toolset under "Disabled" must
 report `enabled: false`. Antares' `toolset_policy` check does exactly that on every verification.
 

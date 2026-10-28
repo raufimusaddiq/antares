@@ -35,6 +35,15 @@ var floorToolsets = []string{
 	"session_search", "connections", "browser",
 }
 
+// offeredToolsets are the toolsets an admin may choose for tenants (hermes.OfferedToolsets): known, outside the
+// floor, and reviewed as acting only inside the tenant's own profile or through the gateway's own provider keys. A
+// request's toolsets must be a subset, so a compromised caller still cannot reach discord_admin, computer_use, a2a,
+// kanban (a shared board) or the like.
+var offeredToolsets = []string{
+	"web", "vision", "image_gen", "video_gen", "video", "tts", "stt", "x_search",
+	"skills", "memory", "todo", "clarify",
+}
+
 // defaultAllowed is the documented default tenant set (hermes.DefaultAllowedToolsets).
 var defaultAllowed = []string{"web", "vision", "image_gen", "skills", "memory", "todo", "clarify"}
 
@@ -96,4 +105,21 @@ func policyFromEnv(raw string) ([]string, error) {
 func toolsetsValue(disabled []string) string {
 	b, _ := json.Marshal(disabled)
 	return string(b)
+}
+
+// requestPolicy turns the toolsets a /provision or /rotate request names into the profile's disabled list. Every
+// name must be offered (so never a floor toolset), and the list must not be empty or repeat a name.
+func requestPolicy(allowed []string) ([]string, error) {
+	if len(allowed) == 0 {
+		return nil, errors.New("toolsets must not be empty")
+	}
+	for i, n := range allowed {
+		if !contains(offeredToolsets, n) {
+			return nil, errors.New("toolset is not offered to tenants")
+		}
+		if contains(allowed[:i], n) {
+			return nil, errors.New("toolset listed twice")
+		}
+	}
+	return disabledFor(allowed)
 }

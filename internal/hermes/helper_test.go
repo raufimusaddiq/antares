@@ -38,9 +38,28 @@ func ok(slug, key string) func(http.ResponseWriter, *http.Request, helperCall) {
 	}
 }
 
+// The admin's tenant policy travels with the request; an invalid one never leaves Antares.
+func TestHelperSendsTheTenantToolPolicy(t *testing.T) {
+	h, calls := fakeHelper(t, ok(slA, keyA))
+	if _, err := h.Rotate(context.Background(), slA, []string{"web", "tts"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := (*calls)[0].body; got != `{"slug":"`+slA+`","toolsets":["web","tts"]}` {
+		t.Fatalf("body %s", got)
+	}
+	for _, bad := range [][]string{{}, {"terminal"}, {"computer_use"}, {"web", "web"}} {
+		if _, err := h.Provision(context.Background(), slA, bad); !errors.Is(err, ErrPermanent) {
+			t.Errorf("%v: %v", bad, err)
+		}
+	}
+	if len(*calls) != 1 {
+		t.Fatalf("an invalid policy reached the helper: %d calls", len(*calls))
+	}
+}
+
 func TestProvisionSendsTokenAndSlugOnlyAndReturnsTheKey(t *testing.T) {
 	h, calls := fakeHelper(t, ok(slA, keyA))
-	cred, err := h.Provision(context.Background(), slA)
+	cred, err := h.Provision(context.Background(), slA, nil)
 	if err != nil || cred.Key != keyA || cred.Profile != slA {
 		t.Fatalf("cred=%v err=%v", cred, err)
 	}
@@ -89,7 +108,7 @@ func TestHelperFailureClasses(t *testing.T) {
 				w.WriteHeader(c.status)
 				w.Write([]byte(c.body))
 			})
-			_, err := h.Provision(context.Background(), slA)
+			_, err := h.Provision(context.Background(), slA, nil)
 			if !errors.Is(err, c.class) {
 				t.Fatalf("err = %v, want class %v", err, c.class)
 			}
@@ -108,16 +127,16 @@ func TestProvision409MeansKeyExistsAndRotateRecovers(t *testing.T) {
 		}
 		ok(slA, keyB)(w, r, c)
 	})
-	if _, err := h.Provision(context.Background(), slA); !errors.Is(err, ErrKeyExists) {
+	if _, err := h.Provision(context.Background(), slA, nil); !errors.Is(err, ErrKeyExists) {
 		t.Fatalf("err = %v", err)
 	}
-	cred, err := h.Rotate(context.Background(), slA)
+	cred, err := h.Rotate(context.Background(), slA, nil)
 	if err != nil || cred.Key != keyB || (*calls)[1].path != "/rotate" {
 		t.Fatalf("rotate: %v %v", cred, err)
 	}
 	// A 409 from /rotate is not "key exists".
 	h2, _ := fakeHelper(t, func(w http.ResponseWriter, r *http.Request, c helperCall) { w.WriteHeader(409) })
-	if _, err := h2.Rotate(context.Background(), slA); !errors.Is(err, ErrPermanent) {
+	if _, err := h2.Rotate(context.Background(), slA, nil); !errors.Is(err, ErrPermanent) {
 		t.Fatalf("rotate 409 = %v", err)
 	}
 }
@@ -128,7 +147,7 @@ func TestHelperUnreachableIsTransient(t *testing.T) {
 	h2, _ := NewHelper(srv.URL, helperToken, nil)
 	srv.Close()
 	_ = h
-	_, err := h2.Provision(context.Background(), slA)
+	_, err := h2.Provision(context.Background(), slA, nil)
 	if !errors.Is(err, ErrRetryable) || strings.Contains(err.Error(), "127.0.0.1") {
 		t.Fatalf("err = %v", err)
 	}
@@ -137,7 +156,7 @@ func TestHelperUnreachableIsTransient(t *testing.T) {
 func TestHelperRefusesBadSlugBeforeAnyRequest(t *testing.T) {
 	h, calls := fakeHelper(t, ok(slA, keyA))
 	for _, s := range []string{"default", "", "u_short", "U_ABCDEFGHIJKL", "u_aaaaaaaaaaaa/../x", "../default", "u_" + strings.Repeat("a", 40)} {
-		if _, err := h.Provision(context.Background(), s); !errors.Is(err, ErrPermanent) {
+		if _, err := h.Provision(context.Background(), s, nil); !errors.Is(err, ErrPermanent) {
 			t.Errorf("slug %q: %v", s, err)
 		}
 	}
@@ -165,7 +184,7 @@ func TestOnlyRotateMissingProfileOrKeyAllowsProvisionFallback(t *testing.T) {
 					w.WriteHeader(status)
 					w.Write([]byte(keyA))
 				})
-				_, err := h.issue(context.Background(), path, slA)
+				_, err := h.issue(context.Background(), path, slA, nil)
 				want := path == "/rotate" && (status == 404 || status == 409)
 				if errors.Is(err, ErrNotProvisioned) != want {
 					t.Fatalf("fallback classification: %v", err)

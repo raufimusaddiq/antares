@@ -47,10 +47,12 @@ type fakeHelper struct {
 	provCalls int
 	rotCalls  int
 	slugs     []string
+	toolsets  [][]string // the tool policy each call carried
 }
 
-func (f *fakeHelper) Provision(ctx context.Context, slug string) (hermes.Credential, error) {
+func (f *fakeHelper) Provision(ctx context.Context, slug string, toolsets []string) (hermes.Credential, error) {
 	f.mu.Lock()
+	f.toolsets = append(f.toolsets, toolsets)
 	f.provCalls++
 	n := f.provCalls
 	f.slugs = append(f.slugs, slug)
@@ -59,8 +61,9 @@ func (f *fakeHelper) Provision(ctx context.Context, slug string) (hermes.Credent
 	return fn(slug, n)
 }
 
-func (f *fakeHelper) Rotate(ctx context.Context, slug string) (hermes.Credential, error) {
+func (f *fakeHelper) Rotate(ctx context.Context, slug string, toolsets []string) (hermes.Credential, error) {
 	f.mu.Lock()
+	f.toolsets = append(f.toolsets, toolsets)
 	f.rotCalls++
 	fn := f.rotate
 	f.mu.Unlock()
@@ -138,7 +141,8 @@ func newRig(t *testing.T) *rig {
 		h: &fakeHelper{provision: issues(keyOne), rotate: func(slug string) (hermes.Credential, error) {
 			return hermes.Credential{Profile: slug, Key: keyTwo}, nil
 		}}, v: &fakeVerifier{report: pass}}
-	r.svc, err = New(Options{DB: db, Box: box, Helper: r.h, Verifier: r.v, Now: r.clk.Now, MaxAttempts: 3, BaseBackoff: 15 * time.Second})
+	r.svc, err = New(Options{DB: db, Box: box, Helper: r.h, Verifier: r.v, Now: r.clk.Now, MaxAttempts: 3, BaseBackoff: 15 * time.Second,
+		ToolPolicy: func(ctx context.Context) ([]string, string, error) { return store.TenantToolPolicy(ctx, db) }})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1019,5 +1023,61 @@ func TestProvisionFallbackConflictWaitsForNextRun(t *testing.T) {
 	}
 	if got := r.view(u); got.TenantStatus != "READY" {
 		t.Fatalf("got %+v", got)
+	}
+}
+
+// The admin's tool policy (Admin → Assistant tools) reaches the helper and the verifier of every run; setting it
+// sends ready accounts back through verification; a run that applied an older policy never marks an account ready.
+func TestTenantToolPolicyReachesTheHelperAndVerifierAndRequeuesReadyAccounts(t *testing.T) {
+	r := newRig(t)
+	ctx := context.Background()
+	u := r.approved("u1")
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if r.h.toolsets[0] != nil || r.v.targets[0].Allowed != nil {
+		t.Fatalf("with no admin policy the defaults apply: %v %v", r.h.toolsets[0], r.v.targets[0].Allowed)
+	}
+	ids, err := store.SetTenantToolPolicy(ctx, r.db, r.admin, []string{"web", "tts"}, "req", r.clk.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(ids) != 1 || ids[0] != u || r.view(u).TenantStatus != "CONFIGURING" {
+		t.Fatalf("requeued %v, status %s", ids, r.view(u).TenantStatus)
+	}
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	last := len(r.h.toolsets) - 1
+	if got := r.view(u); got.TenantStatus != "READY" || strings.Join(r.h.toolsets[last], ",") != "web,tts" ||
+		strings.Join(r.v.targets[len(r.v.targets)-1].Allowed, ",") != "web,tts" {
+		t.Fatalf("status %s, helper %v, verifier %v", got.TenantStatus, r.h.toolsets[last], r.v.targets[len(r.v.targets)-1].Allowed)
+	}
+	if n := r.count(`SELECT COUNT(*) FROM audit_log WHERE action = 'tool_policy.set' AND actor_user_id = ?`, r.admin); n != 1 {
+		t.Fatalf("policy audit entries: %d", n)
+	}
+	// The policy changes while a run is verifying: that run must not unlock the account; the retry applies the new one.
+	if _, err := store.SetTenantToolPolicy(ctx, r.db, r.admin, []string{"web"}, "req", r.clk.Now()); err != nil {
+		t.Fatal(err)
+	}
+	r.v.report = func(tg hermes.Target) hermes.Report {
+		r.v.report = pass
+		if _, err := store.SetTenantToolPolicy(ctx, r.db, r.admin, []string{"web", "memory"}, "req", r.clk.Now()); err != nil {
+			t.Error(err)
+		}
+		return pass(tg)
+	}
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.view(u); got.TenantStatus == "READY" || !strings.Contains(got.TenantDetail, "tool policy changed") {
+		t.Fatalf("a run on the old policy unlocked the account: %+v", got)
+	}
+	r.clk.Add(time.Minute)
+	if err := r.svc.Process(ctx, u); err != nil {
+		t.Fatal(err)
+	}
+	if got := r.view(u); got.TenantStatus != "READY" || strings.Join(r.h.toolsets[len(r.h.toolsets)-1], ",") != "web,memory" {
+		t.Fatalf("after the retry: %s %v", got.TenantStatus, r.h.toolsets[len(r.h.toolsets)-1])
 	}
 }
