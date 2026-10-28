@@ -8,7 +8,7 @@ import { ALLOWED_ACTIONS, followUpText, runAction, safeUrl } from "./actions";
 import RichBlock from "./Block";
 import { ReplyContext } from "./reply";
 import { MAX_BLOCK_CHARS, splitSegments } from "./segments";
-import { check } from "./validate";
+import { check, MAX_ARRAY } from "./validate";
 
 beforeAll(() => {
   // jsdom has no layout observers; the charts and carousels ask for them.
@@ -82,6 +82,33 @@ describe("rendering", () => {
     fireEvent.click(screen.getByRole("button", { name: "Tell me more" }));
     expect(add).toHaveBeenCalledWith("Tell me more about it");
     expect(fetchSpy).not.toHaveBeenCalled();
+  });
+  it("checks a streaming program before rendering it: unsafe or oversized partial output is never rendered", () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const partial = "root = Card([TextContent(\"Hi\"), t])\nt = TextContent(\"unfinished";
+    expect(check(partial, true)).toEqual({ ok: true });
+    expect(check(partial).ok).toBe(false);
+    const unsafe = [
+      'root = Card([TextContent("x")])\n$n = 1\nmore = TextContent("y',
+      'root = Card([TextContent("x"), q])\nq = Query("tool", {})\nmore = TextContent("y',
+      'root = Card([Bogus("x"), TextContent("y',
+      `root = Card([${Array.from({ length: MAX_ARRAY + 1 }, () => 'TextContent("a")').join(", ")}, TextContent("y`,
+      'root = Stack([Text("old',
+    ];
+    for (const source of unsafe) {
+      expect(check(source, true).ok, source).toBe(false);
+      const { container, unmount } = render(<RichBlock source={source} streaming />);
+      expect(container.querySelector(".ou-block"), source).toBeNull();
+      expect(container.querySelector(".ou-fallback"), source).not.toBeNull();
+      unmount();
+    }
+    expect(fetchSpy).not.toHaveBeenCalled();
+  });
+  it("labels a block from the earlier Antares component set instead of calling it broken", () => {
+    render(<RichBlock source={'root = Stack([Text("old answer")])'} />);
+    expect(document.body.textContent).toContain("earlier version of rich replies");
+    expect(document.body.textContent).toContain('Text("old answer")');
   });
   it("shows an invalid finished program as its source, not a half-built view", () => {
     render(<RichBlock source={'root = Card([Bogus("x")])'} />);

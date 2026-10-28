@@ -19,8 +19,13 @@ Antares-specific component set to keep in step with the prompt.
   is complete, has a `Card` root, uses only components of `openuiChatLibrary`, has no `Query`/`Mutation`/`$state`, no
   unresolved or orphan statements, ≤ 600 nodes, depth ≤ 12, ≤ 300 statements, ≤ 200 items per array and ≤ 20,000
   characters per string. Otherwise the block is shown as its **source, as text**, with a one-line reason.
-- **Streaming**: while the reply streams, the block renders progressively (`isStreaming`), with the strict gate applied
-  once the reply ends. A reply that ends with a fenced block still open shows the source.
+- **Streaming**: while the reply streams, the block renders progressively (`isStreaming`), but every update is checked
+  first (`check(source, true)`): root, unknown components, no query/mutation/state and every size limit. Only
+  completeness, parse errors and dangling references wait for the end. A partial program that fails is shown as source
+  at once (those failures cannot be fixed by more text). A reply that ends with a fenced block still open shows the source.
+- **Earlier blocks**: blocks written for Antares' first component set (`[antares-openui v1]`, root `Stack`) are not
+  rendered by the native library; they are shown as source, labelled "made by an earlier version of rich replies".
+  At the switch, production held one such block (an owner test), so no v1 renderer was kept.
 - **Actions** (`actions.ts`, the choke point; `Block.tsx` routes the renderer's `onAction` through `runAction`):
   - `continue_conversation` / `reply`: the message (and any form state, as a fenced JSON block) is cleaned by
     `cleanReply` (string only, control and bidi characters removed, ≤ 4,000 characters) and put in the composer draft of

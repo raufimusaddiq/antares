@@ -12,7 +12,7 @@ import { check } from "./validate";
 // The only module that imports the OpenUI runtime and its component library (native OpenUI: the
 // openuiChatLibrary of @openuidev/react-ui). It is loaded on demand (MessageBody.tsx), so a chat with no
 // rich content never downloads it. ThemeProvider is not used: it injects a <style> element, which the
-// page's CSP (style-src 'self') refuses; the static defaults.css token sheet, themed by openui-theme.css,
+// page's CSP (style-src 'self') refuses; the static defaults.css token sheet, themed by .openui-root in styles.css,
 // does the same job.
 
 class Boundary extends Component<{ source: string; children: ReactNode }, { failed: boolean }> {
@@ -33,9 +33,9 @@ export function openConfirmed(url: string) {
 export default function RichBlock({ source, streaming = false }: { source: string; streaming?: boolean }) {
   const reply = useContext(ReplyContext);
   const sinks: Sinks = { reply, open: openConfirmed };
-  // While the reply streams, the program is incomplete by nature: it is rendered progressively, never checked.
-  // Once complete it must pass the gate, or it is shown as its source.
-  const verdict = useMemo(() => (streaming ? { ok: true as const } : check(source)), [source, streaming]);
+  // Every update is checked before it is rendered: a partial program against the gate's safety rules and limits,
+  // the finished one against all of it. A failure is shown as source.
+  const verdict = useMemo(() => check(source, streaming), [source, streaming]);
   if (!verdict.ok) return <SourceFallback source={source} why={verdict.reason} />;
   return (
     <Boundary source={source}>

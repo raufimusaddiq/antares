@@ -6,6 +6,10 @@ import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib";
 // checks every component and argument against the library's schema; on top of that a block is rendered only if
 // it parses with no error, is complete, has the library's root, holds no query, mutation or state (no tools are
 // wired to it), and stays within the size limits below. Anything else is shown as its source (Block.tsx).
+// While the reply streams the program is partial, so completeness, parse errors and dangling references wait for
+// the end; everything else (root, no query/mutation/state, known components, every limit) is checked on each update
+// before anything is rendered. Those failures only grow with more text, so a partial program that fails one is
+// final: it is shown as its source at once.
 
 export const MAX_NODES = 600;
 export const MAX_DEPTH = 12;
@@ -23,7 +27,10 @@ interface Node {
   props?: Record<string, unknown>;
 }
 
-export function check(source: string): Verdict {
+export function check(source: string, partial = false): Verdict {
+  // Antares' own first component set (v1, before native OpenUI) had a Stack root, which this library lacks (the
+  // parser drops it); such a block is shown as source, labelled as such.
+  if (/^\s*root\s*=\s*Stack\s*\(/.test(source)) return { ok: false, reason: "made by an earlier version of rich replies" };
   parser ??= createParser(openuiChatLibrary.toJSONSchema(), openuiChatLibrary.root);
   let r;
   try {
@@ -32,12 +39,17 @@ export function check(source: string): Verdict {
     return { ok: false, reason: "parse error" };
   }
   const m = r.meta;
-  if (!r.root) return { ok: false, reason: "no root" };
+  if (!r.root) return partial ? { ok: true } : { ok: false, reason: "no root" };
   if (r.root.typeName !== openuiChatLibrary.root) return { ok: false, reason: `root must be ${openuiChatLibrary.root}` };
   if (r.rootExpression) return { ok: false, reason: "computed root" };
-  if (m.incomplete) return { ok: false, reason: "incomplete" };
-  if (m.errors.length > 0) return { ok: false, reason: `invalid: ${m.errors[0].code}` };
-  if (m.unresolved.length > 0) return { ok: false, reason: "dangling reference" };
+  // An unknown component is dropped by the parser and only reported here; more text cannot fix it.
+  const unknown = m.errors.find((e) => e.code === "unknown-component");
+  if (unknown) return { ok: false, reason: "invalid: unknown-component" };
+  if (!partial) {
+    if (m.incomplete) return { ok: false, reason: "incomplete" };
+    if (m.errors.length > 0) return { ok: false, reason: `invalid: ${m.errors[0].code}` };
+    if (m.unresolved.length > 0) return { ok: false, reason: "dangling reference" };
+  }
   if (m.statementCount > MAX_STATEMENTS) return { ok: false, reason: "too many statements" };
   if (r.queryStatements.length > 0 || r.mutationStatements.length > 0) return { ok: false, reason: "queries and mutations are not allowed" };
   if (Object.keys(r.stateDeclarations).length > 0) return { ok: false, reason: "state is not allowed" };
