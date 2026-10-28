@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_IMAGE_BYTES, assetUrl, imageFilesFrom, parseImageInput, precheckImage, sendMessageWithImages, getImageInput, describeImageReason } from "./mediaApi";
-import { MEDIA_UNAVAILABLE, hideMediaPaths } from "./mediaTags";
+import { mediaKind, mediaUrl, splitMedia } from "./mediaTags";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -71,15 +71,26 @@ describe("assetUrl", () => {
   });
 });
 
-describe("hideMediaPaths", () => {
-  it("drops host paths and the voice marker and says so", () => {
-    const r = hideMediaPaths("Here you go\n[[audio_as_voice]]\nMEDIA:/opt/data/profiles/u_x/cache/audio/tts_1.mp3");
-    expect(r.count).toBe(1);
-    expect(r.text).toContain(MEDIA_UNAVAILABLE);
-    expect(r.text).not.toMatch(/opt|profiles|tts_1|audio_as_voice/);
+describe("splitMedia", () => {
+  it("takes the tags and the voice marker out of the text and keeps the ids", () => {
+    const r = splitMedia("Here you go\n[[audio_as_voice]]\nMEDIA:audio-AbC_12");
+    expect(r.ids).toEqual(["audio-AbC_12"]);
+    expect(r.text).toBe("Here you go");
   });
-  it("handles quoted paths and leaves ordinary text alone", () => {
-    expect(hideMediaPaths('MEDIA:"/a b/c.png" done').text).toBe(`${MEDIA_UNAVAILABLE} done`);
-    expect(hideMediaPaths("no media here")).toEqual({ text: "no media here", count: 0 });
+  it("leaves the rest of the reply alone, including blank lines in code", () => {
+    const text = "```\na\n\n\n\nb\n```\nMEDIA:image-x1 and MEDIA:image-x1";
+    expect(splitMedia(text)).toEqual({ text: "```\na\n\n\n\nb\n```\n and", ids: ["image-x1"] });
+    expect(splitMedia("no media here")).toEqual({ text: "no media here", ids: [] });
+  });
+  it("keeps punctuation after a tag in the text, not in the id", () => {
+    expect(splitMedia("Here: MEDIA:image-AbC_1. Done")).toEqual({ text: "Here: . Done", ids: ["image-AbC_1"] });
+    expect(splitMedia("(MEDIA:audio-x9)")).toEqual({ text: "()", ids: ["audio-x9"] });
+  });
+  it("takes an unclosed quoted tag to the end of its line", () => {
+    expect(splitMedia('a MEDIA:"/x/private file.png\nnext').text).toBe("a \nnext");
+  });
+  it("knows the kind from the id's prefix, and a raw path is no media id", () => {
+    expect([mediaKind("image-a"), mediaKind("audio-a"), mediaKind("video-a"), mediaKind("/opt/x.png"), mediaKind("doc-a")]).toEqual(["image", "audio", "video", null, null]);
+    expect(mediaUrl("image-a_b")).toBe("/api/media?id=image-a_b");
   });
 });

@@ -167,7 +167,10 @@ func (s *Service) getMessages(w http.ResponseWriter, r *http.Request) {
 	if err == nil {
 		page = append([]hermes.Message(nil), page...) // stamp a copy, not the transcript
 		for i := range page {
-			page[i].Ref = turnHash(c.ID, page[i])
+			page[i].Ref = turnHash(c.ID, page[i]) // over Hermes' own text, before the media paths are sealed
+			if page[i].Role == "assistant" {
+				page[i].Text = s.sealMediaTags(uid, page[i].Text)
+			}
 		}
 	}
 	if err != nil {

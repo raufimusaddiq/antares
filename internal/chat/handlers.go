@@ -55,6 +55,7 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"PATCH /api/chats/{chatId}":                                    http.HandlerFunc(s.patchChat),
 		"DELETE /api/chats/{chatId}":                                   http.HandlerFunc(s.deleteChat),
 		"GET /api/chats/{chatId}/messages":                             http.HandlerFunc(s.getMessages),
+		"GET /api/media":                                               http.HandlerFunc(s.getMedia),
 		"GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}":         http.HandlerFunc(s.downloadArtifact),
 		"GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview": http.HandlerFunc(s.previewArtifact),
 		"GET /api/chats/{chatId}/search":                               http.HandlerFunc(s.searchOne),

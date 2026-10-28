@@ -169,12 +169,28 @@ func (h hermes) create(ctx context.Context, slug string) error {
 	return nil
 }
 
-// disableToolsets persists the tenant toolset policy in the profile's own
-// config.yaml (never default's): hermes -p <slug> config set.
-func (h hermes) disableToolsets(ctx context.Context, slug string, disabled []string) error {
-	_, stderr, err := h.r.Run(ctx, "", "hermes", "-p", slug, "config", "set", toolsetsConfigKey, toolsetsValue(disabled))
+// policyScript writes the tenant toolset policy into the profile's own config.yaml (never default's), and gives the
+// profile the Kenari image backend: the plugin is copied from the shared copy the deploy installs (when present) and
+// selected as its image_gen provider. One docker exec (three hermes CLI calls, about 6 s each measured on the deployed
+// host, within callTimeout); slug, list and directories arrive as arguments ($1-$4), never in the script.
+// plugins.enabled is replaced, not merged: a tenant profile is provisioner-owned and holds no other plugin.
+const policyScript = `set -e
+hermes -p "$1" config set ` + toolsetsConfigKey + ` "$2"
+if [ -d "$3/kenari-image" ]; then
+  mkdir -p "$4/$1/plugins/kenari-image"
+  cp -r "$3/kenari-image/." "$4/$1/plugins/kenari-image/"
+  hermes -p "$1" config set plugins.enabled '["kenari-image"]'
+  hermes -p "$1" config set image_gen.provider kenari-image
+fi`
+
+// sharedPlugins is where the deploy installs the Hermes plugins Antares relies on (deploy/hermes-plugins).
+const sharedPlugins = "/opt/data/antares-plugins"
+
+// applyPolicy runs policyScript for one profile.
+func (h hermes) applyPolicy(ctx context.Context, slug string, disabled []string) error {
+	_, stderr, err := h.r.Run(ctx, "", "sh", "-c", policyScript, "sh", slug, toolsetsValue(disabled), sharedPlugins, profilesDir)
 	if err != nil {
-		return fmt.Errorf("%w: disabling toolsets: %s", errUpstream, brief(stderr))
+		return fmt.Errorf("%w: applying the profile policy: %s", errUpstream, brief(stderr))
 	}
 	return nil
 }

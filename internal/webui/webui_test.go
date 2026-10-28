@@ -109,7 +109,7 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		// /api/me/templates/{id}; a chat's own draft is /api/chats/{id}/draft, covered above.
 		// #101 staged image and audio assets: upload/preview/delete by the server-issued asset id. Owner-checked
 		// on every call; the page never builds one from message text.
-		"/api/assets": true, "/api/assets/": true,
+		"/api/assets": true, "/api/assets/": true, "/api/media": true,
 		// #111 the caller's own additional instructions.
 		"/api/me/personality": true,
 		// #151 the caller's own usage over 7/30/90 days.

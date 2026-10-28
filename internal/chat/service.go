@@ -46,6 +46,14 @@ type Options struct {
 	// the deployed Hermes). Off, the routes stay the 501 placeholder and the capability is reported unsupported;
 	// suspension still pauses any jobs an account has.
 	Jobs bool
+	// Media, if set, reads files Hermes generated (MEDIA:<path> in a reply) from the caller's own profile cache.
+	// Nil: /api/media answers 404 and the UI says the media is not available.
+	Media MediaSource
+}
+
+// MediaSource reads a generated media file from one profile's cache (hermes.Helper.Media).
+type MediaSource interface {
+	Media(ctx context.Context, slug, path string) ([]byte, string, error)
 }
 
 // Notifier receives the stored terminal status of a run. It gets identifiers and
@@ -78,6 +86,7 @@ type Service struct {
 	// finish the chat's run (and reach a limit) exactly in that window.
 	admitHook func()
 
+	media         MediaSource
 	jobs          bool
 	jobLocks      sync.Map // user id -> *sync.Mutex (jobs.go jobLock)
 	jobRetryAfter string   // where the next pending job shutdown retry starts; only the retry loop touches it
@@ -105,7 +114,7 @@ func New(o Options) (*Service, error) {
 		o.Heartbeat = 15 * time.Second
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs,
+	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs, media: o.Media,
 		base: ctx, stop: cancel, live: map[string]*liveRun{}}
 	s.wg.Add(1)
 	go s.jobShutdownLoop()
@@ -263,12 +272,17 @@ func (s *Service) runNew(ctx context.Context, l *liveRun, run store.Run, input s
 func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, b hermes.Binding, hid string) {
 	var terminal *hermes.Normalized
 	failClosed := false
+	hold := "" // the tail of the reply that may be an unfinished MEDIA: tag (streamMedia)
 	for attempt := 0; ; attempt++ {
 		err := s.hx.StreamEvents(ctx, b, hid, func(ev hermes.Event) error {
 			n := hermes.Normalize(ev)
 			switch n.Kind {
 			case hermes.KindDelta:
-				l.emit("assistant.delta", map[string]string{"text": n.Text}, false)
+				var text string
+				text, hold = streamMedia(hold, n.Text)
+				if text != "" {
+					l.emit("assistant.delta", map[string]string{"text": text}, false)
+				}
 			case hermes.KindToolStarted:
 				l.emit("tool.started", map[string]string{"toolCallId": n.ToolID, "label": n.Label}, false)
 			case hermes.KindToolCompleted:
@@ -287,6 +301,10 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 					}
 				}
 			case hermes.KindTerminal:
+				if rest := stripMediaTags(hold); rest != "" {
+					l.emit("assistant.delta", map[string]string{"text": rest}, false)
+				}
+				hold = ""
 				t := n
 				terminal = &t
 				return errStop
@@ -433,8 +451,8 @@ func terminalPayload(run store.Run, output string) map[string]any {
 	if run.ErrorCode != "" {
 		p["code"] = run.ErrorCode
 	}
-	if run.Status == store.RunCompleted && output != "" {
-		p["output"] = output
+	if out := stripMediaTags(output); run.Status == store.RunCompleted && out != "" {
+		p["output"] = out // a generated file's location never reaches the browser (history seals it into an id)
 	}
 	return p
 }

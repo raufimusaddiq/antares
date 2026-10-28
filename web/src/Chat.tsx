@@ -48,9 +48,9 @@ import { SettingsDialog, type SettingsTab } from "./SettingsDialog";
 import { OpenChatVisualize } from "./VisualizeToggle";
 import { fenceSelection, inFence, indentInFence, toggleList, wrapSelection, type Edit } from "./composerEdit";
 import { ImageStrip, useImageAttachments, type Attachment } from "./ImageAttachments";
-import { SentImage } from "./MediaPreview";
+import { GeneratedMedia, SentImage } from "./MediaPreview";
 import { describeImageReason, describeImageSend, getImageInput, imageFilesFrom, sendMessageWithImages, IMAGE_TYPES, type ImageInput } from "./mediaApi";
-import { hideMediaPaths } from "./mediaTags";
+import { splitMedia } from "./mediaTags";
 import { planRetry } from "./retry";
 import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, describeFolded, describeTool, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
@@ -105,7 +105,7 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
       {run.text !== "" && (
         <div className={run.phase === "completed" ? "" : "partial"}>
           {run.phase !== "completed" && !live && <p className="label">Partial response</p>}
-          <MessageBody text={hideMediaPaths(run.text).text} streaming={live} />
+          <AssistantBody text={run.text} streaming={live} media={false} />
         </div>
       )}
       {notice && (
@@ -245,7 +245,7 @@ export function Transcript(props: TranscriptProps) {
     (t: Turn) => (
       <article className={`turn ${t.role}`} data-found={t.seq === focusSeq ? "true" : undefined} aria-current={t.seq === focusSeq ? "location" : undefined}>
         <h2 className="who">{t.role === "user" ? "You" : "Assistant"}</h2>
-        {t.role === "user" ? <Markdown text={t.text} /> : <MessageBody text={t.role === "assistant" ? hideMediaPaths(t.text).text : t.text} streaming={false} />}
+        {t.role === "user" ? <Markdown text={t.text} /> : t.role === "assistant" ? <AssistantBody text={t.text} streaming={false} /> : <MessageBody text={t.text} streaming={false} />}
         {t.role === "user" && t.attachments && <SentImages refs={t.attachments} />}
         {t.role === "assistant" && chatId && t.ref && <Artifacts chatId={chatId} seq={t.seq} turnRef={t.ref} text={t.text} />}
         {chatId && t.role === "user" && t.seq === lastUser && (
@@ -1583,5 +1583,17 @@ function BudgetForm({ limit, onSaved }: { limit: number | null; onSaved: () => v
       )}
       {err && <p role="alert">{err}</p>}
     </form>
+  );
+}
+
+/** An assistant reply: its text, then any media it generated. Media is shown from history only, where the server has
+ * sealed each file's location into an id; a live reply's tags are just taken out of the text. */
+function AssistantBody({ text, streaming, media = true }: { text: string; streaming: boolean; media?: boolean }) {
+  const m = useMemo(() => splitMedia(text), [text]);
+  return (
+    <>
+      <MessageBody text={m.text} streaming={streaming} />
+      {media && !streaming && <GeneratedMedia ids={m.ids} />}
+    </>
   );
 }
