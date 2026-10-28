@@ -670,7 +670,6 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   .composer-chips summary, .composer-chips button { min-height: 1.6rem; font-size: 0.72rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   /* A chip's text starts at its left edge and ends in the ellipsis (centred, it was cut at both ends). */
   .composer-chips button[data-chip] { display: block; text-align: left; }
-  .composer-chips details[open] { white-space: normal; flex: 1 0 100%; }
   .extras.open { max-height: 40dvh; margin: 0.25rem 0 0.5rem; padding: 0.6rem 0.75rem 0.75rem; }
   /* Composer: one row — attach, camera, the message, send. The words stay in the DOM as the accessible names. */
   .composer { gap: 0.1rem; padding: 0.2rem 0.25rem; margin-bottom: 0.6rem; border-radius: 26px; box-shadow: 3px 3px 0 var(--ink); }
@@ -887,5 +886,6 @@ details[open] > summary::after { transform: none; }
 .composer-chips .model-picker > summary { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 @media (max-width: 640px) {
   .composer-chips details.model-picker[open] { flex: 0 1 auto; }
-  .model-menu { position: fixed; left: 1rem; right: 1rem; bottom: 9rem; max-height: 55vh; }
+  /* Placed from the top, under the header, so a composer that grows with its text never ends up beneath it. */
+  .model-menu { position: fixed; left: 1rem; right: 1rem; top: 6.5rem; bottom: auto; max-height: calc(100dvh - 19rem); }
 }
