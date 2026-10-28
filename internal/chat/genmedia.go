@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/raufimusaddiq/antares/internal/hermes"
 )
@@ -95,7 +96,40 @@ func (s *Service) getMedia(w http.ResponseWriter, r *http.Request) {
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
 }
 
-// stripMediaTags removes every MEDIA:<…> tag from text (for the search index and its snippets).
+// streamMedia takes the MEDIA: tags out of a reply as it streams. A tag can arrive split over deltas, so the tail of
+// the text that may still be one (an unfinished tag, or the start of "MEDIA:") is held back and returned as the new
+// hold; the rest goes out without tags. A hold that grows past 8 KiB is let go, tags stripped.
+func streamMedia(hold, delta string) (out, rest string) {
+	s := hold + delta
+	cut := len(s)
+	if i := strings.LastIndex(s, "MEDIA:"); i >= 0 {
+		tail := s[i+len("MEDIA:"):]
+		var done bool
+		switch {
+		case strings.HasPrefix(tail, `"`), strings.HasPrefix(tail, "'"):
+			done = strings.ContainsAny(tail[1:], tail[:1]+"\n")
+		default:
+			done = strings.IndexFunc(tail, unicode.IsSpace) >= 0
+		}
+		if !done {
+			cut = i
+		}
+	}
+	if cut == len(s) {
+		for k := len("MEDIA:") - 1; k > 0; k-- {
+			if strings.HasSuffix(s, "MEDIA:"[:k]) {
+				cut = len(s) - k
+				break
+			}
+		}
+	}
+	if len(s)-cut > 8<<10 {
+		cut = len(s)
+	}
+	return stripMediaTags(s[:cut]), s[cut:]
+}
+
+// stripMediaTags removes every MEDIA:<…> tag from text (for the live stream, the search index and its snippets).
 func stripMediaTags(text string) string {
 	if !strings.Contains(text, "MEDIA:") {
 		return text

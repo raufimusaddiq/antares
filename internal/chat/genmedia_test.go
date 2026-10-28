@@ -2,6 +2,7 @@ package chat
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -108,5 +109,53 @@ func TestSearchNeverReturnsAGeneratedFilesPath(t *testing.T) {
 	}
 	if got := stripMediaTags("a MEDIA:/x/y.png b MEDIA:\"/p q.mp3\" c"); got != "a  b  c" {
 		t.Errorf("stripMediaTags: %q", got)
+	}
+}
+
+func TestStreamMediaStripsTagsSplitAcrossDeltas(t *testing.T) {
+	deltas := []string{"Here is ", "your image: ME", "DIA:/opt/data/profiles/u_x/cache/gen", "erated/a.png", "\nEnjoy. A MEDIAtor too."}
+	var out strings.Builder
+	hold := ""
+	for _, d := range deltas {
+		var text string
+		text, hold = streamMedia(hold, d)
+		out.WriteString(text)
+	}
+	out.WriteString(stripMediaTags(hold))
+	if got := out.String(); got != "Here is your image: \nEnjoy. A MEDIAtor too." {
+		t.Fatalf("streamed text: %q", got)
+	}
+	// A quoted tag with a space, closed only in a later delta.
+	text1, hold := streamMedia("", `MEDIA:"/a b`)
+	text2, hold := streamMedia(hold, `/c.png" ok`)
+	if text1+text2+hold != " ok" {
+		t.Fatalf("quoted: %q %q %q", text1, text2, hold)
+	}
+}
+
+// The live stream never carries a generated file's location: not in a delta (even split across deltas), not in the
+// terminal output (#168 review).
+func TestRunStreamNeverCarriesAGeneratedFilesPath(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	run := alice.send(alice.newChat(), "draw it")
+	_, fr := a.hx.runWithInput(t, "draw it")
+	st := alice.open(run, "")
+	recv(t, fr.opens, "upstream stream")
+	path := "/opt/data/profiles/" + alice.profile + "/cache/generated/images/a.png"
+	for _, piece := range []string{"Done: ME", "DIA:" + path[:20], path[20:], " enjoy"} {
+		frame, _ := json.Marshal(map[string]string{"delta": piece})
+		a.hx.push(fr, "assistant.delta", string(frame))
+	}
+	out, _ := json.Marshal(map[string]string{"output": "Done: MEDIA:" + path + " enjoy"})
+	a.hx.push(fr, "run.completed", string(out))
+	st.waitFor(t, "run.completed")
+	for _, e := range st.events() {
+		if strings.Contains(e.Data, "/opt/data") || strings.Contains(e.Data, alice.profile) || strings.Contains(e.Data, "MEDIA:") {
+			t.Fatalf("%s carried a path: %s", e.Name, e.Data)
+		}
+	}
+	if got := st.text(); got != "Done:  enjoy" {
+		t.Errorf("streamed text: %q", got)
 	}
 }

@@ -272,12 +272,17 @@ func (s *Service) runNew(ctx context.Context, l *liveRun, run store.Run, input s
 func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, b hermes.Binding, hid string) {
 	var terminal *hermes.Normalized
 	failClosed := false
+	hold := "" // the tail of the reply that may be an unfinished MEDIA: tag (streamMedia)
 	for attempt := 0; ; attempt++ {
 		err := s.hx.StreamEvents(ctx, b, hid, func(ev hermes.Event) error {
 			n := hermes.Normalize(ev)
 			switch n.Kind {
 			case hermes.KindDelta:
-				l.emit("assistant.delta", map[string]string{"text": n.Text}, false)
+				var text string
+				text, hold = streamMedia(hold, n.Text)
+				if text != "" {
+					l.emit("assistant.delta", map[string]string{"text": text}, false)
+				}
 			case hermes.KindToolStarted:
 				l.emit("tool.started", map[string]string{"toolCallId": n.ToolID, "label": n.Label}, false)
 			case hermes.KindToolCompleted:
@@ -296,6 +301,10 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 					}
 				}
 			case hermes.KindTerminal:
+				if rest := stripMediaTags(hold); rest != "" {
+					l.emit("assistant.delta", map[string]string{"text": rest}, false)
+				}
+				hold = ""
 				t := n
 				terminal = &t
 				return errStop
@@ -442,8 +451,8 @@ func terminalPayload(run store.Run, output string) map[string]any {
 	if run.ErrorCode != "" {
 		p["code"] = run.ErrorCode
 	}
-	if run.Status == store.RunCompleted && output != "" {
-		p["output"] = output
+	if out := stripMediaTags(output); run.Status == store.RunCompleted && out != "" {
+		p["output"] = out // a generated file's location never reaches the browser (history seals it into an id)
 	}
 	return p
 }
