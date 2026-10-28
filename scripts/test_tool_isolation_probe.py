@@ -91,6 +91,9 @@ class JudgeTest(unittest.TestCase):
         block = re.search(r"var DeniedToolsets = \[\]string\{(.*?)\n\}", src, re.S).group(1)
         self.assertEqual(set(re.findall(r'"([a-z_]+)"', block)), probe.FLOOR_TOOLSETS)
 
+    def test_every_denied_tool_comes_from_a_floor_toolset(self):
+        self.assertEqual(set(probe.TOOL_TOOLSET.values()), probe.FLOOR_TOOLSETS)
+
     def test_missing_facts_fail_rather_than_pass(self):
         v = verdicts({})
         for name in ("B's runs are given no boundary-crossing tool", "every floor toolset is disabled in B's own config",

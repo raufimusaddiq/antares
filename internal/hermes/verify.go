@@ -47,6 +47,8 @@ var DeniedToolsets = []string{
 	"connections",         // third-party credentials
 	"browser",             // cookies and logged-in sessions
 	"vision", "image_gen", // load any local image path the gateway user can read (#161)
+	"video", "video_gen", // the same local-path media resolver, for video sources and references (#161)
+	"computer_use", // drives the host's desktop (#161)
 }
 
 // KnownToolsets is every toolset the deployed Hermes (v0.22.2) reports from

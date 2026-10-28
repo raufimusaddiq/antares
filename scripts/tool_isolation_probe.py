@@ -27,13 +27,18 @@ import jobs_isolation_probe as base  # noqa: E402
 # Every tool that reads or runs something outside the caller's own profile, or starts a turn with more tools (Phase 0,
 # docs/runbooks/tenant-toolsets.md). vision_analyze and image_generate load any local image path the gateway user can
 # read (tools/image_source.py: under the local backend "any path"), so they are on this list too.
-DENIED_TOOLS = {
-    "terminal", "process", "read_file", "write_file", "patch", "search_files", "execute_code", "delegate_task", "cronjob",
-    "session_search", "manage_connections", "browser_exec", "browser_navigate", "vision_analyze", "image_generate",
-    "video_analyze", "video_generate", "computer_use",
+# Tool -> the toolset that provides it, for every tool that must never be given to a tenant run. Each toolset named here
+# is in the floor (pinned by scripts/test_tool_isolation_probe.py), so the two lists cannot drift.
+TOOL_TOOLSET = {
+    "terminal": "terminal", "process": "terminal", "read_file": "file", "write_file": "file", "patch": "file",
+    "search_files": "file", "execute_code": "code_execution", "delegate_task": "delegation", "cronjob": "cronjob",
+    "session_search": "session_search", "manage_connections": "connections", "browser_exec": "browser",
+    "browser_navigate": "browser", "vision_analyze": "vision", "image_generate": "image_gen", "video_analyze": "video",
+    "video_generate": "video_gen", "computer_use": "computer_use",
 }
+DENIED_TOOLS = set(TOOL_TOOLSET)
 FLOOR_TOOLSETS = {"terminal", "file", "code_execution", "delegation", "cronjob", "session_search", "connections",
-                  "browser", "vision", "image_gen"}
+                  "browser", "vision", "image_gen", "video", "video_gen", "computer_use"}
 SLUG = re.compile(r"^u_[a-z0-9]{6,40}$")
 SKILL = "probe-canary"
 

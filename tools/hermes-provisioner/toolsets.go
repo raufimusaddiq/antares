@@ -33,6 +33,7 @@ var knownToolsets = []string{
 var floorToolsets = []string{
 	"terminal", "file", "code_execution", "delegation", "cronjob",
 	"session_search", "connections", "browser", "vision", "image_gen",
+	"video", "video_gen", "computer_use",
 }
 
 // defaultAllowed is the documented default tenant set (hermes.DefaultAllowedToolsets).

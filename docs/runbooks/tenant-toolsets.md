@@ -14,7 +14,8 @@ the next provision or rotate. Narrowing a single profile by hand is not durable;
 
 ## Status
 
-- **Demonstrated on a live profile** (Hermes v0.22.2, 2026-10-23, throwaway profile, since deleted).
+- **Demonstrated on a live profile** (Hermes v0.22.2, 2026-10-23, throwaway profile, since deleted). This record
+  predates the #161 floor: `vision` and `image_gen` were still allowed then and are not now.
   The provisioner's exact `config set` command was run by hand, not through a running provisioner. Then
   `GET /p/<profile>/v1/toolsets` with that profile's key returned 200 with
   `web, vision, image_gen, skills, todo, memory` enabled and every denied toolset
@@ -22,7 +23,7 @@ the next provision or rotate. Narrowing a single profile by hand is not durable;
   `enabled: false`; the rest of the 27 reported toolsets were also off. Output below.
 - Phase 0's filesystem-isolation FAIL stands. This policy is a gate on which tools exist, not a sandbox.
 - **Cross-tenant tool proof (#161), Hermes v0.22.5, 2026-10-28:** see "A/B tool isolation proof" below.
-  It moved `vision` and `image_gen` into the floor.
+  It moved `vision`, `image_gen`, `video`, `video_gen` and `computer_use` into the floor.
 
 ```
 GET /p/u_probezz02/v1/toolsets -> 200 object=list platform=api_server
@@ -38,8 +39,8 @@ the verifier only requires that nothing outside the allow-list is enabled.)
 
 | Toolset | Tools (from fixture) | Note |
 |---|---|---|
-| `web` | `web_search`, `web_extract` | See open question 1. |
-| `skills` | `skill_manage`, `skill_view`, `skills_list` | Writes into the profile's own skills. See question 2. |
+| `web` | `web_search`, `web_extract` | `web_extract` refuses file, loopback, private, link-local, metadata and container-name targets (measured, "A/B tool isolation proof" item 1). |
+| `skills` | `skill_manage`, `skill_view`, `skills_list` | Writes into the profile's own skills; no execution path while `skills.inline_shell` is off (measured, item 2, with one low upstream finding). |
 | `memory` | `memory` | Writes the profile's own memory; required for per-user memory (PRD). |
 | `todo` | `todo_list` | |
 | `clarify` | `clarify` | Currently *disabled* on `default`; enabling it is a tenant-profile choice. |
@@ -54,7 +55,9 @@ the verifier only requires that nothing outside the allow-list is enabled.)
 | `connections` | Holds third-party service credentials; a tenant would act as the owner elsewhere. |
 | `browser` | A full browser with cookies and sessions (includes `browser_vault`); can act as a logged-in user. |
 | `vision`, `image_gen` | **Cross-tenant read (#161).** `vision_analyze` and image-generation reference images load any local path the gateway user can read: under the local terminal backend Hermes' resolver allows "any path" (`tools/image_source.py` `_permitted_host_read_target`), so B can load an image from A's profile. Measured below. Image input in chat is unaffected: Antares sends the picture to the model as `image_url` data, not through this tool. |
-| `discord`, `discord_admin`, `a2a`, `computer_use`, `kanban`, `video`, `video_gen`, `x_search`, `tts`, `stt`, `context_engine` | Not needed for v1 chat. |
+| `video`, `video_gen` | Floor since #161: the same local-path media resolver as `vision`, for video sources and references. |
+| `computer_use` | Floor since #161: drives the host's desktop. |
+| `discord`, `discord_admin`, `a2a`, `kanban`, `x_search`, `tts`, `stt`, `context_engine` | Not needed for v1 chat. |
 
 `yuanbao` appears in the fixture, is disabled on `default`, and is on neither list. The default for a
 new profile should disable it too (not needed for v1 chat). Decide explicitly rather than inherit.
@@ -97,12 +100,13 @@ given `vision_analyze`, and Hermes' image resolver, called under B's profile, re
 After the fix: the same probe, re-run once this is deployed; its result is committed as
 `docs/hermes/fixtures/tool-isolation-probe-2026-10-28.json` (not in the tree until then).
 
-**Upgrading to the #161 floor.** A list that still names `vision` or `image_gen` now stops both processes at
-startup: the provisioner (`tools/hermes-provisioner/main.go`, refused policy) and Antares (`internal/config`). Before
-starting the new binaries, remove both names from `PROVISIONER_ALLOWED_TOOLSETS` in `/opt/antares/provisioner.env` and
-`ANTARES_TENANT_ALLOWED_TOOLSETS` in `/opt/antares/antares.env` (or leave both unset for the default). Then re-verify every
-existing tenant (admin `tenant-verify`): `/rotate` rewrites its `agent.disabled_toolsets`; until then `toolset_policy`
-would fail its next verification.
+**Upgrading to the #161 floor.** A list that still names a toolset now in the floor (`vision`, `image_gen`, `video`, `video_gen`,
+`computer_use`) stops both processes at startup: the provisioner (`tools/hermes-provisioner/main.go`, refused policy) and Antares (`internal/config`). Before
+starting the new binaries, remove them from `PROVISIONER_ALLOWED_TOOLSETS` in `/opt/antares/provisioner.env` and
+`ANTARES_TENANT_ALLOWED_TOOLSETS` in `/opt/antares/antares.env` (or leave both unset for the default). Then, before any verification runs, re-verify
+every existing tenant (admin `tenant-verify`): `/rotate` rewrites its `agent.disabled_toolsets`. Until then a
+verification fails `toolset_policy` as a **permanent** outcome (`internal/tenant/service.go`: no retry), and only the
+requeue clears it.
 
 ## How to apply
 

@@ -84,8 +84,8 @@ check does not recognise, is a failure.
 | `memory_boundary` | capabilities report `memory_write_api: false`, `admin_config_rw: false`, `auth.required: true` |
 
 `ANTARES_TENANT_ALLOWED_TOOLSETS` may narrow the allow-list. It cannot include
-`terminal, file, code_execution, delegation, cronjob, session_search, connections, browser, vision, image_gen`
-(`hermes.DeniedToolsets`; vision and image_gen since #161): the process refuses to start.
+`terminal, file, code_execution, delegation, cronjob, session_search, connections, browser, vision, image_gen, video,
+video_gen, computer_use` (`hermes.DeniedToolsets`; the last five since #161): the process refuses to start.
 
 ## What this does **not** establish
 
