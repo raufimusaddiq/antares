@@ -91,3 +91,22 @@ func TestGeneratedMediaIsServedOnlyToTheUserItWasIssuedTo(t *testing.T) {
 		t.Errorf("no helper configured: %d", r.Code)
 	}
 }
+
+// A generated file's location is never searchable and never comes back in a snippet (#168 review).
+func TestSearchNeverReturnsAGeneratedFilesPath(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	path := "/opt/data/profiles/" + alice.profile + "/cache/generated/images/apple.png"
+	a.setTranscript(t, alice, chat, [2]string{"user", "draw an apple"}, [2]string{"assistant", "Your apple: MEDIA:" + path + " enjoy the apple"})
+	r := alice.get("/api/search/chats?q=apple")
+	if r.Code != http.StatusOK || !strings.Contains(r.Body.String(), "enjoy") {
+		t.Fatalf("search: %d %s", r.Code, r.Body.String())
+	}
+	if body := r.Body.String(); strings.Contains(body, "/opt/data") || strings.Contains(body, alice.profile) || strings.Contains(body, "MEDIA:") {
+		t.Fatalf("a path reached the search results: %s", body)
+	}
+	if got := stripMediaTags("a MEDIA:/x/y.png b MEDIA:\"/p q.mp3\" c"); got != "a  b  c" {
+		t.Errorf("stripMediaTags: %q", got)
+	}
+}

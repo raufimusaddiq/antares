@@ -222,7 +222,8 @@ func (s *Service) indexTranscript(ctx context.Context, userID string, chat store
 	docs := make([]store.IndexDoc, 0, len(msgs))
 	bytes := 0
 	for _, m := range msgs {
-		docs = append(docs, store.IndexDoc{Seq: m.Seq, Role: m.Role, Text: m.Text, CreatedAt: m.CreatedAt})
+		// A generated file's location (MEDIA:<path>) is not searchable text and must never come back in a snippet.
+		docs = append(docs, store.IndexDoc{Seq: m.Seq, Role: m.Role, Text: stripMediaTags(m.Text), CreatedAt: m.CreatedAt})
 		bytes += len(m.Text)
 	}
 	if _, err := store.ReplaceChatIndex(ctx, s.db, userID, chat.ID, docs, read); err != nil {
@@ -368,7 +369,7 @@ func (s *Service) search(w http.ResponseWriter, r *http.Request, pathChat string
 	}
 	out := make([]searchResult, 0, len(hits))
 	for _, h := range hits {
-		res := searchResult{ChatID: h.ChatID, ChatTitle: h.ChatTitle, Kind: "message", Role: h.Role, CreatedAt: h.CreatedAt, Snippet: snippet(h.Body, terms)}
+		res := searchResult{ChatID: h.ChatID, ChatTitle: h.ChatTitle, Kind: "message", Role: h.Role, CreatedAt: h.CreatedAt, Snippet: snippet(stripMediaTags(h.Body), terms)} // also rows indexed before tags were stripped
 		if h.Seq == store.TitleSeq {
 			res.Kind = "title"
 			res.CreatedAt = h.ChatCreatedAt

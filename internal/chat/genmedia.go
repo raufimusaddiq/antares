@@ -90,9 +90,17 @@ func (s *Service) getMedia(w http.ResponseWriter, r *http.Request) {
 	h := w.Header()
 	h.Set("Content-Type", mt)
 	h.Set("X-Content-Type-Options", "nosniff")
-	h.Set("Cache-Control", "private, max-age=86400")
+	h.Set("Cache-Control", "private, no-store") // re-checked on every read: never reused after a sign-out or suspension
 	h.Set("Content-Security-Policy", "sandbox; default-src 'none'")
 	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
+}
+
+// stripMediaTags removes every MEDIA:<…> tag from text (for the search index and its snippets).
+func stripMediaTags(text string) string {
+	if !strings.Contains(text, "MEDIA:") {
+		return text
+	}
+	return mediaTag.ReplaceAllString(text, "")
 }
 
 func mediaType(mt string) bool {

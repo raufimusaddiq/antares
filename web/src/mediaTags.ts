@@ -15,9 +15,10 @@ export interface SplitMedia {
 export function splitMedia(text: string): SplitMedia {
   const ids: string[] = [];
   const out = text.replace(VOICE_MARKER, "").replace(TAG, (_m, dq?: string, sq?: string, bare?: string) => {
-    const id = dq ?? sq ?? bare ?? "";
+    // An id is <kind>-<base64url>; punctuation after it (a full stop ending the sentence) stays in the text.
+    const id = dq ?? sq ?? (bare ?? "").match(/^[a-z]+-[A-Za-z0-9_-]+/)?.[0] ?? bare ?? "";
     if (id && !ids.includes(id)) ids.push(id);
-    return "";
+    return (bare ?? "").slice(id.length);
   });
   return { text: out.trimEnd(), ids };
 }
