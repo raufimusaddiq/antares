@@ -5,7 +5,9 @@ import { anchorAt, atBottom, layout, scrollTopFor, visibleRange, type Layout } f
 //
 //  - Only the items near the viewport are mounted. Up to WINDOW_ABOVE items every
 //    item is mounted, so an ordinary chat keeps native text selection and find.
-//  - Each mounted item is measured in a layout effect, before paint, and the
+//  - Each item is measured in a layout effect, before paint, the first time it is
+//    mounted at the current width; later changes are re-read by a ResizeObserver
+//    (a width change clears the cache, so every item is measured again). The
 //    scroll position is re-derived from an anchor (the item at the viewport top
 //    plus the offset into it). A page prepended above, or an item above the
 //    viewport changing height, therefore never moves what the reader is looking
@@ -39,8 +41,11 @@ interface Props<T> {
 export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore, loadingMore, topNote, onLoadMore, focusKey, focusNonce = 0 }: Props<T>) {
   const scroller = useRef<HTMLDivElement | null>(null);
   const content = useRef<HTMLDivElement | null>(null);
-  const heights = useRef(new Map<string, number>());
-  const [, bump] = useState(0);
+  const heights = useRef(new Map<string, number>()); // per turn key, at measuredWidth
+  const measuredWidth = useRef(0);
+  // Bumped whenever a measured height changes: the layout below is recomputed only then (or when the items change),
+  // not on every scroll frame (#170: an O(n) pass per frame over the whole loaded history).
+  const [heightsVersion, bump] = useState(0);
   const [viewport, setViewport] = useState(800);
   const [following, setFollowing] = useState(true);
   // What the last positioning pass saw. The reader's place is always derived from
@@ -52,7 +57,8 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
   const remeasured = useRef(false);
 
   const keys = useMemo(() => items.map(itemKey), [items, itemKey]);
-  const lay = layout(keys, heights.current, ESTIMATE);
+  // heights is a ref; heightsVersion stands for its contents.
+  const lay = useMemo(() => layout(keys, heights.current, ESTIMATE), [keys, heightsVersion]);
   const total = lay.offsets[keys.length];
   const windowed = keys.length > WINDOW_ABOVE;
   // The first paint is the newest end, where a conversation opens.
@@ -68,20 +74,29 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
     if (el && c.hasMore && !c.loadingMore && el.scrollTop < NEAR_TOP) c.onLoadMore();
   }, []);
 
-  // Measure what is mounted, before paint. A changed height re-renders at once,
-  // so no frame is painted with estimated heights under real content.
-  useLayoutEffect(() => {
+  // Reads the height of each mounted item (all of them, or only those never measured) into the cache; true when one
+  // changed.
+  const measure = useCallback((onlyNew: boolean) => {
     const el = content.current;
-    if (!el) return;
+    if (!el) return false;
     let changed = false;
     for (const node of el.querySelectorAll<HTMLElement>("[data-vkey]")) {
       const key = node.dataset.vkey!;
+      if (onlyNew && heights.current.has(key)) continue;
       const h = node.getBoundingClientRect().height;
       if (h > 0 && Math.abs((heights.current.get(key) ?? -1) - h) > 0.5) {
         heights.current.set(key, h);
         changed = true;
       }
     }
+    return changed;
+  }, []);
+
+  // Measure items mounted for the first time at this width, before paint; a changed height re-renders at once, so such
+  // an item is never painted at its estimate. Items already measured are re-read by the ResizeObserver below, after
+  // layout, so a scroll frame does not re-measure every mounted item (#170).
+  useLayoutEffect(() => {
+    const changed = measure(true);
     remeasured.current = changed;
     if (changed) bump((v) => v + 1);
   });
@@ -123,7 +138,8 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
     setTop(el.scrollTop);
   });
 
-  // Content that grows with no render of ours (images, fonts, a streaming reply).
+  // Content that grows or reflows with no render of ours (images, fonts, a streaming reply, a narrower window): the
+  // observer runs after layout, so re-reading every mounted item here forces no extra layout pass.
   useLayoutEffect(() => {
     const el = scroller.current;
     const inner = content.current;
@@ -134,12 +150,19 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
         el.scrollTop = el.scrollHeight;
         placed.current = { ...prev, scrollHeight: el.scrollHeight };
       }
+      // Heights depend on the width: when it changes, forget them all, so an item mounted later is measured afresh
+      // rather than placed at the height it had at the old width.
+      if (inner.clientWidth !== measuredWidth.current) {
+        measuredWidth.current = inner.clientWidth;
+        heights.current.clear();
+      }
+      measure(false);
       bump((v) => v + 1);
     });
     ro.observe(inner);
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [measure]);
 
   const onScroll = useCallback(() => {
     const el = scroller.current;
