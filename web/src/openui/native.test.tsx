@@ -131,11 +131,24 @@ describe("rendering", () => {
     }
     expect(fetchSpy).not.toHaveBeenCalled();
   });
-  it("accepts absolute http(s) Markdown links and refuses relative or other ones", () => {
+  it("accepts absolute http(s) links outside Antares, in Markdown and in a Card's sources, and refuses any other", () => {
+    const refused = { ok: false, reason: "links must be absolute http(s) addresses outside Antares" };
+    const own = `${window.location.origin}/api/admin/users`;
     expect(check('root = Card([TextContent("[docs](https://example.com/docs)")])')).toEqual({ ok: true });
-    for (const link of ["[x](/api/admin/users)", "[x](javascript:alert(1))", "[x](mailto:a@b.c)", "[x]: /api/me"]) {
-      expect(check(`root = Card([TextContent(${JSON.stringify(link)})])`), link).toEqual({ ok: false, reason: "links must be absolute http(s) addresses" });
+    for (const link of ["[x](/api/admin/users)", "[x](javascript:alert(1))", "[x](mailto:a@b.c)", "[x]: /api/me", `[x](${own})`]) {
+      expect(check(`root = Card([TextContent(${JSON.stringify(link)})])`), link).toEqual(refused);
     }
+    const sources = (url: string) => `root = Card([TextContent("A fact [1]")], [{title: "t", sourceName: "s", url: ${JSON.stringify(url)}}])`;
+    expect(check(sources("https://example.com/a"))).toEqual({ ok: true });
+    for (const url of ["/api/admin/users", "javascript:alert(1)", "https://u:p@example.com", own]) {
+      expect(check(sources(url)), url).toEqual(refused);
+      expect(check(sources(url) + '\nmore = TextContent("y', true).ok, url).toBe(false);
+      const { container, unmount } = render(<RichBlock source={sources(url)} />);
+      expect(container.querySelector(".ou-block"), url).toBeNull();
+      unmount();
+    }
+    expect(check('root = Card([TextContent("[x](htt', true)).toEqual({ ok: true }); // still arriving
+    expect(safeUrl({ params: { url: own } })).toBeNull();
   });
   it("labels a block from the earlier Antares component set instead of calling it broken", () => {
     render(<RichBlock source={'root = Stack([Text("old answer")])'} />);

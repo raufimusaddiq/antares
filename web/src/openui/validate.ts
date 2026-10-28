@@ -1,6 +1,7 @@
 import "./zodConfig"; // must stay first: see the file
 import { createParser } from "@openuidev/react-lang";
 import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib";
+import { outsideUrl } from "./actions";
 
 // Gate in front of the renderer for a finished reply (PRD §7.4), over OpenUI's own chat library. The parser
 // checks every component and argument against the library's schema; on top of that a block is rendered only if
@@ -19,15 +20,19 @@ export const MAX_TEXT = 20_000;
 
 // A component with an image address makes the browser fetch it with the reader's cookies (CSP allows same-origin
 // images), so no image is accepted: no image field (src, bgImageSrc, a gallery's or list item's image) and no Markdown
-// image. A Markdown link is a click, not a fetch, but it must still be an absolute http(s) address.
+// image. Every address the reader can follow (a url or href field, such as a Card's sources, and every Markdown link)
+// must pass outsideUrl: absolute http(s), no credentials, never Antares itself. While streaming, an address that is
+// still only a prefix of "https://" is let through until more of it arrives.
 const IMAGE_FIELD = /^src$|Src$/;
+const URL_FIELD = /^url$|Url$|^href$/;
 const MD_IMAGE = /!\[/;
 const MD_LINK_TARGET = /\]\(\s*<?([^)\s>]*)|^\s{0,3}\[[^\]]+\]:\s*<?(\S*)/gm;
-function badLink(text: string): boolean {
-  for (const m of text.matchAll(MD_LINK_TARGET)) {
-    const url = m[1] ?? m[2] ?? "";
-    if (!/^https?:\/\//i.test(url)) return true;
-  }
+function urlOk(url: string, partial: boolean): boolean {
+  if (partial && ("https://".startsWith(url.toLowerCase()) || "http://".startsWith(url.toLowerCase()))) return true;
+  return outsideUrl(url) !== null;
+}
+function badLink(text: string, partial: boolean): boolean {
+  for (const m of text.matchAll(MD_LINK_TARGET)) if (!urlOk(m[1] ?? m[2] ?? "", partial)) return true;
   return false;
 }
 
@@ -74,8 +79,7 @@ export function check(source: string, partial = false): Verdict {
     if (typeof v === "string") {
       if (v.length > MAX_TEXT) return "text too long";
       if ((IMAGE_FIELD.test(key) && v.trim() !== "") || MD_IMAGE.test(v)) return "images are not allowed";
-      // A link still streaming in may be cut short ("htt"), so links are judged once the reply is complete.
-      if (!partial && badLink(v)) return "links must be absolute http(s) addresses";
+      if ((URL_FIELD.test(key) && !urlOk(v, partial)) || badLink(v, partial)) return "links must be absolute http(s) addresses outside Antares";
       return null;
     }
     if (Array.isArray(v)) {

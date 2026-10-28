@@ -25,8 +25,9 @@ Antares-specific component set to keep in step with the prompt.
   at once (those failures cannot be fixed by more text). A reply that ends with a fenced block still open shows the source.
 - **No images, absolute links only**: a component with an image address would make the browser fetch it with the
   reader's cookies (the CSP allows same-origin images), so the gate refuses any non-empty image field (`src`,
-  `bgImageSrc`, a gallery's or list item's image) and any Markdown image, while streaming too. Markdown links must be
-  absolute http(s). The prompt says so (`ANTARES_RULES` in `web/scripts/openui-prompt.mjs`). Generated pictures still
+  `bgImageSrc`, a gallery's or list item's image) and any Markdown image, while streaming too. Every address a reader
+  can follow (a `url`/`href` field such as a Card's `sources`, every Markdown link, and `open_url`) must pass
+  `outsideUrl` in `actions.ts`: absolute http(s), no credentials, never Antares' own origin. The prompt says so (`ANTARES_RULES` in `web/scripts/openui-prompt.mjs`). Generated pictures still
   reach the chat as media (`/api/media`), outside OpenUI.
 - **Earlier blocks**: blocks written for Antares' first component set (`[antares-openui v1]`, root `Stack`) are not
   rendered by the native library; they are shown as source, labelled "made by an earlier version of rich replies".
@@ -35,7 +36,7 @@ Antares-specific component set to keep in step with the prompt.
   - `continue_conversation` / `reply`: the message (and any form state, as a fenced JSON block) is cleaned by
     `cleanReply` (string only, control and bidi characters removed, ≤ 4,000 characters) and put in the composer draft of
     the chat on screen via `ReplyContext`. It never sends; the reader reviews and presses Send.
-  - `open_url`: only `http:`/`https:` URLs without user info, ≤ 2,048 characters, opened after a `window.confirm` in a
+  - `open_url`: only `http:`/`https:` URLs without user info and not on Antares' own origin, ≤ 2,048 characters, opened after a `window.confirm` in a
     new tab with `noopener,noreferrer`. `javascript:`, `data:` and the like are refused.
   - Any other action name (including `constructor`/`__proto__`) is refused. No action calls `fetch`; an action that needs
     the server must come with its secured Go route (session, approval, ownership, CSRF).

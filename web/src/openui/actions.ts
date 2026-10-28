@@ -65,15 +65,24 @@ export function followUpText(event: unknown): string | null {
 }
 
 /** An address @OpenUrl may open: absolute http(s) only, with no user name or password in it. */
-export function safeUrl(event: unknown): string | null {
-  const raw = obj(obj(event)?.params)?.url;
+/**
+ * A model-written address the reader may follow: absolute http(s), no user or password, at most 2,048 characters,
+ * and never Antares itself (a link into the app would act with the reader's session). Null otherwise.
+ */
+export function outsideUrl(raw: unknown): string | null {
   if (typeof raw !== "string" || raw.length > 2048) return null;
   try {
-    const u = new URL(raw);
-    return (u.protocol === "https:" || u.protocol === "http:") && !u.username && !u.password ? u.href : null;
+    const u = new URL(raw.trim());
+    if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+    if (u.username || u.password || u.origin === window.location.origin) return null;
+    return u.href;
   } catch {
     return null;
   }
+}
+
+export function safeUrl(event: unknown): string | null {
+  return outsideUrl(obj(obj(event)?.params)?.url);
 }
 
 ACTIONS.continue_conversation = {
