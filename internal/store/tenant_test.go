@@ -435,6 +435,48 @@ func TestMarkReadyIsTheOnlyPathToReadyAndNeedsTheBinding(t *testing.T) {
 	}
 }
 
+// A policy saved while a run is in flight skips that (CONFIGURING) account, so MarkReady itself must refuse a run
+// that applied an older policy: atomically, in the READY transaction, whenever the save lands before it.
+func TestMarkReadyRefusesARunThatAppliedAnOlderToolPolicy(t *testing.T) {
+	ctx := context.Background()
+	db, admin, user := adminAndUser(t, "APPROVED")
+	if _, err := SetTenantToolPolicy(ctx, db, admin, []string{"web"}, "r", t0); err != nil {
+		t.Fatal(err)
+	}
+	_, applied, err := TenantToolPolicy(ctx, db)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c, _ := ClaimTenant(ctx, db, user, "u_slug000000001", t0, time.Minute, 5)
+	c.ToolPolicy = applied
+	b := NewBinding{ID: NewID(), Endpoint: "ep", Ciphertext: []byte("x"), KeyVersion: 1, Fingerprint: "fp1", MemoryScopeKey: "m1"}
+	if err := AttachBinding(ctx, db, c, b, t0); err != nil {
+		t.Fatal(err)
+	}
+	// The admin saves after the run's verification, before its MarkReady. The account is CONFIGURING, so not requeued.
+	ids, err := SetTenantToolPolicy(ctx, db, admin, []string{"web", "tts"}, "r", t0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, id := range ids {
+		if id == user {
+			t.Fatalf("an in-flight account was requeued: %v", ids)
+		}
+	}
+	if err := MarkReady(ctx, db, c, t0); !errors.Is(err, ErrPolicyChanged) {
+		t.Fatalf("MarkReady on the old policy: %v", err)
+	}
+	got, _ := GetAdminUser(ctx, db, user)
+	if got.TenantStatus != "CONFIGURING" || got.BindingStatus != "CONFIGURING" {
+		t.Fatalf("a refused MarkReady changed the account: %+v", got)
+	}
+	_, current, _ := TenantToolPolicy(ctx, db)
+	c.ToolPolicy = current
+	if err := MarkReady(ctx, db, c, t0); err != nil {
+		t.Fatalf("MarkReady on the current policy: %v", err)
+	}
+}
+
 func TestDuplicateCredentialAcrossUsersIsRefused(t *testing.T) {
 	ctx := context.Background()
 	db, _, u1 := adminAndUser(t, "APPROVED")

@@ -7,8 +7,10 @@ memory, todo, clarify`. The floor below is shown locked with its reason, and so 
 shared tenants (`discord, discord_admin, yuanbao, computer_use, a2a, kanban, context_engine`). Saving sends every
 approved account with a ready or failed binding back through verification (the same as an admin's tenant-verify):
 each run passes the policy to the provisioner's `/rotate`, which writes it to the profile, and the verifier's
-`toolset_policy` check uses the same list. A run that started before the change is not marked ready
-(`the tenant tool policy changed during setup`); it retries with the new policy. While re-verifying, an account's
+`toolset_policy` check uses the same list. A run that started before the change is not marked ready: `MarkReady`
+compares the policy version the run applied with the current one inside the READY transaction, after taking the
+write lock, so no save can slip between the check and the commit (`the tenant tool policy changed during setup`);
+it retries with the new policy. While re-verifying, an account's
 chat pauses for about a minute.
 
 The provisioner trusts the list only within its own copy of the offer (`offeredToolsets`, pinned to Antares' by

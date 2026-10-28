@@ -11,8 +11,14 @@ import (
 // TenantToolPolicy returns the admin's tenant toolset policy and a version that changes with every write (when and
 // what). With none set it returns nil names: the configured default (ANTARES_TENANT_ALLOWED_TOOLSETS) applies.
 func TenantToolPolicy(ctx context.Context, db *sql.DB) ([]string, string, error) {
+	return toolPolicy(ctx, db)
+}
+
+func toolPolicy(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}) ([]string, string, error) {
 	var raw, at string
-	err := db.QueryRowContext(ctx, `SELECT toolsets, updated_at FROM tenant_tool_policy WHERE id = 1`).Scan(&raw, &at)
+	err := q.QueryRowContext(ctx, `SELECT toolsets, updated_at FROM tenant_tool_policy WHERE id = 1`).Scan(&raw, &at)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, "", nil
 	}

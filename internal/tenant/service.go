@@ -226,15 +226,10 @@ func (s *Service) Process(ctx context.Context, userID string) error {
 	if err := s.obtainCredential(ctx, &c, toolsets); err != nil {
 		return s.finish(ctx, c, err)
 	}
-	if err := s.verify(ctx, c, toolsets); err != nil {
-		return s.finish(ctx, c, err)
-	}
-	// An admin who changed the policy meanwhile requeued this account, but this run applied the old one: it must
-	// not mark the account ready. A retry applies the new policy.
-	if _, now, err := s.toolPolicy(ctx); err != nil || now != version {
-		return s.finish(ctx, c, fail("the tenant tool policy changed during setup", false))
-	}
-	return s.finish(ctx, c, nil)
+	// MarkReady refuses the account if the policy changed meanwhile: this run applied the old one. A retry applies
+	// the new policy.
+	c.ToolPolicy = version
+	return s.finish(ctx, c, s.verify(ctx, c, toolsets))
 }
 
 func (s *Service) toolPolicy(ctx context.Context) ([]string, string, error) {
@@ -270,6 +265,8 @@ func (s *Service) finish(ctx context.Context, c store.Claim, err error) error {
 			return nil
 		case errors.Is(werr, store.ErrSuperseded):
 			return nil // suspended or rejected meanwhile: nothing may unlock
+		case errors.Is(werr, store.ErrPolicyChanged):
+			err = fail("the tenant tool policy changed during setup", false) // recorded as a retryable failure below
 		default:
 			return werr
 		}
