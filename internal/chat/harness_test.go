@@ -548,6 +548,16 @@ func (p *person) newChat() string {
 	return decodeBody[struct{ ID string }](p.a.t, w).ID
 }
 
+// newPlainChat is a chat with Visualize off (new chats start with it on), for tests about runs without instructions.
+func (p *person) newPlainChat() string {
+	p.a.t.Helper()
+	id := p.newChat()
+	if w := p.do("PATCH", "/api/chats/"+id, nil, map[string]bool{"visualize": false}); w.Code != 200 {
+		p.a.t.Fatalf("visualize off: %d %s", w.Code, w.Body.String())
+	}
+	return id
+}
+
 var idemSeq int
 var idemMu sync.Mutex
 

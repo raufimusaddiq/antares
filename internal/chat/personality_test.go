@@ -39,18 +39,18 @@ func TestPersonalityAppliesToTheOwnersNextRunOnly(t *testing.T) {
 	if got := decodeBody[personalityView](t, bob.get("/api/me/personality")); got.Text != "" {
 		t.Fatalf("bob sees %q", got.Text)
 	}
-	alice.send(alice.newChat(), "alice asks")
+	alice.send(alice.newPlainChat(), "alice asks")
 	body := runBodyFor(t, a, "alice asks")
 	instr, _ := body["instructions"].(string)
 	if !strings.HasPrefix(instr, personalityPrefix) || !strings.HasSuffix(instr, "Answer in Indonesian. Be brief.") {
 		t.Errorf("alice's run instructions: %q", instr)
 	}
-	bob.send(bob.newChat(), "bob asks")
+	bob.send(bob.newPlainChat(), "bob asks")
 	if b := runBodyFor(t, a, "bob asks"); b["instructions"] != nil {
 		t.Errorf("bob's run carries instructions: %v", b["instructions"])
 	}
 	alice.do("PUT", "/api/me/personality", nil, map[string]string{"text": ""})
-	alice.send(alice.newChat(), "alice again")
+	alice.send(alice.newPlainChat(), "alice again")
 	if b := runBodyFor(t, a, "alice again"); b["instructions"] != nil {
 		t.Errorf("cleared personality still sent: %v", b["instructions"])
 	}

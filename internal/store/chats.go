@@ -108,8 +108,9 @@ func CreateChat(ctx context.Context, db *sql.DB, userID, bindingID, hermesSessio
 		return Chat{}, err
 	}
 	defer tx.Rollback()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO chats (id, user_id, hermes_binding_id, hermes_session_id, title, status, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, 'ACTIVE', ?, ?)`, id, userID, bindingID, hermesSessionID, nullIfEmpty(title), t, t); err != nil {
+	// A new chat starts with Visualize on (the owner wants rich replies by default); the reader can turn it off per chat.
+	if _, err := tx.ExecContext(ctx, `INSERT INTO chats (id, user_id, hermes_binding_id, hermes_session_id, title, status, visualize, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, 'ACTIVE', 1, ?, ?)`, id, userID, bindingID, hermesSessionID, nullIfEmpty(title), t, t); err != nil {
 		return Chat{}, err
 	}
 	// The title is searchable from the moment the chat exists (UXP-003).

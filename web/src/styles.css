@@ -840,3 +840,27 @@ details[open] > summary::after { transform: none; }
 /* Settings: a checkbox sits by its words; the notification page flows in the dialog */
 .settings-body label:has(> input[type="checkbox"]) { justify-content: flex-start; }
 .settings-body .notify, .settings-body .notify-panel { position: static; width: auto; padding: 0; border: 0; box-shadow: none; background: none; }
+
+/* ---- rich replies, cleaner (#139 stage 3): soft cards, upright badges, readable table headers, colour in charts ---- */
+.ou-card { border: 1px solid var(--hair); border-radius: var(--r-md); box-shadow: 0 1px 3px rgb(17 20 43 / 0.08); }
+.ou-badge { transform: none; box-shadow: none; border-width: 1px; font-family: var(--font-ui); font-size: 0.8rem; letter-spacing: 0; text-transform: none; }
+.turn table, .ou-table { border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+.turn th, .ou-table th { font-family: var(--font-ui); font-size: 0.85rem; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink); white-space: nowrap; }
+.turn :is(th, td), .ou-table :is(th, td) { overflow-wrap: normal; word-break: normal; }
+.ou-metric { padding: 0.5rem 0.9rem; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--card); }
+.ou-bar, .ou-dot, .ou-slice:nth-child(6n+1) { fill: var(--cobalt); }
+.ou-line { stroke: var(--cobalt); }
+.ou-slice:nth-child(6n+2) { fill: var(--mark); }
+.ou-slice:nth-child(6n+3) { fill: var(--ink-2); opacity: 1; }
+.ou-slice:nth-child(6n+4) { fill: var(--blush); opacity: 1; }
+.ou-slice:nth-child(6n+5) { fill: var(--peri); opacity: 1; }
+.ou-slice:nth-child(6n) { fill: var(--ink); }
+/* A pie's value table carries each slice's colour, so the colours have a key. */
+.ou-swatch { display: inline-block; width: 0.75em; height: 0.75em; margin-right: 0.45em; border-radius: 3px; vertical-align: -0.05em; }
+.ou-swatch[data-slice="0"] { background: var(--cobalt); }
+.ou-swatch[data-slice="1"] { background: var(--mark); }
+.ou-swatch[data-slice="2"] { background: var(--ink-2); }
+.ou-swatch[data-slice="3"] { background: var(--blush); }
+.ou-swatch[data-slice="4"] { background: var(--peri); }
+.ou-swatch[data-slice="5"] { background: var(--ink); }
+.ou-metric { align-self: flex-start; }
