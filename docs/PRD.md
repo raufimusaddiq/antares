@@ -1037,7 +1037,7 @@ The application MUST preserve the **single new Chat UI container** design. Herme
 
 **Measurement contract:** Specify image digest, Go version, browser build, Hermes version, memory definition (`container memory.current`/working-set method and RSS), sample period, traffic fixture and concurrent-user count. Report idle, P50/P95/peak RAM, CPU and stream errors. The 256 MiB number is a **light-load target**; if unmet, profile and optimize first, then document why a higher safe limit (e.g. 512 MiB) is required instead of hiding OOMs or changing tests. Do not automatically set a production `mem_limit: 256m` solely because the benchmark target exists; leave headroom based on measured peak.
 
-**Release gate:** `PERF-001` turn pagination and `PERF-002`–`PERF-005` are P0 implementation requirements; media/OpenUI lazy chunks can land with corresponding P1 features. `PERF-006` requires recorded benchmark evidence and zero OOM. Exceeding the 256 MiB target is an explicit performance exception requiring owner review, **not** permission to compromise security, durability, or turn-history completeness.
+**Release gate:** `PERF-001` turn pagination and `PERF-002`–`PERF-005` are P0 implementation requirements; media/OpenUI lazy chunks can land with corresponding P1 features. `PERF-006`: no OOM in production (owner decision 2026-10-28: no benchmark harness or recorded envelope is kept; the 256 MiB light-load figure is a design target, watched through the container's memory in production). Exceeding the 256 MiB target is an explicit performance exception requiring owner review, **not** permission to compromise security, durability, or turn-history completeness.
 
 ---
 
@@ -1151,7 +1151,7 @@ networks:
 - Fuzz property tests for ownership and SSE recovery.
 - Rate limits/quotas, backup restore, database corruption recovery, error analytics.
 - Admin account lifecycle UX polish and audit export (metadata only).
-- Run §14.2 reproducible performance benchmark, including ≤256 MiB light-load RAM target, long-thread pagination, lazy media/OpenUI and no-OOM checks; document any exception.
+- Long-thread pagination and lazy media/OpenUI are covered by unit tests; no benchmark run is required (owner decision 2026-10-28).
 - Additional accessibility, cross-browser/mobile E2E checks and update strategy.
 
 **DoD:** No P0 security issue open, deployment/restore walkthrough demonstrated, upgrade smoke tests pass.
@@ -1181,7 +1181,7 @@ networks:
 | `PERF-ACC-001` | Open a 1,000-turn chat | Only newest ≤50 turns fetched initially; ordered cursor scroll retrieves all authorized turns, including compacted fixtures |
 | `PERF-ACC-002` | Scroll through a very long thread | Bounded mounted message nodes; viewport/focus preserved; no visible duplicate/missing turns |
 | `PERF-ACC-003` | Open chat containing image, video, audio and charts | Non-visible media does not download in full; heavyweight OpenUI modules loaded on demand |
-| `PERF-ACC-004` | Chat UI idle/light-load/reconnect benchmark | Record P50/P95/peak metrics; light-load RAM P95 target ≤256 MiB; no OOM, leaks or unauthorized cache sharing |
+| `PERF-ACC-004` | Chat UI in production | No OOM, leaks or unauthorized cache sharing; light-load RAM ≤256 MiB is a design target, not a recorded gate (owner decision 2026-10-28) |
 | `PERF-ACC-005` | Inspect production image/processes and data stores | Go serves static React, no runtime Node.js, SQLite WAL, no Redis/Postgres, no unconditional full transcript duplication |
 | `UI-001` | Valid OpenUI Lang | Renders approved interactive React components |
 | `UI-002` | Invalid OpenUI | Graceful safe fallback |
@@ -1709,4 +1709,4 @@ All tests below require two approved isolated Google identities (`A` and `B`) an
 
 Tracking is the issue tracker; no separate parity table (owner decision 2026-10-28). Unsupported upstream does not count as a delivered feature. P0 auth, approval, isolation and least-privilege gates cannot be waived.
 
-Minimum Hermes probe before feature planning: check deployed `GET /v1/capabilities`, `GET /api/model/options`, session/message APIs incl. compacted history, model override/effort/tier fields on real runs, run steering/approvals, multimodal upload input format, returned artifact layout, memory/notes/skills read/write exposure, provider quota reporting and voice STT. Store harmless fixture shapes (redacting secrets) and update the table rather than relying on README or another Hermes deployment.
+Minimum Hermes probe before feature planning: check deployed `GET /v1/capabilities`, `GET /api/model/options`, session/message APIs incl. compacted history, model override/effort/tier fields on real runs, run steering/approvals, multimodal upload input format, returned artifact layout, memory/notes/skills read/write exposure, provider quota reporting and voice STT. Store harmless fixture shapes (redacting secrets, `scripts/hermes_contract.py`) rather than relying on README or another Hermes deployment.

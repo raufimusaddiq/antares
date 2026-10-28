@@ -4,8 +4,9 @@
 
 `ANTARES_JOBS=on` in `/opt/antares/antares.env` mounts the routes and reports the `jobs` capability, which shows the
 menu panel. Off (the default), the routes stay the 501 placeholder and the capability says it is switched off
-(PRD §12 rule 6). It is turned on only after the owner-isolation and suspension probe against the deployed Hermes
-passes (the fake-upstream tests here prove the app's side, not Hermes'). Suspension
+(PRD §12 rule 6). It was turned on (2026-10-28, Hermes 0.22.5) after owner isolation and suspension were checked live against the
+deployed Hermes; the fake-upstream tests here prove the app's side. After a Hermes upgrade, check by hand that another
+account gets 404 on a job and that suspending an account pauses its jobs in Hermes' store. Suspension
 pauses any jobs an account has whether or not the switch is on.
 
 ## What exists

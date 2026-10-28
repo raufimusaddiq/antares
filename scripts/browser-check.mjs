@@ -59,7 +59,7 @@ function transcript(rich) {
 const DATA = { [PLAIN]: transcript(false), [RICH]: transcript(true) };
 const b64 = (s) => Buffer.from(s).toString("base64url");
 
-const state = { log: [], holdOlder: null, delayMs: 15, email: "reader@example.test", budgetReached: false, emptyList: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map() };
+const state = { log: [], delayMs: 15, email: "reader@example.test", budgetReached: false, emptyList: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map() };
 // A slow runner answers later than a fast one. MOCK_DELAY_MS adds that latency to the image endpoints of the mock (upload, delete, send) so
 // the ordering a slow CI runner produces can be reproduced on demand. Unset (the default) the mock answers at once.
 const MOCK_DELAY = Number(process.env.MOCK_DELAY_MS || 0);
@@ -139,8 +139,6 @@ function api(req, res, url) {
     if (cur) end = Number(Buffer.from(cur, "base64url").toString().split(".")[1]);
     const start = Math.max(0, end - PAGE);
     const reply = () => send(200, { messages: all.slice(start, end), nextCursor: start > 0 ? b64(`v1.${start}`) : "", total: all.length });
-    const hold = cur && state.holdOlder;
-    if (hold) return void hold.then(reply);
     return void setTimeout(reply, state.delayMs);
   }
   // The rest of what the chat screen reads on load, with the real response shapes, so no failure notice distorts the layout.
