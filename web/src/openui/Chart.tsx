@@ -69,7 +69,10 @@ export default function Chart({ kind, title, labels, values }: ChartProps) {
         <tbody>
           {values.map((v, i) => (
             <tr key={i}>
-              <th scope="row">{labels[i] ?? ""}</th>
+              <th scope="row">
+                {kind === "pie" && <span className="ou-swatch" data-slice={i % 6} aria-hidden="true" />}
+                {labels[i] ?? ""}
+              </th>
               <td>{fmt(v)}</td>
             </tr>
           ))}

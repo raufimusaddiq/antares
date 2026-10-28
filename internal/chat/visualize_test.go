@@ -10,7 +10,14 @@ import (
 func TestVisualizeIsPerChatAndReachesOnlyItsRuns(t *testing.T) {
 	a := newApp(t)
 	alice, bob := a.user("alice"), a.user("bobby")
-	on, off := alice.newChat(), alice.newChat()
+	on, off := alice.newChat(), alice.newPlainChat()
+	// A new chat starts with Visualize on, and says so in the create response the client renders, not only on a read.
+	if w := alice.do("POST", "/api/chats", nil, map[string]string{"title": "t"}); w.Code != 201 || !strings.Contains(w.Body.String(), `"visualize":true`) {
+		t.Fatalf("create response: %d %s", w.Code, w.Body.String())
+	}
+	if w := alice.get("/api/chats/" + on); !strings.Contains(w.Body.String(), `"visualize":true`) {
+		t.Fatalf("a new chat is not visualized: %s", w.Body.String())
+	}
 	if w := bob.do("PATCH", "/api/chats/"+on, nil, map[string]bool{"visualize": true}); w.Code != 404 {
 		t.Fatalf("bob turns on alice's chat: %d", w.Code)
 	}
@@ -33,7 +40,7 @@ func TestVisualizeIsPerChatAndReachesOnlyItsRuns(t *testing.T) {
 	if strings.Contains(instr, "openui") || !strings.HasSuffix(instr, "Be brief.") {
 		t.Errorf("instructions with visualize off: %q", instr)
 	}
-	bob.send(bob.newChat(), "bob question")
+	bob.send(bob.newPlainChat(), "bob question")
 	if b := runBodyFor(t, a, "bob question"); b["instructions"] != nil {
 		t.Errorf("bob's run: %v", b["instructions"])
 	}
