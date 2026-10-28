@@ -27,7 +27,9 @@ Antares-specific component set to keep in step with the prompt.
   reader's cookies (the CSP allows same-origin images), so the gate refuses any non-empty image field (`src`,
   `bgImageSrc`, a gallery's or list item's image) and any Markdown image, while streaming too. Every address a reader
   can follow (a `url`/`href` field such as a Card's `sources`, every Markdown link, and `open_url`) must pass
-  `outsideUrl` in `actions.ts`: absolute http(s), no credentials, never Antares' own origin. The prompt says so (`ANTARES_RULES` in `web/scripts/openui-prompt.mjs`). Generated pictures still
+  `outsideUrl` in `actions.ts`: absolute http(s), no credentials, never Antares' own origin. Markdown is checked by
+  parsing each string with remark + GFM (the renderer's own parser, pinned at the same versions), so inline, reference,
+  `<autolink>` and bare-URL links are all seen; `mailto:` links are allowed there. The prompt says so (`ANTARES_RULES` in `web/scripts/openui-prompt.mjs`). Generated pictures still
   reach the chat as media (`/api/media`), outside OpenUI.
 - **Earlier blocks**: blocks written for Antares' first component set (`[antares-openui v1]`, root `Stack`) are not
   rendered by the native library; they are shown as source, labelled "made by an earlier version of rich replies".

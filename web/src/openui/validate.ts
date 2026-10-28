@@ -1,6 +1,9 @@
 import "./zodConfig"; // must stay first: see the file
 import { createParser } from "@openuidev/react-lang";
 import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib";
+import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
 import { outsideUrl } from "./actions";
 
 // Gate in front of the renderer for a finished reply (PRD §7.4), over OpenUI's own chat library. The parser
@@ -20,20 +23,44 @@ export const MAX_TEXT = 20_000;
 
 // A component with an image address makes the browser fetch it with the reader's cookies (CSP allows same-origin
 // images), so no image is accepted: no image field (src, bgImageSrc, a gallery's or list item's image) and no Markdown
-// image. Every address the reader can follow (a url or href field, such as a Card's sources, and every Markdown link)
-// must pass outsideUrl: absolute http(s), no user or password, never Antares itself. While streaming, an address that is
-// still only a prefix of "https://" is let through until more of it arrives.
+// image. Every address the reader can follow must pass outsideUrl: absolute http(s), no user or password, never
+// Antares itself. That covers url/href fields (a Card's sources) and every Markdown link, found by parsing each string
+// the way the library's renderer does (remark + GFM), so inline, reference, <autolink> and bare-URL links are all seen;
+// a mailto: link is also allowed there. While streaming, an address that is still only a prefix of "https://" is let
+// through until more of it arrives.
 const IMAGE_FIELD = /^src$|Src$/;
 const URL_FIELD = /^url$|Url$|^href$/;
-const MD_IMAGE = /!\[/;
-const MD_LINK_TARGET = /\]\(\s*<?([^)\s>]*)|^\s{0,3}\[[^\]]+\]:\s*<?(\S*)/gm;
+const markdown = unified().use(remarkParse).use(remarkGfm);
+// Only text with one of these can hold a Markdown link or image; anything else skips the parse.
+const MAY_LINK = /[[<:]|www\./i;
+
 function urlOk(url: string, partial: boolean): boolean {
-  if (partial && ("https://".startsWith(url.toLowerCase()) || "http://".startsWith(url.toLowerCase()))) return true;
+  const u = url.toLowerCase();
+  if (partial && ("https://".startsWith(u) || "http://".startsWith(u))) return true;
   return outsideUrl(url) !== null;
 }
-function badLink(text: string, partial: boolean): boolean {
-  for (const m of text.matchAll(MD_LINK_TARGET)) if (!urlOk(m[1] ?? m[2] ?? "", partial)) return true;
-  return false;
+
+interface MdNode {
+  type: string;
+  url?: string;
+  children?: MdNode[];
+}
+
+/** The first thing wrong with the links and images of a piece of Markdown, or null. */
+function markdownProblem(text: string, partial: boolean): string | null {
+  if (!MAY_LINK.test(text)) return null;
+  const walk = (n: MdNode): string | null => {
+    if (n.type === "image" || n.type === "imageReference") return "images are not allowed";
+    if ((n.type === "link" || n.type === "definition") && typeof n.url === "string") {
+      if (!/^mailto:/i.test(n.url) && !urlOk(n.url, partial)) return "links must be absolute http(s) addresses outside Antares";
+    }
+    for (const c of n.children ?? []) {
+      const bad = walk(c);
+      if (bad) return bad;
+    }
+    return null;
+  };
+  return walk(markdown.runSync(markdown.parse(text)) as MdNode);
 }
 
 export type Verdict = { ok: true } | { ok: false; reason: string };
@@ -78,8 +105,10 @@ export function check(source: string, partial = false): Verdict {
   const visit = (v: unknown, depth: number, key = ""): string | null => {
     if (typeof v === "string") {
       if (v.length > MAX_TEXT) return "text too long";
-      if ((IMAGE_FIELD.test(key) && v.trim() !== "") || MD_IMAGE.test(v)) return "images are not allowed";
-      if ((URL_FIELD.test(key) && !urlOk(v, partial)) || badLink(v, partial)) return "links must be absolute http(s) addresses outside Antares";
+      if (IMAGE_FIELD.test(key) && v.trim() !== "") return "images are not allowed";
+      if (URL_FIELD.test(key) && !urlOk(v, partial)) return "links must be absolute http(s) addresses outside Antares";
+      const bad = markdownProblem(v, partial);
+      if (bad) return bad;
       return null;
     }
     if (Array.isArray(v)) {

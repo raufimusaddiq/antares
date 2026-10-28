@@ -135,7 +135,11 @@ describe("rendering", () => {
     const refused = { ok: false, reason: "links must be absolute http(s) addresses outside Antares" };
     const own = `${window.location.origin}/api/admin/users`;
     expect(check('root = Card([TextContent("[docs](https://example.com/docs)")])')).toEqual({ ok: true });
-    for (const link of ["[x](/api/admin/users)", "[x](javascript:alert(1))", "[x](mailto:a@b.c)", "[x]: /api/me", `[x](${own})`]) {
+    for (const ok of ["[mail](mailto:a@b.c)", "write to a@b.c", "see <https://example.com/a>", "see https://example.com/a"]) {
+      expect(check(`root = Card([TextContent(${JSON.stringify(ok)})])`), ok).toEqual({ ok: true });
+    }
+    const links = ["[x](/api/admin/users)", "[x](javascript:alert(1))", "[x][r]\n\n[r]: /api/me", `[x](${own})`, `<${own}>`, `see ${own} now`];
+    for (const link of [...links, ...links.map((l) => l.replace(window.location.origin, window.location.origin.toUpperCase()))]) {
       expect(check(`root = Card([TextContent(${JSON.stringify(link)})])`), link).toEqual(refused);
     }
     const sources = (url: string) => `root = Card([TextContent("A fact [1]")], [{title: "t", sourceName: "s", url: ${JSON.stringify(url)}}])`;

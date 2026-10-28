@@ -16,6 +16,9 @@
     "@openuidev/react-ui": "0.18.1",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
+    "remark-gfm": "4.0.1",
+    "remark-parse": "11.0.0",
+    "unified": "11.0.5",
     "zod": "4.6.7",
     "zustand": "4.5.7"
   },
