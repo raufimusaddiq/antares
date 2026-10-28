@@ -47,7 +47,7 @@ else
   echo "committed bundle matches a fresh build"
 fi
 
-step "real browser: desktop 1280x800 and mobile 390x844, 500-turn scroll-back, prepend stability, OpenUI"
+step "real browser: phone and desktop layout, starting card, image attach"
 if [ -n "${PLAYWRIGHT_CORE:-}" ]; then
   run node scripts/browser-check.mjs
 else

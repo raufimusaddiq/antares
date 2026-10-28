@@ -102,7 +102,7 @@ Accessibility fallbacks reassign tokens at the end of the file; the selectors do
 `src/TurnControls.test.tsx` (tap shows the reason), `src/ShellMarkup.test.tsx` (the markup the grid relies on), and in a real browser
 `scripts/browser-check.mjs`: `ONLY=mobile-layout` (phone), `ONLY=desktop-layout` (rail, hit-tests, overlaps, popover, the note and a
 shown reason against every text node), `ONLY=starting-card`, `ONLY=images` (attach, retry, remove, send, and a touch tap on a
-reason). `docs/runbooks/mobile-check.md` has the details and the limits.
+reason). 
 
 ## Brand, type and social card
 
