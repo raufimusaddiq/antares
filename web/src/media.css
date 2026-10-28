@@ -18,3 +18,10 @@
 [data-media="sent"] { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 8px; }
 [data-media="notice"] { margin: 0 0 8px; color: var(--danger, #c33); font-size: 0.875rem; }
 [data-media="wait"] { font-size: 0.8125rem; opacity: 0.8; }
+
+/* Media the assistant generated: shown at a readable size under the reply, a click opens the lightbox. */
+[data-media="generated"] { display: flex; flex-wrap: wrap; gap: 0.5rem; margin-top: 0.5rem; }
+[data-media="genbtn"] { padding: 0; border: 0; background: none; cursor: zoom-in; }
+[data-media="genbtn"] img { display: block; width: min(100%, 420px); height: auto; border-radius: 12px; }
+[data-media="generated"] audio { width: min(100%, 420px); }
+[data-media="generated"] video { width: min(100%, 520px); border-radius: 12px; }

@@ -1,0 +1,7 @@
+name: kenari-image
+version: 1.0.0
+description: "Image generation through the profile's OpenAI-compatible endpoint (Kenari), asking for base64 output. Saves generated images to $HERMES_HOME/cache/generated/images/."
+author: Antares
+kind: backend
+requires_env:
+  - OPENAI_API_KEY

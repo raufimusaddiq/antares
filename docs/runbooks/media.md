@@ -142,3 +142,30 @@ go test ./internal/chat -run 'TestImageStagingOwnerOnlyAndValidated|TestImageUpl
 `TestImageStagingOwnerOnlyAndValidated` proves B cannot GET/DELETE A's image, A keeps access,
 and image staging sends zero Hermes requests. `TestImageUploadRefusals` covers spoofed MIME,
 SVG/WebP refusal, byte/pixel limits and no leftover rows.
+
+## Generated media (#168, 2026-10-28)
+
+Hermes' own tools generate the media; Antares only shows it.
+
+- **Images.** Hermes' bundled `openai` image backend does not work against Kenari: Kenari answers with a `data:` URL
+  unless `response_format: "b64_json"` is sent, and Hermes refuses to fetch `data:` URLs. `deploy/hermes-plugins/kenari-image`
+  is a small Hermes image backend that asks for `b64_json` on the profile's own endpoint (`OPENAI_BASE_URL`/`OPENAI_API_KEY`,
+  which every tenant profile already has) and saves the image to the profile's cache like any backend. Default model
+  `agnes-image-2-5-flash:free`; set `image_gen.kenari-image.model` in a profile to change it.
+- **Install** (once per Hermes data volume, and after changing the plugin): copy it to `/opt/data/antares-plugins/`:
+
+      docker cp deploy/hermes-plugins/kenari-image hermes:/opt/data/antares-plugins/
+      docker exec -u 0 hermes chown -R hermes:hermes /opt/data/antares-plugins
+
+  The provisioner's policy step (every provision and rotate) copies it into the profile's `plugins/` and sets
+  `plugins.enabled: [kenari-image]` and `image_gen.provider: kenari-image`. Existing profiles get it on their next
+  rotate (admin `tenant-verify`). Hermes loads plugins per profile when the gateway first serves it, so restart the
+  Hermes container after installing or changing the plugin.
+- **Delivery.** A reply names a generated file as `MEDIA:<path>` in the profile's cache. The web app takes the tag out
+  of the text and shows the file under the reply (image with a lightbox, audio and video with native controls) from
+  `GET /api/media?path=…`. Antares passes the path, with the caller's **own** profile, to the provisioner's
+  `POST /media`, which serves only `/opt/data/profiles/<that profile>/cache/` (checked again inside the container
+  after resolving symlinks), media extensions only, at most 25 MiB. Another user's path is a 404.
+- **Single trusted user.** Hermes' media tools can load local image paths, including another profile's (#161). Fine
+  while Antares has one trusted user; disable `vision`/`image_gen` for tenants or confine the resolver upstream before
+  onboarding a second, untrusted one.

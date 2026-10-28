@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import "./media.css";
 import { assetUrl } from "./mediaApi";
+import { mediaKind, mediaUrl } from "./mediaTags";
 
 // Safe previews of media the signed-in user owns (MEDIA-EXT-003/005/007). Every source is
 // /api/assets/{id}?inline=1, which the server serves only to the owner, as a validated raster
@@ -70,5 +71,36 @@ export function OwnedAudio({ assetId, label }: { assetId: string; label: string 
         Download
       </a>
     </figure>
+  );
+}
+
+/** Media the assistant generated in this reply (MEDIA:<path>), loaded from the user's own profile (the media route). */
+export function GeneratedMedia({ paths }: { paths: string[] }) {
+  if (paths.length === 0) return null;
+  return (
+    <div data-media="generated">
+      {paths.map((p, i) => (
+        <GeneratedItem key={p} path={p} index={i} />
+      ))}
+    </div>
+  );
+}
+
+function GeneratedItem({ path, index }: { path: string; index: number }) {
+  const [open, setOpen] = useState(false);
+  const [failed, setFailed] = useState(false);
+  const kind = mediaKind(path);
+  const label = kind === "image" ? `Generated image ${index + 1}` : kind === "audio" ? `Generated audio ${index + 1}` : `Generated video ${index + 1}`;
+  if (!kind || failed) return <span data-media="gone">{kind ? label : "Generated media"} (not available)</span>;
+  const src = mediaUrl(path);
+  if (kind === "audio") return <audio controls preload="none" src={src} aria-label={label} onError={() => setFailed(true)} />;
+  if (kind === "video") return <video controls preload="metadata" src={src} aria-label={label} onError={() => setFailed(true)} />;
+  return (
+    <>
+      <button type="button" data-media="genbtn" aria-label={`Open ${label}`} onClick={() => setOpen(true)}>
+        <img src={src} alt={label} loading="lazy" decoding="async" onError={() => setFailed(true)} />
+      </button>
+      {open && <Lightbox src={src} alt={label} onClose={() => setOpen(false)} />}
+    </>
   );
 }

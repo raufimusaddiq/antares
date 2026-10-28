@@ -424,11 +424,11 @@ func TestProvisionDisablesToolsetsBeforeIssuingKey(t *testing.T) {
 	}
 	cfg, py := -1, -1
 	for i, c := range f.calls {
-		if len(c) == 7 && c[0] == "hermes" && c[1] == "-p" && c[2] == "u_newuser01" && c[3] == "config" && c[4] == "set" && c[5] == "agent.disabled_toolsets" {
+		if len(c) == 6 && c[0] == "sh" && c[2] == policyScript && c[4] == "u_newuser01" {
 			cfg = i
 			var got []string
-			if err := json.Unmarshal([]byte(c[6]), &got); err != nil {
-				t.Fatalf("value is not a JSON array: %q", c[6])
+			if err := json.Unmarshal([]byte(c[5]), &got); err != nil {
+				t.Fatalf("value is not a JSON array: %q", c[5])
 			}
 			have := map[string]bool{}
 			for _, n := range got {
@@ -471,7 +471,7 @@ func TestProvisionFailsClosedWhenToolsetPolicyFails(t *testing.T) {
 type toolsetFail struct{ scripted }
 
 func (f *toolsetFail) Run(ctx context.Context, in string, args ...string) (string, string, error) {
-	if len(args) > 4 && args[3] == "config" {
+	if len(args) == 6 && args[0] == "sh" && args[2] == policyScript {
 		f.calls = append(f.calls, args)
 		return "", "boom", exitErr(1)
 	}
@@ -546,7 +546,7 @@ func TestPolicyFromEnv(t *testing.T) {
 
 func toolsetCall(f *scripted) []string {
 	for _, c := range f.calls {
-		if len(c) == 7 && c[3] == "config" && c[5] == toolsetsConfigKey {
+		if len(c) == 6 && c[0] == "sh" && c[2] == policyScript {
 			return c
 		}
 	}
@@ -571,7 +571,7 @@ func TestNarrowedPolicyReachesProvisionAndRotate(t *testing.T) {
 			t.Fatalf("%s did not apply the toolset policy", c.path)
 		}
 		var got []string
-		if err := json.Unmarshal([]byte(call[6]), &got); err != nil {
+		if err := json.Unmarshal([]byte(call[5]), &got); err != nil {
 			t.Fatal(err)
 		}
 		if contains(got, "web") || contains(got, "memory") || !contains(got, "vision") {

@@ -54,6 +54,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /provision", s.auth(s.provision))
 	mux.HandleFunc("POST /deprovision", s.auth(s.deprovision))
 	mux.HandleFunc("POST /rotate", s.auth(s.rotate))
+	mux.HandleFunc("POST /media", s.auth(s.media))
 	return mux
 }
 
@@ -134,7 +135,7 @@ func (s *server) provision(w http.ResponseWriter, r *http.Request) {
 	}
 	// Applied on every provision, existing profile or not, before any key is
 	// issued: a profile that cannot be locked down never gets a key.
-	if err := s.h.disableToolsets(ctx, slug, s.disabled); err != nil {
+	if err := s.h.applyPolicy(ctx, slug, s.disabled); err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -175,7 +176,7 @@ func (s *server) rotate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Reapplied so provision and rotate leave a profile in the same state.
-	if err := s.h.disableToolsets(ctx, slug, s.disabled); err != nil {
+	if err := s.h.applyPolicy(ctx, slug, s.disabled); err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}

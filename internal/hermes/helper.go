@@ -183,3 +183,37 @@ func (h *Helper) issue(ctx context.Context, path, slug string) (Credential, erro
 	}
 	return Credential{Profile: out.Profile, Key: out.Key}, nil
 }
+
+// maxMedia bounds one generated media file (the helper's own limit is 25 MiB).
+const maxMedia = 25 << 20
+
+// Media returns a file Hermes generated in the profile's own cache (named MEDIA:<path> in a reply) and its media
+// type. The helper refuses any other path; ErrNotFound covers every refusal.
+func (h *Helper) Media(ctx context.Context, slug, path string) ([]byte, string, error) {
+	if !ValidSlug(slug) {
+		return nil, "", ErrMediaNotFound
+	}
+	body, _ := json.Marshal(map[string]string{"slug": slug, "path": path})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.base.String()+"/media", bytes.NewReader(body))
+	if err != nil {
+		return nil, "", ErrMediaNotFound
+	}
+	req.Header.Set("Authorization", "Bearer "+h.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return nil, "", transient("provisioning helper unreachable")
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", ErrMediaNotFound
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxMedia+1))
+	if err != nil || len(raw) == 0 || len(raw) > maxMedia {
+		return nil, "", ErrMediaNotFound
+	}
+	return raw, resp.Header.Get("Content-Type"), nil
+}
+
+// ErrMediaNotFound is any refused or missing media file.
+var ErrMediaNotFound = errors.New("hermes: media not found")

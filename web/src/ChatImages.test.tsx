@@ -218,8 +218,12 @@ describe("generated media paths (MEDIA-EXT-006)", () => {
         onResend={noop}
       />,
     );
-    expect(container.textContent).toContain("Generated media was produced but is not available here");
+    expect(container.textContent).toContain("Here it is");
     expect(container.textContent).not.toMatch(/opt\/data|gen_1|profiles/);
+    // The finished turn shows the image itself, loaded from the user's own profile through /api/media.
+    const img = container.querySelector<HTMLImageElement>('[data-media="generated"] img')!;
+    expect(img.getAttribute("src")).toBe("/api/media?path=" + encodeURIComponent("/opt/data/profiles/u_x/cache/images/gen_1.png"));
+    expect(img.alt).toBe("Generated image 1");
   });
 });
 

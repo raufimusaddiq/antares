@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { MAX_IMAGE_BYTES, assetUrl, imageFilesFrom, parseImageInput, precheckImage, sendMessageWithImages, getImageInput, describeImageReason } from "./mediaApi";
-import { MEDIA_UNAVAILABLE, hideMediaPaths } from "./mediaTags";
+import { mediaKind, mediaUrl, splitMedia } from "./mediaTags";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -71,15 +71,19 @@ describe("assetUrl", () => {
   });
 });
 
-describe("hideMediaPaths", () => {
-  it("drops host paths and the voice marker and says so", () => {
-    const r = hideMediaPaths("Here you go\n[[audio_as_voice]]\nMEDIA:/opt/data/profiles/u_x/cache/audio/tts_1.mp3");
-    expect(r.count).toBe(1);
-    expect(r.text).toContain(MEDIA_UNAVAILABLE);
-    expect(r.text).not.toMatch(/opt|profiles|tts_1|audio_as_voice/);
+describe("splitMedia", () => {
+  it("takes the tags and the voice marker out of the text and keeps the paths", () => {
+    const r = splitMedia("Here you go\n[[audio_as_voice]]\nMEDIA:/opt/data/profiles/u_x/cache/audio/tts_1.mp3");
+    expect(r.paths).toEqual(["/opt/data/profiles/u_x/cache/audio/tts_1.mp3"]);
+    expect(r.text).toBe("Here you go");
   });
-  it("handles quoted paths and leaves ordinary text alone", () => {
-    expect(hideMediaPaths('MEDIA:"/a b/c.png" done').text).toBe(`${MEDIA_UNAVAILABLE} done`);
-    expect(hideMediaPaths("no media here")).toEqual({ text: "no media here", count: 0 });
+  it("handles quoted paths, trailing punctuation and repeats, and leaves ordinary text alone", () => {
+    expect(splitMedia('MEDIA:"/a b/c.png" done')).toEqual({ text: "done", paths: ["/a b/c.png"] });
+    expect(splitMedia("See MEDIA:/x/y.png. And MEDIA:/x/y.png").paths).toEqual(["/x/y.png"]);
+    expect(splitMedia("no media here")).toEqual({ text: "no media here", paths: [] });
+  });
+  it("knows the kind from the extension and builds the same-origin URL", () => {
+    expect([mediaKind("/a.PNG"), mediaKind("/a.mp3"), mediaKind("/a.webm"), mediaKind("/a.txt")]).toEqual(["image", "audio", "video", null]);
+    expect(mediaUrl("/a b.png")).toBe("/api/media?path=%2Fa%20b.png");
   });
 });
