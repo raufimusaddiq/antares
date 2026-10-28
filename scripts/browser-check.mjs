@@ -576,6 +576,33 @@ async function images(browser) {
 
 // ONLY=shots: review screenshots (no checks) of the chat, Options closed and open, light and dark, desktop and phone,
 // for an owner's visual review (#139). Run before and after a visual change and compare the folders.
+// The model picker (#139), opened over a 40-model catalogue at phone and desktop widths: it stays on screen, the page
+// does not overflow sideways, the list scrolls inside the popover, and on a touch screen its buttons are 44px tall.
+async function modelPicker(browser) {
+  state.models = true;
+  try {
+    for (const { w, h, touch } of [{ w: 320, h: 568, touch: true }, { w: 390, h: 844, touch: true }, { w: 641, h: 800, touch: false }, { w: 700, h: 700, touch: false }, { w: 900, h: 700, touch: false }, { w: 1280, h: 800, touch: false }]) {
+      const { ctx, page } = await openPage(browser, { viewport: { width: w, height: h }, isMobile: touch, hasTouch: touch });
+      await page.goto(base + "/");
+      await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
+      await page.locator(".composer-chips summary", { hasText: "Model" }).first().click();
+      await page.waitForSelector(".model-menu .model-row");
+      const m = await page.evaluate(() => {
+        const menu = document.querySelector(".model-menu");
+        const r = menu.getBoundingClientRect();
+        const buttons = [...menu.querySelectorAll(".model-row button")].slice(0, 5).map((b) => b.getBoundingClientRect().height);
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth, vh: innerHeight, overflowX: document.documentElement.scrollWidth - innerWidth, scrolls: menu.scrollHeight > menu.clientHeight + 10, minButton: Math.min(...buttons) };
+      });
+      const onScreen = m.left >= 0 && m.right <= m.vw && m.top >= 0 && m.bottom <= m.vh;
+      check(`model picker ${w}px: on screen, no sideways overflow, scrolls inside`, onScreen && m.overflowX <= 0 && m.scrolls, JSON.stringify(m));
+      if (touch) check(`model picker ${w}px: Hide/Show are 44px tall on touch`, m.minButton >= 44, `${m.minButton}px`);
+      await ctx.close();
+    }
+  } finally {
+    state.models = false;
+  }
+}
+
 async function shots(browser) {
   state.models = true;
   for (const scheme of ["light", "dark"]) {
@@ -622,6 +649,7 @@ const only = process.env.ONLY;
 try {
   if (!only || only === "mobile-layout") await mobileLayout(browser);
   if (!only || only === "desktop-layout") await desktopLayout(browser);
+  if (!only || only === "mobile-layout" || only === "desktop-layout") await modelPicker(browser);
   if (!only || only === "starting-card") await startingCard(browser);
   if (!only || only === "images") await images(browser);
   if (!only || only === "mobile-layout" || only === "mobile-budget") await mobileBudget(browser);
