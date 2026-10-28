@@ -46,8 +46,8 @@ func TestPolicyScriptInstallsAndSelectsTheImagePlugin(t *testing.T) {
 	calls, profiles := runPolicy(t, true)
 	want := []string{
 		`-p u_abcdefgh config set agent.disabled_toolsets ["terminal"]`,
-		`-p u_abcdefgh config set plugins.enabled ["kenari-image"]`,
 		`-p u_abcdefgh config set image_gen.provider kenari-image`,
+		`-p u_abcdefgh plugins enable kenari-image`,
 	}
 	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("hermes calls:\n%s", strings.Join(calls, "\n"))

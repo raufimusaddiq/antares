@@ -173,14 +173,16 @@ func (h hermes) create(ctx context.Context, slug string) error {
 // profile the Kenari image backend: the plugin is copied from the shared copy the deploy installs (when present) and
 // selected as its image_gen provider. One docker exec (three hermes CLI calls, about 6 s each measured on the deployed
 // host, within callTimeout); slug, list and directories arrive as arguments ($1-$4), never in the script.
-// plugins.enabled is replaced, not merged: a tenant profile is provisioner-owned and holds no other plugin.
+// The plugin is enabled with "plugins enable", not a config write: it also asks the running gateway (over its control
+// socket) to rediscover this profile's plugins. The gateway discovered them once, when the profile appeared at
+// "profile create", before the plugin was copied in, and would otherwise not load it until a restart.
 const policyScript = `set -e
 hermes -p "$1" config set ` + toolsetsConfigKey + ` "$2"
 if [ -d "$3/kenari-image" ]; then
   mkdir -p "$4/$1/plugins/kenari-image"
   cp -r "$3/kenari-image/." "$4/$1/plugins/kenari-image/"
-  hermes -p "$1" config set plugins.enabled '["kenari-image"]'
   hermes -p "$1" config set image_gen.provider kenari-image
+  hermes -p "$1" plugins enable kenari-image
 fi`
 
 // sharedPlugins is where the deploy installs the Hermes plugins Antares relies on (deploy/hermes-plugins).
