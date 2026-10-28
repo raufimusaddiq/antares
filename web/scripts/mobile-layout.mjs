@@ -1,4 +1,4 @@
-// The mobile layout measurements and verdicts, shared by mobile-check.mjs (authenticated, scratch Antares) and
+// The mobile layout measurements and verdicts, used by
 // scripts/browser-check.mjs (mock backend, runs in CI). `measure` runs inside the page and must stay self-contained.
 export const TARGET = 44;
 // Runs in the page. Returns the facts the verdicts are built from.

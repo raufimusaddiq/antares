@@ -37,12 +37,6 @@ jobs:
       - name: Vet
         if: steps.detect.outputs.present == 'true'
         run: go vet ./...
-      # scripts/capacity sits behind a build tag, so the steps above never see it (#76).
-      - name: Vet and test the capacity harness
-        if: steps.detect.outputs.present == 'true'
-        run: |
-          go vet -tags capacity ./...
-          go test -race -count=1 -tags capacity ./scripts/capacity
       - name: Test
         if: steps.detect.outputs.present == 'true'
         run: go test -race -count=1 ./...
@@ -65,34 +59,6 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         working-directory: tools/hermes-provisioner
         run: go test -race -count=1 ./...
-
-  # PRD §14.2 light-load RAM benchmark (#86), 60 s idle + 300 s load profile. Runs on pushes to main and
-  # on demand, not on pull requests: it is a recorded benchmark, not a per-PR gate on a shared runner.
-  # Fails if the Antares process RSS P95 exceeds 256 MiB, any run fails or nothing was measured. The JSON
-  # result is printed in the log and kept as an artifact. A GitHub-hosted runner is a different machine
-  # from the one in docs/runbooks/capacity.md.
-  bench:
-    name: bench (light-load RSS)
-    if: github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-          cache: true
-      - name: Light-load benchmark (short profile)
-        run: |
-          set -o pipefail
-          IDLE_SECS=60 LOAD_SECS=300 scripts/capacity/bench.sh | tee bench-result.txt
-          echo "### Light-load RSS (CI runner, short profile)" >> "$GITHUB_STEP_SUMMARY"
-          jq -s '.[-1]' bench-result.txt | { echo '```json'; cat; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: bench-result
-          path: bench-result.txt
 
   web:
     name: web
