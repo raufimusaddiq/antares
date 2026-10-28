@@ -191,3 +191,17 @@ func TestStreamMediaDropsAnOversizedTagWithoutLeakingItsRest(t *testing.T) {
 		t.Fatalf("quoted: %.80q", got)
 	}
 }
+
+func TestStreamMediaFollowsTheOuterQuotedTag(t *testing.T) {
+	var out strings.Builder
+	hold := ""
+	for _, d := range []string{`a MEDIA:"/opt/data/profiles/u_x/cache/MEDIA:foo `, `SECRET.png" done`} {
+		var text string
+		text, hold = streamMedia(hold, d)
+		out.WriteString(text)
+	}
+	out.WriteString(stripMediaTags(hold))
+	if got := out.String(); got != "a  done" {
+		t.Fatalf("streamed text: %q", got)
+	}
+}

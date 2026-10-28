@@ -103,18 +103,29 @@ func (s *Service) getMedia(w http.ResponseWriter, r *http.Request) {
 func streamMedia(hold, delta string) (out, rest string) {
 	s := hold + delta
 	cut := len(s)
-	if i := strings.LastIndex(s, "MEDIA:"); i >= 0 {
-		tail := s[i+len("MEDIA:"):]
-		var done bool
-		switch {
-		case strings.HasPrefix(tail, `"`), strings.HasPrefix(tail, "'"):
-			done = strings.ContainsAny(tail[1:], tail[:1]+"\n")
-		default:
-			done = strings.IndexFunc(tail, unicode.IsSpace) >= 0
+	// Left to right over the tags: a complete one is stepped over whole (a "MEDIA:" inside a quoted path is part of
+	// it), the first unfinished one starts the hold.
+	for i := 0; ; {
+		j := strings.Index(s[i:], "MEDIA:")
+		if j < 0 {
+			break
 		}
-		if !done {
-			cut = i
+		start := i + j
+		tail := s[start+len("MEDIA:"):]
+		var end int
+		if tail != "" && (tail[0] == '"' || tail[0] == '\'') {
+			end = strings.IndexAny(tail[1:], tail[:1]+"\n")
+			if end >= 0 {
+				end += 2 // the opening and closing quote
+			}
+		} else {
+			end = strings.IndexFunc(tail, unicode.IsSpace)
 		}
+		if end < 0 {
+			cut = start
+			break
+		}
+		i = start + len("MEDIA:") + end
 	}
 	if cut == len(s) {
 		for k := len("MEDIA:") - 1; k > 0; k-- {
