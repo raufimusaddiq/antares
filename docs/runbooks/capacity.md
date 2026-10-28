@@ -368,45 +368,6 @@ Open-to-first-item: 620 ms (100 messages) and 833 ms (500 messages), page load i
 - **Not measured:** 1,000+ messages (seeding at the default 30 runs/min limit takes ~17 min per 500 messages), real
   devices, touch scrolling, streaming-reply cost while scrolled up.
 
-#### Fast-fling profile and fix (#170, 2026-10-28)
-
-`ONLY=fling TURNS=<n> node scripts/browser-check.mjs` (unminified bundle via `DIST`, so the profile names functions):
-from the newest turn, flick upward at 4,000 px/s in a `requestAnimationFrame` loop until the start of the conversation
-is on screen (120 s cap), recording each rAF delta, the Performance-domain split (script, layout, style) and a sampled CPU
-profile (200 µs) summarised by self time. Desktop 1280×800, and a phone (390×844, touch, CPU throttled 4× as a mid-range
-stand-in). Machine profiles: `docs/perf/s170/before/` and `docs/perf/s170/after/` (`fling-<turns>.json`).
-
-**Measured cause** (before, top self time outside idle and V8 "(program)"): `getBoundingClientRect` was the largest named
-cost and grew with the history loaded (0.8 s / 5.0 s / 8.5 s over the 100 / 500 / 1,000-turn desktop fling; 13.2 s on the
-throttled phone at 500), followed by `layout` from `web/src/virtual.ts` (0.1 / 1.8 / 4.3 s). Two code paths:
-
-1. `VirtualList` re-measured **every** mounted item before paint on **every** render, and a fling renders every frame:
-   one forced synchronous layout, and a second render whenever a height moved.
-2. It rebuilt the offset table, O(loaded items), on every render, so the per-frame cost grew with the thread.
-
-Markdown parsing (`parseBlocks`) was 0.4–2.3 s and not the lead; nothing else was over 2 % of samples.
-
-**Fix (no architecture change):** the layout is memoised on the item keys and a height version, so a scroll frame that
-changes no height reuses it; before paint only items never measured are read. Items already measured are re-read in the
-existing `ResizeObserver` callback, which runs after layout and forces none, so streaming replies, images, fonts and a
-width change still update their heights. Windowing, the page cursor, the scroll anchor, follow and "Jump to latest" are
-unchanged; `browser-check.mjs` desktop (9/9), rich, drafts and mobile pass (one mobile frame-gap check failed once, the
-same check on the unchanged main bundle failed once too in the same session: host load).
-
-| Desktop fling | `getBoundingClientRect` self | `layout` self | script s | frame p50 / p95 / max (ms) |
-|---|---|---|---|---|
-| 100 turns, before → after | 799 → 170 ms | 132 → <1 % | 4.3 → 3.7 | 16.7/33.3/50 → 16.7/33.3/83 |
-| 500 turns, before → after | 4,991 → 1,870 ms | 1,838 → 484 ms | 14.8 → 12.8 | 16.7/16.8/117 → 16.7/33.3/133 |
-| 1,000 turns, before → after | 8,475 → 3,896 ms | 4,320 → 1,300 ms | 23.9 → 21.5 | 16.7/16.8/100 → 16.7/16.8/133 |
-| Phone 4× (500 turns) | 13,226 → 5,444 ms | 5,593 → 927 ms | 43.1 → 38.4 | 16.7/50/300 → 16.7/50/367 |
-
-**What the frame figures can and cannot say.** The host is a shared 2 vCPU server with a load average of 6–9 during
-both runs, and Chromium is software-rendered: the frame percentiles moved within noise, so this report claims the cost
-reduction (the profile), not a frame-rate gain. The P95 the ticket asks for on a **real desktop and a real phone** is not
-measurable from this host; it is recorded as device-only and re-measured with the same `ONLY=fling` harness (or a
-DevTools trace of the same flick) on the first real device. At 1,000 turns the 120 s cap ends the flick before the
-start (32 of 39 older pages): that is the distance at 4,000 px/s, not a stall (every run kept loading pages).
-
 ## What would change these numbers
 
 Larger or more frequent real Hermes frames, tool-progress events, OpenUI payloads, real transcripts longer than

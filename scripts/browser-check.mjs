@@ -12,8 +12,6 @@
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
 //   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout runs just the phone layout checks, which CI runs)
-//   (ONLY=fling TURNS=100|500|1000: the fast-fling frame-time profile of #170, desktop and throttled phone, written to
-//   <out>/fling-<turns>.json with a CPU profile summary; no checks)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -38,7 +36,7 @@ const { chromium } = require(process.env.PLAYWRIGHT_CORE || "playwright-core");
 const serverGo = fs.readFileSync(path.join(here, "..", "internal", "server", "server.go"), "utf8");
 const styleHash = /const openUIStyleHash = "([^"]+)"/.exec(serverGo)[1];
 const CSP = /h\.Set\("Content-Security-Policy", (.*)\)\n/.exec(serverGo)[1].replace('"+openUIStyleHash+"', styleHash).slice(1, -1);
-const TURNS = Number(process.env.TURNS || 500); // ONLY=fling measures other lengths; every other mode assumes 500
+const TURNS = 500;
 const PAGE = 50;
 const PLAIN = "a".repeat(32);
 const RICH = "b".repeat(32);
@@ -877,77 +875,6 @@ async function shots(browser) {
   }
 }
 
-// ONLY=fling (#170): flick from the newest turn to the start at 4,000 px/s, time-based in a requestAnimationFrame loop, and
-// record each frame's rAF delta, the Performance-domain time split (script, layout, style) and a CPU profile summarised by
-// self time. Desktop 1280x800, and a phone (390x844, touch, CPU throttled 4x as a mid-range phone stand-in).
-async function fling(browser) {
-  const report = { turns: TURNS, chromium: await browser.version(), runs: [] };
-  for (const dev of [
-    { name: "desktop", opts: { viewport: { width: 1280, height: 800 } }, throttle: 1 },
-    { name: "phone (4x CPU throttle)", opts: { viewport: { width: 390, height: 844 }, deviceScaleFactor: 3, isMobile: true, hasTouch: true }, throttle: 4 },
-  ]) {
-    const { ctx, page } = await openPage(browser, dev.opts);
-    await page.goto(base + "/");
-    await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
-    await page.waitForTimeout(500);
-    const cdp = await ctx.newCDPSession(page);
-    await cdp.send("Performance.enable");
-    await cdp.send("Emulation.setCPUThrottlingRate", { rate: dev.throttle });
-    await cdp.send("Profiler.enable");
-    await cdp.send("Profiler.setSamplingInterval", { interval: 200 });
-    const before = Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map((m) => [m.name, m.value]));
-    state.log.length = 0;
-    if (process.env.FLING_MS) await page.evaluate((ms) => { window.__flingMs = ms; }, Number(process.env.FLING_MS));
-    await cdp.send("Profiler.start");
-    const frames = await page.evaluate(() => new Promise((resolve) => {
-      const el = document.querySelector(".log");
-      const deltas = [];
-      let last = performance.now();
-      const stopAt = last + Number(window.__flingMs || 120000);
-      const step = (now) => {
-        const dt = now - last;
-        last = now;
-        deltas.push(dt);
-        el.scrollTop = Math.max(0, el.scrollTop - (4000 * dt) / 1000);
-        const done = el.scrollTop === 0 && /start of the conversation/i.test(document.querySelector(".vstatus")?.textContent ?? "");
-        if (done || now > stopAt) resolve({ deltas: deltas.slice(1), reachedStart: done, scrollTop: el.scrollTop, status: document.querySelector(".vstatus")?.innerText ?? "" });
-        else requestAnimationFrame(step);
-      };
-      requestAnimationFrame(step);
-    }));
-    const { profile } = await cdp.send("Profiler.stop");
-    const after = Object.fromEntries((await cdp.send("Performance.getMetrics")).metrics.map((m) => [m.name, m.value]));
-    await cdp.send("Emulation.setCPUThrottlingRate", { rate: 1 });
-    // Self time per function (sampled), grouped by function and source file.
-    const dt = profile.timeDeltas || [];
-    const selfMs = new Map();
-    const byId = new Map(profile.nodes.map((n) => [n.id, n]));
-    (profile.samples || []).forEach((id, i) => {
-      const n = byId.get(id);
-      const f = n.callFrame;
-      const key = `${f.functionName || "(anonymous)"} ${f.url ? path.basename(new URL(f.url, base).pathname) : ""}`.trim();
-      selfMs.set(key, (selfMs.get(key) || 0) + (dt[i] || 0) / 1000);
-    });
-    const total = [...selfMs.values()].reduce((a, b) => a + b, 0);
-    const top = [...selfMs.entries()].sort((a, b) => b[1] - a[1]).slice(0, 15).map(([k, v]) => ({ fn: k, ms: Math.round(v), share: +(v / total).toFixed(3) }));
-    const sorted = [...frames.deltas].sort((a, b) => a - b);
-    const pct = (q) => +sorted[Math.min(sorted.length - 1, Math.floor(q * sorted.length))].toFixed(1);
-    const diff = (k) => +((after[k] || 0) - (before[k] || 0)).toFixed(3);
-    const run = {
-      device: dev.name, frames: sorted.length, reachedStart: frames.reachedStart, endScrollTop: Math.round(frames.scrollTop), endStatus: frames.status,
-      olderPageRequests: state.log.filter((l) => l.includes("/messages?cursor=")).length,
-      p50: pct(0.5), p95: pct(0.95), max: +sorted[sorted.length - 1].toFixed(1), over50: sorted.filter((x) => x > 50).length,
-      seconds: { script: diff("ScriptDuration"), layout: diff("LayoutDuration"), style: diff("RecalcStyleDuration"), task: diff("TaskDuration") },
-      layouts: diff("LayoutCount"), styleRecalcs: diff("RecalcStyleCount"), topSelfTime: top,
-    };
-    report.runs.push(run);
-    console.log(`fling ${TURNS} turns, ${dev.name}: ${run.frames} frames, p50 ${run.p50} ms, p95 ${run.p95} ms, max ${run.max} ms; script ${run.seconds.script}s layout ${run.seconds.layout}s style ${run.seconds.style}s; reached start ${run.reachedStart} (scrollTop ${run.endScrollTop}, ${run.olderPageRequests} older pages, status ${JSON.stringify(run.endStatus)})`);
-    for (const t of top.slice(0, 8)) console.log(`   ${String(t.ms).padStart(6)} ms  ${(t.share * 100).toFixed(1).padStart(5)}%  ${t.fn}`);
-    await ctx.close();
-  }
-  fs.writeFileSync(path.join(outDir, `fling-${TURNS}.json`), JSON.stringify(report, null, 2) + "\n");
-}
-
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
@@ -965,7 +892,6 @@ try {
   if (!only || only === "images") await images(browser);
   if (!only || only === "mobile" || only === "mobile-layout" || only === "mobile-budget") await mobileBudget(browser); // no timing in it: this is the one CI runs
   if (only === "shots") await shots(browser);
-  if (only === "fling") await fling(browser);
 } finally {
   await browser.close();
   server.close();
