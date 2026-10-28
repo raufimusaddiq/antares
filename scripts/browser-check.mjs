@@ -59,7 +59,7 @@ function transcript(rich) {
 const DATA = { [PLAIN]: transcript(false), [RICH]: transcript(true) };
 const b64 = (s) => Buffer.from(s).toString("base64url");
 
-const state = { log: [], delayMs: 15, email: "reader@example.test", budgetReached: false, emptyList: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map() };
+const state = { log: [], delayMs: 15, models: false, email: "reader@example.test", budgetReached: false, emptyList: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map() };
 // A slow runner answers later than a fast one. MOCK_DELAY_MS adds that latency to the image endpoints of the mock (upload, delete, send) so
 // the ordering a slow CI runner produces can be reproduced on demand. Unset (the default) the mock answers at once.
 const MOCK_DELAY = Number(process.env.MOCK_DELAY_MS || 0);
@@ -142,7 +142,12 @@ function api(req, res, url) {
     return void setTimeout(reply, state.delayMs);
   }
   // The rest of what the chat screen reads on load, with the real response shapes, so no failure notice distorts the layout.
-  if (url.pathname === "/api/capabilities") return send(200, { capabilities: [], toolsets: [], providers: [], skills: [] });
+  if (url.pathname === "/api/capabilities") return send(200, { capabilities: state.models ? [{ id: "models", label: "Models", status: "available" }] : [], toolsets: [], providers: [], skills: [] });
+  // ONLY=shots shows the model picker with a long catalogue, as in production.
+  if (state.models && url.pathname === "/api/models") {
+    const model = (i) => ({ id: `model-${String(i).padStart(2, "0")}-${["flash", "pro", "mini", "vision"][i % 4]}`, available: true, hidden: false, reasoning: i % 3 === 0, reasoningEfforts: i % 3 === 0 ? ["low", "high"] : [], modalities: { input: i % 4 === 3 ? ["text", "image"] : ["text"], output: ["text"] }, contextWindow: 128000, price: null });
+    return send(200, { source: "kenari", fetchedAt: "2026-10-28T08:00:00Z", stale: false, default: { provider: "custom", model: "model-00-flash" }, unsupported: {}, providers: [{ slug: "custom", name: "Kenari", available: true, models: Array.from({ length: 40 }, (_, i) => model(i)) }] });
+  }
   if (url.pathname === "/api/me/templates") return send(200, { templates: [] });
   if (/^\/api\/(me\/new-chat-draft|chats\/[0-9a-f]{32}\/draft)$/.test(url.pathname)) {
     if (req.method === "DELETE") { res.writeHead(204); return void res.end(); }
@@ -572,6 +577,7 @@ async function images(browser) {
 // ONLY=shots: review screenshots (no checks) of the chat, Options closed and open, light and dark, desktop and phone,
 // for an owner's visual review (#139). Run before and after a visual change and compare the folders.
 async function shots(browser) {
+  state.models = true;
   for (const scheme of ["light", "dark"]) {
     for (const v of [{ name: "desktop", width: 1440, height: 900 }, { name: "phone", width: 390, height: 844, isMobile: true, hasTouch: true }]) {
       const { ctx, page } = await openPage(browser, { viewport: { width: v.width, height: v.height }, colorScheme: scheme, isMobile: v.isMobile, hasTouch: v.hasTouch });
@@ -585,6 +591,13 @@ async function shots(browser) {
         await page.waitForTimeout(300);
         await page.screenshot({ path: path.join(outDir, `shot-${v.name}-${scheme}-options.png`) });
         await toggle.click();
+      }
+      const picker = page.locator(".composer-chips summary", { hasText: "Model" }).first();
+      if ((await picker.count()) > 0) {
+        await picker.click();
+        await page.waitForTimeout(500);
+        await page.screenshot({ path: path.join(outDir, `shot-${v.name}-${scheme}-models.png`) });
+        await picker.click();
       }
       // The account menu, then Settings.
       const menu = page.getByRole("button", { name: "Menu" }).first();

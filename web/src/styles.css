@@ -864,3 +864,28 @@ details[open] > summary::after { transform: none; }
 .ou-swatch[data-slice="4"] { background: var(--peri); }
 .ou-swatch[data-slice="5"] { background: var(--ink); }
 .ou-metric { align-self: flex-start; }
+
+/* ---- model picker (#139): a popover above its chip, scrolling on its own; one tidy row per model ---- */
+.composer-chips .model-picker { position: relative; }
+.model-menu { position: absolute; bottom: calc(100% + 0.5rem); left: 0; z-index: 30; box-sizing: border-box; width: min(34rem, calc(100vw - 2rem));
+  max-height: min(60vh, 30rem); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
+  padding: 0.75rem 1rem 1rem; background: var(--card); color: var(--ink); border: 1px solid var(--hair); border-radius: var(--r-md);
+  box-shadow: 0 10px 30px rgb(17 20 43 / 0.18); font-family: var(--font-ui); font-size: 0.875rem; font-weight: 400; white-space: normal; text-align: left; }
+.model-menu > * + * { margin-top: 0.5rem; }
+.model-menu p { margin: 0; color: var(--ink-2); }
+.model-menu label { display: flex; align-items: center; gap: 0.5rem; min-height: 2.25rem; }
+.model-menu input[type="search"] { flex: 1; min-width: 0; }
+.model-menu fieldset { margin: 0.75rem 0 0; padding: 0; border: 0; }
+.model-menu legend { padding: 0; margin-bottom: 0.25rem; font-size: 0.8rem; font-weight: 600; color: var(--ink-2); }
+.model-row { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 0 0.5rem; padding: 0.35rem 0.5rem; border-radius: 10px; }
+.model-row:hover { background: var(--rail); }
+.model-row label { min-height: 2rem; overflow-wrap: anywhere; }
+.model-row small { grid-column: 1 / -1; padding-left: 1.6rem; color: var(--ink-2); font-size: 0.75rem; line-height: 1.4; }
+.model-row button, .model-menu > button { min-height: 1.9rem; padding: 0 0.7rem; font-size: 0.75rem; }
+.composer-chips .model-picker[open] > summary { white-space: nowrap; }
+@media (max-width: 640px) {
+  .composer-chips details.model-picker[open] { flex: 0 1 auto; }
+  .model-menu { position: fixed; left: 1rem; right: 1rem; bottom: 9rem; width: auto; max-height: 55vh; }
+}
+.model-menu input[type="search"] { padding: 0.5rem 0.75rem; border: 1px solid var(--hair); border-radius: 10px; background: var(--canvas); color: var(--ink); font: inherit; }
+.model-menu input[type="radio"] { flex: none; }
