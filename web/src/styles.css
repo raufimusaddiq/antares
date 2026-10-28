@@ -887,5 +887,5 @@ details[open] > summary::after { transform: none; }
 @media (max-width: 640px) {
   .composer-chips details.model-picker[open] { flex: 0 1 auto; }
   /* Placed from the top, under the header, so a composer that grows with its text never ends up beneath it. */
-  .model-menu { position: fixed; left: 1rem; right: 1rem; top: 6.5rem; bottom: auto; max-height: calc(100dvh - 19rem); }
+  .model-menu { position: fixed; left: 1rem; right: 1rem; top: 6.5rem; bottom: auto; max-height: max(12rem, calc(100dvh - 19rem)); }
 }

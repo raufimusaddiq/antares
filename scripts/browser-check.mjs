@@ -581,7 +581,7 @@ async function images(browser) {
 async function modelPicker(browser) {
   state.models = true;
   try {
-    for (const { w, h, touch } of [{ w: 320, h: 568, touch: true }, { w: 390, h: 844, touch: true }, { w: 641, h: 800, touch: false }, { w: 700, h: 700, touch: false }, { w: 900, h: 700, touch: false }, { w: 1280, h: 800, touch: false }]) {
+    for (const { w, h, touch } of [{ w: 320, h: 568, touch: true }, { w: 390, h: 844, touch: true }, { w: 568, h: 320, touch: true }, { w: 641, h: 800, touch: false }, { w: 700, h: 700, touch: false }, { w: 900, h: 700, touch: false }, { w: 1280, h: 800, touch: false }]) {
       const { ctx, page } = await openPage(browser, { viewport: { width: w, height: h }, isMobile: touch, hasTouch: touch });
       await page.goto(base + "/");
       await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
