@@ -1,3 +1,4 @@
+import { Panel } from "./Panel";
 import { useEffect, useState, type FormEvent } from "react";
 import { createJob, deleteJob, describeJobCode, jobAction, listJobs, type Job } from "./chatApi";
 
@@ -11,8 +12,8 @@ export const when = (s: string | null) => {
   return d && !Number.isNaN(d.getTime()) ? `${d.toISOString().slice(0, 16).replace("T", " ")} UTC` : "—";
 };
 
-export function JobsPanel() {
-  const [open, setOpen] = useState(false);
+export function JobsPanel({ page = false }: { page?: boolean } = {}) {
+  const [open, setOpen] = useState(page);
   const [jobs, setJobs] = useState<Job[] | null>(null);
   const [max, setMax] = useState(10);
   const [error, setError] = useState("");
@@ -51,8 +52,7 @@ export function JobsPanel() {
   };
 
   return (
-    <details className="jobs-panel" onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary>Scheduled tasks</summary>
+    <Panel page={page} className="jobs-panel" title="Scheduled tasks" onToggle={setOpen}>
       {open && (
         <>
           <p className="label">Tasks run in your own workspace with the same tools as your chats, at most once an hour. Times are UTC. Results stay in the workspace; this list shows when each task last ran.</p>
@@ -104,6 +104,6 @@ export function JobsPanel() {
           )}
         </>
       )}
-    </details>
+    </Panel>
   );
 }

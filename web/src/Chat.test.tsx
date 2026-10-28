@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Composer, Transcript } from "./Chat";
-import { parseInventory } from "./chatApi";
 import { Markdown, safeHref } from "./Markdown";
 import { indentInFence, wrapSelection } from "./composerEdit";
 import { describeCode, describeGlance, describeSpending, describeTurns, describeUsage, parseSpending, reconcileSpending, spendingFields, parseRupiah, getMessages, listChats, parseLimitInput, parseUsage, sendMessage } from "./chatApi";
@@ -180,32 +179,12 @@ describe("transcript and composer markup", () => {
     expect(html).not.toContain("<script");
   });
 
-  it("renders regenerate, edit and rewind disabled, each with the server's reason, and never as an action", () => {
-    const row = (id: string, reason: string) => ({ id, label: id, status: "unsupported", reason });
-    const inv = parseInventory({
-      capabilities: [row("regenerate", "no retry route"), row("edit_turn", "no branch route"), row("rewind", "no truncate route")],
-      toolsets: [], providers: [], skills: [],
-    });
+  it("shows no regenerate, edit or rewind control: the assistant cannot act on them (#139 stage 3)", () => {
     const turns = [{ seq: 0, role: "user" as const, text: "q" }, { seq: 1, role: "assistant" as const, text: "a" }];
-    const html = renderToStaticMarkup(<Transcript {...props} chatId="c1" inventory={inv} run={null} pending={null} turns={turns} />);
-    for (const [k, label, reason] of [["regenerate", "Regenerate", "no retry route"], ["edit", "Edit", "no branch route"], ["rewind", "Rewind", "no truncate route"]]) {
-      const btn = html.match(new RegExp(`<button[^>]*data-control="${k}"[^>]*>${label}</button>`))?.[0] ?? "";
-      expect(btn, k).toContain('aria-disabled="true"');
-      expect(btn, k).toMatch(/aria-describedby="tc-/);
-      expect(btn, k).not.toContain("onclick");
-      expect(html, k).toContain(`>${reason}</small>`);
-    }
-    // No capability answer: still disabled, and says the availability is unknown.
-    const unknown = renderToStaticMarkup(<Transcript {...props} chatId="c1" run={null} pending={null} turns={turns} />);
-    expect(unknown.match(/aria-disabled="true"/g)).toHaveLength(3);
-    expect(unknown.match(/Availability unknown/g)).toHaveLength(3);
-    // A server that says "available" does not make a button that does nothing look usable.
-    const avail = parseInventory({ capabilities: [{ id: "rewind", label: "r", status: "available" }], toolsets: [], providers: [], skills: [] });
-    const a = renderToStaticMarkup(<Transcript {...props} chatId="c1" inventory={avail} run={null} pending={null} turns={turns} />);
-    expect(a).toContain("Not available in this app yet");
-    // Without a chat nothing is rendered.
-    expect(renderToStaticMarkup(<Transcript {...props} run={null} pending={null} turns={turns} />)).not.toContain("data-control");
+    const html = renderToStaticMarkup(<Transcript {...props} chatId="c1" run={null} pending={null} turns={turns} />);
+    expect(html).not.toMatch(/data-control="(regenerate|edit|rewind)"|aria-disabled="true"|no retry route/);
   });
+
 
   it("shows a failed run with its partial text, a notice and a retry, not as a completed answer", () => {
     const run = play([ev("assistant.delta", { text: "half an ans" }), ev("run.failed", { code: "", status: "FAILED" })]);

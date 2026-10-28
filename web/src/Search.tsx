@@ -168,6 +168,8 @@ export function SearchPanel({ current, onOpen }: { current: string | null; onOpe
           Search conversations
         </label>
         <input id="search-input" type="search" value={text} maxLength={200} placeholder="Search conversations" onChange={(e) => setText(e.target.value)} />
+        {/* Filters appear once there is something to search for (#139 stage 3: a quiet sidebar). */}
+        {(text.trim() !== "" || role !== "" || thisChat) && (
         <div className="search-filters">
           <label>
             <span className="sr">Who wrote it</span>
@@ -181,6 +183,7 @@ export function SearchPanel({ current, onOpen }: { current: string | null; onOpe
             <input type="checkbox" checked={thisChat} disabled={!current} onChange={(e) => setThisChat(e.target.checked)} /> This chat only
           </label>
         </div>
+        )}
       </form>
       <SearchResults state={state} onOpen={onOpen} onMore={() => run(state.page?.nextCursor)} />
       </div>

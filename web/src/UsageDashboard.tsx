@@ -1,3 +1,4 @@
+import { Panel } from "./Panel";
 import { useEffect, useState } from "react";
 import { describeCode, getUsageRange, type UsageRange, type UsageTotals } from "./chatApi";
 
@@ -17,8 +18,8 @@ function caveats(t: UsageTotals): string {
   return parts.length ? ` (${parts.join(", ")}; not counted in the estimate)` : "";
 }
 
-export function UsageDashboard() {
-  const [open, setOpen] = useState(false);
+export function UsageDashboard({ page = false }: { page?: boolean } = {}) {
+  const [open, setOpen] = useState(page);
   const [days, setDays] = useState<7 | 30 | 90>(7);
   const [data, setData] = useState<UsageRange | null>(null);
   const [error, setError] = useState("");
@@ -41,8 +42,7 @@ export function UsageDashboard() {
   const peak = data ? Math.max(1, ...data.byDay.map((d) => d.input + d.output)) : 1;
 
   return (
-    <details className="usage-panel" onToggle={(e) => e.target === e.currentTarget && setOpen(e.currentTarget.open)}>
-      <summary>Usage</summary>
+    <Panel page={page} className="usage-panel" title="Usage" onToggle={setOpen}>
       {open && (
         <>
           <div className="actions" role="group" aria-label="Range">
@@ -130,6 +130,6 @@ export function UsageDashboard() {
           )}
         </>
       )}
-    </details>
+    </Panel>
   );
 }

@@ -1355,7 +1355,7 @@ docs/
 - **Edit a prior user turn:** default to non-destructive **branch** preserving original conversation and creating an owned new session. Exact prefix/turn-level fork is not documented solely by the existence of `POST /api/sessions/{id}/fork`; must probe turn-fork support. If not possible, offer explicit copy prompt into new chat, not fabricated context preservation.
 - **Rewind/delete last turn:** only with verified native Hermes API that does not break transcript/memory consistency. Do not emulate by editing Hermes `state.db`/transcript or launching Hermes Python scripts from Chat UI.
 - **Steer live run:** use `POST /v1/runs/{run_id}/steer` only if capability advertised and run active, with backend-resolved owner and upstream generation; display accepted/failed status and do not append an invented final chat turn.
-- Any destructive operation demands user confirmation, no pending active conflicting run, updated history/search index, cache invalidation, audit event (metadata only) and immediate check that run/session is still owned/approved. Preview before irreversible removal. On upstream inability, feature is clearly disabled with a reason, not silently hidden in a misleading "retry" action.
+- Any destructive operation demands user confirmation, no pending active conflicting run, updated history/search index, cache invalidation, audit event (metadata only) and immediate check that run/session is still owned/approved. Preview before irreversible removal. On upstream inability the action is not offered (owner decision 2026-10-28: a chat shows only actions that work; the alternative "Edit as new message" / "Ask again" writes the text into the composer), never a misleading "retry" that does something else.
 
 ### 21.6 Markdown editor, templates, drafts and turn display
 
@@ -1554,7 +1554,7 @@ All tests below require two approved isolated Google identities (`A` and `B`) an
 | `UXP-ACC-009` | `/template` create/use/update/delete | Owner only, autocomplete and insertion correct, text never executes a tool on selection |
 | `UXP-ACC-010` | Chat has known/unknown usage and pricing | Known values accurate; unknown shown as unknown; estimated cost labeled estimate; no fabricated balance |
 | `UXP-ACC-011` | Configured soft budget reached | New run gets warning; hard ceiling enforced only where actually supported; bypass by REST disallowed |
-| `UXP-ACC-012` | Regenerate, edit and rewind with upstream support/no support | Correct fork/retry history and no corruption when supported; otherwise explicit unsupported state; no direct Hermes DB write |
+| `UXP-ACC-012` | Regenerate, edit and rewind with upstream support/no support | Correct fork/retry history and no corruption when supported; otherwise the action is not offered (the capability API still reports it unsupported); no direct Hermes DB write |
 | `UXP-ACC-013` | Steer active A run, then attempt steering B/finished run | A succeeds if upstream supports; B/finished rejected; no ghost assistant turn |
 | `UXP-ACC-014` | Disconnect/reconnect 10 cycles during tools and OpenUI | One logical run/turn, correct terminal state, bounded SSE buffers, no data crossing users |
 | `UXP-ACC-015` | Preview HTML with script/iframe/network attempts; SVG with event attributes | No script execution in Chat UI origin, credential exfiltration, direct Hermes/network access; safe download fallback |

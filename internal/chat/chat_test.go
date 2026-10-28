@@ -98,7 +98,7 @@ func TestTwoUsersChatPrivately(t *testing.T) {
 func TestClientSuppliedProfileKeyAndSessionNeverReachHermes(t *testing.T) {
 	a := newApp(t)
 	alice, bob := a.user("alice"), a.user("bobby")
-	chatA := alice.newChat()
+	chatA := alice.newPlainChat()
 	idem := func() map[string]string { return map[string]string{"Idempotency-Key": nextIdem()} }
 	with := func(h map[string]string, k, v string) map[string]string { h[k] = v; return h }
 

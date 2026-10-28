@@ -1,10 +1,11 @@
+import { Panel } from "./Panel";
 import { useEffect, useState } from "react";
 import { applyAppearance, loadAppearance, saveAppearance, type Appearance } from "./appearance";
 
 // The account menu's two device panels (#113): appearance, and diagnostics that show the build and the connection
 // without any secret, token, cookie or upstream key.
 
-export function AppearancePanel() {
+export function AppearancePanel({ page = false }: { page?: boolean } = {}) {
   const [a, setA] = useState<Appearance>(loadAppearance);
   const change = (next: Appearance) => {
     setA(next);
@@ -12,8 +13,7 @@ export function AppearancePanel() {
     applyAppearance(next);
   };
   return (
-    <details className="settings">
-      <summary>Appearance</summary>
+    <Panel page={page} className="settings" title="Appearance">
       <p className="label">Saved on this device only.</p>
       <label>
         Theme{" "}
@@ -43,7 +43,7 @@ export function AppearancePanel() {
         <input type="checkbox" checked={a.focus} onChange={(e) => change({ ...a, focus: e.target.checked })} /> Focus mode (hide the conversation list on a wide screen)
       </label>
       <p className="label">Animations follow your system's reduced-motion setting.</p>
-    </details>
+    </Panel>
   );
 }
 
@@ -58,8 +58,8 @@ interface Diag {
 }
 
 /** What is running and whether this device can reach it. Reads only public, secret-free endpoints, and only while open. */
-export function DiagnosticsPanel() {
-  const [open, setOpen] = useState(false);
+export function DiagnosticsPanel({ page = false }: { page?: boolean } = {}) {
+  const [open, setOpen] = useState(page);
   const [d, setD] = useState<Diag | null>(null);
   const [tick, setTick] = useState(0);
   useEffect(() => {
@@ -102,8 +102,7 @@ export function DiagnosticsPanel() {
     };
   }, [open, tick]);
   return (
-    <details className="settings" onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary>Diagnostics</summary>
+    <Panel page={page} className="settings" title="Diagnostics" onToggle={setOpen}>
       {!open ? null : !d ? (
         <p className="label">Checking…</p>
       ) : (
@@ -130,6 +129,6 @@ export function DiagnosticsPanel() {
           Check again
         </button>
       )}
-    </details>
+    </Panel>
   );
 }

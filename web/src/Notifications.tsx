@@ -17,8 +17,8 @@ const MISSING: Record<MissingReason, string> = {
 };
 
 /** The per-device opt-in. Everything is off until the button is pressed. */
-export function Notifications() {
-  const [open, setOpen] = useState(false);
+export function Notifications({ page = false }: { page?: boolean } = {}) {
+  const [open, setOpen] = useState(page);
   const [state, setState] = useState<State | null>(null);
   const [device, setDevice] = useState<Device | null>(null);
   const [missing, setMissing] = useState<MissingReason | null>(null);
@@ -55,9 +55,11 @@ export function Notifications() {
 
   return (
     <div className="notify">
-      <button type="button" className="quiet" data-icon="bell" aria-expanded={open} onClick={() => setOpen(!open)}>
-        Notifications
-      </button>
+      {!page && (
+        <button type="button" className="quiet" data-icon="bell" aria-expanded={open} onClick={() => setOpen(!open)}>
+          Notifications
+        </button>
+      )}
       {open && (
         <section className="notify-panel" aria-label="Notifications">
           {unsupported ? (
