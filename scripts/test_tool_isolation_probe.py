@@ -1,4 +1,6 @@
 """Offline tests for tool_isolation_probe.judge (#161): the verdicts over the facts the probe reads inside Hermes."""
+import os
+import re
 import unittest
 
 import tool_isolation_probe as probe
@@ -19,8 +21,8 @@ def safe():
         "disabled": sorted(probe.FLOOR_TOOLSETS | {"video", "tts"}),
         "inline_shell": False, "external_dirs": [], "allow_private_urls": False,
         "web_extract": {u: {"error": "Blocked: URL targets a private or internal network address", "leak": False} for u in TARGETS},
-        "skill_view": {probe.SKILL: {"success": False, "leak": False},
-                       f"../../{A}/skills/{probe.SKILL}": {"success": False, "leak": False}},
+        "skill_view": {probe.SKILL: {"answered": True, "success": False, "leak": False},
+                       f"../../{A}/skills/{probe.SKILL}": {"answered": True, "success": False, "leak": False}},
         "inline_skill": {"created": True, "viewed": True, "leak": False, "unexpanded": True},
     }
 
@@ -68,10 +70,26 @@ class JudgeTest(unittest.TestCase):
         self.assertFalse(verdicts(f)["a skill B writes with an inline shell snippet stays inert"])
 
     def test_inline_shell_on_or_unknown_fails(self):
-        for value in (True, None):
+        for value in (True, None, "absent"):
             f = safe()
             f["inline_shell"] = value
             self.assertFalse(verdicts(f)["skills.inline_shell is off for B"], value)
+
+    def test_a_tool_call_that_raised_is_not_a_refusal(self):
+        f = safe()
+        f["web_extract"][TARGETS[2]] = {"raised": "TypeError", "leak": False}
+        f["skill_view"][probe.SKILL] = {"raised": "TypeError"}
+        v = verdicts(f)
+        self.assertFalse(v["web_extract refuses http://127.0.0.1:8642/health"])
+        self.assertFalse(v[f"skill_view cannot read A's skill as {probe.SKILL}"])
+
+    def test_the_floor_matches_the_go_source(self):
+        # The Go floor (hermes.DeniedToolsets) is the authority; this copy must not drift from it.
+        here = os.path.dirname(os.path.abspath(__file__))
+        with open(os.path.join(here, "..", "internal", "hermes", "verify.go")) as f:
+            src = f.read()
+        block = re.search(r"var DeniedToolsets = \[\]string\{(.*?)\n\}", src, re.S).group(1)
+        self.assertEqual(set(re.findall(r'"([a-z_]+)"', block)), probe.FLOOR_TOOLSETS)
 
     def test_missing_facts_fail_rather_than_pass(self):
         v = verdicts({})

@@ -89,7 +89,15 @@ given `vision_analyze`, and Hermes' image resolver, called under B's profile, re
 3. **Antares routes:** B got 404 on A's chat, messages, run, run events, chat search and artifact, and global search
    found nothing of A's.
 
-After the fix: the same probe, recorded in `docs/hermes/fixtures/tool-isolation-probe-2026-10-28.json`.
+After the fix: the same probe, re-run once this is deployed; its result is committed as
+`docs/hermes/fixtures/tool-isolation-probe-2026-10-28.json` (not in the tree until then).
+
+**Upgrading to the #161 floor.** A list that still names `vision` or `image_gen` now stops both processes at
+startup: the provisioner (`tools/hermes-provisioner/main.go`, refused policy) and Antares (`internal/config`). Before
+starting the new binaries, remove both names from `PROVISIONER_ALLOWED_TOOLSETS` in `/opt/antares/provisioner.env` and
+`ANTARES_TENANT_ALLOWED_TOOLSETS` in `/opt/antares/antares.env` (or leave both unset for the default). Then re-verify every
+existing tenant (admin `tenant-verify`): `/rotate` rewrites its `agent.disabled_toolsets`; until then `toolset_policy`
+would fail its next verification.
 
 ## How to apply
 

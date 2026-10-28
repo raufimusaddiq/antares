@@ -386,6 +386,11 @@ These are **Chat UI's normalized event names**, not claims that all Hermes endpo
 | Usage metadata | Own model/tokens/status when available | Hermes run status | P1 |
 | Unsupported tools | Hidden/disabled with truthful reason | Capability probing | P0 |
 
+*Images/vision note (2026-10-28, #161):* the `vision` and `image_gen` toolsets are in the tenant floor because Hermes' image
+resolver reads any local path under the local terminal backend. Inline image input is unaffected (sent as `image_url`
+data). The generated asset gallery stays blocked until Hermes confines that resolver to the caller's profile and returns
+generated media in a durable, owner-scoped form (#168); the floor is revisited then, with the isolation probe re-run.
+
 "Support everything Hermes supports" means **pass through enabled, exposed features through a secure adapter**, not invent a UI for undocumented or privileged internals. Tools need not be separately reimplemented or exposed for clients to call by name.
 
 ### 6.5 Tool call and model controls

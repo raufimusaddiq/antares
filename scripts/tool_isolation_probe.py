@@ -72,7 +72,7 @@ out["disabled"] = disabled
 out["tools"] = sorted(d["function"]["name"] for d in model_tools.get_tool_definitions(
     enabled_toolsets=enabled, disabled_toolsets=disabled, quiet_mode=True, skip_tool_search_assembly=True))
 skills_cfg = cfg.get("skills") or {}
-out["inline_shell"] = skills_cfg.get("inline_shell", False)
+out["inline_shell"] = skills_cfg.get("inline_shell", "absent")  # load_config merges the defaults: absent = renamed
 out["external_dirs"] = skills_cfg.get("external_dirs") or []
 from tools.url_safety import _global_allow_private_urls
 out["allow_private_urls"] = _global_allow_private_urls()
@@ -88,17 +88,19 @@ for u in targets:
         res = json.loads(asyncio.run(web_extract_tool([u])))
         entry = (res.get("results") or [{}])[0] if isinstance(res, dict) else {}
         extract[u] = {"error": str(entry.get("error") or res.get("error") or ""), "leak": canary in json.dumps(res)}
-    except Exception as e:
-        extract[u] = {"error": "raised " + type(e).__name__, "leak": canary in str(e)}
+    except Exception as e:  # a call that raised probed nothing: kept apart from a refusal
+        extract[u] = {"raised": type(e).__name__, "leak": canary in str(e)}
 out["web_extract"] = extract
 from tools.skills_tool import skill_view
 views = {}
 for name in [skill, f"../../{pa}/skills/{skill}", f"/opt/data/profiles/{pa}/skills/{skill}"]:
     try:
         r = skill_view(name)
-    except Exception as e:
-        r = "raised " + type(e).__name__
-    views[name] = {"success": '"success": true' in r, "leak": canary in r}
+        parsed = json.loads(r)
+        views[name] = {"answered": isinstance(parsed, dict) and parsed.get("success") is False,
+                       "success": isinstance(parsed, dict) and parsed.get("success") is True, "leak": canary in r}
+    except Exception as e:  # raised, or not the documented JSON: probed nothing
+        views[name] = {"raised": type(e).__name__}
 out["skill_view"] = views
 from tools.skill_manager_tool import skill_manage
 own = "probe-inline-" + canary[-6:].lower()
@@ -137,15 +139,16 @@ def judge(facts, canary):
     extract = facts.get("web_extract") or {}
     for url, r in sorted(extract.items()):
         shown = re.sub(r"/profiles/u_[a-z0-9]+/", "/profiles/<A>/", url)
-        out.append((f"web_extract refuses {shown}", bool(r.get("error")) and not r.get("leak"),
-                    r.get("error", "")[:80]))
+        out.append((f"web_extract refuses {shown}", not r.get("raised") and bool(r.get("error")) and not r.get("leak"),
+                    ("raised " + r["raised"]) if r.get("raised") else r.get("error", "")[:80]))
     out.append(("web_extract was probed on every target", len(extract) >= 14, f"{len(extract)} targets"))
     views = facts.get("skill_view") or {}
     out.append(("skill_view was probed by name and by path", len(views) >= 2, f"{len(views)} names"))
     for name, r in sorted(views.items()):
         shown = re.sub(r"u_[a-z0-9]+", "<A>", name)
-        out.append((f"skill_view cannot read A's skill as {shown}", not r.get("success") and not r.get("leak"),
-                    "refused" if not r.get("success") else "answered"))
+        refused = r.get("answered") is True and not r.get("success") and not r.get("leak")
+        out.append((f"skill_view cannot read A's skill as {shown}", refused,
+                    ("raised " + r["raised"]) if r.get("raised") else ("refused" if refused else "answered with content")))
     ins = facts.get("inline_skill") or {}
     out.append(("a skill B writes with an inline shell snippet stays inert",
                 ins.get("created") and ins.get("viewed") and ins.get("unexpanded") and not ins.get("leak"),
