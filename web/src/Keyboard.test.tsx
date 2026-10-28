@@ -19,7 +19,10 @@ it.each(["M", "Â"])("reaches the composer with Alt+Shift+M (key %s) outside fie
   const shortcut = { key, code: "KeyM", altKey: true, shiftKey: true };
   expect(fireEvent.keyDown(newChat, shortcut)).toBe(false);
   expect(document.activeElement).toBe(composer);
-  for (const field of [screen.getByRole("searchbox"), ...screen.queryAllByRole("combobox"), composer]) {
+  // The search filter appears once there is something to search for; its select must keep typing too.
+  fireEvent.change(screen.getByRole("searchbox"), { target: { value: "x" } });
+  const filter = screen.getByRole("combobox");
+  for (const field of [screen.getByRole("searchbox"), filter, composer]) {
     field.focus();
     expect(fireEvent.keyDown(field, shortcut)).toBe(true);
     expect(document.activeElement).toBe(field);

@@ -18,13 +18,13 @@ Image id at the time of reading: `sha256:9c5561579f3ffdf333401797094ac3a743738d6
 ## What the user sees instead
 
 - Regenerate / edit / rewind answer `501 CAPABILITY_UNAVAILABLE` ("Hermes has no way to … a turn; start a
-  new chat instead"). The UI shows them disabled with that reason, never as a working button.
+  new chat instead"). The UI does not show them at all (owner decision 2026-10-28, #139 stage 3: a chat shows only
+  actions that work).
 - Beside them is a working alternative that composes a **new** turn (issue #166): **Edit as new message** on the
   newest user turn and **Ask again** on the newest answer write that turn's text (for Ask again, the question the
   answer replied to) into the composer, after anything already typed there. Nothing is sent, rewound or edited:
-  the user reads it, changes it if they like, and sends it as a normal message. The disabled Edit and Regenerate
-  name the alternative in their reason; Rewind has none beyond starting a new chat, which its reason says
-  (`web/src/TurnReuse.test.tsx`, `TurnControls.test.tsx`).
+  the user reads it, changes it if they like, and sends it as a normal message (`web/src/TurnReuse.test.tsx`,
+  `TurnControls.test.tsx`).
 - No fork is offered: Hermes' `/fork` ends the source session (`branched`) and cannot branch at a turn, so it is not
   a rewind and its side effect needs its own ticket and owner decision.
 - Antares does **not** emulate them: no row deletion, no direct `state.db` or transcript write, no second
@@ -38,7 +38,8 @@ Image id at the time of reading: `sha256:9c5561579f3ffdf333401797094ac3a743738d6
 
 `GET /api/capabilities` lists `regenerate`, `edit_turn` and `rewind` with `status: unsupported` and a reason
 (`internal/hermes/discovery.go`, `TestDiscoverTurnControlsAreUnsupportedWithAReason`). The client's `offers()`
-therefore returns false for them, and the web app renders Regenerate, Edit and Rewind as `aria-disabled` buttons with no handler, each with its reason visible beside it (`TurnControls` in `web/src/Chat.tsx`; newest user turn gets Edit, newest assistant turn gets Regenerate and Rewind; wraps on narrow screens). They become `available`
+therefore returns false for them, and the web app does not render them (`TurnControls` in `web/src/Chat.tsx` shows only
+the working alternative). They become `available`
 only when a verified Hermes route (fixture + file:line in the table above), a handler that uses it, and the
 destructive-operation guards (confirmation, active-run refusal, search-index invalidation, metadata-only audit
 event, ownership re-check) land together. A whole-session `/fork` or a second `POST /v1/runs` does not qualify.

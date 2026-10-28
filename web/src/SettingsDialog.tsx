@@ -20,7 +20,7 @@ const TABS: { id: SettingsTab; label: string }[] = [
  * section is mounted, so each one loads when it is shown. Escape or the close button closes it; the caller puts focus
  * back where it was.
  */
-export function SettingsDialog(props: { tab: SettingsTab; jobs: boolean; onClose: () => void; onSignOutEverywhere: () => void }) {
+export function SettingsDialog(props: { tab: SettingsTab; jobs: boolean; onClose: () => void; onSignOutEverywhere: () => void; signOutError?: string }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [tab, setTab] = useState<SettingsTab>(props.tab);
   const tabs = TABS.filter((t) => t.id !== "jobs" || props.jobs);
@@ -56,6 +56,7 @@ export function SettingsDialog(props: { tab: SettingsTab; jobs: boolean; onClose
               <button type="button" className="quiet" data-icon="logout" onClick={props.onSignOutEverywhere}>
                 Sign out everywhere
               </button>
+              {props.signOutError && <p role="alert">{props.signOutError}</p>}
             </>
           )}
           {tab === "memory" && <MemorySkillsPanel page />}

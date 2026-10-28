@@ -73,7 +73,7 @@ package is installed. `web/.npmrc` therefore sets `ignore-scripts=true`.
 
 ## Visualize toggle (#153, LLM-008)
 
-Per chat, off by default: `PATCH /api/chats/{chatId}` with `{"visualize": true|false}` (owner only; the chat view
+Per chat, **on** for a new chat (owner decision 2026-10-28; `store.CreateChat` stores and returns `visualize: true`; chats made before keep their setting): `PATCH /api/chats/{chatId}` with `{"visualize": true|false}` (owner only; the chat view
 carries `visualize`), stored in `chats.visualize` (migration 0022); the composer shows the checkbox. While it is on,
 each run of that chat sends the versioned instruction `[antares-openui v1]` (`internal/chat/personality.go`,
 `openUIInstruction`) as the `instructions` field of `POST /v1/runs`, before the user's own preferences (#111). Hermes

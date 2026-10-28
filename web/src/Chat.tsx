@@ -1318,7 +1318,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           </div>
         </div>
       </header>
-      {settings && <SettingsDialog tab={settings} jobs={offers(inventory, "jobs")} onClose={() => { setSettings(null); document.querySelector<HTMLElement>(".bar-toggle")?.focus(); }} onSignOutEverywhere={() => onSignOut(true)} />}
+      {settings && <SettingsDialog tab={settings} jobs={offers(inventory, "jobs")} onClose={() => { setSettings(null); document.querySelector<HTMLElement>(".bar-toggle")?.focus(); }} onSignOutEverywhere={() => onSignOut(true)} signOutError={signOutError} />}
       <nav className="side" aria-label="Conversations">
         <button type="button" data-icon="plus" onClick={() => void startChat()}>
           New chat

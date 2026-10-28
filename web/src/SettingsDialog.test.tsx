@@ -56,3 +56,10 @@ describe("SettingsDialog", () => {
     expect(onClose).toHaveBeenCalledOnce();
   });
 });
+
+describe("SettingsDialog sign out everywhere", () => {
+  it("shows a failed sign-out in the dialog, where it was pressed", () => {
+    render(<SettingsDialog tab="general" jobs={false} onClose={() => {}} onSignOutEverywhere={() => {}} signOutError="Could not sign out everywhere. Try again." />);
+    expect(screen.getByRole("alert").textContent).toBe("Could not sign out everywhere. Try again.");
+  });
+});
