@@ -55,9 +55,13 @@ const (
 
 // Helper is the host-side provisioner as the pipeline uses it.
 type Helper interface {
-	Provision(ctx context.Context, slug string) (hermes.Credential, error)
-	Rotate(ctx context.Context, slug string) (hermes.Credential, error)
+	Provision(ctx context.Context, slug string, toolsets []string) (hermes.Credential, error)
+	Rotate(ctx context.Context, slug string, toolsets []string) (hermes.Credential, error)
 }
+
+// ToolPolicy reads the admin's tenant toolset policy and its version (store.TenantToolPolicy). nil names mean
+// none is set: the helper and the verifier keep their configured defaults.
+type ToolPolicy func(ctx context.Context) (names []string, version string, err error)
 
 // Verifier is the pre-READY check suite.
 type Verifier interface {
@@ -73,6 +77,7 @@ type Options struct {
 	Now         func() time.Time
 	MaxAttempts int
 	BaseBackoff time.Duration
+	ToolPolicy  ToolPolicy // nil: no admin policy, the configured defaults apply
 }
 
 // Service owns provisioning runs. It is safe for concurrent use; a given user
@@ -85,6 +90,7 @@ type Service struct {
 	now      func() time.Time
 	max      int
 	base     time.Duration
+	policy   ToolPolicy
 
 	mu       sync.Mutex
 	inflight map[string]bool
@@ -109,7 +115,7 @@ func New(o Options) (*Service, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{db: o.DB, box: o.Box, helper: o.Helper, verifier: o.Verifier, now: o.Now,
-		max: o.MaxAttempts, base: o.BaseBackoff, inflight: map[string]bool{}, ctx: ctx, cancel: cancel}, nil
+		max: o.MaxAttempts, base: o.BaseBackoff, policy: o.ToolPolicy, inflight: map[string]bool{}, ctx: ctx, cancel: cancel}, nil
 }
 
 // Kick schedules a run for one user and returns immediately. It is idempotent:
@@ -212,10 +218,30 @@ func (s *Service) Process(ctx context.Context, userID string) error {
 		return err
 	}
 
-	if err := s.obtainCredential(ctx, &c); err != nil {
+	// One policy for the whole run: the helper applies it and the verifier checks against it.
+	toolsets, version, err := s.toolPolicy(ctx)
+	if err != nil {
+		return s.finish(ctx, c, fail("could not read the tenant tool policy", false))
+	}
+	if err := s.obtainCredential(ctx, &c, toolsets); err != nil {
 		return s.finish(ctx, c, err)
 	}
-	return s.finish(ctx, c, s.verify(ctx, c))
+	if err := s.verify(ctx, c, toolsets); err != nil {
+		return s.finish(ctx, c, err)
+	}
+	// An admin who changed the policy meanwhile requeued this account, but this run applied the old one: it must
+	// not mark the account ready. A retry applies the new policy.
+	if _, now, err := s.toolPolicy(ctx); err != nil || now != version {
+		return s.finish(ctx, c, fail("the tenant tool policy changed during setup", false))
+	}
+	return s.finish(ctx, c, nil)
+}
+
+func (s *Service) toolPolicy(ctx context.Context) ([]string, string, error) {
+	if s.policy == nil {
+		return nil, "", nil
+	}
+	return s.policy(ctx)
 }
 
 // outcome carries a failure's fixed detail and whether retrying can help.
@@ -281,20 +307,20 @@ func (s *Service) finish(ctx context.Context, c store.Claim, err error) error {
 }
 
 // obtainCredential asks the helper for the profile's key and stores it sealed.
-func (s *Service) obtainCredential(ctx context.Context, c *store.Claim) error {
+func (s *Service) obtainCredential(ctx context.Context, c *store.Claim, toolsets []string) error {
 	var cred hermes.Credential
 	var err error
 	if c.BindingID != "" {
 		// Rotate reapplies toolset policy; only an absent profile or key needs provisioning.
-		cred, err = s.helper.Rotate(ctx, c.Profile)
+		cred, err = s.helper.Rotate(ctx, c.Profile, toolsets)
 		if errors.Is(err, hermes.ErrNotProvisioned) {
-			cred, err = s.helper.Provision(ctx, c.Profile)
+			cred, err = s.helper.Provision(ctx, c.Profile, toolsets)
 		}
 	} else {
-		cred, err = s.helper.Provision(ctx, c.Profile)
+		cred, err = s.helper.Provision(ctx, c.Profile, toolsets)
 		if errors.Is(err, hermes.ErrKeyExists) {
 			// A lost provision response left a key we never stored.
-			cred, err = s.helper.Rotate(ctx, c.Profile)
+			cred, err = s.helper.Rotate(ctx, c.Profile, toolsets)
 		}
 	}
 	if err != nil {
@@ -342,7 +368,7 @@ func helperFailure(err error) error {
 }
 
 // verify checks the stored binding against Hermes and, if it passes, returns nil.
-func (s *Service) verify(ctx context.Context, c store.Claim) error {
+func (s *Service) verify(ctx context.Context, c store.Claim, toolsets []string) error {
 	cred, err := store.BindingCredential(ctx, s.db, c.UserID)
 	if err != nil {
 		return fail("tenant binding is missing", false)
@@ -355,7 +381,7 @@ func (s *Service) verify(ctx context.Context, c store.Claim) error {
 	if err != nil {
 		return fail("could not list other tenants for isolation checks", false)
 	}
-	rep := s.verifier.Verify(ctx, hermes.Target{Profile: cred.Profile, Key: key, Siblings: sib, Fresh: !cred.Verified})
+	rep := s.verifier.Verify(ctx, hermes.Target{Profile: cred.Profile, Key: key, Siblings: sib, Fresh: !cred.Verified, Allowed: toolsets})
 	if !rep.OK() {
 		d := rep.Detail()
 		if d == "" {

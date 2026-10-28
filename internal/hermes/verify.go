@@ -9,6 +9,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -60,6 +61,33 @@ var KnownToolsets = []string{
 	"kanban", "memory", "context_engine", "session_search", "connections",
 	"clarify", "delegation", "cronjob", "discord", "discord_admin", "yuanbao",
 	"computer_use", "a2a",
+}
+
+// OfferedToolsets are the toolsets an admin may turn on for tenants (Admin → Assistant tools): known, outside the
+// floor, and reviewed as acting only inside the tenant's own profile or through the gateway's own provider keys.
+// The rest of KnownToolsets (discord, discord_admin, yuanbao, computer_use, a2a, kanban, context_engine) is not
+// offered: not reviewed for shared tenants. The provisioner mirrors this list (offeredToolsets) and refuses any
+// other name, pinned by TestProvisionerToolsetListsMatchAntares.
+var OfferedToolsets = []string{
+	"web", "vision", "image_gen", "video_gen", "video", "tts", "stt", "x_search",
+	"skills", "memory", "todo", "clarify",
+}
+
+// ValidateOfferedToolsets refuses a tenant policy that is empty, repeats a name, or names a toolset outside
+// OfferedToolsets. It is the rule the provisioner applies to a request's toolsets.
+func ValidateOfferedToolsets(names []string) error {
+	if len(names) == 0 {
+		return errors.New("allowed toolsets must not be empty")
+	}
+	for i, n := range names {
+		if !slices.Contains(OfferedToolsets, n) {
+			return errors.New("toolset " + safeName(n) + " is not offered to tenants")
+		}
+		if slices.Contains(names[:i], n) {
+			return errors.New("toolset " + safeName(n) + " is listed twice")
+		}
+	}
+	return nil
 }
 
 // DefaultAllowedToolsets is the documented default tenant set. It is data, not
@@ -137,6 +165,8 @@ type Target struct {
 	Key      string
 	Siblings []string // other tenants' profile names, for cross-user probes
 	Fresh    bool     // first verification: the profile must own no sessions yet
+	// Allowed, when set, is the tenant policy this run applied (the admin's choice); otherwise the verifier's own.
+	Allowed []string
 }
 
 // Verifier runs the pre-READY checks against Hermes' multiplexed API.
@@ -393,6 +423,16 @@ func sessionCount(b []byte) (int, bool) {
 // outside the configured allow-list is either. An empty answer proves nothing
 // and fails.
 func (v *Verifier) toolsets(ctx context.Context, t Target) Result {
+	allowed := v.allowed
+	if t.Allowed != nil {
+		if err := ValidateAllowedToolsets(t.Allowed); err != nil {
+			return Result{Check: CheckToolsets, Reason: "the tenant tool policy is invalid"}
+		}
+		allowed = map[string]bool{}
+		for _, n := range t.Allowed {
+			allowed[n] = true
+		}
+	}
 	r, err := v.get(ctx, route(t.Profile)+"/v1/toolsets", t.Key)
 	if err != nil || r.status != http.StatusOK {
 		return Result{Check: CheckToolsets, Reason: "toolsets endpoint did not answer"}
@@ -421,7 +461,7 @@ func (v *Verifier) toolsets(ctx context.Context, t Target) Result {
 				return Result{Check: CheckToolsets, Reason: "boundary-crossing toolset " + den + " is enabled", Remediation: ReapplyToolsetPolicy}
 			}
 		}
-		if !v.allowed[ts.Name] {
+		if !allowed[ts.Name] {
 			return Result{Check: CheckToolsets, Reason: "toolset " + safeName(ts.Name) + " is enabled but not allowed", Remediation: ReapplyToolsetPolicy}
 		}
 	}

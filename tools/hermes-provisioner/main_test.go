@@ -580,6 +580,40 @@ func TestNarrowedPolicyReachesProvisionAndRotate(t *testing.T) {
 	}
 }
 
+// Antares sends the admin's tenant policy with each /provision and /rotate; it replaces the operator's default for
+// that profile. Only offered toolsets are accepted, so a floor or unreviewed toolset is refused before anything runs.
+func TestRequestToolsetsReplaceTheDefaultAndStayInsideTheOffer(t *testing.T) {
+	disabled, err := policyFromEnv("")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, c := range []struct{ path, slug string }{{"/provision", "u_newuser01"}, {"/rotate", "u_existing1"}} {
+		f := &scripted{list: listFixture}
+		srv := newServerWithPolicy(f, testToken, disabled)
+		srv.inference = inferenceBootstrap{Key: fixtureInferenceKey, BaseURL: "https://provider.example.invalid/v1"}
+		rec := do(t, srv, c.path, "Bearer "+testToken, `{"slug":"`+c.slug+`","toolsets":["web","tts","video_gen"]}`)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("%s: got %d %s", c.path, rec.Code, rec.Body)
+		}
+		var got []string
+		if err := json.Unmarshal([]byte(toolsetCall(f)[5]), &got); err != nil {
+			t.Fatal(err)
+		}
+		if contains(got, "web") || contains(got, "tts") || contains(got, "video_gen") || !contains(got, "memory") || !contains(got, "terminal") {
+			t.Errorf("%s applied %v", c.path, got)
+		}
+	}
+	for _, bad := range []string{`[]`, `["terminal"]`, `["browser","web"]`, `["computer_use"]`, `["discord_admin"]`, `["kanban"]`, `["web","web"]`, `["zz"]`} {
+		for _, path := range []string{"/provision", "/rotate"} {
+			f := &scripted{list: listFixture}
+			rec := do(t, newServerWithPolicy(f, testToken, disabled), path, "Bearer "+testToken, `{"slug":"u_existing1","toolsets":`+bad+`}`)
+			if rec.Code != http.StatusBadRequest || strings.Contains(rec.Body.String(), `"key"`) || toolsetCall(f) != nil {
+				t.Errorf("%s %s: got %d %s", path, bad, rec.Code, rec.Body)
+			}
+		}
+	}
+}
+
 func TestRotateFailsClosedWhenToolsetPolicyFails(t *testing.T) {
 	f := &toolsetFail{scripted{list: listFixture}}
 	rec := do(t, newServer(f, testToken), "/rotate", "Bearer "+testToken, `{"slug":"u_existing1"}`)

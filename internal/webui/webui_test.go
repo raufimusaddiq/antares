@@ -90,6 +90,8 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		"/api/admin/users": true, "/api/admin/users/": true, "/api/admin/audit": true,
 		// #146 the shared provider account's balance, quota and usage: one admin-only read, no body, no key.
 		"/api/admin/kenari-usage": true,
+		// Admin → Assistant tools: the tenant toolset policy, read and replaced as a list of toolset names.
+		"/api/admin/tool-policy": true,
 		// #59 adds the opt-in notification routes, listed one by one: the VAPID public key,
 		// device (un)registration (/api/push/subscriptions/{id} is the revoke), and the
 		// per-account mode. None of them returns or accepts conversation content.
