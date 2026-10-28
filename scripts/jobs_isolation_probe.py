@@ -8,6 +8,7 @@ Usage: jobs_isolation_probe.py <origin> <antares.sqlite> <report.json>
 Hermes is read inside its container (HERMES_CONTAINER, default "hermes", as scripts/hermes-route-probe.sh) as the
 hermes user, read-only: the job's output file and the profile's job store. Prints no cookie, key or prompt output beyond the marker.
 """
+import http.client
 import json
 from contextlib import closing
 import os
@@ -46,7 +47,7 @@ class Probe:
                 status, raw = r.status, r.read()
         except urllib.error.HTTPError as e:
             status, raw = e.code, e.read()
-        except OSError:  # refused, unreachable, reset or timed out (URLError and socket timeouts are OSErrors)
+        except (OSError, http.client.HTTPException):  # refused, unreachable, reset, timed out or cut short mid-body
             return 0, None  # no HTTP answer at all: the caller's check fails, and the report is still written
         try:
             return status, (json.loads(raw) if raw else None)
