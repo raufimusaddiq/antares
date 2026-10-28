@@ -1,7 +1,7 @@
 import "./zodConfig"; // must stay first: see the file
 import "@openuidev/react-ui/defaults.css";
 import "@openuidev/react-ui/components.css";
-import { Component, useContext, useMemo, type ReactNode } from "react";
+import { Component, useContext, useMemo, useState, type ReactNode } from "react";
 import { Renderer } from "@openuidev/react-lang";
 import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib";
 import { runAction, type Sinks } from "./actions";
@@ -32,7 +32,15 @@ export function openConfirmed(url: string) {
 
 export default function RichBlock({ source, streaming = false }: { source: string; streaming?: boolean }) {
   const reply = useContext(ReplyContext);
-  const sinks: Sinks = { reply, open: openConfirmed };
+  // A model can label a button "Submit order", but a follow-up only fills the composer: say so after the click (#173).
+  const [added, setAdded] = useState(false);
+  const toComposer = reply
+    ? (text: string) => {
+        reply(text);
+        setAdded(true);
+      }
+    : null;
+  const sinks: Sinks = { reply: toComposer, open: openConfirmed };
   // Every update is checked before it is rendered: a partial program against the gate's safety rules and limits,
   // the finished one against all of it. A failure is shown as source.
   const verdict = useMemo(() => check(source, streaming), [source, streaming]);
@@ -45,6 +53,11 @@ export default function RichBlock({ source, streaming = false }: { source: strin
         <Renderer.Root response={source} library={openuiChatLibrary} isStreaming={streaming} onAction={(e) => runAction(e?.type, e, sinks)}>
           <Renderer.Content />
         </Renderer.Root>
+        {added && (
+          <p className="label" role="status">
+            Added to your message. Nothing was sent.
+          </p>
+        )}
       </div>
     </Boundary>
   );

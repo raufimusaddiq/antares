@@ -95,6 +95,8 @@ export function check(source: string, partial = false): Verdict {
     if (m.incomplete) return { ok: false, reason: "incomplete" };
     if (m.errors.length > 0) return { ok: false, reason: `invalid: ${m.errors[0].code}` };
     if (m.unresolved.length > 0) return { ok: false, reason: "dangling reference" };
+    // An unreferenced statement would be dropped silently, losing part of the answer: show the source instead.
+    if (m.orphaned.length > 0) return { ok: false, reason: "unused statement" };
   }
   if (m.statementCount > MAX_STATEMENTS) return { ok: false, reason: "too many statements" };
   if (r.queryStatements.length > 0 || r.mutationStatements.length > 0) return { ok: false, reason: "queries and mutations are not allowed" };

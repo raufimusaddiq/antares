@@ -89,6 +89,25 @@ describe("rendering", () => {
     expect(add).toHaveBeenCalledWith("Tell me more about it");
     expect(fetchSpy).not.toHaveBeenCalled();
   });
+  it("a model-labelled action never reads as completed: after the click it says nothing was sent (#173)", () => {
+    const add = vi.fn();
+    render(
+      <ReplyContext.Provider value={add}>
+        <RichBlock source={'root = Card([Buttons([Button("Submit order", @ToAssistant("Order 2 coffees"))])])'} />
+      </ReplyContext.Provider>,
+    );
+    expect(screen.queryByRole("status")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Submit order" }));
+    expect(add).toHaveBeenCalledWith("Order 2 coffees");
+    expect(screen.getByRole("status").textContent).toBe("Added to your message. Nothing was sent.");
+  });
+  it("a finished program with an unused statement is shown as source, not with that part silently dropped", () => {
+    const source = 'root = Card([TextContent("kept")])\nlost = TextContent("this part is not referenced")';
+    expect(check(source)).toEqual({ ok: false, reason: "unused statement" });
+    render(<RichBlock source={source} />);
+    expect(document.body.textContent).toContain("this part is not referenced");
+    expect(document.querySelector(".ou-block")).toBeNull();
+  });
   it("checks a streaming program before rendering it: unsafe or oversized partial output is never rendered", () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);

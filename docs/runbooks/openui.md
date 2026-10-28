@@ -37,7 +37,8 @@ Antares-specific component set to keep in step with the prompt.
 - **Actions** (`actions.ts`, the choke point; `Block.tsx` routes the renderer's `onAction` through `runAction`):
   - `continue_conversation` / `reply`: the message (and any form state, as a fenced JSON block) is cleaned by
     `cleanReply` (string only, control and bidi characters removed, ≤ 4,000 characters) and put in the composer draft of
-    the chat on screen via `ReplyContext`. It never sends; the reader reviews and presses Send.
+    the chat on screen via `ReplyContext`. It never sends; the reader reviews and presses Send. After the click the
+    block says "Added to your message. Nothing was sent." (#173), since a model can label a button "Submit order".
   - `open_url`: only `http:`/`https:` URLs without user info and not on Antares' own origin, ≤ 2,048 characters, opened after a `window.confirm` in a
     new tab with `noopener,noreferrer`. `javascript:`, `data:` and the like are refused.
   - Any other action name (including `constructor`/`__proto__`) is refused. No action calls `fetch`; an action that needs
