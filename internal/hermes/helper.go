@@ -188,7 +188,7 @@ func (h *Helper) issue(ctx context.Context, path, slug string) (Credential, erro
 const maxMedia = 25 << 20
 
 // Media returns a file Hermes generated in the profile's own cache (named MEDIA:<path> in a reply) and its media
-// type. The helper refuses any other path; ErrNotFound covers every refusal.
+// type. The helper refuses any other path: ErrMediaNotFound; a helper that cannot answer is a transient Failure.
 func (h *Helper) Media(ctx context.Context, slug, path string) ([]byte, string, error) {
 	if !ValidSlug(slug) {
 		return nil, "", ErrMediaNotFound
@@ -205,8 +205,11 @@ func (h *Helper) Media(ctx context.Context, slug, path string) ([]byte, string, 
 		return nil, "", transient("provisioning helper unreachable")
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		return nil, "", ErrMediaNotFound
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		return nil, "", ErrMediaNotFound // refused or absent: the helper says so on purpose
+	case resp.StatusCode != http.StatusOK:
+		return nil, "", transient("provisioning helper failed to read the media") // a broken helper is not "no media"
 	}
 	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxMedia+1))
 	if err != nil || len(raw) == 0 || len(raw) > maxMedia {

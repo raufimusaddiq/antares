@@ -28,7 +28,7 @@ const mediaScript = `
 import os, stat, sys
 root, path, limit = sys.argv[1], sys.argv[2], int(sys.argv[3])
 real = os.path.realpath(path)
-if not real.startswith(root) or not stat.S_ISREG(os.stat(real).st_mode) or os.path.getsize(real) > limit:
+if not real.startswith(root) or not os.path.exists(real) or not stat.S_ISREG(os.stat(real).st_mode) or os.path.getsize(real) > limit:
     sys.exit(3)
 with open(real, "rb") as f:
     sys.stdout.buffer.write(f.read())
@@ -73,8 +73,14 @@ func (s *server) media(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := opCtx(r) // a read: no mutation lock
 	defer cancel()
 	out, _, err := s.h.r.Run(ctx, "", "python3", "-c", mediaScript, profilesDir+"/"+req.Slug+"/cache/", req.Path, strconv.Itoa(maxMediaBytes))
-	if err != nil || len(out) == 0 {
-		writeErr(w, http.StatusNotFound, errMediaPath.Error())
+	var ee interface{ ExitCode() int }
+	switch {
+	case err == nil && len(out) > 0:
+	case err == nil || (errors.As(err, &ee) && ee.ExitCode() == 3):
+		writeErr(w, http.StatusNotFound, errMediaPath.Error()) // refused in the container, or empty
+		return
+	default:
+		writeErr(w, http.StatusBadGateway, "could not read the media in the container") // missing file or a broken exec
 		return
 	}
 	w.Header().Set("Content-Type", mt)

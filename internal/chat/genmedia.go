@@ -1,37 +1,90 @@
 package chat
 
 import (
+	"bytes"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"path/filepath"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/raufimusaddiq/antares/internal/hermes"
 )
 
-// getMedia serves a file Hermes generated for the caller (an image, a voice reply, a video), named in a reply as
-// MEDIA:<path>. The profile is the caller's own binding, and the helper serves only that profile's cache. The bytes are the caller's own, so they are served private, never sniffed,
-// and sandboxed if opened directly.
+// Hermes' media tools (an image, a voice reply, a video) name the file they generated as MEDIA:<path>, a path in the
+// user's own profile cache. That path, and the profile it names, never reaches the browser: the history API replaces
+// each tag with MEDIA:<id>, where the id is the kind of media and the path sealed with the server's key and bound to
+// the user (sealMediaTags). GET /api/media?id= opens it again for that user only and asks the helper, with the user's
+// own profile, for the bytes.
+
+var mediaTag = regexp.MustCompile(`MEDIA:(?:"([^"\n]*)"|'([^'\n]*)'|(\S+))`)
+
+var mediaKinds = map[string]string{
+	".png": "image", ".jpg": "image", ".jpeg": "image", ".webp": "image", ".gif": "image",
+	".mp3": "audio", ".ogg": "audio", ".wav": "audio", ".m4a": "audio",
+	".mp4": "video", ".webm": "video",
+}
+
+func mediaAAD(uid string) string { return "antares-media:" + uid }
+
+// sealMediaTags replaces every MEDIA:<path> in an assistant reply with MEDIA:<kind>-<id>. A tag that is not a media
+// file is dropped. Nothing else in the text changes.
+func (s *Service) sealMediaTags(uid, text string) string {
+	if !strings.Contains(text, "MEDIA:") {
+		return text
+	}
+	return mediaTag.ReplaceAllStringFunc(text, func(tag string) string {
+		m := mediaTag.FindStringSubmatch(tag)
+		path, tail := m[1]+m[2], ""
+		if m[3] != "" {
+			path = strings.TrimRight(m[3], ".,;:!?)]}>")
+			tail = m[3][len(path):]
+		}
+		kind := mediaKinds[strings.ToLower(filepath.Ext(path))]
+		if kind == "" {
+			return tail
+		}
+		sealed, err := s.box.Seal(path, mediaAAD(uid))
+		if err != nil {
+			return tail
+		}
+		return "MEDIA:" + kind + "-" + base64.RawURLEncoding.EncodeToString(sealed) + tail
+	})
+}
+
+// getMedia serves one generated file to the user its id was issued to. The bytes are the user's own: private, never
+// sniffed, sandboxed if opened directly, with Range support so audio and video can seek.
 func (s *Service) getMedia(w http.ResponseWriter, r *http.Request) {
 	uid, _ := user(r)
+	id := r.URL.Query().Get("id")
+	_, rest, ok := strings.Cut(id, "-")
+	raw, err := base64.RawURLEncoding.DecodeString(rest)
+	if !ok || err != nil || len(id) > 4096 {
+		notFound(w)
+		return
+	}
+	path, err := s.box.Open(raw, mediaAAD(uid))
+	if err != nil || !filepath.IsAbs(path) || filepath.Clean(path) != path {
+		notFound(w) // another user's id, a forged one, or a stale key
+		return
+	}
 	b, _, err := s.gate(r.Context(), uid)
 	if err != nil || s.media == nil {
 		notFound(w)
 		return
 	}
-	// The helper decides whether the path is in this profile's cache (it knows the layout; Antares does not): here
-	// only a clean absolute path is passed on, with the caller's own profile, never one the browser names.
-	path := r.URL.Query().Get("path")
-	if !filepath.IsAbs(path) || filepath.Clean(path) != path {
-		notFound(w)
-		return
-	}
 	data, mt, err := s.media.Media(r.Context(), b.Profile, path)
-	if errors.Is(err, hermes.ErrMediaNotFound) || (err == nil && !mediaType(mt)) {
+	switch {
+	case errors.Is(err, hermes.ErrMediaNotFound):
 		notFound(w)
 		return
-	} else if err != nil {
+	case err != nil:
 		apiError(w, http.StatusBadGateway, "HERMES_UNAVAILABLE", "The assistant's media could not be read right now")
+		return
+	case !mediaType(mt):
+		notFound(w)
 		return
 	}
 	h := w.Header()
@@ -39,7 +92,7 @@ func (s *Service) getMedia(w http.ResponseWriter, r *http.Request) {
 	h.Set("X-Content-Type-Options", "nosniff")
 	h.Set("Cache-Control", "private, max-age=86400")
 	h.Set("Content-Security-Policy", "sandbox; default-src 'none'")
-	_, _ = w.Write(data)
+	http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(data))
 }
 
 func mediaType(mt string) bool {

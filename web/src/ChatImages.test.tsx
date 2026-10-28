@@ -204,14 +204,14 @@ describe("history", () => {
 });
 
 describe("generated media paths (MEDIA-EXT-006)", () => {
-  it("never shows a host file path from an assistant turn or a streaming reply", () => {
-    const text = "Here it is\nMEDIA:/opt/data/profiles/u_x/cache/images/gen_1.png";
+  it("never shows a host file path from a streaming reply, and shows a history turn's media by its id", () => {
+    const live = "Here it is\nMEDIA:/opt/data/profiles/u_x/cache/images/gen_1.png";
     const noop = () => {};
     const { container } = render(
       <Transcript
-        turns={[{ seq: 0, role: "assistant", text }]}
+        turns={[{ seq: 0, role: "assistant", text: "Done\nMEDIA:image-SEALED_id" }]}
         pending={null}
-        run={{ runId: "r", phase: "streaming", text, tools: [], folded: { count: 0, failed: 0, untracked: 0 }, thinking: false, seenEvent: true } as never}
+        run={{ runId: "r", phase: "streaming", text: live, tools: [], folded: { count: 0, failed: 0, untracked: 0 }, thinking: false, seenEvent: true } as never}
         onCancel={noop}
         onRetry={noop}
         onReconnect={noop}
@@ -219,12 +219,13 @@ describe("generated media paths (MEDIA-EXT-006)", () => {
       />,
     );
     expect(container.textContent).toContain("Here it is");
-    expect(container.textContent).not.toMatch(/opt\/data|gen_1|profiles/);
-    // The finished turn shows the image itself, loaded from the user's own profile through /api/media.
-    const img = container.querySelector<HTMLImageElement>('[data-media="generated"] img')!;
-    expect(img.getAttribute("src")).toBe("/api/media?path=" + encodeURIComponent("/opt/data/profiles/u_x/cache/images/gen_1.png"));
-    expect(img.alt).toBe("Generated image 1");
+    expect(container.innerHTML).not.toMatch(/opt\/data|gen_1|profiles/);
+    const imgs = container.querySelectorAll<HTMLImageElement>('[data-media="generated"] img');
+    expect(imgs).toHaveLength(1);
+    expect(imgs[0].getAttribute("src")).toBe("/api/media?id=image-SEALED_id");
+    expect(imgs[0].alt).toBe("Generated image 1");
   });
+
 });
 
 const turn = (seq: number, text: string, attachments?: { assetId: string; mediaType: string; available: boolean }[]) => ({ seq, role: "user" as const, text, ...(attachments ? { attachments } : {}) });

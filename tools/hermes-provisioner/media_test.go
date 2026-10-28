@@ -10,12 +10,13 @@ import (
 type mediaRunner struct {
 	scripted
 	body string
+	err  error
 }
 
 func (f *mediaRunner) Run(ctx context.Context, in string, args ...string) (string, string, error) {
 	if args[0] == "python3" && args[2] == mediaScript {
 		f.calls = append(f.calls, args)
-		return f.body, "", nil
+		return f.body, "", f.err
 	}
 	return f.scripted.Run(ctx, in, args...)
 }
@@ -44,8 +45,13 @@ func TestMediaServesOnlyTheProfilesOwnCache(t *testing.T) {
 	if rec := do(t, s, "/media", "Bearer wrong", ok); rec.Code != http.StatusUnauthorized {
 		t.Errorf("no token: %d", rec.Code)
 	}
-	f.body = ""
+	f.body, f.err = "", exitErr(3)
 	if rec := do(t, s, "/media", "Bearer "+testToken, ok); rec.Code != http.StatusNotFound || strings.Contains(rec.Body.String(), "PNG") {
 		t.Errorf("refused in the container: %d", rec.Code)
+	}
+	// A broken exec is not "no media": it is a 502, so the failure is visible.
+	f.err = exitErr(1)
+	if rec := do(t, s, "/media", "Bearer "+testToken, ok); rec.Code != http.StatusBadGateway {
+		t.Errorf("broken exec: %d", rec.Code)
 	}
 }

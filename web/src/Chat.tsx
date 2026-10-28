@@ -109,7 +109,7 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
       {run.text !== "" && (
         <div className={run.phase === "completed" ? "" : "partial"}>
           {run.phase !== "completed" && !live && <p className="label">Partial response</p>}
-          <AssistantBody text={run.text} streaming={live} />
+          <AssistantBody text={run.text} streaming={live} media={false} />
         </div>
       )}
       {notice && (
@@ -1646,13 +1646,14 @@ function BudgetForm({ limit, onSaved }: { limit: number | null; onSaved: () => v
   );
 }
 
-/** An assistant reply: its text, then any media it generated (shown once the reply is complete). */
-function AssistantBody({ text, streaming }: { text: string; streaming: boolean }) {
+/** An assistant reply: its text, then any media it generated. Media is shown from history only, where the server has
+ * sealed each file's location into an id; a live reply's tags are just taken out of the text. */
+function AssistantBody({ text, streaming, media = true }: { text: string; streaming: boolean; media?: boolean }) {
   const m = useMemo(() => splitMedia(text), [text]);
   return (
     <>
       <MessageBody text={m.text} streaming={streaming} />
-      {!streaming && <GeneratedMedia paths={m.paths} />}
+      {media && !streaming && <GeneratedMedia ids={m.ids} />}
     </>
   );
 }

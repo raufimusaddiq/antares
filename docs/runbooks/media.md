@@ -89,13 +89,13 @@ Status words follow PRD §27.3's table: IMPLEMENTED / TESTED / UPSTREAM_BLOCKED 
 |---|---|---|
 | MEDIA-EXT-001 | IMPLEMENTED, TESTED | Paste, drop, file picker, and a camera button on coarse-pointer devices; chip with name/type/size/thumbnail/progress/retry/remove (`web/src/ImageAttachments.tsx`, `ChatImages.test.tsx`, `ImageAttachments.test.tsx`). Magic bytes, spoofed MIME, SVG/WebP refusal, 8 MiB/25 MP limits, owner-bound ids, `private, no-store`: existing `TestImageStagingOwnerOnlyAndValidated`, `TestImageUploadRefusals`. Real camera capture is browser/device dependent and was not run on a device. |
 | MEDIA-EXT-002 | IMPLEMENTED, TESTED (Antares side); live model reception OPEN | Kenari-sourced capability, pinned model id, refusal cases: `TestImageSendUsesCheckedModelAndInlineBytes`, `TestImageSendRefusedWhenVisionIsNotConfirmed`, `TestHermesInventoryDoesNotDecideVision`, `TestCreateRunSendsImagesInline`, `ChatImages.test.tsx`. |
-| MEDIA-EXT-003 | User-sent images: IMPLEMENTED, TESTED. Generated images: UPSTREAM_BLOCKED | Thumbnail, lightbox, download, history replay while the asset exists, "no longer available" after deletion: `TestHistoryLinksOwnImagesAndSurvivesDeletion`, `TestAssetPreviewHeadersAndRange`, `ImageAttachments.test.tsx`. Cross-owner: `TestImageCrossOwnerDenied` (B cannot send, preview or delete A's image; same 404 as an unknown id). Generated: below. |
+| MEDIA-EXT-003 | User-sent images: IMPLEMENTED, TESTED. Generated images: IMPLEMENTED, TESTED (#168) | Thumbnail, lightbox, download, history replay while the asset exists, "no longer available" after deletion: `TestHistoryLinksOwnImagesAndSurvivesDeletion`, `TestAssetPreviewHeadersAndRange`, `ImageAttachments.test.tsx`. Cross-owner: `TestImageCrossOwnerDenied` (B cannot send, preview or delete A's image; same 404 as an unknown id). Generated: "Generated media" below (`TestGeneratedMediaIsServedOnlyToTheUserItWasIssuedTo`). |
 | MEDIA-EXT-004 | UPSTREAM_BLOCKED | No generated-video result or async job contract has been observed; video output goes through the same blocked delivery as images. |
 | MEDIA-EXT-005 | PARTIAL | Owned-audio player (`OwnedAudio`: native controls, `preload="none"`, Range-capable source, download) is built and tested; nothing feeds it generated audio (blocked below). Voice input (Recorder) is unchanged. TTS tool output and a native `/v1/audio/speech` are not conflated and neither is wired. |
-| MEDIA-EXT-006 | PARTIAL | A `MEDIA:<host path>` tag in an assistant turn or streaming reply is replaced with a statement; the path is never shown (`web/src/mediaTags.ts`, `ChatImages.test.tsx`). No media tool lifecycle has been observed, so media activity presentation is not claimed. |
+| MEDIA-EXT-006 | IMPLEMENTED, TESTED | The history API seals each `MEDIA:<host path>` into an opaque id bound to the user (`internal/chat/genmedia.go`, `TestMediaTagsAreSealedAndNeverCarryThePath`); a streaming reply's tags are taken out of the text. No host path or profile name is in the DOM, a URL or a request (`ChatImages.test.tsx`). |
 | MEDIA-EXT-007 | PARTIAL | Lazy thumbnails, on-demand audio, `Range` support via `http.ServeContent` (`TestAssetPreviewHeadersAndRange`). §14 media benchmarks were not run. |
 
-## Generated media: exact blocker (finish)
+## Generated media: the earlier blocker (history; delivered by #168, see "Generated media" below)
 
 Generated images and audio are returned by Hermes' tools as `MEDIA:<path>` where `<path>` is a file on the Hermes host
 (`tools/tts_tool.py:358`). Hermes resolves those tags to inline data URLs only in `/v1/chat/completions` and
@@ -161,11 +161,14 @@ Hermes' own tools generate the media; Antares only shows it.
   `plugins.enabled: [kenari-image]` and `image_gen.provider: kenari-image`. Existing profiles get it on their next
   rotate (admin `tenant-verify`). Hermes loads plugins per profile when the gateway first serves it, so restart the
   Hermes container after installing or changing the plugin.
-- **Delivery.** A reply names a generated file as `MEDIA:<path>` in the profile's cache. The web app takes the tag out
-  of the text and shows the file under the reply (image with a lightbox, audio and video with native controls) from
-  `GET /api/media?path=…`. Antares passes the path, with the caller's **own** profile, to the provisioner's
-  `POST /media`, which serves only `/opt/data/profiles/<that profile>/cache/` (checked again inside the container
-  after resolving symlinks), media extensions only, at most 25 MiB. Another user's path is a 404.
+- **Delivery.** A reply names a generated file as `MEDIA:<path>` in the profile's cache. The history API replaces each
+  tag with `MEDIA:<kind>-<id>`, the path sealed with the server's key and bound to the user, so no path or profile name
+  reaches the browser. The web app shows the file under the reply (image with a lightbox, audio and video with native
+  controls and seeking) from `GET /api/media?id=…`, rate-limited with the other file reads. Antares opens the id for
+  that user only and asks the provisioner's `POST /media` with the user's **own** profile; the provisioner serves only
+  `/opt/data/profiles/<that profile>/cache/` (checked again inside the container after resolving symlinks), media
+  extensions only, at most 25 MiB. A refused or missing file is a 404, a helper that cannot answer a 502. A live
+  (streaming) reply shows its text only; the media appears with the turn from history.
 - **Single trusted user.** Hermes' media tools can load local image paths, including another profile's (#161). Fine
   while Antares has one trusted user; disable `vision`/`image_gen` for tenants or confine the resolver upstream before
   onboarding a second, untrusted one.

@@ -72,18 +72,18 @@ describe("assetUrl", () => {
 });
 
 describe("splitMedia", () => {
-  it("takes the tags and the voice marker out of the text and keeps the paths", () => {
-    const r = splitMedia("Here you go\n[[audio_as_voice]]\nMEDIA:/opt/data/profiles/u_x/cache/audio/tts_1.mp3");
-    expect(r.paths).toEqual(["/opt/data/profiles/u_x/cache/audio/tts_1.mp3"]);
+  it("takes the tags and the voice marker out of the text and keeps the ids", () => {
+    const r = splitMedia("Here you go\n[[audio_as_voice]]\nMEDIA:audio-AbC_12");
+    expect(r.ids).toEqual(["audio-AbC_12"]);
     expect(r.text).toBe("Here you go");
   });
-  it("handles quoted paths, trailing punctuation and repeats, and leaves ordinary text alone", () => {
-    expect(splitMedia('MEDIA:"/a b/c.png" done')).toEqual({ text: "done", paths: ["/a b/c.png"] });
-    expect(splitMedia("See MEDIA:/x/y.png. And MEDIA:/x/y.png").paths).toEqual(["/x/y.png"]);
-    expect(splitMedia("no media here")).toEqual({ text: "no media here", paths: [] });
+  it("leaves the rest of the reply alone, including blank lines in code", () => {
+    const text = "```\na\n\n\n\nb\n```\nMEDIA:image-x1 and MEDIA:image-x1";
+    expect(splitMedia(text)).toEqual({ text: "```\na\n\n\n\nb\n```\n and", ids: ["image-x1"] });
+    expect(splitMedia("no media here")).toEqual({ text: "no media here", ids: [] });
   });
-  it("knows the kind from the extension and builds the same-origin URL", () => {
-    expect([mediaKind("/a.PNG"), mediaKind("/a.mp3"), mediaKind("/a.webm"), mediaKind("/a.txt")]).toEqual(["image", "audio", "video", null]);
-    expect(mediaUrl("/a b.png")).toBe("/api/media?path=%2Fa%20b.png");
+  it("knows the kind from the id's prefix, and a raw path is no media id", () => {
+    expect([mediaKind("image-a"), mediaKind("audio-a"), mediaKind("video-a"), mediaKind("/opt/x.png"), mediaKind("doc-a")]).toEqual(["image", "audio", "video", null, null]);
+    expect(mediaUrl("image-a_b")).toBe("/api/media?id=image-a_b");
   });
 });

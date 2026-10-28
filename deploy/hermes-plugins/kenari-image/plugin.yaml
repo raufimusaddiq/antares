@@ -5,3 +5,4 @@ author: Antares
 kind: backend
 requires_env:
   - OPENAI_API_KEY
+  - OPENAI_BASE_URL

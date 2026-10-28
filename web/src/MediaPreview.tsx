@@ -75,24 +75,25 @@ export function OwnedAudio({ assetId, label }: { assetId: string; label: string 
 }
 
 /** Media the assistant generated in this reply (MEDIA:<path>), loaded from the user's own profile (the media route). */
-export function GeneratedMedia({ paths }: { paths: string[] }) {
-  if (paths.length === 0) return null;
+export function GeneratedMedia({ ids }: { ids: string[] }) {
+  const shown = ids.filter((id) => mediaKind(id) !== null);
+  if (shown.length === 0) return null;
   return (
     <div data-media="generated">
-      {paths.map((p, i) => (
-        <GeneratedItem key={p} path={p} index={i} />
+      {shown.map((id, i) => (
+        <GeneratedItem key={id} id={id} index={i} />
       ))}
     </div>
   );
 }
 
-function GeneratedItem({ path, index }: { path: string; index: number }) {
+function GeneratedItem({ id, index }: { id: string; index: number }) {
   const [open, setOpen] = useState(false);
   const [failed, setFailed] = useState(false);
-  const kind = mediaKind(path);
+  const kind = mediaKind(id);
   const label = kind === "image" ? `Generated image ${index + 1}` : kind === "audio" ? `Generated audio ${index + 1}` : `Generated video ${index + 1}`;
   if (!kind || failed) return <span data-media="gone">{kind ? label : "Generated media"} (not available)</span>;
-  const src = mediaUrl(path);
+  const src = mediaUrl(id);
   if (kind === "audio") return <audio controls preload="none" src={src} aria-label={label} onError={() => setFailed(true)} />;
   if (kind === "video") return <video controls preload="metadata" src={src} aria-label={label} onError={() => setFailed(true)} />;
   return (

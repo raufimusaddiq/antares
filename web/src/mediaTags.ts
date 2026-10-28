@@ -1,35 +1,33 @@
-// The agent's media tools reply with `MEDIA:<path>`, where <path> is a file in the user's own assistant profile cache
-// (an image it generated, a voice reply, a video). The runs route Antares uses returns the tag untouched, so the tag is
-// taken out of the text (no server path is shown) and its path is kept for GeneratedMedia, which loads the file from
-// /api/media: the server serves only the signed-in user's own profile.
+// The agent's media tools reply with `MEDIA:<…>` naming a file they generated (an image, a voice reply, a video). In
+// a turn read from history the server has already replaced the file's location with an opaque id, `<kind>-<sealed>`,
+// that only the signed-in user can open; the tag is taken out of the text and the id is kept for GeneratedMedia.
 
 const TAG = /MEDIA:(?:"([^"\n]*)"|'([^'\n]*)'|(\S+))/g;
 const VOICE_MARKER = /\[\[audio_as_voice\]\]\s*/g;
 
 export interface SplitMedia {
   text: string;
-  /** The media paths, in order, without duplicates. */
-  paths: string[];
+  /** The media ids, in order, without duplicates. */
+  ids: string[];
 }
 
+/** Removes the tags (and the voice marker) and nothing else from the reply. */
 export function splitMedia(text: string): SplitMedia {
-  const paths: string[] = [];
+  const ids: string[] = [];
   const out = text.replace(VOICE_MARKER, "").replace(TAG, (_m, dq?: string, sq?: string, bare?: string) => {
-    const p = (dq ?? sq ?? (bare ?? "").replace(/[.,;:!?)\]}>]+$/, "")).trim();
-    if (p && !paths.includes(p)) paths.push(p);
+    const id = dq ?? sq ?? bare ?? "";
+    if (id && !ids.includes(id)) ids.push(id);
     return "";
   });
-  return { text: out.replace(/\n{3,}/g, "\n\n").trim(), paths };
+  return { text: out.trimEnd(), ids };
 }
 
 export type MediaKind = "image" | "audio" | "video" | null;
 
-export function mediaKind(path: string): MediaKind {
-  const ext = path.slice(path.lastIndexOf(".") + 1).toLowerCase();
-  if (["png", "jpg", "jpeg", "webp", "gif"].includes(ext)) return "image";
-  if (["mp3", "ogg", "wav", "m4a"].includes(ext)) return "audio";
-  if (["mp4", "webm"].includes(ext)) return "video";
-  return null;
+/** The kind the server put in front of the id; anything else (a raw path in a live reply) is no media id at all. */
+export function mediaKind(id: string): MediaKind {
+  const kind = id.slice(0, id.indexOf("-"));
+  return kind === "image" || kind === "audio" || kind === "video" ? kind : null;
 }
 
-export const mediaUrl = (path: string) => `/api/media?path=${encodeURIComponent(path)}`;
+export const mediaUrl = (id: string) => `/api/media?id=${encodeURIComponent(id)}`;
