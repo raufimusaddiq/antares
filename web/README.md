@@ -44,8 +44,8 @@ no gradient surface. `src/cssContract.test.ts` pins this (see "What is tested").
   upward. There is no top bar. The header element is `display: contents` here, so its two children, `.brand` and `.account`, are
   grid items of `.chat-app` (areas `brand` / `side` / `account` / `pane`); the rail's tinted dotted backdrop is `.chat-app::before`.
 - *Phone (max 40rem):* one slim header row (mark, address, Menu), a one-line conversation strip (chips are a 32px pill inside a
-  44px hit area), the conversation, an `Options` toggle, a one-row dock (attach, camera, message, send). Options opens a
-  periwinkle panel. The header is a flex row here and the account actions open as a panel over the log.
+  44px hit area), the conversation, an `Options` toggle, a one-row dock (attach, camera, message, send). Options opens the same card panel
+  as on a wide screen. The header is a flex row here and the account actions open as a panel over the log.
 - *Reading:* the assistant's answer is open text on the page (tag: mono caps and a small star tile). The user's message is the
   headline: large, tight, with a marker stroke behind its first line, no box. Code is an ink block, tables are two ink rules, a
   badge is a tilted sticker.
@@ -71,7 +71,14 @@ names. **The CSP is `img-src 'self'`, so every `url()` in the stylesheet is a sa
 `data:` URI is blocked in production and the contract test rejects one.** (A mask of an SVG that works in a CSP-less preview
 does not work in the shipped page.)
 
-**Capability reasons** (Regenerate / Edit / Rewind, which the backend cannot do) are mono text with a dotted underline. The reason
+**The chat's extras (#139 stage 2):** at every width only `Options`, the model chip and the usage chip sit above the input. Options
+opens one card (`--card`, ink outline, small hard shadow) holding usage details and limits (its disclosure is "Usage details and
+limits", never a second copy of the chip's figure), Visualize, voice (Dictate and Record side by side, in a group named "Voice"),
+templates and the draft-policy note as a footnote. Helper text there is the UI face at 13px. No control has a dashed border:
+disabled is a solid, faded outline.
+
+**Capability reasons** (Regenerate / Edit / Rewind, which the backend cannot do) are muted small mono actions with no underline,
+in the same row and size as the action that works (Ask again / Edit as new message, in ink with a hover fill). The reason
 is always in the document and is the button's `aria-describedby`; a **press** (tap or click) shows it in the flow under the controls
 (and keyboard focus or a mouse hover does too), and Escape or a press elsewhere puts it away. A press never performs an action: the
 button stays `aria-disabled`. iOS Safari does not focus a tapped button and has no hover, which is why a press, not `:focus` or

@@ -854,6 +854,27 @@ async function mobile(browser) {
   await ctx.close();
 }
 
+// ONLY=shots: review screenshots (no checks) of the chat, Options closed and open, light and dark, desktop and phone,
+// for an owner's visual review (#139). Run before and after a visual change and compare the folders.
+async function shots(browser) {
+  for (const scheme of ["light", "dark"]) {
+    for (const v of [{ name: "desktop", width: 1440, height: 900 }, { name: "phone", width: 390, height: 844, isMobile: true, hasTouch: true }]) {
+      const { ctx, page } = await openPage(browser, { viewport: { width: v.width, height: v.height }, colorScheme: scheme, isMobile: v.isMobile, hasTouch: v.hasTouch });
+      await page.goto(base + "/");
+      await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
+      await page.waitForTimeout(400);
+      await page.screenshot({ path: path.join(outDir, `shot-${v.name}-${scheme}.png`) });
+      const toggle = page.locator(".extras-toggle");
+      if ((await toggle.count()) > 0 && (await toggle.isVisible())) {
+        await toggle.click();
+        await page.waitForTimeout(300);
+        await page.screenshot({ path: path.join(outDir, `shot-${v.name}-${scheme}-options.png`) });
+      }
+      await ctx.close();
+    }
+  }
+}
+
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
@@ -870,6 +891,7 @@ try {
   if (!only || only === "starting-card") await startingCard(browser);
   if (!only || only === "images") await images(browser);
   if (!only || only === "mobile" || only === "mobile-layout" || only === "mobile-budget") await mobileBudget(browser); // no timing in it: this is the one CI runs
+  if (only === "shots") await shots(browser);
 } finally {
   await browser.close();
   server.close();
