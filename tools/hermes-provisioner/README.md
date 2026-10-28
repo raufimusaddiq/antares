@@ -12,7 +12,7 @@ export PROVISIONER_INFERENCE_API_KEY=... # required: operator-managed shared lau
 export PROVISIONER_INFERENCE_BASE_URL=... # required: exact matching OpenAI-compatible endpoint
 export PROVISIONER_ADDR=127.0.0.1:8750   # optional (default shown)
 export HERMES_CONTAINER=hermes           # optional (default shown)
-export PROVISIONER_ALLOWED_TOOLSETS=...  # optional; toolsets a tenant keeps (default web,vision,image_gen,skills,memory,todo,clarify)
+export PROVISIONER_ALLOWED_TOOLSETS=...  # optional; toolsets a tenant keeps (default web,skills,memory,todo,clarify)
 go build -o hermes-provisioner . && ./hermes-provisioner
 ```
 

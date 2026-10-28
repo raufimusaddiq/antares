@@ -62,7 +62,7 @@ PROVISIONER_INFERENCE_BASE_URL=<exact-shared-inference-endpoint>
 # HERMES_CONTAINER=hermes
 # Must equal ANTARES_TENANT_ALLOWED_TOOLSETS in antares.env (default shown). If the two differ,
 # toolset_policy fails for every tenant, or the provisioner refuses to start on an unknown name.
-PROVISIONER_ALLOWED_TOOLSETS=web,vision,image_gen,skills,memory,todo,clarify
+PROVISIONER_ALLOWED_TOOLSETS=web,skills,memory,todo,clarify
 ```
 
 `antares.env` holds every variable in `.env.example` (real values). Generate:

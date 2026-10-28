@@ -3,7 +3,7 @@
 Issue #13, applied by issue #41. The allowed set is **operator configuration**, not a constant in
 Antares code: `ANTARES_TENANT_ALLOWED_TOOLSETS` (Antares, enforced by verification) and
 `PROVISIONER_ALLOWED_TOOLSETS` (the provisioner, applied to each profile) take the same comma list,
-default `web,vision,image_gen,skills,memory,todo,clarify`. The floor below can never be allowed. Set both
+default `web,skills,memory,todo,clarify`. The floor below can never be allowed. Set both
 variables to the same value; if the provisioner allows more than Antares, `toolset_policy` fails.
 Both refuse the same bad input at startup: an unknown name, a floor toolset, or a set-but-blank value
 (`" "`, `","`). Only an empty or unset variable means the default.
@@ -21,7 +21,8 @@ the next provision or rotate. Narrowing a single profile by hand is not durable;
   (`terminal, file, code_execution, delegation, cronjob, session_search, connections, browser`) reported
   `enabled: false`; the rest of the 27 reported toolsets were also off. Output below.
 - Phase 0's filesystem-isolation FAIL stands. This policy is a gate on which tools exist, not a sandbox.
-- The two open questions below (`web_extract`, `skill_manage`) are still unverified.
+- **Cross-tenant tool proof (#161), Hermes v0.22.5, 2026-10-28:** see "A/B tool isolation proof" below.
+  It moved `vision` and `image_gen` into the floor.
 
 ```
 GET /p/u_probezz02/v1/toolsets -> 200 object=list platform=api_server
@@ -38,8 +39,6 @@ the verifier only requires that nothing outside the allow-list is enabled.)
 | Toolset | Tools (from fixture) | Note |
 |---|---|---|
 | `web` | `web_search`, `web_extract` | See open question 1. |
-| `vision` | `vision_analyze` | |
-| `image_gen` | `image_generate` | |
 | `skills` | `skill_manage`, `skill_view`, `skills_list` | Writes into the profile's own skills. See question 2. |
 | `memory` | `memory` | Writes the profile's own memory; required for per-user memory (PRD). |
 | `todo` | `todo_list` | |
@@ -54,22 +53,43 @@ the verifier only requires that nothing outside the allow-list is enabled.)
 | `session_search` | Reads the shared session store: cross-tenant read. |
 | `connections` | Holds third-party service credentials; a tenant would act as the owner elsewhere. |
 | `browser` | A full browser with cookies and sessions (includes `browser_vault`); can act as a logged-in user. |
+| `vision`, `image_gen` | **Cross-tenant read (#161).** `vision_analyze` and image-generation reference images load any local path the gateway user can read: under the local terminal backend Hermes' resolver allows "any path" (`tools/image_source.py` `_permitted_host_read_target`), so B can load an image from A's profile. Measured below. Image input in chat is unaffected: Antares sends the picture to the model as `image_url` data, not through this tool. |
 | `discord`, `discord_admin`, `a2a`, `computer_use`, `kanban`, `video`, `video_gen`, `x_search`, `tts`, `stt`, `context_engine` | Not needed for v1 chat. |
 
 `yuanbao` appears in the fixture, is disabled on `default`, and is on neither list. The default for a
 new profile should disable it too (not needed for v1 chat). Decide explicitly rather than inherit.
 
-## Open questions (escalation review; not resolved)
+## A/B tool isolation proof (#161)
 
-1. **`web_extract`** fetches URLs from the gateway host. If it accepts `file://` or internal addresses
-   (for example `hermes:8642`, or other containers on `hermes_edge`) it is a read path across the
-   boundary. Not tested. Needs a check before `web` is called safe.
-2. **`skill_manage`** writes skill files into the profile. Skills are instructions, but whether a skill
-   can carry an executable script that runs without `terminal` is not established. Not tested. If it
-   can, `skills` should be read-only (`skill_view`, `skills_list` only) for tenants.
+`scripts/tool_isolation_probe.py`, run through `scripts/smoke_fixtures.py` against production (disposable accounts A
+and B and their profiles, removed afterwards: cleanup clean). It plants canaries in A's profile (a text file in its
+home, an image in its media cache, a skill), resolves the tools a B run is actually given (the `api_server` platform
+list minus B's `agent.disabled_toolsets`), calls them directly under B's `HERMES_HOME`, and finally asks B's assistant
+in a real chat to fetch A's canary file. Every result, the Hermes version and the container image are in the report;
+a different Hermes build invalidates it (the #175 staleness check).
 
-Neither is confirmed as an escalation path; neither is cleared. Until checked, treat both as
-unverified.
+    sudo python3 -I scripts/smoke_fixtures.py run --db <antares.sqlite> --workdir /var/backups/antares/smoke-fixtures \
+      --timeout 1500 -- python3 -I scripts/tool_isolation_probe.py https://<origin> <antares.sqlite> <result.json>
+
+Before the fix (`docs/hermes/fixtures/tool-isolation-probe-before-2026-10-28.json`, Hermes v0.22.5): B's runs were
+given `vision_analyze`, and Hermes' image resolver, called under B's profile, returned the bytes of A's canary image
+(finding `image_resolver_reads_other_profile: true`). Everything else held.
+
+1. **`web_extract`: safe.** All 14 targets refused before any fetch with "Blocked: URL targets a private or internal
+   network address": `file://` and a bare path into A's profile, loopback (`127.0.0.1`, `localhost`, `[::1]`, decimal
+   and hex forms), the container names `hermes` and `antares`, the provisioner on the docker bridge, RFC 1918 addresses,
+   link-local metadata `169.254.169.254` and `metadata.google.internal`. `security.allow_private_urls` is off. Hermes
+   checks every redirect target the same way (`tools/url_safety.py`).
+2. **`skill_manage`: no execution path.** Skills are files under the profile's own `skills/`; `skill_view` refused A's
+   skill by name, by `../../<A>/...` and by absolute path. The only code that runs skill content is the inline
+   ``!`cmd` `` expansion, gated by `skills.inline_shell`, which is off (Hermes default; no profile sets it). A skill B
+   wrote with ``!`cat <A's canary>` `` came back unexpanded. **Upstream finding (low):** `skill_manage` on a name B
+   does not have answers with the other profiles that do have it, naming A's profile id (an opaque slug, no content).
+   It is Hermes code; recorded, not fixable here.
+3. **Antares routes:** B got 404 on A's chat, messages, run, run events, chat search and artifact, and global search
+   found nothing of A's.
+
+After the fix: the same probe, recorded in `docs/hermes/fixtures/tool-isolation-probe-2026-10-28.json`.
 
 ## How to apply
 

@@ -32,11 +32,11 @@ var knownToolsets = []string{
 // (hermes.DeniedToolsets, docs/runbooks/tenant-toolsets.md).
 var floorToolsets = []string{
 	"terminal", "file", "code_execution", "delegation", "cronjob",
-	"session_search", "connections", "browser",
+	"session_search", "connections", "browser", "vision", "image_gen",
 }
 
 // defaultAllowed is the documented default tenant set (hermes.DefaultAllowedToolsets).
-var defaultAllowed = []string{"web", "vision", "image_gen", "skills", "memory", "todo", "clarify"}
+var defaultAllowed = []string{"web", "skills", "memory", "todo", "clarify"}
 
 // toolsetsConfigKey is where Hermes persists a per-profile suppression list.
 // agent.disabled_toolsets is applied last in Hermes' toolset resolution, over

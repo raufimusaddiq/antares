@@ -43,9 +43,10 @@ const (
 var DeniedToolsets = []string{
 	"terminal", "file", "code_execution", // read any path the gateway user can
 	"delegation", "cronjob", // start agent turns with the full toolset
-	"session_search", // reads the shared session store
-	"connections",    // third-party credentials
-	"browser",        // cookies and logged-in sessions
+	"session_search",      // reads the shared session store
+	"connections",         // third-party credentials
+	"browser",             // cookies and logged-in sessions
+	"vision", "image_gen", // load any local image path the gateway user can read (#161)
 }
 
 // KnownToolsets is every toolset the deployed Hermes (v0.22.2) reports from
@@ -64,7 +65,7 @@ var KnownToolsets = []string{
 
 // DefaultAllowedToolsets is the documented default tenant set. It is data, not
 // policy: the admin owns it (docs/runbooks/tenant-toolsets.md).
-var DefaultAllowedToolsets = []string{"web", "vision", "image_gen", "skills", "memory", "todo", "clarify"}
+var DefaultAllowedToolsets = []string{"web", "skills", "memory", "todo", "clarify"}
 
 // ValidateAllowedToolsets refuses a configured allow-list that includes a
 // floor toolset or a name Hermes does not report. It is checked at startup,

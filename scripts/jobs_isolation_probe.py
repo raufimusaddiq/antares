@@ -32,7 +32,7 @@ class Probe:
         self.wait, self.run_wait, self.poll = wait, run_wait, poll
         self.results = []
 
-    def call(self, who, method, path, body=None):
+    def call(self, who, method, path, body=None, headers=None):
         data = None if body is None else json.dumps(body).encode()
         req = urllib.request.Request(self.origin + path, data=data, method=method)
         req.add_header("Cookie", f"{COOKIE}={self.cookies[who]}")
@@ -42,6 +42,8 @@ class Probe:
             req.add_header("Origin", self.origin)  # every mutation is same-origin checked before ownership
         if data is not None:
             req.add_header("Content-Type", "application/json")
+        for k, v in (headers or {}).items():
+            req.add_header(k, v)
         try:
             with urllib.request.urlopen(req, timeout=60) as r:
                 status, raw = r.status, r.read()
@@ -61,9 +63,9 @@ class Probe:
         return st, body if isinstance(body, dict) else {}
 
     def hermes_read(self, shell):
-        """Runs a read-only shell command in the Hermes container and returns its stdout, or "" on failure or timeout."""
+        """Runs a shell command in the Hermes container (as the hermes user) and returns its stdout, or "" on failure or timeout."""
         try:
-            out = subprocess.run(self.hermes_cmd + ["sh", "-c", shell], capture_output=True, text=True, timeout=60)
+            out = subprocess.run(self.hermes_cmd + ["sh", "-c", shell], capture_output=True, text=True, timeout=180)
         except subprocess.TimeoutExpired:
             return ""
         return out.stdout if out.returncode == 0 else ""
@@ -79,24 +81,31 @@ class Probe:
             time.sleep(self.poll)
         return cond()
 
-    def run(self):
+    def ready(self):
+        """Signs A and B in, has the admin approve them and waits for both workspaces. Returns /api/me for A and B, or
+        None after a failed check."""
         # Fails fast when Antares does not answer at all, rather than waiting out the admin poll below.
         if not self.check("Antares answers", self.call("ADMIN", "GET", "/api/me")[0] != 0):
-            return
+            return None
         if not self.check("admin API reachable (admin workspace ready)",
                           self.until(lambda: self.call("ADMIN", "GET", "/api/admin/users")[0] == 200, self.wait)):
-            return
+            return None
         me = {w: self.get(w, "/api/me")[1] for w in ("A", "B")}
         if not self.check("A and B are signed in", all(isinstance(me[w].get("id"), str) and me[w]["id"] for w in ("A", "B"))):
-            return
+            return None
         for w in ("A", "B"):
             if not me[w].get("canChat"):
                 st, _ = self.call("ADMIN", "POST", f"/api/admin/users/{me[w]['id']}/approve", {})
                 self.check(f"admin approves {w}", st == 200, str(st))
         if not self.check("A and B provisioned and able to chat",
                           self.until(lambda: all(self.get(w, "/api/me")[1].get("canChat") is True for w in ("A", "B")), self.wait)):
-            return
+            return None
+        return me
 
+    def run(self):
+        me = self.ready()
+        if not me:
+            return
         _, caps = self.get("A", "/api/capabilities")
         cap = next((c for c in caps.get("capabilities") or [] if isinstance(c, dict) and c.get("id") == "jobs"), None)
         self.check("the jobs capability is available", cap is not None and cap.get("status") == "available", json.dumps(cap))
@@ -175,9 +184,9 @@ class Probe:
                 "at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())}
 
 
-def main(argv, env):
+def main(argv, env, cls=Probe, name="jobs_isolation_probe.py"):
     if len(argv) != 4:
-        print("usage: jobs_isolation_probe.py <origin> <antares.sqlite> <report.json>", file=sys.stderr)
+        print(f"usage: {name} <origin> <antares.sqlite> <report.json>", file=sys.stderr)
         return 3
     origin, db, report = argv[1:]
     cookies = {w: env.get("ANTARES_SMOKE_COOKIE_" + w, "") for w in ("ADMIN", "A", "B")}
@@ -185,7 +194,7 @@ def main(argv, env):
         print("ANTARES_SMOKE_COOKIE_ADMIN, _A and _B are required (run it through scripts/smoke_fixtures.py)", file=sys.stderr)
         return 3
     hermes_cmd = ["docker", "exec", "-u", "hermes", env.get("HERMES_CONTAINER", "hermes")]
-    p = Probe(origin, db, cookies, hermes_cmd)
+    p = cls(origin, db, cookies, hermes_cmd)
     p.run()
     rep = p.report()
     with open(report, "w") as f:

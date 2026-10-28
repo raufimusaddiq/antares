@@ -1,0 +1,230 @@
+{
+  "passed": false,
+  "checks": [
+    {
+      "check": "Antares answers",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "admin API reachable (admin workspace ready)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "A and B are signed in",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "admin approves A",
+      "pass": true,
+      "detail": "200"
+    },
+    {
+      "check": "admin approves B",
+      "pass": true,
+      "detail": "200"
+    },
+    {
+      "check": "A and B provisioned and able to chat",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "A's chat run completed",
+      "pass": true,
+      "detail": "COMPLETED"
+    },
+    {
+      "check": "B gets 404 on A's chat",
+      "pass": true,
+      "detail": "404"
+    },
+    {
+      "check": "B gets 404 on A's messages",
+      "pass": true,
+      "detail": "404"
+    },
+    {
+      "check": "B gets 404 on A's run",
+      "pass": true,
+      "detail": "404"
+    },
+    {
+      "check": "B gets 404 on A's run events",
+      "pass": true,
+      "detail": "404"
+    },
+    {
+      "check": "B gets 404 on A's chat search",
+      "pass": true,
+      "detail": "404"
+    },
+    {
+      "check": "B gets 404 on A's artifact",
+      "pass": true,
+      "detail": "404"
+    },
+    {
+      "check": "B's global search finds nothing of A's",
+      "pass": true,
+      "detail": "200"
+    },
+    {
+      "check": "A and B have distinct workspaces",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "canaries planted in A's profile",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "B's tools were inspected in its own profile",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "B's runs are given no boundary-crossing tool",
+      "pass": false,
+      "detail": "vision_analyze"
+    },
+    {
+      "check": "every floor toolset is disabled in B's own config",
+      "pass": false,
+      "detail": "image_gen, vision"
+    },
+    {
+      "check": "skills.inline_shell is off for B",
+      "pass": true,
+      "detail": "False"
+    },
+    {
+      "check": "B has no skills.external_dirs",
+      "pass": true,
+      "detail": "[]"
+    },
+    {
+      "check": "private URLs are blocked for B",
+      "pass": true,
+      "detail": "False"
+    },
+    {
+      "check": "web_extract refuses /opt/data/profiles/<A>/home/canary.txt",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract refuses file:///opt/data/profiles/<A>/home/canary.txt",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract refuses http://0x7f000001:8642/health",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract refuses http://10.0.0.1/",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract refuses http://127.0.0.1:8642/health",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract refuses http://169.254.169.254/latest/meta-data/",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract refuses http://172.17.0.1:8750/health",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract refuses http://192.168.1.1/",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract refuses http://2130706433:8642/health",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract refuses http://[::1]:8642/health",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract refuses http://antares:8080/healthz",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract refuses http://hermes:8642/health",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract refuses http://localhost:8642/health",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract refuses http://metadata.google.internal/",
+      "pass": true,
+      "detail": "Blocked: URL targets a private or internal network address"
+    },
+    {
+      "check": "web_extract was probed on every target",
+      "pass": true,
+      "detail": "14 targets"
+    },
+    {
+      "check": "skill_view was probed by name and by path",
+      "pass": true,
+      "detail": "3 names"
+    },
+    {
+      "check": "skill_view cannot read A's skill as ../../<A>/skills/probe-canary",
+      "pass": true,
+      "detail": "refused"
+    },
+    {
+      "check": "skill_view cannot read A's skill as /opt/data/profiles/<A>/skills/probe-canary",
+      "pass": true,
+      "detail": "refused"
+    },
+    {
+      "check": "skill_view cannot read A's skill as probe-canary",
+      "pass": true,
+      "detail": "refused"
+    },
+    {
+      "check": "a skill B writes with an inline shell snippet stays inert",
+      "pass": true,
+      "detail": "{\"created\": true, \"viewed\": true, \"leak\": false, \"unexpanded\": true}"
+    },
+    {
+      "check": "B's chat run ended",
+      "pass": false,
+      "detail": "RUNNING"
+    },
+    {
+      "check": "B's assistant reply holds no canary",
+      "pass": true,
+      "detail": ""
+    }
+  ],
+  "at": "2026-10-28T01:09:00Z",
+  "findings": {
+    "skill_manage_names_other_profile": true,
+    "image_resolver_reads_other_profile": true
+  }
+}

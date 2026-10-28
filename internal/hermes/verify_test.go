@@ -62,7 +62,7 @@ func newFake(t *testing.T) *fakeHermes {
 	for _, n := range DeniedToolsets {
 		f.toolsets = append(f.toolsets, tset{n, false})
 	}
-	for _, n := range []string{"web", "vision", "memory", "todo", "yuanbao", "kanban"} {
+	for _, n := range []string{"web", "skills", "memory", "todo", "yuanbao", "kanban"} {
 		f.toolsets = append(f.toolsets, tset{n, n != "yuanbao" && n != "kanban"})
 	}
 	f.srv = httptest.NewServer(http.HandlerFunc(f.serve))
@@ -337,7 +337,7 @@ func TestToolsetPolicyFloorCannotBeConfiguredAway(t *testing.T) {
 	}
 	// A narrower allow-list is fine, and is enforced: memory is enabled on the fake.
 	f := newFake(t)
-	v, err := NewVerifier(f.srv.URL, []string{"web", "vision", "todo"}, f.srv.Client())
+	v, err := NewVerifier(f.srv.URL, []string{"web", "skills", "todo"}, f.srv.Client())
 	if err != nil {
 		t.Fatal(err)
 	}

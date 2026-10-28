@@ -228,3 +228,13 @@ own HTTP path on the live host (the `config set` was run by hand), the two escal
 runbook (`web_extract`, `skill_manage`), and the A-vs-B cross-tenant negative tests. The Phase 0 FAIL
 verdict and the isolation finding in section 6 stand unchanged: this policy limits which tools exist, it
 does not make profiles sandboxes.
+
+### Update — issue #161 (2026-10-28, Hermes v0.22.5)
+
+The A-vs-B cross-tenant negative tests and both escalation questions were run against production with disposable
+accounts (`scripts/tool_isolation_probe.py`, `docs/runbooks/tenant-toolsets.md` "A/B tool isolation proof"). `web_extract`
+refuses every file, loopback, private, link-local, metadata and container-name target; `skill_manage` has no execution
+path while `skills.inline_shell` is off; Antares answers 404 to B on every A route. One real hole was found and closed:
+`vision_analyze` (and image-generation reference images) load any local path, so `vision` and `image_gen` joined the
+floor. The verdict in section 6 still stands: profiles share one filesystem and one user, and the toolset floor is what
+keeps a tenant's tools inside its own profile.
