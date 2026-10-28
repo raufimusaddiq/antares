@@ -291,7 +291,7 @@ function badges(m: ModelEntry): string {
     `Output: ${m.modalities ? kinds(m.modalities.output) : "unknown"}`,
     `Reasoning: ${m.reasoning === null ? "unknown" : m.reasoning ? "yes" : "no"}`,
     `Context window: ${m.contextWindow === null ? "unknown" : `${m.contextWindow.toLocaleString("en-US")} tokens`}`,
-    describePrice(m.price),
+    mediaPrice(m) ?? describePrice(m.price),
   ].join(" · ");
 }
 
@@ -299,3 +299,11 @@ const withHidden = (c: ModelCatalog, ids: Set<string>): ModelCatalog => ({
   ...c,
   providers: c.providers.map((p) => ({ ...p, models: p.models.map((m) => ({ ...m, hidden: ids.has(m.id) })) })),
 });
+
+/** Kenari's API prices models per token and reports 0 for an image, video or speech model, whose price is on its
+ * catalogue page instead. That 0 is not the price, so it is not shown; a model Kenari marks free stays "free". */
+export function mediaPrice(m: ModelEntry): string | null {
+  if (m.price?.free) return null;
+  const out = m.modalities?.output ?? [];
+  return out.some((k) => k !== "text") ? "Price: not in Kenari's API (see its catalogue)" : null;
+}
