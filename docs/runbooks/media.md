@@ -159,10 +159,15 @@ Hermes' own tools generate the media; Antares only shows it.
       docker exec -u 0 hermes chown -R hermes:hermes /opt/data/antares-plugins
       docker exec hermes test -f /opt/data/antares-plugins/kenari-image/plugin.yaml   # the policy step looks here
 
-  The provisioner's policy step (every provision and rotate) copies it into the profile's `plugins/` and sets
-  `plugins.enabled: [kenari-image]` and `image_gen.provider: kenari-image`. Existing profiles get it on their next
-  rotate (admin `tenant-verify`). Hermes loads plugins per profile when the gateway first serves it, so restart the
-  Hermes container after installing or changing the plugin.
+  The provisioner's policy step (every provision and rotate) copies it into the profile's `plugins/`, sets
+  `plugins.enabled: [kenari-image]` (replaced, not merged: a tenant profile is provisioner-owned) and then
+  `image_gen.provider: kenari-image`, and then always asks the running gateway to rediscover that profile's plugins
+  (`gateway.control_socket.reload_gateway_plugins`, under a second). The reload matters: the shared gateway discovers a
+  profile's plugins once, when the profile appears (at `profile create`, before the plugin is copied in), and a config
+  write does not tell it. Measured on 2026-10-28: without it, a freshly provisioned profile's runs had no
+  `image_generate` tool until a gateway restart; with it, the same flow generated an image. It runs on every rotate too,
+  so an existing profile gets the plugin on its next `tenant-verify`. A gateway that does not answer (not running) does
+  not fail the step. After changing the plugin's code, restart the Hermes container.
 - **Delivery.** A reply names a generated file as `MEDIA:<path>` in the profile's cache. The history API replaces each
   tag with `MEDIA:<kind>-<id>`, the path sealed with the server's key and bound to the user, so no path or profile name
   reaches the browser. The web app shows the file under the reply (image with a lightbox, audio and video with native
