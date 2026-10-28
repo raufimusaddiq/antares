@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"errors"
 	"net/http"
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -53,5 +57,49 @@ func TestMediaServesOnlyTheProfilesOwnCache(t *testing.T) {
 	f.err = exitErr(1)
 	if rec := do(t, s, "/media", "Bearer "+testToken, ok); rec.Code != http.StatusBadGateway {
 		t.Errorf("broken exec: %d", rec.Code)
+	}
+}
+
+// The media script itself, run by python3 against a temporary cache: a regular file inside is served; a symlink
+// anywhere on the way (to a file outside, to a directory outside, or to a file inside) is refused, as is a missing file.
+func TestMediaScriptRefusesSymlinksAnywhereOnThePath(t *testing.T) {
+	if _, err := exec.LookPath("python3"); err != nil {
+		t.Skip("python3 not installed")
+	}
+	dir := t.TempDir()
+	root := filepath.Join(dir, "profiles", "u_abcdefgh", "cache") + "/"
+	other := filepath.Join(dir, "profiles", "u_otherone1", "cache")
+	must := func(err error) {
+		t.Helper()
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	must(os.MkdirAll(filepath.Join(root, "generated", "images"), 0o755))
+	must(os.MkdirAll(other, 0o755))
+	must(os.WriteFile(filepath.Join(root, "generated", "images", "own.png"), []byte("OWN"), 0o644))
+	must(os.WriteFile(filepath.Join(other, "secret.png"), []byte("SECRET"), 0o644))
+	must(os.Symlink(filepath.Join(other, "secret.png"), filepath.Join(root, "generated", "images", "link.png")))
+	must(os.Symlink(other, filepath.Join(root, "swapped")))
+	must(os.Symlink(filepath.Join(root, "generated", "images", "own.png"), filepath.Join(root, "inner.png")))
+	run := func(path string) (string, int) {
+		cmd := exec.Command("python3", "-c", mediaScript, root, path, "1048576")
+		out, err := cmd.Output()
+		var ee *exec.ExitError
+		if errors.As(err, &ee) {
+			return string(out), ee.ExitCode()
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		return string(out), 0
+	}
+	if out, code := run(root + "generated/images/own.png"); code != 0 || out != "OWN" {
+		t.Fatalf("own file: %d %q", code, out)
+	}
+	for _, p := range []string{root + "generated/images/link.png", root + "swapped/secret.png", root + "inner.png", root + "generated/images/none.png", root + "../.env"} {
+		if out, code := run(p); code != 3 || strings.Contains(out, "SECRET") || out != "" {
+			t.Errorf("%s: exit %d, %q", p, code, out)
+		}
 	}
 }

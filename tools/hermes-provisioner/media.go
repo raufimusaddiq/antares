@@ -22,16 +22,32 @@ var mediaTypes = map[string]string{
 	".mp4": "video/mp4", ".webm": "video/webm",
 }
 
-// mediaScript prints the file's bytes, or exits 3 when it resolves outside the cache, is not a regular file or is too
-// large. The root and the path are arguments.
+// mediaScript prints the file's bytes, or exits 3 when it is not a regular file inside the cache, is too large or
+// missing. It opens each path component relative to the one before with O_NOFOLLOW, starting at the cache directory,
+// and checks and reads the opened descriptor: a symlink anywhere on the way (or swapped in while it runs) is refused,
+// never followed. The root and the path are arguments.
 const mediaScript = `
 import os, stat, sys
 root, path, limit = sys.argv[1], sys.argv[2], int(sys.argv[3])
-real = os.path.realpath(path)
-if not real.startswith(root) or not os.path.exists(real) or not stat.S_ISREG(os.stat(real).st_mode) or os.path.getsize(real) > limit:
+rel = os.path.relpath(path, root)
+parts = rel.split(os.sep)
+if rel.startswith("..") or os.path.isabs(rel) or "" in parts or ".." in parts:
     sys.exit(3)
-with open(real, "rb") as f:
-    sys.stdout.buffer.write(f.read())
+D = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
+try:
+    fd = os.open(root, D)
+    for p in parts[:-1]:
+        nfd = os.open(p, D, dir_fd=fd)
+        os.close(fd)
+        fd = nfd
+    ffd = os.open(parts[-1], os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=fd)  # a FIFO never blocks the read
+    st = os.fstat(ffd)
+    if not stat.S_ISREG(st.st_mode) or st.st_size > limit:
+        sys.exit(3)
+    with os.fdopen(ffd, "rb") as f:
+        sys.stdout.buffer.write(f.read(limit + 1)[:limit])
+except OSError:
+    sys.exit(3)
 `
 
 var errMediaPath = errors.New("not a media file in this profile's cache")
