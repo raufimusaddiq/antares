@@ -1,26 +1,69 @@
 import "./zodConfig"; // must stay first: see the file
 import { createParser } from "@openuidev/react-lang";
-import { ALLOWED_COMPONENTS, library, MAX_TEXT } from "./library";
+import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib";
+import remarkGfm from "remark-gfm";
+import remarkParse from "remark-parse";
+import { unified } from "unified";
+import { outsideUrl } from "./actions";
 
-// Strict gate in front of the renderer (PRD §7.4). The OpenUI parser is
-// permissive by design: it drops what it cannot place and renders the rest. For
-// model output that is the wrong default, so a block is rendered only if it
-// parses cleanly, is complete, and contains nothing outside the allowlist.
-// Anything else is shown as inert source (see Block.tsx).
+// Gate in front of the renderer for a finished reply (PRD §7.4), over OpenUI's own chat library. The parser
+// checks every component and argument against the library's schema; on top of that a block is rendered only if
+// it parses with no error, is complete, has the library's root, holds no query, mutation or state (no tools are
+// wired to it), and stays within the size limits below. Anything else is shown as its source (Block.tsx).
+// While the reply streams the program is partial, so completeness, parse errors and dangling references wait for
+// the end; everything else (root, no query/mutation/state, known components, every limit) is checked on each update
+// before anything is rendered. Those failures only grow with more text, so a partial program that fails one is
+// final: it is shown as its source at once.
 
-export const MAX_NODES = 300;
-export const MAX_DEPTH = 6;
-export const MAX_STATEMENTS = 100;
-export const MAX_CHILDREN = 40;
-export const MAX_ARRAY = 100;
+export const MAX_NODES = 600;
+export const MAX_DEPTH = 12;
+export const MAX_STATEMENTS = 300;
+export const MAX_ARRAY = 200;
+export const MAX_TEXT = 20_000;
+
+// A component with an image address makes the browser fetch it with the reader's cookies (CSP allows same-origin
+// images), so no image is accepted: no image field (src, bgImageSrc, a gallery's or list item's image) and no Markdown
+// image. Every address the reader can follow must pass outsideUrl: absolute http(s), no user or password, never
+// Antares itself. That covers url/href fields (a Card's sources) and every Markdown link, found by parsing each string
+// the way the library's renderer does (remark + GFM), so inline, reference, <autolink> and bare-URL links are all seen;
+// a mailto: link is also allowed there. While streaming, an address that is still only a prefix of "https://" is let
+// through until more of it arrives.
+const IMAGE_FIELD = /^src$|Src$/;
+const URL_FIELD = /^url$|Url$|^href$/;
+const markdown = unified().use(remarkParse).use(remarkGfm);
+// Only text with one of these can hold a Markdown link or image; anything else skips the parse.
+const MAY_LINK = /[[<:]|www\./i;
+
+function urlOk(url: string, partial: boolean): boolean {
+  const u = url.toLowerCase();
+  if (partial && ("https://".startsWith(u) || "http://".startsWith(u))) return true;
+  return outsideUrl(url) !== null;
+}
+
+interface MdNode {
+  type: string;
+  url?: string;
+  children?: MdNode[];
+}
+
+/** The first thing wrong with the links and images of a piece of Markdown, or null. */
+function markdownProblem(text: string, partial: boolean): string | null {
+  if (!MAY_LINK.test(text)) return null;
+  const walk = (n: MdNode): string | null => {
+    if (n.type === "image" || n.type === "imageReference") return "images are not allowed";
+    if ((n.type === "link" || n.type === "definition") && typeof n.url === "string") {
+      if (!/^mailto:/i.test(n.url) && !urlOk(n.url, partial)) return "links must be absolute http(s) addresses outside Antares";
+    }
+    for (const c of n.children ?? []) {
+      const bad = walk(c);
+      if (bad) return bad;
+    }
+    return null;
+  };
+  return walk(markdown.runSync(markdown.parse(text)) as MdNode);
+}
 
 export type Verdict = { ok: true } | { ok: false; reason: string };
-
-// Which components may sit inside which (containers only; everything else is a leaf).
-const CONTAINS: Record<string, readonly string[]> = {
-  Stack: ["Text", "Heading", "Badge", "Metric", "BulletList", "Table", "Divider", "Chart", "Button", "Input", "Choice", "Card"],
-  Card: ["Text", "Heading", "Badge", "Metric", "BulletList", "Table", "Divider", "Chart", "Button", "Input", "Choice"],
-};
 
 let parser: ReturnType<typeof createParser> | undefined;
 
@@ -28,28 +71,13 @@ interface Node {
   type?: unknown;
   typeName?: unknown;
   props?: Record<string, unknown>;
-  hasDynamicProps?: unknown;
 }
 
-// The parser does not enforce the schema's min/max or cross-prop rules, so the ones that matter are here.
-const MAX_POINTS = 24;
-function shape(name: string, props: Record<string, unknown>): string | null {
-  if (name === "Chart") {
-    const { labels, values } = props;
-    if (!Array.isArray(labels) || !Array.isArray(values)) return "chart data";
-    if (labels.length < 1 || labels.length > MAX_POINTS) return "chart size";
-    if (labels.length !== values.length) return "chart labels and values differ";
-    if (!values.every((v) => typeof v === "number" && Number.isFinite(v))) return "chart value";
-  }
-  if (name === "Choice") {
-    const { options } = props;
-    if (!Array.isArray(options) || options.length < 2 || options.length > 12) return "choice options";
-  }
-  return null;
-}
-
-export function check(source: string): Verdict {
-  parser ??= createParser(library.toJSONSchema(), library.root);
+export function check(source: string, partial = false): Verdict {
+  // Antares' own first component set (v1, before native OpenUI) had a Stack root, which this library lacks (the
+  // parser drops it); such a block is shown as source, labelled as such.
+  if (/^\s*root\s*=\s*Stack\s*\(/.test(source)) return { ok: false, reason: "made by an earlier version of rich replies" };
+  parser ??= createParser(openuiChatLibrary.toJSONSchema(), openuiChatLibrary.root);
   let r;
   try {
     r = parser.parse(source);
@@ -57,45 +85,60 @@ export function check(source: string): Verdict {
     return { ok: false, reason: "parse error" };
   }
   const m = r.meta;
-  if (!r.root) return { ok: false, reason: "no root" };
-  if (r.root.typeName !== library.root) return { ok: false, reason: `root must be ${library.root}` };
+  if (!r.root) return partial ? { ok: true } : { ok: false, reason: "no root" };
+  if (r.root.typeName !== openuiChatLibrary.root) return { ok: false, reason: `root must be ${openuiChatLibrary.root}` };
   if (r.rootExpression) return { ok: false, reason: "computed root" };
-  if (m.incomplete) return { ok: false, reason: "incomplete" };
-  if (m.errors.length > 0) return { ok: false, reason: `invalid: ${m.errors[0].code}` };
-  if (m.unresolved.length > 0 || m.orphaned.length > 0) return { ok: false, reason: "dangling reference" };
+  // An unknown component is dropped by the parser and only reported here; more text cannot fix it.
+  const unknown = m.errors.find((e) => e.code === "unknown-component");
+  if (unknown) return { ok: false, reason: "invalid: unknown-component" };
+  if (!partial) {
+    if (m.incomplete) return { ok: false, reason: "incomplete" };
+    if (m.errors.length > 0) return { ok: false, reason: `invalid: ${m.errors[0].code}` };
+    if (m.unresolved.length > 0) return { ok: false, reason: "dangling reference" };
+    // An unreferenced statement would be dropped silently, losing part of the answer: show the source instead.
+    if (m.orphaned.length > 0) return { ok: false, reason: "unused statement" };
+  }
   if (m.statementCount > MAX_STATEMENTS) return { ok: false, reason: "too many statements" };
   if (r.queryStatements.length > 0 || r.mutationStatements.length > 0) return { ok: false, reason: "queries and mutations are not allowed" };
   if (Object.keys(r.stateDeclarations).length > 0) return { ok: false, reason: "state is not allowed" };
 
+  const known = new Set(Object.keys(openuiChatLibrary.components));
   let nodes = 0;
-  const visit = (v: unknown, parent: string | null, depth: number): string | null => {
-    if (typeof v === "string") return v.length > MAX_TEXT ? "text too long" : null;
+  const visit = (v: unknown, depth: number, key = ""): string | null => {
+    if (typeof v === "string") {
+      if (v.length > MAX_TEXT) return "text too long";
+      if (IMAGE_FIELD.test(key) && v.trim() !== "") return "images are not allowed";
+      if (URL_FIELD.test(key) && !urlOk(v, partial)) return "links must be absolute http(s) addresses outside Antares";
+      const bad = markdownProblem(v, partial);
+      if (bad) return bad;
+      return null;
+    }
     if (Array.isArray(v)) {
       if (v.length > MAX_ARRAY) return "list too long";
-      if (parent !== null && v.length > MAX_CHILDREN && v.some((x) => typeof x === "object" && x !== null && (x as Node).type === "element")) return "too many children";
       for (const x of v) {
-        const bad = visit(x, parent, depth);
+        const bad = visit(x, depth, key);
         if (bad) return bad;
       }
       return null;
     }
     if (typeof v !== "object" || v === null) return null;
     const n = v as Node;
-    if (n.type !== "element") return "unexpected value";
-    const name = String(n.typeName);
-    if (!ALLOWED_COMPONENTS.includes(name)) return `component ${name}`;
-    if (parent !== null && !CONTAINS[parent]?.includes(name)) return `${name} inside ${parent}`;
-    if (n.hasDynamicProps) return "dynamic props";
-    const bad = shape(name, n.props ?? {});
-    if (bad) return bad;
-    if (++nodes > MAX_NODES) return "too many components";
-    if (depth > MAX_DEPTH) return "nested too deeply";
-    for (const val of Object.values(n.props ?? {})) {
-      const inner = visit(val, name, depth + 1);
+    if (n.type === "element") {
+      if (!known.has(String(n.typeName))) return `component ${String(n.typeName)}`;
+      if (++nodes > MAX_NODES) return "too many components";
+      if (depth > MAX_DEPTH) return "nested too deeply";
+      for (const [k, val] of Object.entries(n.props ?? {})) {
+        const inner = visit(val, depth + 1, k);
+        if (inner) return inner;
+      }
+      return null;
+    }
+    for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+      const inner = visit(val, depth, k);
       if (inner) return inner;
     }
     return null;
   };
-  const bad = visit(r.root, null, 1);
+  const bad = visit(r.root, 1);
   return bad ? { ok: false, reason: bad } : { ok: true };
 }

@@ -135,6 +135,13 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 	// failure. It is a public constant, not a route, key or profile. Any other
 	// mention of the word is still refused.
 	apiCode := regexp.MustCompile(`HERMES_UNAVAILABLE`)
+	// The other one: lucide's "fingerprint-pattern" icon, which the native OpenUI library (@openuidev/react-ui, on
+	// demand) loads by name: its chunk file, the name, and the "fingerprint:" key of lucide's dynamic import map.
+	// These exact forms only; any other occurrence of the word is still refused.
+	lucideIcon := regexp.MustCompile("fingerprint-pattern(-[A-Za-z0-9_-]+\\.js)?|\\bfingerprint:\\(\\)=>")
+	// And the SQL grammar of the code highlighter that OpenUI's CodeBlock uses lists AUTHORIZATION among its keywords
+	// (in exactly this run of the alternation); a keyword list, not a header.
+	sqlKeyword := regexp.MustCompile(`\|ASC\|AUTHORIZATION\|AUTO_INCREMENT\|`)
 	check := func(name string, b []byte, ours bool) {
 		if ours && wordRe.Match(fetchOption.ReplaceAll(b, nil)) {
 			t.Errorf("%s mentions credentials beyond fetch's same-origin option", name)
@@ -144,7 +151,7 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 				t.Errorf("%s names backend path %s", name, p)
 			}
 		}
-		if m := badRe.FindString(string(apiCode.ReplaceAll(b, nil))); m != "" {
+		if m := badRe.FindString(string(sqlKeyword.ReplaceAll(lucideIcon.ReplaceAll(apiCode.ReplaceAll(b, nil), nil), nil))); m != "" {
 			t.Errorf("%s contains %q: nothing credential-shaped may reach the browser", name, m)
 		}
 	}
@@ -178,8 +185,8 @@ func TestOpenUIChunksAreNotInTheInitialBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Strings that exist only in the lazy modules: Block.tsx (renderer) and Chart.tsx.
-	lazy := map[string]string{"Block-": "ou-block", "Chart-": "ou-chart-svg"}
+	// Strings that exist only in the lazy modules: Block.tsx (renderer).
+	lazy := map[string]string{"Block-": "ou-block"}
 	for prefix := range lazy {
 		if strings.Contains(string(html), "/assets/"+prefix) {
 			t.Errorf("index.html loads or preloads the %s chunk", prefix)
@@ -242,7 +249,7 @@ func TestServiceWorkerPrecachesShellNotOptionalChunks(t *testing.T) {
 			t.Errorf("precache lacks %s", want)
 		}
 	}
-	for _, prefix := range []string{"Block-", "Chart-"} {
+	for _, prefix := range []string{"Block-"} {
 		if strings.Contains(precache, "/assets/"+prefix) {
 			t.Errorf("precache downloads the optional %s chunk at install", prefix)
 		}

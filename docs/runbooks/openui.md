@@ -1,45 +1,54 @@
-# Runbook — OpenUI renderer foundation (slice 5, PRD §7)
+# Runbook — OpenUI in chat (slice 5, PRD §7)
 
-Code: `web/src/openui/*`, `web/src/MessageBody.tsx`. Package: `@openuidev/react-lang@1.0.1` (exact pin), `zod@4`.
+Code: `web/src/openui/*`, `web/src/MessageBody.tsx`. Packages (exact pins): `@openuidev/react-lang@1.0.2`,
+`@openuidev/react-ui@0.18.1`, `@openuidev/react-headless@0.18.1`, `zustand@4.5.7`, `zod@4`.
 
 ## What is built
 
-- **Detection** (`segments.ts`, main bundle, no OpenUI import): an assistant message is split into Markdown and
-  OpenUI segments. An OpenUI segment is a fenced block whose info string is `openui` or `openui-lang`. Anything
-  else, including such a fence nested inside another code fence, over 20,000 characters, or beyond 8 per message,
-  stays Markdown (shown as inert code).
-- **Lazy runtime**: the renderer, Zod and the component library are one on-demand chunk (`Block-*.js`, ~200 kB,
-  ~61 kB gzip). A chat with no rich content never fetches it (checked in `scripts/browser-check.mjs`).
-- **Allowlist** (`library.tsx`): `Stack, Card, Text, Heading, Badge, Metric, BulletList, Table, Divider, Chart, Button, Input, Choice`.
-  Every value is rendered as React text. There is **no** link, form submit, image, iframe, media or URL component, so a
-  block cannot navigate, fetch or mutate anything. `onAction` is a no-op.
-- **Safe actions** (`reply.ts`): `Button`, `Input` and `Choice` do one thing: add text (≤ 500 chars) to the composer draft
-  of the chat on screen through `ReplyContext`, provided by `Chat.tsx`. They never send; the reader reviews and presses
-  Send, so the follow-up is an ordinary authenticated message in the current chat (PRD §7.4). Without a provider the
-  buttons are disabled. No Go route is involved, so there is no new server surface to authorize.
-- **Action choke point** (`actions.ts`, shipped in the on-demand `Block-*` chunk because only `library.tsx` and `Block.tsx` import it): everything a block can do goes through `runAction(name, payload, sinks)`.
-  The name must be an own key of the action table (so `constructor`/`__proto__` are refused); the only action is `reply`.
-  The payload is rebuilt by `cleanReply` (string only, control and bidi-override characters removed, trimmed, 1-500
-  characters) before a handler sees it; that function is the sanitisation point. `Block.tsx` routes the renderer's
-  `onAction` through `runAction` with **no sinks**, so a model-declared action never does anything. An action that needs the
-  server must be added to the table together with its secured Go route (session, approval, ownership, CSRF), never by a
-  component calling `fetch`. `actions.test.tsx` pins the refusals, that a payload reaches only the composer sink, and (by
-  scanning the renderer's sources) that no DOM sink or dynamic code exists in `web/src/openui/*` or `MessageBody.tsx`.
-- **Charts** (`Chart.tsx`): bar, line and pie as plain SVG from `kind`, `title`, `labels`, `values` (1-24 points, finite
-  numbers, labels and values the same length; checked in `validate.ts` because the parser does not enforce schema
-  min/max). The numbers are also shown as a text table. The renderer is its own on-demand chunk (`Chart-*.js`, ~2 kB)
-  behind `React.lazy`; `TestOpenUIChunksAreNotInTheInitialBundle` (`internal/webui`) fails if the shell preloads, or the
-  entry script contains, the `Block` or `Chart` chunk.
-- **Strict gate** (`validate.ts`): the parser is permissive by design (it drops what it cannot place). A block is
-  rendered only if it parses with zero errors, is complete, has a `Stack` root, contains only allowlisted components
-  in allowed positions (`Card` not in `Card`, no `Stack` inside `Card`), no dynamic props, no `Query`/`Mutation`/`$state`,
-  no dangling or orphan statements, ≤ 300 nodes, depth ≤ 6, ≤ 40 children per container, ≤ 100 items per list and ≤ 4,000
-  characters per string. Otherwise the block is shown as its **source, as text**, with a one-line reason — never blank,
-  never half-built.
-- **Streaming**: an unterminated block while the reply streams is a quiet placeholder ("Preparing rich content…"); it is
-  validated and rendered only once its fence closes, and the result is memoised by source, so frequent deltas do no
-  repeated work. If the reply ends with the block still open, the source is shown.
-- **Crash safety**: an error boundary around the renderer falls back to the source.
+Antares renders OpenUI **natively**: the model writes OpenUI Lang against OpenUI's own chat component library
+(`openuiChatLibrary` from `@openuidev/react-ui`), and `Block.tsx` renders it with that library's `Renderer`. There is no
+Antares-specific component set to keep in step with the prompt.
+
+- **Detection** (`segments.ts`, main bundle, no OpenUI import): a reply that starts with `root =` is one OpenUI block (up
+  to 60,000 characters). Otherwise an OpenUI segment is a fenced block whose info string is `openui` or `openui-lang`
+  (at most 8 per message); anything else, including such a fence nested in another code fence, stays Markdown.
+- **Lazy runtime**: renderer, library, its CSS and the lucide icons are on-demand chunks (`Block-*.js` ~1.9 MB,
+  `Block-*.css` ~370 kB, one small chunk per icon). A chat with no rich content never fetches them;
+  `TestOpenUIChunksAreNotInTheInitialBundle` (`internal/webui`) fails if the shell preloads or contains `Block`.
+- **Strict gate** (`validate.ts`): the parser is permissive, so a block is rendered only if it parses with zero errors,
+  is complete, has a `Card` root, uses only components of `openuiChatLibrary`, has no `Query`/`Mutation`/`$state`, no
+  unresolved or orphan statements, ≤ 600 nodes, depth ≤ 12, ≤ 300 statements, ≤ 200 items per array and ≤ 20,000
+  characters per string. Otherwise the block is shown as its **source, as text**, with a one-line reason.
+- **Streaming**: while the reply streams, the block renders progressively (`isStreaming`), but every update is checked
+  first (`check(source, true)`): root, unknown components, no query/mutation/state and every size limit. Only
+  completeness, parse errors and dangling references wait for the end. A partial program that fails is shown as source
+  at once (those failures cannot be fixed by more text). A reply that ends with a fenced block still open shows the source.
+- **No images, absolute links only**: a component with an image address would make the browser fetch it with the
+  reader's cookies (the CSP allows same-origin images), so the gate refuses any non-empty image field (`src`,
+  `bgImageSrc`, a gallery's or list item's image) and any Markdown image, while streaming too. Every address a reader
+  can follow (a `url`/`href` field such as a Card's `sources`, every Markdown link, and `open_url`) must pass
+  `outsideUrl` in `actions.ts`: absolute http(s), no credentials, never Antares' own origin. Markdown is checked by
+  parsing each string with remark + GFM (the renderer's own parser, pinned at the same versions), so inline, reference,
+  `<autolink>` and bare-URL links are all seen; `mailto:` links are allowed there. The prompt says so (`ANTARES_RULES` in `web/scripts/openui-prompt.mjs`). Generated pictures still
+  reach the chat as media (`/api/media`), outside OpenUI.
+- **Earlier blocks**: blocks written for Antares' first component set (`[antares-openui v1]`, root `Stack`) are not
+  rendered by the native library; they are shown as source, labelled "made by an earlier version of rich replies".
+  At the switch, production held one such block (an owner test), so no v1 renderer was kept.
+- **Actions** (`actions.ts`, the choke point; `Block.tsx` routes the renderer's `onAction` through `runAction`):
+  - `continue_conversation` / `reply`: the message (and any form state, as a fenced JSON block) is cleaned by
+    `cleanReply` (string only, control and bidi characters removed, ≤ 4,000 characters) and put in the composer draft of
+    the chat on screen via `ReplyContext`. It never sends; the reader reviews and presses Send. After the click the
+    block says "Added to your message. Nothing was sent." (#173), since a model can label a button "Submit order".
+  - `open_url`: only `http:`/`https:` URLs without user info and not on Antares' own origin, ≤ 2,048 characters, opened after a `window.confirm` in a
+    new tab with `noopener,noreferrer`. `javascript:`, `data:` and the like are refused.
+  - Any other action name (including `constructor`/`__proto__`) is refused. No action calls `fetch`; an action that needs
+    the server must come with its secured Go route (session, approval, ownership, CSRF).
+- **Theme**: `styles.css` restates OpenUI's font tokens with the app font and its ink/cobalt; `appearance.ts` mirrors the
+  app's light/dark choice to `data-openui-theme` on `<html>`, which OpenUI's token sheet reads (system = no attribute,
+  so it follows `prefers-color-scheme` like the app). `ThemeProvider` is not used: it injects a `<style>` the CSP refuses.
+- **Crash safety**: an error boundary around the renderer, and a load boundary around the lazy import, fall back to the source.
+- **Tests**: `native.test.tsx` renders OpenUI's own chat examples through the gate and checks the action refusals;
+  `prompt.test.ts` pins that `internal/chat/openui_prompt.txt` is what the library generates.
 
 ## CSP and the OpenUI runtime
 
@@ -62,23 +71,19 @@ package is installed. `web/.npmrc` therefore sets `ignore-scripts=true`.
 
 ## Not done here (explicit)
 
-- The versioned OpenUI instruction that tells the model the language (PRD §7.2) is **not** sent. Hermes' per-request
-  instruction mechanism has no captured fixture (`docs/hermes/PHASE0-FINDINGS.md` §2), and inventing one is how an
-  endpoint's assumed shape becomes a production bug. Until it exists, models only produce OpenUI if a user asks for it.
-- Images/video/audio, source lists, approval cards and a sent (not drafted) follow-up (§7.3 beyond the above). Sending
-  from a block would need the secured Go route first.
-- The §7.5 malicious-action rows (`/admin/*` from a block, cross-chat form submit) hold because no component can issue a
-  request: the only action writes to a local draft. `Rich.test.tsx` pins that no `fetch` happens on click.
+- A sent (not drafted) follow-up from a block. Sending from a block would need the secured Go route first.
+- The §7.5 malicious-action rows (`/admin/*` from a block, cross-chat form submit) hold because no action issues a
+  request: replies write to a local draft and links only open after a confirm.
 - Hermes exposes no OpenUI route (PRD UI-001, `docs/hermes/PHASE0-FINDINGS.md` has none), so the registry stays client-side.
 
 ## Visualize toggle (#153, LLM-008)
 
 Per chat, **on** for a new chat (owner decision 2026-10-28; `store.CreateChat` stores and returns `visualize: true`; chats made before keep their setting): `PATCH /api/chats/{chatId}` with `{"visualize": true|false}` (owner only; the chat view
 carries `visualize`), stored in `chats.visualize` (migration 0022); the composer shows the checkbox. While it is on,
-each run of that chat sends the versioned instruction `[antares-openui v1]` (`internal/chat/personality.go`,
-`openUIInstruction`) as the `instructions` field of `POST /v1/runs`, before the user's own preferences (#111). Hermes
-reads it into the run's ephemeral system prompt (`gateway/platforms/api_server_runs.py` `_resolve_conversation_history`
-→ `ephemeral_system_prompt`), so nothing global or profile-wide changes. The instruction lists exactly what
-`library.tsx`/`validate.ts` accept; change them together and bump the tag. Whatever the model sends is still validated
-and rendered by the strict gate above. `TestVisualizeIsPerChatAndReachesOnlyItsRuns` checks the instruction reaches only
-that chat's runs, another user cannot set it, and turning it off stops it.
+each run of that chat sends the versioned instruction `[antares-openui v2]` followed by OpenUI's generated chat-library
+prompt (`internal/chat/openui_prompt.txt`, embedded by `personality.go`, `openUIInstruction`) as the `instructions` field
+of `POST /v1/runs`, before the user's own preferences (#111). Hermes reads it into the run's ephemeral system prompt
+(`gateway/platforms/api_server_runs.py` `_resolve_conversation_history` → `ephemeral_system_prompt`), so nothing global
+or profile-wide changes. After a library upgrade, regenerate the prompt with `node web/scripts/openui-prompt.mjs`
+(`prompt.test.ts` fails until you do) and bump the tag. `TestVisualizeIsPerChatAndReachesOnlyItsRuns` checks the
+instruction reaches only that chat's runs, another user cannot set it, and turning it off stops it.

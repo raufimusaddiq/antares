@@ -33,7 +33,7 @@ Inputs over 200,000 characters are not parsed at all and are shown as plain pref
 ## Safety that is tested, not assumed
 
 - Script, event-handler attributes, `javascript:` links and raw HTML never reach the DOM as markup (`MarkdownDom.test.tsx`).
-- OpenUI accepts only its component allowlist with size limits (`openui/library.tsx`, `validate.ts`; `openui.test.tsx`),
+- OpenUI accepts only OpenUI's chat component library with size limits (`openui/validate.ts`; `native.test.tsx`),
   and its only action is `reply`: it puts text in the composer and sends nothing. After a click the block says
   "Added to your message. Nothing was sent.", so a model-chosen label such as "Submit order" cannot suggest otherwise.
 - Mixed Markdown with fenced OpenUI, long code lines and wide tables are in the browser check's rich conversation

@@ -13,7 +13,7 @@ const openPanel = (c: HTMLElement) => {
 
 beforeEach(() => {
   localStorage.clear();
-  for (const a of ["data-theme", "data-text", "data-focus", "data-sidebar"]) root.removeAttribute(a);
+  for (const a of ["data-theme", "data-openui-theme", "data-text", "data-focus", "data-sidebar"]) root.removeAttribute(a);
 });
 afterEach(() => {
   cleanup();
@@ -36,9 +36,9 @@ describe("appearance", () => {
     saveAppearance(chosen);
     expect(loadAppearance()).toEqual(chosen);
     applyAppearance(loadAppearance());
-    expect([root.dataset.theme, root.dataset.text, root.hasAttribute("data-focus"), root.dataset.sidebar]).toEqual(["dark", "larger", true, "narrow"]);
+    expect([root.dataset.theme, root.dataset.openuiTheme, root.dataset.text, root.hasAttribute("data-focus"), root.dataset.sidebar]).toEqual(["dark", "dark", "larger", true, "narrow"]);
     applyAppearance(DEFAULT_APPEARANCE); // the defaults leave no attribute behind
-    expect(["data-theme", "data-text", "data-focus", "data-sidebar"].some((a) => root.hasAttribute(a))).toBe(false);
+    expect(["data-theme", "data-openui-theme", "data-text", "data-focus", "data-sidebar"].some((a) => root.hasAttribute(a))).toBe(false);
   });
 
   it("the panel applies and saves a change at once", () => {

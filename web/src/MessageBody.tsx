@@ -19,11 +19,9 @@ class LoadBoundary extends Component<{ source: string; children: ReactNode }, { 
 }
 
 /**
- * An assistant message: Markdown, with OpenUI blocks rendered through the
- * allowlist where they are complete and valid. While a reply is still
- * streaming, an unfinished block is a quiet placeholder, never a half-built UI
- * (PRD §7.5); once the reply has ended, an unfinished or invalid block is shown
- * as its source. Markdown/plain text is always the fallback, never a blank.
+ * An assistant message: Markdown, with OpenUI blocks rendered through OpenUI's chat library. While a
+ * reply is still streaming, a block renders progressively; once the reply has ended, an unfinished or
+ * invalid block is shown as its source. Markdown/plain text is always the fallback, never a blank.
  */
 export function MessageBody({ text, streaming }: { text: string; streaming: boolean }) {
   const segments = useMemo(() => splitSegments(text), [text]);
@@ -32,15 +30,8 @@ export function MessageBody({ text, streaming }: { text: string; streaming: bool
     <>
       {segments.map((s, i) => {
         if (s.kind === "md") return <Markdown key={i} text={s.text} />;
-        if (!s.closed) {
-          return streaming ? (
-            <p key={i} className="label" role="status">
-              Preparing rich content…
-            </p>
-          ) : (
-            <SourceFallback key={i} source={s.source} why="incomplete" />
-          );
-        }
+        // A fenced block is still open while the reply streams in; the renderer shows it progressively.
+        if (!s.closed && !streaming) return <SourceFallback key={i} source={s.source} why="incomplete" />;
         return (
           <LoadBoundary key={i} source={s.source}>
             <Suspense
@@ -50,7 +41,7 @@ export function MessageBody({ text, streaming }: { text: string; streaming: bool
                 </p>
               }
             >
-              <RichBlock source={s.source} />
+              <RichBlock source={s.source} streaming={streaming} />
             </Suspense>
           </LoadBoundary>
         );

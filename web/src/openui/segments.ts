@@ -9,12 +9,17 @@
 
 export type Segment = { kind: "md"; text: string } | { kind: "openui"; source: string; closed: boolean };
 
-export const MAX_BLOCK_CHARS = 20_000;
+export const MAX_BLOCK_CHARS = 60_000; // a whole native reply is one block
 export const MAX_BLOCKS = 8;
 
 const OPEN = /^(\s{0,3})(`{3,})\s*([A-Za-z0-9_-]*)\s*$/;
 
+// Native OpenUI: the whole reply is an openui-lang program whose first statement is `root = ...`. While it streams
+// it is rendered progressively; the closed flag is the caller's (a finished reply is complete).
+const NATIVE = /^\s*root\s*=/;
+
 export function splitSegments(text: string): Segment[] {
+  if (NATIVE.test(text) && text.length <= MAX_BLOCK_CHARS) return [{ kind: "openui", source: text.trim(), closed: true }];
   if (!/```\s*openui/i.test(text)) return [{ kind: "md", text }];
   const lines = text.replace(/\r\n?/g, "\n").split("\n");
   const out: Segment[] = [];
