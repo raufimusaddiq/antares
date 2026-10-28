@@ -98,7 +98,8 @@ func (s *Service) getMedia(w http.ResponseWriter, r *http.Request) {
 
 // streamMedia takes the MEDIA: tags out of a reply as it streams. A tag can arrive split over deltas, so the tail of
 // the text that may still be one (an unfinished tag, or the start of "MEDIA:") is held back and returned as the new
-// hold; the rest goes out without tags. A hold that grows past 8 KiB is let go, tags stripped.
+// hold; the rest goes out without tags. A tag that grows past 8 KiB unfinished is cut down to its opening, so the hold
+// stays small and the tag's remaining pieces are still stripped.
 func streamMedia(hold, delta string) (out, rest string) {
 	s := hold + delta
 	cut := len(s)
@@ -123,10 +124,16 @@ func streamMedia(hold, delta string) (out, rest string) {
 			}
 		}
 	}
-	if len(s)-cut > 8<<10 {
-		cut = len(s)
+	rest = s[cut:]
+	if len(rest) > 8<<10 && strings.HasPrefix(rest, "MEDIA:") {
+		// An oversized unfinished tag: drop what arrived of it, keep only its opening, so the pieces still to come are
+		// still recognised as the same tag and stripped (the hold stays bounded).
+		rest = "MEDIA:"
+		if q := s[cut+len("MEDIA:"):]; q != "" && (q[0] == '"' || q[0] == '\'') {
+			rest += q[:1]
+		}
 	}
-	return stripMediaTags(s[:cut]), s[cut:]
+	return stripMediaTags(s[:cut]), rest
 }
 
 // stripMediaTags removes every MEDIA:<…> tag from text (for the live stream, the search index and its snippets).

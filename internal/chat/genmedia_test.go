@@ -159,3 +159,35 @@ func TestRunStreamNeverCarriesAGeneratedFilesPath(t *testing.T) {
 		t.Errorf("streamed text: %q", got)
 	}
 }
+
+func TestStreamMediaDropsAnOversizedTagWithoutLeakingItsRest(t *testing.T) {
+	var out strings.Builder
+	hold := ""
+	feed := func(d string) {
+		var text string
+		text, hold = streamMedia(hold, d)
+		out.WriteString(text)
+		if len(hold) > 9<<10 {
+			t.Fatalf("hold grew to %d bytes", len(hold))
+		}
+	}
+	feed("Look: MEDIA:/opt/data/profiles/u_x/cache/")
+	for i := 0; i < 5; i++ {
+		feed(strings.Repeat("a", 4<<10)) // the tag keeps going past 8 KiB
+	}
+	feed("SECRETTAIL.png")
+	feed(" after")
+	out.WriteString(stripMediaTags(hold))
+	if got := out.String(); got != "Look:  after" {
+		t.Fatalf("streamed text: %.80q", got)
+	}
+	// A quoted one, too.
+	out.Reset()
+	hold = ""
+	feed(`MEDIA:"/a b ` + strings.Repeat("c", 9<<10))
+	feed(`SECRET d.png" ok`)
+	out.WriteString(stripMediaTags(hold))
+	if got := out.String(); got != " ok" {
+		t.Fatalf("quoted: %.80q", got)
+	}
+}
