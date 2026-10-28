@@ -1,0 +1,121 @@
+{
+  "passed": true,
+  "checks": [
+    {
+      "check": "admin API reachable (admin workspace ready)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "A and B are signed in",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "admin approves A",
+      "pass": true,
+      "detail": "200"
+    },
+    {
+      "check": "admin approves B",
+      "pass": true,
+      "detail": "200"
+    },
+    {
+      "check": "A and B provisioned and able to chat",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "the jobs capability is available",
+      "pass": true,
+      "detail": "{\"id\": \"jobs\", \"label\": \"Scheduled tasks\", \"status\": \"available\"}"
+    },
+    {
+      "check": "A creates a job",
+      "pass": true,
+      "detail": "201"
+    },
+    {
+      "check": "the new job is scheduled, not paused",
+      "pass": true,
+      "detail": "{\"state\": \"scheduled\", \"paused\": false, \"schedule\": \"every 120m\"}"
+    },
+    {
+      "check": "B's list does not contain A's job",
+      "pass": true,
+      "detail": "200 0 jobs"
+    },
+    {
+      "check": "B GET /api/jobs/<A job> is 404",
+      "pass": true,
+      "detail": "404"
+    },
+    {
+      "check": "B DELETE /api/jobs/<A job> is 404",
+      "pass": true,
+      "detail": "404"
+    },
+    {
+      "check": "B POST /api/jobs/<A job>/pause is 404",
+      "pass": true,
+      "detail": "404"
+    },
+    {
+      "check": "B POST /api/jobs/<A job>/resume is 404",
+      "pass": true,
+      "detail": "404"
+    },
+    {
+      "check": "B POST /api/jobs/<A job>/run is 404",
+      "pass": true,
+      "detail": "404"
+    },
+    {
+      "check": "A's job is unchanged after B's attempts",
+      "pass": true,
+      "detail": "200"
+    },
+    {
+      "check": "A runs the job once",
+      "pass": true,
+      "detail": "200"
+    },
+    {
+      "check": "the run finished",
+      "pass": true,
+      "detail": "{\"lastRunAt\": \"2026-10-28T05:43:50.782599+07:00\", \"lastStatus\": \"ok\", \"state\": \"scheduled\"}"
+    },
+    {
+      "check": "A has a workspace binding",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "the cron run's reply is exactly the no-terminal marker",
+      "pass": true,
+      "detail": "exact marker"
+    },
+    {
+      "check": "admin suspends A",
+      "pass": true,
+      "detail": "200"
+    },
+    {
+      "check": "suspension verified the jobs paused (no pending mark)",
+      "pass": true,
+      "detail": ""
+    },
+    {
+      "check": "audit admin.suspend_jobs ok",
+      "pass": true,
+      "detail": "('ok',)"
+    },
+    {
+      "check": "Hermes' own store has the job disabled",
+      "pass": true,
+      "detail": "{\"enabled\": false, \"state\": \"paused\"}"
+    }
+  ],
+  "at": "2026-10-27T22:43:55Z"
+}

@@ -360,8 +360,8 @@ func TestTableTotals(t *testing.T) {
 
 const (
 	wantRows        = 121
-	wantTested      = 95
-	wantImplemented = 7
+	wantTested      = 96
+	wantImplemented = 6
 	wantBlocked     = 18
 	wantException   = 1
 )
