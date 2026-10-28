@@ -889,3 +889,45 @@ details[open] > summary::after { transform: none; }
   /* Placed from the top, under the header, so a composer that grows with its text never ends up beneath it. */
   .model-menu { position: fixed; left: 1rem; right: 1rem; top: 6.5rem; bottom: auto; max-height: max(12rem, calc(100dvh - 19rem)); }
 }
+
+/* OpenUI's token sheet (defaults.css), bent toward Antares: its type, ink and cobalt accent. Dark mode follows the
+   app's own theme: appearance.ts mirrors data-theme to the data-openui-theme attribute OpenUI reads. */
+.openui-root {
+  font-family: var(--font-ui); color: var(--ink);
+  --openui-font-body: var(--font-ui); --openui-font-heading: var(--font-ui); --openui-font-label: var(--font-ui); --openui-font-numbers: var(--font-ui);
+  /* The composite text tokens spell the family out, so each is restated with the app's. */
+  --openui-text-body-default:  400 16px/1.5 var(--font-ui);
+  --openui-text-body-default-heavy:  560 16px/1.5 var(--font-ui);
+  --openui-text-body-lg:  400 18px/1.5 var(--font-ui);
+  --openui-text-body-lg-heavy:  560 18px/1.5 var(--font-ui);
+  --openui-text-body-sm:  400 14px/1.5 var(--font-ui);
+  --openui-text-body-sm-heavy:  560 14px/1.5 var(--font-ui);
+  --openui-text-body-xs:  400 12px/1.5 var(--font-ui);
+  --openui-text-body-xs-heavy:  560 12px/1.5 var(--font-ui);
+  --openui-text-heading-lg:  600 28px/1.1 var(--font-ui);
+  --openui-text-heading-md:  600 24px/1.1 var(--font-ui);
+  --openui-text-heading-sm:  600 18px/1.25 var(--font-ui);
+  --openui-text-heading-xl:  700 32px/1.1 var(--font-ui);
+  --openui-text-heading-xs:  600 16px/1.25 var(--font-ui);
+  --openui-text-label-default:  400 16px/1.25 var(--font-ui);
+  --openui-text-label-default-heavy:  560 16px/1.25 var(--font-ui);
+  --openui-text-label-lg:  400 18px/1.25 var(--font-ui);
+  --openui-text-label-lg-heavy:  560 18px/1.25 var(--font-ui);
+  --openui-text-label-sm:  400 14px/1.25 var(--font-ui);
+  --openui-text-label-sm-heavy:  560 14px/1.25 var(--font-ui);
+  --openui-text-label-xs:  400 12px/1.25 var(--font-ui);
+  --openui-text-label-xs-heavy:  560 12px/1.25 var(--font-ui);
+  --openui-text-numbers-default:  400 16px/1.5 var(--font-ui);
+  --openui-text-numbers-default-heavy:  560 16px/1.5 var(--font-ui);
+  --openui-text-numbers-heading-lg:  600 28px/1.1 var(--font-ui);
+  --openui-text-numbers-heading-md:  600 24px/1.1 var(--font-ui);
+  --openui-text-numbers-heading-sm:  600 18px/1.25 var(--font-ui);
+  --openui-text-numbers-heading-xl:  600 32px/1.1 var(--font-ui);
+  --openui-text-numbers-lg:  400 18px/1.5 var(--font-ui);
+  --openui-text-numbers-lg-heavy:  560 18px/1.5 var(--font-ui);
+  --openui-text-numbers-sm:  400 14px/1.5 var(--font-ui);
+  --openui-text-numbers-sm-heavy:  560 14px/1.5 var(--font-ui);
+  --openui-text-numbers-xs:  400 12px/1.5 var(--font-ui);
+  --openui-text-numbers-xs-heavy:  560 12px/1.5 var(--font-ui);
+}
+.openui-root a { color: var(--cobalt); }

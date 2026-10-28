@@ -39,8 +39,8 @@ const PAGE = 50;
 const PLAIN = "a".repeat(32);
 const RICH = "b".repeat(32);
 
-const TABLE = 'root = Stack([Heading("Compare"), Table(["Option","Cost"], [["A","$1"],["B","$2"],["C","$3"]]), Card("Notes", [Text("A is cheapest"), Badge("recommended")])])';
-const HOSTILE = 'root = Stack([Text("ok"), Button("go", @OpenUrl("https://evil.example"))])';
+const TABLE = 'root = Card([hdr, txt, tbl, chart, btns])\nhdr = CardHeader("Compare", "Three plans side by side")\ntxt = TextContent("**A** is cheapest; **C** has the most storage.")\ntbl = Table([Col("Plan", ["A", "B", "C"]), Col("Cost ($)", [1, 2, 3])])\nchart = BarChart(["A", "B", "C"], [Series("Cost", [1, 2, 3])])\nbtns = Buttons([Button("Tell me more", @ToAssistant("Tell me more about plan A"))])';
+const HOSTILE = 'root = Card([btn])\nbtn = Buttons([Button("go", @OpenUrl("javascript:alert(1)"))])';
 
 function transcript(rich) {
   const m = [];
@@ -644,7 +644,7 @@ async function shots(browser) {
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
-console.log(`# ${await browser.version()} (Chromium), bundle ${fs.readdirSync(path.join(dist, "assets")).filter((f) => f.endsWith(".js")).join(", ")}`);
+console.log(`# ${await browser.version()} (Chromium), bundle ${fs.readdirSync(path.join(dist, "assets")).filter((f) => /^(index|Block)-.*\.js$/.test(f)).join(", ")}`);
 const only = process.env.ONLY;
 try {
   if (!only || only === "mobile-layout") await mobileLayout(browser);

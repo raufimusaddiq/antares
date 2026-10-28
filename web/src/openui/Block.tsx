@@ -1,13 +1,19 @@
 import "./zodConfig"; // must stay first: see the file
-import { Component, useMemo, type ReactNode } from "react";
+import "@openuidev/react-ui/defaults.css";
+import "@openuidev/react-ui/components.css";
+import { Component, useContext, useMemo, type ReactNode } from "react";
 import { Renderer } from "@openuidev/react-lang";
-import { runAction } from "./actions";
-import { library } from "./library";
+import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib";
+import { runAction, type Sinks } from "./actions";
+import { ReplyContext } from "./reply";
 import { SourceFallback } from "./Fallback";
 import { check } from "./validate";
 
-// The only module that imports the OpenUI runtime. It is loaded on demand
-// (MessageBody.tsx), so a chat with no rich content never downloads it.
+// The only module that imports the OpenUI runtime and its component library (native OpenUI: the
+// openuiChatLibrary of @openuidev/react-ui). It is loaded on demand (MessageBody.tsx), so a chat with no
+// rich content never downloads it. ThemeProvider is not used: it injects a <style> element, which the
+// page's CSP (style-src 'self') refuses; the static defaults.css token sheet, themed by openui-theme.css,
+// does the same job.
 
 class Boundary extends Component<{ source: string; children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
@@ -19,23 +25,24 @@ class Boundary extends Component<{ source: string; children: ReactNode }, { fail
   }
 }
 
-// Model-declared actions arrive here. Components call runAction themselves with
-// the composer sink; this channel has no sink, so whatever name the block carries
-// is refused (an unknown name by the allowlist, "reply" for lack of a handler).
-export const onAction = (e: { type?: unknown; params?: unknown }) => {
-  runAction(e?.type, e?.params, {});
-};
+/** Opens an http(s) address the reader has confirmed, in a new tab, with no opener and no referrer. */
+export function openConfirmed(url: string) {
+  if (window.confirm(`Open this link in a new tab?\n\n${url}`)) window.open(url, "_blank", "noopener,noreferrer");
+}
 
-export default function RichBlock({ source }: { source: string }) {
-  const verdict = useMemo(() => check(source), [source]);
+export default function RichBlock({ source, streaming = false }: { source: string; streaming?: boolean }) {
+  const reply = useContext(ReplyContext);
+  const sinks: Sinks = { reply, open: openConfirmed };
+  // While the reply streams, the program is incomplete by nature: it is rendered progressively, never checked.
+  // Once complete it must pass the gate, or it is shown as its source.
+  const verdict = useMemo(() => (streaming ? { ok: true as const } : check(source)), [source, streaming]);
   if (!verdict.ok) return <SourceFallback source={source} why={verdict.reason} />;
   return (
     <Boundary source={source}>
-      <div className="ou-block">
-        {/* Root + Content, not the all-in-one Renderer: that one adds a loading spinner
-            which injects a <style> element, and our CSP (style-src 'self') refuses it.
-            A validated block has no queries, so there is nothing to show a loader for. */}
-        <Renderer.Root response={source} library={library} isStreaming={false} onAction={onAction}>
+      <div className="ou-block openui-root">
+        {/* Root + Content, not the all-in-one Renderer: that one adds a loading spinner that injects a <style>
+            element, which the CSP refuses. A program here has no queries, so nothing needs a loader. */}
+        <Renderer.Root response={source} library={openuiChatLibrary} isStreaming={streaming} onAction={(e) => runAction(e?.type, e, sinks)}>
           <Renderer.Content />
         </Renderer.Root>
       </div>

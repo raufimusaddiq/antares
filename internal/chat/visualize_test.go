@@ -31,7 +31,7 @@ func TestVisualizeIsPerChatAndReachesOnlyItsRuns(t *testing.T) {
 
 	first := alice.send(on, "visual question")
 	instr, _ := runBodyFor(t, a, "visual question")["instructions"].(string)
-	vi, pi := strings.Index(instr, "[antares-openui v1]"), strings.Index(instr, "Be brief.")
+	vi, pi := strings.Index(instr, "[antares-openui v2]"), strings.Index(instr, "Be brief.")
 	if vi != 0 || pi < vi {
 		t.Errorf("instructions with visualize on: %q", instr)
 	}
