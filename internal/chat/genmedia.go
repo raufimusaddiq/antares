@@ -20,7 +20,9 @@ import (
 // the user (sealMediaTags). GET /api/media?id= opens it again for that user only and asks the helper, with the user's
 // own profile, for the bytes.
 
-var mediaTag = regexp.MustCompile(`MEDIA:(?:"([^"\n]*)"|'([^'\n]*)'|(\S+))`)
+// A quoted path may hold spaces. One whose closing quote never came (a truncated reply) runs to the end of its line:
+// fail closed, never stop at a space and leave the rest of the path as text.
+var mediaTag = regexp.MustCompile(`MEDIA:(?:"([^"\n]*)"?|'([^'\n]*)'?|(\S+))`)
 
 var mediaKinds = map[string]string{
 	".png": "image", ".jpg": "image", ".jpeg": "image", ".webp": "image", ".gif": "image",

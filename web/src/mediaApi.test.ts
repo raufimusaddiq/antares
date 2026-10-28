@@ -86,6 +86,9 @@ describe("splitMedia", () => {
     expect(splitMedia("Here: MEDIA:image-AbC_1. Done")).toEqual({ text: "Here: . Done", ids: ["image-AbC_1"] });
     expect(splitMedia("(MEDIA:audio-x9)")).toEqual({ text: "()", ids: ["audio-x9"] });
   });
+  it("takes an unclosed quoted tag to the end of its line", () => {
+    expect(splitMedia('a MEDIA:"/x/private file.png\nnext').text).toBe("a \nnext");
+  });
   it("knows the kind from the id's prefix, and a raw path is no media id", () => {
     expect([mediaKind("image-a"), mediaKind("audio-a"), mediaKind("video-a"), mediaKind("/opt/x.png"), mediaKind("doc-a")]).toEqual(["image", "audio", "video", null, null]);
     expect(mediaUrl("image-a_b")).toBe("/api/media?id=image-a_b");

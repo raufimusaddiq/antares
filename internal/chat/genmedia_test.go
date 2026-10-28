@@ -205,3 +205,33 @@ func TestStreamMediaFollowsTheOuterQuotedTag(t *testing.T) {
 		t.Fatalf("streamed text: %q", got)
 	}
 }
+
+// A truncated reply whose quoted tag never closes: nothing of the path is left as text (#168 review).
+func TestUnclosedQuotedTagIsStrippedToTheEndOfItsLine(t *testing.T) {
+	for _, text := range []string{"a MEDIA:\"/opt/data/profiles/u_x/cache/private file.png", "a MEDIA:'/opt/data/profiles/u_x/cache/private file.png"} {
+		if got := stripMediaTags(text + "\nnext"); got != "a \nnext" {
+			t.Errorf("stripMediaTags(%q) = %q", text, got)
+		}
+	}
+	a := newApp(t)
+	alice := a.user("alice")
+	if got := a.svc.sealMediaTags(alice.id, "a MEDIA:\"/opt/data/profiles/x/cache/private file.png"); strings.Contains(got, "file") || strings.Contains(got, "/opt") {
+		t.Errorf("sealMediaTags left %q", got)
+	}
+	// The live stream: a reply that ends inside the quoted tag.
+	run := alice.send(alice.newChat(), "draw it")
+	_, fr := a.hx.runWithInput(t, "draw it")
+	st := alice.open(run, "")
+	recv(t, fr.opens, "upstream stream")
+	tag := "Done MEDIA:\"/opt/data/profiles/" + alice.profile + "/cache/private file.png"
+	frame, _ := json.Marshal(map[string]string{"delta": tag})
+	a.hx.push(fr, "assistant.delta", string(frame))
+	out, _ := json.Marshal(map[string]string{"output": tag})
+	a.hx.push(fr, "run.completed", string(out))
+	st.waitFor(t, "run.completed")
+	for _, e := range st.events() {
+		if strings.Contains(e.Data, "file.png") || strings.Contains(e.Data, "/opt/data") {
+			t.Fatalf("%s carried the path: %s", e.Name, e.Data)
+		}
+	}
+}

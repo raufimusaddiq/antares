@@ -2,7 +2,8 @@
 // a turn read from history the server has already replaced the file's location with an opaque id, `<kind>-<sealed>`,
 // that only the signed-in user can open; the tag is taken out of the text and the id is kept for GeneratedMedia.
 
-const TAG = /MEDIA:(?:"([^"\n]*)"|'([^'\n]*)'|(\S+))/g;
+// An unclosed quote (a truncated reply) runs to the end of its line, as on the server.
+const TAG = /MEDIA:(?:"([^"\n]*)"?|'([^'\n]*)'?|(\S+))/g;
 const VOICE_MARKER = /\[\[audio_as_voice\]\]\s*/g;
 
 export interface SplitMedia {
