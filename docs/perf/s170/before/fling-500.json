@@ -1,0 +1,200 @@
+{
+  "turns": 500,
+  "chromium": "131.0.6778.33",
+  "runs": [
+    {
+      "device": "desktop",
+      "frames": 4189,
+      "reachedStart": true,
+      "endScrollTop": 0,
+      "endStatus": "START OF THE CONVERSATION",
+      "olderPageRequests": 19,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 116.7,
+      "over50": 6,
+      "seconds": {
+        "script": 14.793,
+        "layout": 2.995,
+        "style": 0.823,
+        "task": 27.967
+      },
+      "layouts": 2104,
+      "styleRecalcs": 2104,
+      "topSelfTime": [
+        {
+          "fn": "(idle)",
+          "ms": 46931,
+          "share": 0.642
+        },
+        {
+          "fn": "(program)",
+          "ms": 7107,
+          "share": 0.097
+        },
+        {
+          "fn": "getBoundingClientRect",
+          "ms": 4991,
+          "share": 0.068
+        },
+        {
+          "fn": "layout index-B1XErUOM.js",
+          "ms": 1838,
+          "share": 0.025
+        },
+        {
+          "fn": "(anonymous) index-B1XErUOM.js",
+          "ms": 1688,
+          "share": 0.023
+        },
+        {
+          "fn": "parseBlocks index-B1XErUOM.js",
+          "ms": 1008,
+          "share": 0.014
+        },
+        {
+          "fn": "updateProperties index-B1XErUOM.js",
+          "ms": 517,
+          "share": 0.007
+        },
+        {
+          "fn": "(garbage collector)",
+          "ms": 505,
+          "share": 0.007
+        },
+        {
+          "fn": "querySelectorAll",
+          "ms": 416,
+          "share": 0.006
+        },
+        {
+          "fn": "reconcileChildrenArray index-B1XErUOM.js",
+          "ms": 394,
+          "share": 0.005
+        },
+        {
+          "fn": "updateSlot index-B1XErUOM.js",
+          "ms": 342,
+          "share": 0.005
+        },
+        {
+          "fn": "VirtualList index-B1XErUOM.js",
+          "ms": 304,
+          "share": 0.004
+        },
+        {
+          "fn": "commitHostUpdate index-B1XErUOM.js",
+          "ms": 284,
+          "share": 0.004
+        },
+        {
+          "fn": "requestAnimationFrame",
+          "ms": 280,
+          "share": 0.004
+        },
+        {
+          "fn": "reconcileChildFibersImpl index-B1XErUOM.js",
+          "ms": 250,
+          "share": 0.003
+        }
+      ]
+    },
+    {
+      "device": "phone (4x CPU throttle)",
+      "frames": 5323,
+      "reachedStart": false,
+      "endScrollTop": 7117,
+      "endStatus": "START OF THE CONVERSATION",
+      "olderPageRequests": 19,
+      "p50": 16.7,
+      "p95": 50,
+      "max": 300.1,
+      "over50": 225,
+      "seconds": {
+        "script": 43.122,
+        "layout": 8.636,
+        "style": 2.448,
+        "task": 96.316
+      },
+      "layouts": 1977,
+      "styleRecalcs": 1977,
+      "topSelfTime": [
+        {
+          "fn": "(program)",
+          "ms": 41351,
+          "share": 0.343
+        },
+        {
+          "fn": "(idle)",
+          "ms": 24741,
+          "share": 0.205
+        },
+        {
+          "fn": "getBoundingClientRect",
+          "ms": 13226,
+          "share": 0.11
+        },
+        {
+          "fn": "layout index-B1XErUOM.js",
+          "ms": 5593,
+          "share": 0.046
+        },
+        {
+          "fn": "(anonymous) index-B1XErUOM.js",
+          "ms": 4200,
+          "share": 0.035
+        },
+        {
+          "fn": "requestAnimationFrame",
+          "ms": 2398,
+          "share": 0.02
+        },
+        {
+          "fn": "parseBlocks index-B1XErUOM.js",
+          "ms": 2306,
+          "share": 0.019
+        },
+        {
+          "fn": "step",
+          "ms": 1627,
+          "share": 0.014
+        },
+        {
+          "fn": "VirtualList index-B1XErUOM.js",
+          "ms": 1145,
+          "share": 0.01
+        },
+        {
+          "fn": "(garbage collector)",
+          "ms": 1031,
+          "share": 0.009
+        },
+        {
+          "fn": "querySelectorAll",
+          "ms": 1005,
+          "share": 0.008
+        },
+        {
+          "fn": "updateProperties index-B1XErUOM.js",
+          "ms": 827,
+          "share": 0.007
+        },
+        {
+          "fn": "commitHostUpdate index-B1XErUOM.js",
+          "ms": 823,
+          "share": 0.007
+        },
+        {
+          "fn": "removeChild",
+          "ms": 729,
+          "share": 0.006
+        },
+        {
+          "fn": "completeWork index-B1XErUOM.js",
+          "ms": 712,
+          "share": 0.006
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,200 @@
+{
+  "turns": 500,
+  "chromium": "131.0.6778.33",
+  "runs": [
+    {
+      "device": "desktop",
+      "frames": 4006,
+      "reachedStart": true,
+      "endScrollTop": 0,
+      "endStatus": "START OF THE CONVERSATION",
+      "olderPageRequests": 19,
+      "p50": 16.7,
+      "p95": 33.3,
+      "max": 133.3,
+      "over50": 23,
+      "seconds": {
+        "script": 12.798,
+        "layout": 3.373,
+        "style": 0.94,
+        "task": 27.149
+      },
+      "layouts": 2073,
+      "styleRecalcs": 2073,
+      "topSelfTime": [
+        {
+          "fn": "(idle)",
+          "ms": 47813,
+          "share": 0.653
+        },
+        {
+          "fn": "(program)",
+          "ms": 7990,
+          "share": 0.109
+        },
+        {
+          "fn": "(anonymous) index-DaMqoWnN.js",
+          "ms": 4275,
+          "share": 0.058
+        },
+        {
+          "fn": "getBoundingClientRect",
+          "ms": 1870,
+          "share": 0.026
+        },
+        {
+          "fn": "parseBlocks index-DaMqoWnN.js",
+          "ms": 995,
+          "share": 0.014
+        },
+        {
+          "fn": "(garbage collector)",
+          "ms": 531,
+          "share": 0.007
+        },
+        {
+          "fn": "layout index-DaMqoWnN.js",
+          "ms": 484,
+          "share": 0.007
+        },
+        {
+          "fn": "querySelectorAll",
+          "ms": 467,
+          "share": 0.006
+        },
+        {
+          "fn": "updateProperties index-DaMqoWnN.js",
+          "ms": 406,
+          "share": 0.006
+        },
+        {
+          "fn": "reconcileChildrenArray index-DaMqoWnN.js",
+          "ms": 354,
+          "share": 0.005
+        },
+        {
+          "fn": "VirtualList index-DaMqoWnN.js",
+          "ms": 288,
+          "share": 0.004
+        },
+        {
+          "fn": "removeChild",
+          "ms": 284,
+          "share": 0.004
+        },
+        {
+          "fn": "commitHostUpdate index-DaMqoWnN.js",
+          "ms": 280,
+          "share": 0.004
+        },
+        {
+          "fn": "beginWork index-DaMqoWnN.js",
+          "ms": 274,
+          "share": 0.004
+        },
+        {
+          "fn": "commitMutationEffectsOnFiber index-DaMqoWnN.js",
+          "ms": 258,
+          "share": 0.004
+        }
+      ]
+    },
+    {
+      "device": "phone (4x CPU throttle)",
+      "frames": 5225,
+      "reachedStart": false,
+      "endScrollTop": 7857,
+      "endStatus": "START OF THE CONVERSATION",
+      "olderPageRequests": 19,
+      "p50": 16.7,
+      "p95": 50,
+      "max": 366.6,
+      "over50": 256,
+      "seconds": {
+        "script": 38.372,
+        "layout": 9.805,
+        "style": 2.397,
+        "task": 94.875
+      },
+      "layouts": 1960,
+      "styleRecalcs": 1960,
+      "topSelfTime": [
+        {
+          "fn": "(program)",
+          "ms": 43514,
+          "share": 0.361
+        },
+        {
+          "fn": "(idle)",
+          "ms": 26632,
+          "share": 0.221
+        },
+        {
+          "fn": "(anonymous) index-DaMqoWnN.js",
+          "ms": 12066,
+          "share": 0.1
+        },
+        {
+          "fn": "getBoundingClientRect",
+          "ms": 5444,
+          "share": 0.045
+        },
+        {
+          "fn": "parseBlocks index-DaMqoWnN.js",
+          "ms": 2458,
+          "share": 0.02
+        },
+        {
+          "fn": "requestAnimationFrame",
+          "ms": 2452,
+          "share": 0.02
+        },
+        {
+          "fn": "step",
+          "ms": 1741,
+          "share": 0.014
+        },
+        {
+          "fn": "querySelectorAll",
+          "ms": 1082,
+          "share": 0.009
+        },
+        {
+          "fn": "(garbage collector)",
+          "ms": 990,
+          "share": 0.008
+        },
+        {
+          "fn": "layout index-DaMqoWnN.js",
+          "ms": 927,
+          "share": 0.008
+        },
+        {
+          "fn": "VirtualList index-DaMqoWnN.js",
+          "ms": 904,
+          "share": 0.007
+        },
+        {
+          "fn": "removeChild",
+          "ms": 868,
+          "share": 0.007
+        },
+        {
+          "fn": "updateProperties index-DaMqoWnN.js",
+          "ms": 826,
+          "share": 0.007
+        },
+        {
+          "fn": "completeWork index-DaMqoWnN.js",
+          "ms": 751,
+          "share": 0.006
+        },
+        {
+          "fn": "reconcileChildrenArray index-DaMqoWnN.js",
+          "ms": 747,
+          "share": 0.006
+        }
+      ]
+    }
+  ]
+}

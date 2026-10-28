@@ -1,0 +1,200 @@
+{
+  "turns": 1000,
+  "chromium": "131.0.6778.33",
+  "runs": [
+    {
+      "device": "desktop",
+      "frames": 6917,
+      "reachedStart": false,
+      "endScrollTop": 1785,
+      "endStatus": "SCROLL UP FOR OLDER MESSAGES",
+      "olderPageRequests": 32,
+      "p50": 16.7,
+      "p95": 16.8,
+      "max": 100,
+      "over50": 14,
+      "seconds": {
+        "script": 23.895,
+        "layout": 5.196,
+        "style": 1.556,
+        "task": 45.409
+      },
+      "layouts": 3556,
+      "styleRecalcs": 3556,
+      "topSelfTime": [
+        {
+          "fn": "(idle)",
+          "ms": 77471,
+          "share": 0.645
+        },
+        {
+          "fn": "(program)",
+          "ms": 11126,
+          "share": 0.093
+        },
+        {
+          "fn": "getBoundingClientRect",
+          "ms": 8475,
+          "share": 0.071
+        },
+        {
+          "fn": "layout index-B1XErUOM.js",
+          "ms": 4320,
+          "share": 0.036
+        },
+        {
+          "fn": "(anonymous) index-B1XErUOM.js",
+          "ms": 2445,
+          "share": 0.02
+        },
+        {
+          "fn": "parseBlocks index-B1XErUOM.js",
+          "ms": 1449,
+          "share": 0.012
+        },
+        {
+          "fn": "VirtualList index-B1XErUOM.js",
+          "ms": 911,
+          "share": 0.008
+        },
+        {
+          "fn": "(garbage collector)",
+          "ms": 867,
+          "share": 0.007
+        },
+        {
+          "fn": "querySelectorAll",
+          "ms": 692,
+          "share": 0.006
+        },
+        {
+          "fn": "updateProperties index-B1XErUOM.js",
+          "ms": 621,
+          "share": 0.005
+        },
+        {
+          "fn": "commitHostUpdate index-B1XErUOM.js",
+          "ms": 468,
+          "share": 0.004
+        },
+        {
+          "fn": "removeChild",
+          "ms": 421,
+          "share": 0.004
+        },
+        {
+          "fn": "requestAnimationFrame",
+          "ms": 410,
+          "share": 0.003
+        },
+        {
+          "fn": "reconcileChildrenArray index-B1XErUOM.js",
+          "ms": 385,
+          "share": 0.003
+        },
+        {
+          "fn": "completeWork index-B1XErUOM.js",
+          "ms": 379,
+          "share": 0.003
+        }
+      ]
+    },
+    {
+      "device": "phone (4x CPU throttle)",
+      "frames": 5498,
+      "reachedStart": false,
+      "endScrollTop": 7978,
+      "endStatus": "SCROLL UP FOR OLDER MESSAGES",
+      "olderPageRequests": 19,
+      "p50": 16.7,
+      "p95": 50,
+      "max": 266.7,
+      "over50": 219,
+      "seconds": {
+        "script": 41.546,
+        "layout": 8.109,
+        "style": 2.141,
+        "task": 93.493
+      },
+      "layouts": 1995,
+      "styleRecalcs": 1995,
+      "topSelfTime": [
+        {
+          "fn": "(program)",
+          "ms": 40770,
+          "share": 0.338
+        },
+        {
+          "fn": "(idle)",
+          "ms": 28109,
+          "share": 0.233
+        },
+        {
+          "fn": "getBoundingClientRect",
+          "ms": 12229,
+          "share": 0.101
+        },
+        {
+          "fn": "layout index-B1XErUOM.js",
+          "ms": 5303,
+          "share": 0.044
+        },
+        {
+          "fn": "(anonymous) index-B1XErUOM.js",
+          "ms": 4200,
+          "share": 0.035
+        },
+        {
+          "fn": "requestAnimationFrame",
+          "ms": 2275,
+          "share": 0.019
+        },
+        {
+          "fn": "parseBlocks index-B1XErUOM.js",
+          "ms": 2133,
+          "share": 0.018
+        },
+        {
+          "fn": "step",
+          "ms": 1618,
+          "share": 0.013
+        },
+        {
+          "fn": "VirtualList index-B1XErUOM.js",
+          "ms": 1205,
+          "share": 0.01
+        },
+        {
+          "fn": "querySelectorAll",
+          "ms": 1023,
+          "share": 0.008
+        },
+        {
+          "fn": "(garbage collector)",
+          "ms": 964,
+          "share": 0.008
+        },
+        {
+          "fn": "updateProperties index-B1XErUOM.js",
+          "ms": 868,
+          "share": 0.007
+        },
+        {
+          "fn": "removeChild",
+          "ms": 764,
+          "share": 0.006
+        },
+        {
+          "fn": "reconcileChildrenArray index-B1XErUOM.js",
+          "ms": 674,
+          "share": 0.006
+        },
+        {
+          "fn": "commitHostUpdate index-B1XErUOM.js",
+          "ms": 665,
+          "share": 0.006
+        }
+      ]
+    }
+  ]
+}
