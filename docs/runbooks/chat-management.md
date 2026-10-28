@@ -33,7 +33,7 @@ The chat list cursor is `v2` (pinned flag, `updated_at`, id). A `v1` cursor (iss
 - `409 session_active_turn` (a turn is writing to it) → `RUN_CONFLICT`. `503 session_db_unavailable` → `HERMES_UNAVAILABLE`.
 - The handler also scrubs transcripts/dumps, drops routing entries and collects unheld images upstream. Antares relies on that and does not touch Hermes' data directories.
 
-Verified only against the local fake (`internal/chat/harness_test.go`, `scripts/capacity/upstream.go`) shaped from that source.
+Verified only against the local fake (`internal/chat/harness_test.go`) shaped from that source.
 It was **not** called on the deployed Hermes. A first real delete is an owner-approved operator step.
 
 ## Delete, in order
@@ -60,6 +60,3 @@ Escape closes and returns focus. Rename and delete are modal dialogs (focus trap
 A change shows only after the server confirms it. `Show archived` lists the archive. On a phone the strip stays a line of chips (the open one whole; `mobile layout` CI enforces it) and the open chat's actions are under Options → Conversation actions; the archive replaces the strip like an open search, and its rows keep their buttons. A message sent into an archived chat makes it active on the server; the list is read again so it reappears at once.
 After a delete the browser also forgets that chat's local draft, resets the search panel, and opens the next chat (or the empty state).
 
-## Browser check
-
-`web/scripts/manage-check.mjs` (see its header) against the `scripts/capacity` scratch stack: desktop 1280, phones 390 and 320 (emulator, not a device).

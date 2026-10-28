@@ -1037,7 +1037,7 @@ The application MUST preserve the **single new Chat UI container** design. Herme
 
 **Measurement contract:** Specify image digest, Go version, browser build, Hermes version, memory definition (`container memory.current`/working-set method and RSS), sample period, traffic fixture and concurrent-user count. Report idle, P50/P95/peak RAM, CPU and stream errors. The 256 MiB number is a **light-load target**; if unmet, profile and optimize first, then document why a higher safe limit (e.g. 512 MiB) is required instead of hiding OOMs or changing tests. Do not automatically set a production `mem_limit: 256m` solely because the benchmark target exists; leave headroom based on measured peak.
 
-**Release gate:** `PERF-001` turn pagination and `PERF-002`–`PERF-005` are P0 implementation requirements; media/OpenUI lazy chunks can land with corresponding P1 features. `PERF-006` requires recorded benchmark evidence and zero OOM. Exceeding the 256 MiB target is an explicit performance exception requiring owner review, **not** permission to compromise security, durability, or turn-history completeness.
+**Release gate:** `PERF-001` turn pagination and `PERF-002`–`PERF-005` are P0 implementation requirements; media/OpenUI lazy chunks can land with corresponding P1 features. `PERF-006`: no OOM in production (owner decision 2026-10-28: no benchmark harness or recorded envelope is kept; the 256 MiB light-load figure is a design target, watched through the container's memory in production). Exceeding the 256 MiB target is an explicit performance exception requiring owner review, **not** permission to compromise security, durability, or turn-history completeness.
 
 ---
 
@@ -1151,12 +1151,10 @@ networks:
 - Fuzz property tests for ownership and SSE recovery.
 - Rate limits/quotas, backup restore, database corruption recovery, error analytics.
 - Admin account lifecycle UX polish and audit export (metadata only).
-- Run §14.2 reproducible performance benchmark, including ≤256 MiB light-load RAM target, long-thread pagination, lazy media/OpenUI and no-OOM checks; document any exception.
+- Long-thread pagination and lazy media/OpenUI are covered by unit tests; no benchmark run is required (owner decision 2026-10-28).
 - Additional accessibility, cross-browser/mobile E2E checks and update strategy.
 
-**DoD:** No P0 security issue open, deployment/restore walkthrough demonstrated, measured resource envelope recorded, upgrade smoke tests pass.
-
-Recorded resource envelope (idle, concurrent chat load at N=10/50/100, database size, per-SSE-stream cost, disk growth; measured on a scratch instance with a fabricated Hermes): [`docs/runbooks/capacity.md`](runbooks/capacity.md).
+**DoD:** No P0 security issue open, deployment/restore walkthrough demonstrated, upgrade smoke tests pass.
 
 ---
 
@@ -1183,7 +1181,7 @@ Recorded resource envelope (idle, concurrent chat load at N=10/50/100, database 
 | `PERF-ACC-001` | Open a 1,000-turn chat | Only newest ≤50 turns fetched initially; ordered cursor scroll retrieves all authorized turns, including compacted fixtures |
 | `PERF-ACC-002` | Scroll through a very long thread | Bounded mounted message nodes; viewport/focus preserved; no visible duplicate/missing turns |
 | `PERF-ACC-003` | Open chat containing image, video, audio and charts | Non-visible media does not download in full; heavyweight OpenUI modules loaded on demand |
-| `PERF-ACC-004` | Chat UI idle/light-load/reconnect benchmark | Record P50/P95/peak metrics; light-load RAM P95 target ≤256 MiB; no OOM, leaks or unauthorized cache sharing |
+| `PERF-ACC-004` | Chat UI in production | No OOM, leaks or unauthorized cache sharing; light-load RAM ≤256 MiB is a design target, not a recorded gate (owner decision 2026-10-28) |
 | `PERF-ACC-005` | Inspect production image/processes and data stores | Go serves static React, no runtime Node.js, SQLite WAL, no Redis/Postgres, no unconditional full transcript duplication |
 | `UI-001` | Valid OpenUI Lang | Renders approved interactive React components |
 | `UI-002` | Invalid OpenUI | Graceful safe fallback |
@@ -1566,7 +1564,7 @@ All tests below require two approved isolated Google identities (`A` and `B`) an
 | `UXP-ACC-019` | Power-cycle/redeploy only Chat UI container | Hermes remains intact; chat/draft/search indexes/push preferences restore or safe-rebuild; no duplicated terminal notifications |
 | `UXP-ACC-020` | Inspect generated production image and network | Single Go server + built React, existing Hermes in different container, no bundled runtime Python/Node process, no local Hermes mounts/DB writes or direct provider calls |
 
-**Mandatory release evidence:** a versioned `docs/FEATURE_PARITY_AIXELL.md` table tracking each `UXP-*`, `LLM-*`, `CTX-*`, `MEDIA-EXT-*`, `QUEUE-*` and `KNOW-*` requirement as `IMPLEMENTED / TESTED / UPSTREAM_BLOCKED / OWNER_ACCEPTED_EXCEPTION`, file paths, API fixtures, test IDs and measured performance. All `P0` security controls must pass regardless of owner exceptions. No claim of completed parity if rows are only mock UI or unverified Hermes integrations.
+**Owner decision (2026-10-28):** no parity-tracking table, measuring or benchmark tooling is kept (YAGNI); delivery is judged by the working product. All `P0` security controls must still pass.
 
 **Suggested execution order:** Security foundation (§§3–5) → owned chat/turn streaming/history (§§6–10) → rich composer/templates/drafts/search → usage/cost → PWA/push → safe previews/export → verified rewind/steer/voice integration → performance hardening (§14), with parallel UI tests for every feature. The **deployed Hermes container must not be replaced/reconfigured by Chat UI code** unless owner separately approves a documented operator task.
 
@@ -1709,6 +1707,6 @@ All tests below require two approved isolated Google identities (`A` and `B`) an
 
 ### 29.3 Full parity tracking and sign-off
 
-Implementation MUST maintain `docs/FEATURE_PARITY_AIXELL.md` listing **every row in §§21, 26, 27, 28 and 29** with `source_module`, `UX/API contract`, `priority`, `owner`, `Hermes version/capability observation`, `IMPLEMENTED/TESTED/UPSTREAM_BLOCKED/OWNER_ACCEPTED_EXCEPTION` status, and code/test evidence. **Unsupported upstream does not count as delivered feature.** A secure beta can ship before P1 parity, but full-parity release requires all required features tested or consciously waived by owner. P0 auth, approval, isolation, least privilege and tool sandbox gates cannot be waived by default. Record explicit **deliberate divergences** (single logical assistant, no arbitrary profiles, no shared memory, no direct Hermes DB scripts) rather than mislabel them forgotten functionality.
+Tracking is the issue tracker; no separate parity table (owner decision 2026-10-28). Unsupported upstream does not count as a delivered feature. P0 auth, approval, isolation and least-privilege gates cannot be waived.
 
-Minimum Hermes probe before feature planning: check deployed `GET /v1/capabilities`, `GET /api/model/options`, session/message APIs incl. compacted history, model override/effort/tier fields on real runs, run steering/approvals, multimodal upload input format, returned artifact layout, memory/notes/skills read/write exposure, provider quota reporting and voice STT. Store harmless fixture shapes (redacting secrets) and update the table rather than relying on README or another Hermes deployment.
+Minimum Hermes probe before feature planning: check deployed `GET /v1/capabilities`, `GET /api/model/options`, session/message APIs incl. compacted history, model override/effort/tier fields on real runs, run steering/approvals, multimodal upload input format, returned artifact layout, memory/notes/skills read/write exposure, provider quota reporting and voice STT. Store harmless fixture shapes (redacting secrets, `scripts/hermes_contract.py`) rather than relying on README or another Hermes deployment.
