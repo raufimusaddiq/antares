@@ -166,8 +166,10 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
   const current = catalog?.providers.flatMap((p) => p.models).find((m) => m.id === choice?.model);
 
   return (
-    <details className="usage" onToggle={(e) => e.currentTarget.open && load(true)}>
+    <details className="usage model-picker" onToggle={(e) => e.currentTarget.open && load(true)}>
       <summary>{label}</summary>
+      {/* A popover above the chip with its own scroll: a long catalogue never pushes the composer off screen. */}
+      <div className="model-menu">
       {readFailed && (
         <p role="alert">
           This chat's model could not be read, so the choice shown may not be the saved one.{" "}
@@ -210,7 +212,7 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
               </legend>
               {!p.available && p.reason && <p>{p.reason}</p>}
               {p.models.map((m) => (
-                <div key={m.id}>
+                <div key={m.id} className="model-row">
                   <label>
                     <input
                       type="radio"
@@ -259,6 +261,7 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
           {choice && <button type="button" onClick={() => change(null)}>Use the default model</button>}
         </>
       )}
+      </div>
     </details>
   );
 }
