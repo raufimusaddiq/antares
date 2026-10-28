@@ -581,7 +581,7 @@ async function images(browser) {
 async function modelPicker(browser) {
   state.models = true;
   try {
-    for (const { w, h, touch } of [{ w: 320, h: 568, touch: true }, { w: 390, h: 844, touch: true }, { w: 641, h: 800, touch: false }, { w: 700, h: 700, touch: false }, { w: 900, h: 700, touch: false }, { w: 1280, h: 800, touch: false }]) {
+    for (const { w, h, touch } of [{ w: 320, h: 568, touch: true }, { w: 390, h: 844, touch: true }, { w: 568, h: 320, touch: true }, { w: 641, h: 800, touch: false }, { w: 700, h: 700, touch: false }, { w: 900, h: 700, touch: false }, { w: 1280, h: 800, touch: false }]) {
       const { ctx, page } = await openPage(browser, { viewport: { width: w, height: h }, isMobile: touch, hasTouch: touch });
       await page.goto(base + "/");
       await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
@@ -591,7 +591,7 @@ async function modelPicker(browser) {
         const menu = document.querySelector(".model-menu");
         const r = menu.getBoundingClientRect();
         const buttons = [...menu.querySelectorAll(".model-row button")].slice(0, 5).map((b) => b.getBoundingClientRect().height);
-        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth, vh: innerHeight, overflowX: document.documentElement.scrollWidth - innerWidth, scrolls: menu.scrollHeight > menu.clientHeight + 10, minButton: Math.min(...buttons) };
+        return { left: r.left, right: r.right, top: r.top, bottom: r.bottom, vw: innerWidth, vh: innerHeight, overflowX: document.documentElement.scrollWidth - innerWidth, scrolls: menu.scrollHeight > menu.clientHeight + 10, minButton: buttons.length ? Math.min(...buttons) : 0 }; // no button found measures as 0, never as a pass
       });
       const onScreen = m.left >= 0 && m.right <= m.vw && m.top >= 0 && m.bottom <= m.vh;
       check(`model picker ${w}px: on screen, no sideways overflow, scrolls inside`, onScreen && m.overflowX <= 0 && m.scrolls, JSON.stringify(m));

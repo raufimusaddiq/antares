@@ -19,6 +19,23 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
   const [loading, setLoading] = useState(false);
   const [readFailed, setReadFailed] = useState(false);
   const [readTick, setReadTick] = useState(0);
+  // The open picker floats over the conversation: Escape or a press outside it closes it, like the account menu.
+  const box = useRef<HTMLDetailsElement | null>(null);
+  useEffect(() => {
+    const away = (e: Event) => {
+      const d = box.current;
+      if (!d?.open) return;
+      if (e.type === "keydown" ? (e as KeyboardEvent).key !== "Escape" : d.contains(e.target as Node)) return;
+      d.open = false;
+      if (e.type === "keydown") d.querySelector("summary")?.focus();
+    };
+    document.addEventListener("pointerdown", away);
+    document.addEventListener("keydown", away);
+    return () => {
+      document.removeEventListener("pointerdown", away);
+      document.removeEventListener("keydown", away);
+    };
+  }, []);
   // Only the newest catalogue request may answer: an older one that lands last must not replace it.
   const loadSeq = useRef(0);
 
@@ -166,7 +183,7 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
   const current = catalog?.providers.flatMap((p) => p.models).find((m) => m.id === choice?.model);
 
   return (
-    <details className="usage model-picker" onToggle={(e) => e.currentTarget.open && load(true)}>
+    <details ref={box} className="usage model-picker" onToggle={(e) => e.currentTarget.open && load(true)}>
       <summary>{label}</summary>
       {/* A popover above the chip with its own scroll: a long catalogue never pushes the composer off screen. */}
       <div className="model-menu">
