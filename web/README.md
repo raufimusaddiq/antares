@@ -71,6 +71,13 @@ names. **The CSP is `img-src 'self'`, so every `url()` in the stylesheet is a sa
 `data:` URI is blocked in production and the contract test rejects one.** (A mask of an SVG that works in a CSP-less preview
 does not work in the shipped page.)
 
+**A chat, not a document (#139 stage 3):** your message is a bubble on the right; the reply is plain text with no
+role label. A turn shows only actions that work ("Edit as new message", "Ask again"); regenerate, edit and rewind,
+which the assistant cannot honour, are not shown. The account menu is three rows at most (Settings, Admin for admins,
+Sign out); everything else (appearance, notifications, sign out everywhere, memory and skills, usage, scheduled tasks,
+diagnostics) is a tab of the Settings dialog. Export is in the chat's Options. No disclosure shows a native marker:
+every `summary` ends in the same chevron. Search filters appear once there is something to search for.
+
 **The chat's extras (#139 stage 2):** at every width only `Options`, the model chip and the usage chip sit above the input. Options
 opens one card (`--card`, ink outline, small hard shadow) holding usage details and limits (its disclosure is "Usage details and
 limits", never a second copy of the chip's figure), Visualize, voice (Dictate and Record side by side, in a group named "Voice"),

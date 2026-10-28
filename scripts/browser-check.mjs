@@ -599,21 +599,6 @@ const desktopMeasure = () => {
     noteVisible: Boolean(note), noteUnderText: under, notePosition: noteEl ? getComputedStyle(noteEl.parentElement).position : "",
   };
 };
-// The text rectangles a shown reason must not cover: all log text except the reason itself and its own button.
-const reasonOverlap = (controlSel) => {
-  const btn = document.querySelector(controlSel);
-  const small = btn.closest(".turn-control").querySelector("small");
-  const r0 = small.getBoundingClientRect();
-  const hits = [];
-  const walker = document.createTreeWalker(document.querySelector(".log"), NodeFilter.SHOW_TEXT);
-  for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-    if (!n.textContent.trim() || small.contains(n)) continue;
-    const range = document.createRange();
-    range.selectNodeContents(n);
-    for (const r of range.getClientRects()) if (r.width > 0 && Math.min(r.right, r0.right) - Math.max(r.left, r0.left) > 2 && Math.min(r.bottom, r0.bottom) - Math.max(r.top, r0.top) > 2) hits.push(n.textContent.trim().slice(0, 24));
-  }
-  return { size: [Math.round(r0.width), Math.round(r0.height)], hits };
-};
 
 async function desktopLayout(browser) {
   for (const { w, h } of [{ w: 1280, h: 800 }, { w: 1024, h: 700 }, { w: 700, h: 700 }, { w: 641, h: 800 }]) {
@@ -656,19 +641,10 @@ async function desktopLayout(browser) {
     const menu = page.getByRole("button", { name: "Menu" });
     await menu.click();
     const items = await page.evaluate(() => [...document.querySelectorAll(".bar-actions button")].map((b) => { const r = b.getBoundingClientRect(); const t = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); return [b.textContent.trim(), (t === b || b.contains(t)) && r.top >= 0 && r.bottom <= innerHeight && r.left >= 0 && r.right <= innerWidth]; }));
-    check(`${name}, the Menu popover opens and each action (${items.map((i) => i[0]).join(", ")}) is reachable`, items.length >= 4 && items.every((i) => i[1]), JSON.stringify(items.filter((i) => !i[1])));
+    check(`${name}, the Menu popover opens and each action (${items.map((i) => i[0]).join(", ")}) is reachable`, items.length >= 2 && items.every((i) => i[1]), JSON.stringify(items.filter((i) => !i[1])));
     await page.screenshot({ path: path.join(outDir, `desktop-layout-${w}-menu.png`) });
     await page.keyboard.press("Escape");
     check(`${name}, Escape closes the Menu popover`, (await menu.getAttribute("aria-expanded")) === "false");
-    // A capability reason is shown by a press (mouse here, touch in the phone check) and is in the flow: it covers no text.
-    const regen = '[data-control="regenerate"]';
-    await page.locator(regen).scrollIntoViewIfNeeded();
-    await page.locator(regen).click({ force: true }); // aria-disabled: Playwright treats it as disabled, but a real pointer press must still reach it
-    const shownReason = await page.evaluate((sel) => document.querySelector(sel).closest(".turn-control").getAttribute("data-reason"), regen);
-    const ro = await page.evaluate(reasonOverlap, regen);
-    check(`${name}, a press shows the capability reason, and it covers no text`, shownReason === "shown" && ro.size[0] > 20 && ro.hits.length === 0, `reason ${ro.size.join("x")}px, covers ${JSON.stringify(ro.hits)}`);
-    await page.keyboard.press("Escape");
-    check(`${name}, Escape puts the reason away`, (await page.evaluate((sel) => document.querySelector(sel).closest(".turn-control").getAttribute("data-reason"), regen)) === null);
     check(`${name}, no console error, CSP violation or off-origin request`, consoleErrors.length === 0 && (await page.evaluate(() => window.__csp.length)) === 0, JSON.stringify(consoleErrors.slice(0, 2)));
     await ctx.close();
   }
@@ -775,18 +751,6 @@ async function images(browser) {
     const after = { strip: await items(), draft: await page.inputValue("#composer-input"), reply: await page.evaluate((want) => { const hits = [...document.querySelectorAll(".log *")].filter((e) => e.textContent.includes("Received 1 image(s) and: " + want)); const el = hits.at(-1); const turn = el?.closest(".turn"); return turn ? turn.className + " | " + turn.innerText.replace(/\s+/g, " ").slice(0, 70) : `no turn around: ${el ? el.tagName + "." + el.className : "no element"}`; }, text), live: await page.locator(".run-streaming, .run-reconnecting, .partial, .notice[role=alert]").count() };
     check(`images ${label}: the composer and the strip are empty after Send, and the reply is shown as completed`, after.strip === 0 && after.draft === "" && after.reply.includes("Received 1 image(s)") && !/partial|failed|cancelled/.test(after.reply.split("|")[0]) && after.live === 0, JSON.stringify(after));
     await page.screenshot({ path: path.join(outDir, `images-${label}-sent.png`) });
-    if (phone) {
-      // iOS Safari does not focus a tapped button and has no hover: a TAP must show the capability reason.
-      const regen = page.locator('[data-control="regenerate"]');
-      await regen.scrollIntoViewIfNeeded();
-      const box = await regen.boundingBox();
-      await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
-      await page.waitForTimeout(150);
-      const reason = await page.evaluate(() => document.querySelector('[data-control="regenerate"]').closest(".turn-control").getAttribute("data-reason"));
-      const ro = await page.evaluate(reasonOverlap, '[data-control="regenerate"]');
-      check(`images ${label}: a TAP (no hover, no focus) shows the capability reason, and it covers no text`, reason === "shown" && ro.size[0] > 20 && ro.hits.length === 0, `reason ${ro.size.join("x")} covers ${JSON.stringify(ro.hits)}`);
-      await page.screenshot({ path: path.join(outDir, `phone-reason-tapped.png`) });
-    }
     // #142: the page's CSP is img-src 'self' blob:, so the attached-image thumbnail (a blob: URL the page made) must actually render,
     // while an image from anywhere else is still refused. Nothing in this flow may produce a CSP message except the probes below.
     const csp = await page.evaluate(() => window.__csp.splice(0));
@@ -869,6 +833,17 @@ async function shots(browser) {
         await toggle.click();
         await page.waitForTimeout(300);
         await page.screenshot({ path: path.join(outDir, `shot-${v.name}-${scheme}-options.png`) });
+        await toggle.click();
+      }
+      // The account menu, then Settings.
+      const menu = page.getByRole("button", { name: "Menu" }).first();
+      if ((await menu.count()) > 0) {
+        await menu.click();
+        await page.waitForTimeout(300);
+        await page.screenshot({ path: path.join(outDir, `shot-${v.name}-${scheme}-menu.png`) });
+        await page.getByRole("button", { name: "Settings" }).click();
+        await page.waitForTimeout(400);
+        await page.screenshot({ path: path.join(outDir, `shot-${v.name}-${scheme}-settings.png`) });
       }
       await ctx.close();
     }

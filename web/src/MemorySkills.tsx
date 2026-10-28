@@ -1,3 +1,4 @@
+import { Panel } from "./Panel";
 import { useEffect, useRef, useState } from "react";
 import { describeCode, getCapabilities, getPersonality, putPersonality, type Inventory } from "./chatApi";
 
@@ -6,8 +7,8 @@ import { describeCode, getCapabilities, getPersonality, putPersonality, type Inv
 // says so instead of guessing), and the caller's own additional instructions, applied from the next message.
 // Read only while the panel is open.
 
-export function MemorySkillsPanel() {
-  const [open, setOpen] = useState(false);
+export function MemorySkillsPanel({ page = false }: { page?: boolean } = {}) {
+  const [open, setOpen] = useState(page);
   const [inv, setInv] = useState<Inventory | null>(null);
   const [invError, setInvError] = useState("");
   const [query, setQuery] = useState("");
@@ -72,8 +73,7 @@ export function MemorySkillsPanel() {
   const skills = (inv?.skills ?? []).filter((s) => !q || `${s.name} ${s.category} ${s.description}`.toLowerCase().includes(q));
 
   return (
-    <details className="memory-panel" onToggle={(e) => setOpen(e.currentTarget.open)}>
-      <summary>Memory &amp; Skills</summary>
+    <Panel page={page} className="memory-panel" title="Memory & Skills" onToggle={setOpen}>
       {open && (
         <>
           <h3>Memory</h3>
@@ -121,6 +121,6 @@ export function MemorySkillsPanel() {
           {status && <p role="status">{status}</p>}
         </>
       )}
-    </details>
+    </Panel>
   );
 }

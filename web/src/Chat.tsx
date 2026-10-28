@@ -44,12 +44,9 @@ import { Markdown } from "./Markdown";
 import { MAX_REPLY, ReplyContext } from "./openui/reply";
 import { Artifacts } from "./Artifacts";
 import { ExportChat } from "./ExportChat";
+import { SettingsDialog, type SettingsTab } from "./SettingsDialog";
 import { OpenChatVisualize } from "./VisualizeToggle";
-import { MemorySkillsPanel } from "./MemorySkills";
-import { UsageDashboard } from "./UsageDashboard";
-import { JobsPanel } from "./Jobs";
 import { fenceSelection, inFence, indentInFence, toggleList, wrapSelection, type Edit } from "./composerEdit";
-import { Notifications } from "./Notifications";
 import { ImageStrip, useImageAttachments, type Attachment } from "./ImageAttachments";
 import { SentImage } from "./MediaPreview";
 import { describeImageReason, describeImageSend, getImageInput, imageFilesFrom, sendMessageWithImages, IMAGE_TYPES, type ImageInput } from "./mediaApi";
@@ -67,7 +64,6 @@ import { forgetChatDrafts, loadDraft, matchTemplates, mergeTemplates, saveDraft,
 import { DraftNotice, sharedTextApplied, takeSharedText, useDraftSync, NO_HOLD, type SendHold } from "./DraftSync";
 import { listOwnTemplates, type OwnTemplate } from "./draftApi";
 import { Templates } from "./Templates";
-import { AppearancePanel, DiagnosticsPanel } from "./Settings";
 
 const MAX_INPUT = 32_000;
 const RECONNECT_TRIES = 5;
@@ -166,26 +162,6 @@ function Activity({ run, live }: { run: LiveRun; live: boolean }) {
 const turnKey = (t: Turn) => String(t.seq);
 
 /**
- * Regenerate, edit and rewind (PRD §21.5, UXP-ACC-012). The assistant backend has no route for any of them, so each
- * is a button that cannot be activated and says why, in text, from the server's capability answer.
- * There is deliberately no action handler: when a verified route lands, this is where it is wired. A press only
- * shows or hides the reason next to the button, so it is reachable by tap (iOS Safari does not focus a tapped
- * button, so :hover and :focus alone would leave a phone user without it). The reason is always in the document
- * and always the button's description, whether or not it is currently shown.
- */
-const TURN_CONTROLS = {
-  regenerate: { id: "regenerate", label: "Regenerate" },
-  edit: { id: "edit_turn", label: "Edit" },
-  rewind: { id: "rewind", label: "Rewind" },
-} as const;
-
-export function turnControlReason(inv: Inventory | null, id: string): string {
-  const row = inv?.capabilities.find((c) => c.id === id);
-  if (!row) return "Availability unknown";
-  return row.available ? "Not available in this app yet" : row.reason || "Not supported by the assistant backend";
-}
-
-/**
  * The working alternative beside the turn controls the assistant cannot honour (#166): it writes the earlier text into
  * the composer as a new message. Nothing is rewound, edited or sent; the user sends it, or not.
  */
@@ -194,44 +170,15 @@ export interface TurnReuse {
   onClick: () => void;
 }
 
-export function TurnControls({ inv, kinds, seq, reuse }: { inv: Inventory | null; kinds: readonly (keyof typeof TURN_CONTROLS)[]; seq: number; reuse?: TurnReuse }) {
-  const [shown, setShown] = useState<string | null>(null);
-  const ref = useRef<HTMLDivElement | null>(null);
-  useEffect(() => {
-    if (shown === null) return;
-    // A press anywhere else, or Escape, puts the reason away again.
-    const away = (e: Event) => {
-      if (e.type === "keydown" ? (e as globalThis.KeyboardEvent).key === "Escape" : !ref.current?.contains(e.target as Node)) setShown(null);
-    };
-    document.addEventListener("pointerdown", away);
-    document.addEventListener("keydown", away);
-    return () => {
-      document.removeEventListener("pointerdown", away);
-      document.removeEventListener("keydown", away);
-    };
-  }, [shown]);
+/** The turn's one working action, when there is one: it reuses earlier text as a new message (#166, #139 stage 3: an
+ * action the assistant cannot honour, such as regenerate, edit or rewind, is not shown at all). */
+export function TurnControls({ reuse }: { reuse?: TurnReuse }) {
+  if (!reuse) return null;
   return (
-    <div className="turn-controls" role="group" aria-label="Turn controls" ref={ref}>
-      {kinds.map((k) => {
-        const c = TURN_CONTROLS[k];
-        const rid = `tc-${k}-${seq}`;
-        return (
-          <span key={k} className="turn-control" data-reason={shown === k ? "shown" : undefined}>
-            <button type="button" className="quiet" aria-disabled="true" aria-describedby={rid} data-control={k} data-icon={k} onClick={() => setShown(shown === k ? null : k)}>
-              {c.label}
-            </button>
-            <small id={rid} className="label">
-              {turnControlReason(inv, c.id)}
-              {reuse && k !== "rewind" && !offers(inv, c.id) ? ` Instead, use “${reuse.label}”: it writes a new message for you to send.` : ""}
-            </small>
-          </span>
-        );
-      })}
-      {reuse && (
-        <button type="button" className="quiet" data-control="reuse" data-icon="edit" onClick={reuse.onClick}>
-          {reuse.label}
-        </button>
-      )}
+    <div className="turn-controls" role="group" aria-label="Turn controls">
+      <button type="button" className="quiet" data-control="reuse" data-icon="edit" onClick={reuse.onClick}>
+        {reuse.label}
+      </button>
     </div>
   );
 }
@@ -303,10 +250,10 @@ export function Transcript(props: TranscriptProps) {
         {t.role === "user" && t.attachments && <SentImages refs={t.attachments} />}
         {t.role === "assistant" && chatId && t.ref && <Artifacts chatId={chatId} seq={t.seq} turnRef={t.ref} text={t.text} />}
         {chatId && t.role === "user" && t.seq === lastUser && (
-          <TurnControls inv={inventory} kinds={["edit"]} seq={t.seq} reuse={onReuse && { label: "Edit as new message", onClick: () => onReuse(t.text) }} />
+          <TurnControls reuse={onReuse && { label: "Edit as new message", onClick: () => onReuse(t.text) }} />
         )}
         {chatId && t.role === "assistant" && t.seq === lastAssistant && (
-          <TurnControls inv={inventory} kinds={["regenerate", "rewind"]} seq={t.seq} reuse={onReuse && askedText ? { label: "Ask again", onClick: () => onReuse(askedText) } : undefined} />
+          <TurnControls reuse={onReuse && askedText ? { label: "Ask again", onClick: () => onReuse(askedText) } : undefined} />
         )}
       </article>
     ),
@@ -685,6 +632,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   // The account actions live behind the Menu toggle at every width (rail footer on a wide screen, header on a phone); the
   // per-chat options are behind their toggle on a phone only. Both stay one tap away.
   const [menuOpen, setMenuOpen] = useState(false);
+  const [settings, setSettings] = useState<SettingsTab | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
   useEffect(() => {
     if (!menuOpen) return;
@@ -1356,29 +1304,22 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             Menu
           </button>
           <div id="bar-actions" className={menuOpen ? "bar-actions open" : "bar-actions"}>
-            <Notifications />
-            <MemorySkillsPanel />
-            <UsageDashboard />
-            {offers(inventory, "jobs") && <JobsPanel />}
-            {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? openTitle.current} />}
+            <button type="button" className="quiet" data-icon="settings" onClick={() => { setMenuOpen(false); setSettings("general"); }}>
+              Settings
+            </button>
             {canAdmin && onAdmin && (
               <button type="button" className="quiet" data-icon="shield" onClick={onAdmin}>
                 Admin
               </button>
             )}
-            <AppearancePanel />
-            <DiagnosticsPanel />
             <button type="button" className="quiet" data-icon="logout" onClick={() => onSignOut()}>
               Sign out
-            </button>
-            {/* #150: ends this account's sessions on every device; each one has to sign in again. */}
-            <button type="button" className="quiet" data-icon="logout" onClick={() => onSignOut(true)}>
-              Sign out everywhere
             </button>
             {signOutError && <p role="alert">{signOutError}</p>}
           </div>
         </div>
       </header>
+      {settings && <SettingsDialog tab={settings} jobs={offers(inventory, "jobs")} onClose={() => setSettings(null)} onSignOutEverywhere={() => onSignOut(true)} />}
       <nav className="side" aria-label="Conversations">
         <button type="button" data-icon="plus" onClick={() => void startChat()}>
           New chat
@@ -1488,6 +1429,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         </div>
         <div id="chat-extras" className={moreOpen ? "extras open" : "extras"}>
           <div className="chat-actions-slot" ref={setActionsSlot} />
+          {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? openTitle.current} />}
           {usage && (
             <details className="usage" open={usage.budget.reached}>
               <summary>{usage.budget.reached ? "Token limit reached" : usage.spending?.hardReached ? "Daily spending limit reached" : usage.spending?.warnings.length ? "Usage: spending warning reached" : "Usage details and limits"}</summary>

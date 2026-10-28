@@ -8,7 +8,6 @@ import { describe, expect, it } from "vitest";
 // in STYLELESS with the reason.
 const STYLELESS: Record<string, string> = {
   pending: "state hook on a user turn awaiting its server copy; styling comes from .turn.user",
-  md: "wrapper the Markdown renderer emits; children are styled, the wrapper adds nothing",
 };
 
 const src = join(__dirname);
