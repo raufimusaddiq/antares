@@ -1,7 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Composer, Transcript } from "./Chat";
-import { parseInventory } from "./chatApi";
 import { Markdown, safeHref } from "./Markdown";
 import { indentInFence, wrapSelection } from "./composerEdit";
 import { describeCode, describeGlance, describeSpending, describeTurns, describeUsage, parseSpending, reconcileSpending, spendingFields, parseRupiah, getMessages, listChats, parseLimitInput, parseUsage, sendMessage } from "./chatApi";
@@ -181,13 +180,8 @@ describe("transcript and composer markup", () => {
   });
 
   it("shows no regenerate, edit or rewind control: the assistant cannot act on them (#139 stage 3)", () => {
-    const row = (id: string, reason: string) => ({ id, label: id, status: "unsupported", reason });
-    const inv = parseInventory({
-      capabilities: [row("regenerate", "no retry route"), row("edit_turn", "no branch route"), row("rewind", "no truncate route")],
-      toolsets: [], providers: [], skills: [],
-    });
     const turns = [{ seq: 0, role: "user" as const, text: "q" }, { seq: 1, role: "assistant" as const, text: "a" }];
-    const html = renderToStaticMarkup(<Transcript {...props} chatId="c1" inventory={inv} run={null} pending={null} turns={turns} />);
+    const html = renderToStaticMarkup(<Transcript {...props} chatId="c1" run={null} pending={null} turns={turns} />);
     expect(html).not.toMatch(/data-control="(regenerate|edit|rewind)"|aria-disabled="true"|no retry route/);
   });
 

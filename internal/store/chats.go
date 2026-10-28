@@ -120,7 +120,7 @@ func CreateChat(ctx context.Context, db *sql.DB, userID, bindingID, hermesSessio
 	if err := tx.Commit(); err != nil {
 		return Chat{}, err
 	}
-	return Chat{ID: id, UserID: userID, BindingID: bindingID, HermesSessionID: hermesSessionID, Title: title, Status: "ACTIVE", CreatedAt: t, UpdatedAt: t}, nil
+	return Chat{ID: id, UserID: userID, BindingID: bindingID, HermesSessionID: hermesSessionID, Title: title, Status: "ACTIVE", Visualize: true, CreatedAt: t, UpdatedAt: t}, nil
 }
 
 // GetChat returns the user's own chat, or ErrNoChat. Ownership is the WHERE

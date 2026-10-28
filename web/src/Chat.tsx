@@ -210,7 +210,6 @@ export interface TranscriptProps {
   /** The chat these turns belong to; without it nothing is offered for download. */
   chatId?: string;
   /** The capability answer the turn controls read; null shows them disabled as unknown. */
-  inventory?: Inventory | null;
   /** Bumped when the run's stream reports a prompt opened or closed; the prompts themselves come from the server. */
   promptTick?: number;
   /** Puts an earlier message's text into the composer as a new message (the alternative to edit and regenerate). */
@@ -236,7 +235,7 @@ function describeManage(code: string, what: "change" | "delete"): string {
 }
 
 export function Transcript(props: TranscriptProps) {
-  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0, chatId, inventory = null, onReuse } = props;
+  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0, chatId, onReuse } = props;
   // Compact: the controls sit on the newest turn of each role only, not on every message.
   const lastUser = turns.reduce((n, t) => (t.role === "user" ? t.seq : n), -1);
   const lastAssistant = turns.reduce((n, t) => (t.role === "assistant" ? t.seq : n), -1);
@@ -257,7 +256,7 @@ export function Transcript(props: TranscriptProps) {
         )}
       </article>
     ),
-    [focusSeq, chatId, inventory, lastUser, lastAssistant, onReuse, askedText],
+    [focusSeq, chatId, lastUser, lastAssistant, onReuse, askedText],
   );
   const note = loadingMore ? (
     "Loading older messages…"
@@ -1319,7 +1318,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           </div>
         </div>
       </header>
-      {settings && <SettingsDialog tab={settings} jobs={offers(inventory, "jobs")} onClose={() => setSettings(null)} onSignOutEverywhere={() => onSignOut(true)} />}
+      {settings && <SettingsDialog tab={settings} jobs={offers(inventory, "jobs")} onClose={() => { setSettings(null); document.querySelector<HTMLElement>(".bar-toggle")?.focus(); }} onSignOutEverywhere={() => onSignOut(true)} />}
       <nav className="side" aria-label="Conversations">
         <button type="button" data-icon="plus" onClick={() => void startChat()}>
           New chat
@@ -1368,7 +1367,6 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         <Transcript
           key={current ?? "new"}
           chatId={current ?? undefined}
-          inventory={inventory}
           onReuse={reuseText}
           turns={turns}
           pending={pending}

@@ -16,8 +16,9 @@ const TABS: { id: SettingsTab; label: string }[] = [
 ];
 
 /**
- * Everything about the account and this device, in one modal: a tab list and the open tab's page. Only the open page
- * is mounted, so each one loads when it is shown. Escape or the close button returns focus to the menu.
+ * Everything about the account and this device, in one modal: a list of sections and the open section. Only the open
+ * section is mounted, so each one loads when it is shown. Escape or the close button closes it; the caller puts focus
+ * back where it was.
  */
 export function SettingsDialog(props: { tab: SettingsTab; jobs: boolean; onClose: () => void; onSignOutEverywhere: () => void }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -25,7 +26,9 @@ export function SettingsDialog(props: { tab: SettingsTab; jobs: boolean; onClose
   const tabs = TABS.filter((t) => t.id !== "jobs" || props.jobs);
   useEffect(() => {
     const d = ref.current;
-    if (d && !d.open) d.showModal?.();
+    if (!d || d.open) return;
+    if (typeof d.showModal === "function") d.showModal();
+    else d.setAttribute("open", ""); // no modal support: shown in place
   }, []);
   return (
     <dialog ref={ref} className="settings-dialog" aria-labelledby="settings-title" onClose={props.onClose} onCancel={props.onClose}>
@@ -34,14 +37,14 @@ export function SettingsDialog(props: { tab: SettingsTab; jobs: boolean; onClose
         <button type="button" className="quiet icon-only" data-icon="close" aria-label="Close settings" onClick={props.onClose} />
       </header>
       <div className="settings-body">
-        <nav role="tablist" aria-label="Settings sections">
+        <nav aria-label="Settings sections">
           {tabs.map((t) => (
-            <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} aria-controls="settings-page" onClick={() => setTab(t.id)}>
+            <button key={t.id} type="button" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>
               {t.label}
             </button>
           ))}
         </nav>
-        <div id="settings-page" role="tabpanel" aria-label={tabs.find((t) => t.id === tab)?.label}>
+        <section className="settings-page" aria-label={tabs.find((t) => t.id === tab)?.label}>
           {tab === "general" && (
             <>
               <h3>Appearance</h3>
@@ -59,7 +62,7 @@ export function SettingsDialog(props: { tab: SettingsTab; jobs: boolean; onClose
           {tab === "usage" && <UsageDashboard page />}
           {tab === "jobs" && props.jobs && <JobsPanel page />}
           {tab === "diagnostics" && <DiagnosticsPanel page />}
-        </div>
+        </section>
       </div>
     </dialog>
   );

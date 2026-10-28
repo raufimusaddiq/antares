@@ -11,7 +11,10 @@ func TestVisualizeIsPerChatAndReachesOnlyItsRuns(t *testing.T) {
 	a := newApp(t)
 	alice, bob := a.user("alice"), a.user("bobby")
 	on, off := alice.newChat(), alice.newPlainChat()
-	// A new chat starts with Visualize on.
+	// A new chat starts with Visualize on, and says so in the create response the client renders, not only on a read.
+	if w := alice.do("POST", "/api/chats", nil, map[string]string{"title": "t"}); w.Code != 201 || !strings.Contains(w.Body.String(), `"visualize":true`) {
+		t.Fatalf("create response: %d %s", w.Code, w.Body.String())
+	}
 	if w := alice.get("/api/chats/" + on); !strings.Contains(w.Body.String(), `"visualize":true`) {
 		t.Fatalf("a new chat is not visualized: %s", w.Body.String())
 	}
