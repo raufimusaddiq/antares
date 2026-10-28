@@ -110,7 +110,7 @@ func (f *profileRunner) Run(ctx context.Context, stdin string, args ...string) (
 		}
 		data, _ = json.Marshal(cfg)
 		return "", "", os.WriteFile(p, data, 0600)
-	case len(args) == 8 && args[0] == "sh" && args[2] == policyScript: // the profile policy: toolsets (no shared plugins here)
+	case len(args) == 10 && args[0] == "sh" && args[2] == policyScript: // the profile policy: toolsets (no shared plugins here)
 		return f.Run(ctx, "", "hermes", "-p", args[4], "config", "set", toolsetsConfigKey, args[5])
 	case len(args) >= 5 && args[0] == "python3":
 		argv := append([]string(nil), args[1:]...)

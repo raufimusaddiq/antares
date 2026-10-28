@@ -25,6 +25,12 @@ func runPolicy(t *testing.T, withPlugin bool) (calls []string, profiles string) 
 	if err := os.WriteFile(filepath.Join(bin, "hermes"), []byte(fake), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// python3 is the reload: record the arguments after the script (the root and the profile home), and fail like a
+	// gateway that does not answer, which must not fail the policy step.
+	pyFake := "#!/bin/sh\nshift 2\nprintf 'reload %s\\n' \"$*\" >> " + log + "\nexit 1\n"
+	if err := os.WriteFile(filepath.Join(bin, "python3"), []byte(pyFake), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if withPlugin {
 		if err := os.MkdirAll(filepath.Join(shared, "kenari-image"), 0o755); err != nil {
 			t.Fatal(err)
@@ -33,7 +39,7 @@ func runPolicy(t *testing.T, withPlugin bool) (calls []string, profiles string) 
 			t.Fatal(err)
 		}
 	}
-	cmd := exec.Command("sh", "-c", policyScript, "sh", "u_abcdefgh", `["terminal"]`, shared, profiles)
+	cmd := exec.Command("sh", "-c", policyScript, "sh", "u_abcdefgh", `["terminal"]`, shared, profiles, "/root-of-hermes", reloadScript)
 	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("policy script: %v %s", err, out)
@@ -46,8 +52,9 @@ func TestPolicyScriptInstallsAndSelectsTheImagePlugin(t *testing.T) {
 	calls, profiles := runPolicy(t, true)
 	want := []string{
 		`-p u_abcdefgh config set agent.disabled_toolsets ["terminal"]`,
+		`-p u_abcdefgh config set plugins.enabled ["kenari-image"]`,
 		`-p u_abcdefgh config set image_gen.provider kenari-image`,
-		`-p u_abcdefgh plugins enable kenari-image`,
+		"reload /root-of-hermes " + profiles + "/u_abcdefgh",
 	}
 	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
 		t.Fatalf("hermes calls:\n%s", strings.Join(calls, "\n"))

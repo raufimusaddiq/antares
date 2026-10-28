@@ -170,27 +170,43 @@ func (h hermes) create(ctx context.Context, slug string) error {
 }
 
 // policyScript writes the tenant toolset policy into the profile's own config.yaml (never default's), and gives the
-// profile the Kenari image backend: the plugin is copied from the shared copy the deploy installs (when present) and
-// selected as its image_gen provider. One docker exec (three hermes CLI calls, about 6 s each measured on the deployed
-// host, within callTimeout); slug, list and directories arrive as arguments ($1-$4), never in the script.
-// The plugin is enabled with "plugins enable", not a config write: it also asks the running gateway (over its control
-// socket) to rediscover this profile's plugins. The gateway discovered them once, when the profile appeared at
-// "profile create", before the plugin was copied in, and would otherwise not load it until a restart.
+// profile the Kenari image backend: the plugin is copied from the shared copy the deploy installs (when present),
+// enabled, selected as its image_gen provider, and then the running gateway is asked to rediscover this profile's
+// plugins (reloadScript). That last step is unconditional: the gateway discovers a profile's plugins once, when the
+// profile appears at "profile create" (before the plugin is here), and a config write alone does not tell it.
+// One docker exec: two config writes about 6 s each and a reload under a second, measured on the deployed host, within
+// callTimeout. Slug, list, directories and the reload script arrive as arguments ($1-$6), never in the script.
+// plugins.enabled is replaced, not merged: a tenant profile is provisioner-owned and holds no other plugin.
 const policyScript = `set -e
 hermes -p "$1" config set ` + toolsetsConfigKey + ` "$2"
 if [ -d "$3/kenari-image" ]; then
   mkdir -p "$4/$1/plugins/kenari-image"
   cp -r "$3/kenari-image/." "$4/$1/plugins/kenari-image/"
+  hermes -p "$1" config set plugins.enabled '["kenari-image"]'
   hermes -p "$1" config set image_gen.provider kenari-image
-  hermes -p "$1" plugins enable kenari-image
+  python3 -c "$6" "$5" "$4/$1" || echo "gateway plugin reload not confirmed" >&2
 fi`
+
+// reloadScript asks the gateway serving the Hermes root to rediscover one profile's plugins (Hermes'
+// gateway.control_socket.reload_gateway_plugins). No answer (no gateway running) is not an error: a gateway that
+// starts later discovers the profile's plugins itself.
+const reloadScript = `
+import sys
+from pathlib import Path
+from gateway.control_socket import reload_gateway_plugins
+answer = reload_gateway_plugins(Path(sys.argv[1]), profile_home=Path(sys.argv[2]), timeout=20)
+print("gateway plugins reloaded" if answer and answer.get("reloaded") else "no gateway answered")
+`
+
+// hermesRoot is the Hermes data root the gateway serves (profilesDir's parent).
+const hermesRoot = "/opt/data"
 
 // sharedPlugins is where the deploy installs the Hermes plugins Antares relies on (deploy/hermes-plugins).
 const sharedPlugins = "/opt/data/antares-plugins"
 
 // applyPolicy runs policyScript for one profile.
 func (h hermes) applyPolicy(ctx context.Context, slug string, disabled []string) error {
-	_, stderr, err := h.r.Run(ctx, "", "sh", "-c", policyScript, "sh", slug, toolsetsValue(disabled), sharedPlugins, profilesDir)
+	_, stderr, err := h.r.Run(ctx, "", "sh", "-c", policyScript, "sh", slug, toolsetsValue(disabled), sharedPlugins, profilesDir, hermesRoot, reloadScript)
 	if err != nil {
 		return fmt.Errorf("%w: applying the profile policy: %s", errUpstream, brief(stderr))
 	}

@@ -160,12 +160,14 @@ Hermes' own tools generate the media; Antares only shows it.
       docker exec hermes test -f /opt/data/antares-plugins/kenari-image/plugin.yaml   # the policy step looks here
 
   The provisioner's policy step (every provision and rotate) copies it into the profile's `plugins/`, sets
-  `image_gen.provider: kenari-image` and runs `hermes -p <slug> plugins enable kenari-image`. The enable matters: the
-  shared gateway discovers a profile's plugins once, when the profile appears (at `profile create`, before the plugin
-  is copied in), and `plugins enable` asks it over its control socket to rediscover them. Measured on 2026-10-28: with
-  a plain config write, a freshly provisioned profile's runs had no `image_generate` tool until a gateway restart.
-  Existing profiles get the plugin on their next rotate (admin `tenant-verify`); after changing the plugin's code,
-  restart the Hermes container.
+  `plugins.enabled: [kenari-image]` (replaced, not merged: a tenant profile is provisioner-owned) and then
+  `image_gen.provider: kenari-image`, and then always asks the running gateway to rediscover that profile's plugins
+  (`gateway.control_socket.reload_gateway_plugins`, under a second). The reload matters: the shared gateway discovers a
+  profile's plugins once, when the profile appears (at `profile create`, before the plugin is copied in), and a config
+  write does not tell it. Measured on 2026-10-28: without it, a freshly provisioned profile's runs had no
+  `image_generate` tool until a gateway restart; with it, the same flow generated an image. It runs on every rotate too,
+  so an existing profile gets the plugin on its next `tenant-verify`. A gateway that does not answer (not running) does
+  not fail the step. After changing the plugin's code, restart the Hermes container.
 - **Delivery.** A reply names a generated file as `MEDIA:<path>` in the profile's cache. The history API replaces each
   tag with `MEDIA:<kind>-<id>`, the path sealed with the server's key and bound to the user, so no path or profile name
   reaches the browser. The web app shows the file under the reply (image with a lightbox, audio and video with native
