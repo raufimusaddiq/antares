@@ -231,5 +231,6 @@
     "version": "Hermes Agent v0.22.5 (2026.9.24) \u00b7 upstream bf0203a7",
     "image": "sha256:9c5561579f3ffdf333401797094ac3a743738d6c25d40f4331c7bf77b694238d",
     "note": "read from the same running container after the probe (started 2026-10-27T19:41:59Z, not restarted since); this run predates the probe recording it itself"
-  }
+  },
+  "review_note": "'B's assistant reply holds no canary' passed here although B's run had not completed (still RUNNING), so that pass proves nothing; the probe now requires a completed run with an answer and fails otherwise."
 }

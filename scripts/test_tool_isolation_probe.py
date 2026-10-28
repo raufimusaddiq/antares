@@ -18,11 +18,14 @@ def safe():
     """What a correctly confined profile reports (the deployed Hermes, after #161)."""
     return {
         "tools": ["memory", "skill_manage", "skill_view", "skills_list", "todo_list", "web_extract", "web_search"],
+        "floor_tools": {**{n: [] for n in probe.FLOOR_TOOLSETS}, "terminal": ["process_manage", "terminal"],
+                        "vision": ["vision_analyze"], "video_gen": ["video_generate", "xai_video_edit"]},
         "disabled": sorted(probe.FLOOR_TOOLSETS | {"video", "tts"}),
         "inline_shell": False, "external_dirs": [], "allow_private_urls": False,
         "web_extract": {u: {"error": "Blocked: URL targets a private or internal network address", "leak": False} for u in TARGETS},
         "skill_view": {probe.SKILL: {"answered": True, "success": False, "leak": False},
-                       f"../../{A}/skills/{probe.SKILL}": {"answered": True, "success": False, "leak": False}},
+                       f"../../{A}/skills/{probe.SKILL}": {"answered": True, "success": False, "leak": False},
+                       f"/opt/data/profiles/{A}/skills/{probe.SKILL}": {"answered": True, "success": False, "leak": False}},
         "inline_skill": {"created": True, "viewed": True, "leak": False, "unexpanded": True},
     }
 
@@ -91,8 +94,26 @@ class JudgeTest(unittest.TestCase):
         block = re.search(r"var DeniedToolsets = \[\]string\{(.*?)\n\}", src, re.S).group(1)
         self.assertEqual(set(re.findall(r'"([a-z_]+)"', block)), probe.FLOOR_TOOLSETS)
 
-    def test_every_denied_tool_comes_from_a_floor_toolset(self):
-        self.assertEqual(set(probe.TOOL_TOOLSET.values()), probe.FLOOR_TOOLSETS)
+    def test_a_tool_hermes_reports_for_a_floor_toolset_is_denied(self):
+        # Names come from the running Hermes, so a tool a newer build adds (process_manage, xai_video_edit) is caught.
+        for tool in ("process_manage", "xai_video_edit"):
+            f = safe()
+            f["tools"].append(tool)
+            self.assertFalse(verdicts(f)["B's runs are given no boundary-crossing tool"], tool)
+
+    def test_unknown_floor_tools_fail(self):
+        f = safe()
+        del f["floor_tools"]["terminal"]
+        v = verdicts(f)
+        self.assertFalse(v["Hermes names the tools of every floor toolset"])
+        f = safe()
+        f["floor_tools"] = {}
+        self.assertFalse(verdicts(f)["B's runs are given no boundary-crossing tool"])
+
+    def test_dropping_a_skill_view_probe_fails(self):
+        f = safe()
+        f["skill_view"].pop(probe.SKILL)
+        self.assertFalse(verdicts(f)["skill_view was probed by name and by path"])
 
     def test_missing_facts_fail_rather_than_pass(self):
         v = verdicts({})

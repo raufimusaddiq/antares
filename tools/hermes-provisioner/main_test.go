@@ -434,7 +434,7 @@ func TestProvisionDisablesToolsetsBeforeIssuingKey(t *testing.T) {
 			for _, n := range got {
 				have[n] = true
 			}
-			for _, n := range []string{"terminal", "file", "code_execution", "delegation", "cronjob", "session_search", "connections", "browser", "vision", "image_gen"} {
+			for _, n := range floorToolsets {
 				if !have[n] {
 					t.Errorf("%s is not disabled", n)
 				}

@@ -17,8 +17,9 @@ A non-image data URL sent to `/v1/chat/completions` was refused with
 the selected model can process an image.
 
 Neither authenticated `/v1/models` nor `/api/model/options` advertised input modalities or
-vision support. The `vision` toolset is enabled/configured; its `vision_analyze` tool still
-is not a guarantee that the chat model receives inline images. Antares' capability discovery
+vision support. The `vision` toolset is not available to tenant profiles: since #161 it is in the toolset floor, because
+its `vision_analyze` tool loads any local image path, including another tenant's (`docs/runbooks/tenant-toolsets.md`).
+It was never what delivers an image to the chat model: inline images go as `image_url` data. Antares' capability discovery
 exists; the earlier statement that `/api/capabilities` is a 501 placeholder was obsolete.
 It does not currently report an image-send capability, so an image-send control remains hidden.
 
