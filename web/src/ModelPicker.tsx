@@ -300,10 +300,10 @@ const withHidden = (c: ModelCatalog, ids: Set<string>): ModelCatalog => ({
   providers: c.providers.map((p) => ({ ...p, models: p.models.map((m) => ({ ...m, hidden: ids.has(m.id) })) })),
 });
 
-/** Kenari's API prices models per token; an image, video or speech model is priced per unit on its catalogue page
- * instead, and the API reports 0 for it. That 0 is not the price, so it is never shown. */
-function mediaPrice(m: ModelEntry): string | null {
+/** Kenari's API prices models per token and reports 0 for an image, video or speech model, whose price is on its
+ * catalogue page instead. That 0 is not the price, so it is not shown; a model Kenari marks free stays "free". */
+export function mediaPrice(m: ModelEntry): string | null {
+  if (m.price?.free) return null;
   const out = m.modalities?.output ?? [];
-  const unit = out.includes("video") ? "per second" : out.includes("image") ? "per image" : out.includes("audio") ? "per use" : null;
-  return unit ? `Price: ${unit}, on Kenari's catalogue (not in its API)` : null;
+  return out.some((k) => k !== "text") ? "Price: not in Kenari's API (see its catalogue)" : null;
 }
