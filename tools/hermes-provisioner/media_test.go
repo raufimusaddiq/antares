@@ -67,7 +67,8 @@ func TestMediaScriptRefusesSymlinksAnywhereOnThePath(t *testing.T) {
 		t.Skip("python3 not installed")
 	}
 	dir := t.TempDir()
-	root := filepath.Join(dir, "profiles", "u_abcdefgh", "cache") + "/"
+	base := filepath.Join(dir, "profiles")
+	root := filepath.Join(base, "u_abcdefgh", "cache") + "/"
 	other := filepath.Join(dir, "profiles", "u_otherone1", "cache")
 	must := func(err error) {
 		t.Helper()
@@ -83,7 +84,7 @@ func TestMediaScriptRefusesSymlinksAnywhereOnThePath(t *testing.T) {
 	must(os.Symlink(other, filepath.Join(root, "swapped")))
 	must(os.Symlink(filepath.Join(root, "generated", "images", "own.png"), filepath.Join(root, "inner.png")))
 	run := func(path string) (string, int) {
-		cmd := exec.Command("python3", "-c", mediaScript, root, path, "1048576")
+		cmd := exec.Command("python3", "-c", mediaScript, base, "u_abcdefgh", path, "1048576")
 		out, err := cmd.Output()
 		var ee *exec.ExitError
 		if errors.As(err, &ee) {
@@ -101,5 +102,11 @@ func TestMediaScriptRefusesSymlinksAnywhereOnThePath(t *testing.T) {
 		if out, code := run(p); code != 3 || strings.Contains(out, "SECRET") || out != "" {
 			t.Errorf("%s: exit %d, %q", p, code, out)
 		}
+	}
+	// The cache directory itself replaced by a symlink to another profile's cache.
+	must(os.RemoveAll(root))
+	must(os.Symlink(other, filepath.Join(base, "u_abcdefgh", "cache")))
+	if out, code := run(root + "secret.png"); code != 3 || out != "" {
+		t.Errorf("symlinked cache: exit %d, %q", code, out)
 	}
 }

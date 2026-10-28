@@ -23,20 +23,21 @@ var mediaTypes = map[string]string{
 }
 
 // mediaScript prints the file's bytes, or exits 3 when it is not a regular file inside the cache, is too large or
-// missing. It opens each path component relative to the one before with O_NOFOLLOW, starting at the cache directory,
+// missing. From the trusted profiles directory it opens the profile, its cache and each further component relative to
+// the one before with O_NOFOLLOW (no trailing slash anywhere, so the flag holds for every one of them),
 // and checks and reads the opened descriptor: a symlink anywhere on the way (or swapped in while it runs) is refused,
-// never followed. The root and the path are arguments.
+// never followed. The profiles directory, the slug and the path are arguments.
 const mediaScript = `
 import os, stat, sys
-root, path, limit = sys.argv[1], sys.argv[2], int(sys.argv[3])
-rel = os.path.relpath(path, root)
+base, slug, path, limit = sys.argv[1], sys.argv[2], sys.argv[3], int(sys.argv[4])
+rel = os.path.relpath(path, os.path.join(base, slug, "cache"))
 parts = rel.split(os.sep)
-if rel.startswith("..") or os.path.isabs(rel) or "" in parts or ".." in parts:
+if rel.startswith("..") or os.path.isabs(rel) or "" in parts or ".." in parts or "." in parts:
     sys.exit(3)
 D = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 try:
-    fd = os.open(root, D)
-    for p in parts[:-1]:
+    fd = os.open(base, os.O_RDONLY | os.O_DIRECTORY)  # the trusted profiles directory
+    for p in [slug, "cache"] + parts[:-1]:
         nfd = os.open(p, D, dir_fd=fd)
         os.close(fd)
         fd = nfd
@@ -88,7 +89,7 @@ func (s *server) media(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := opCtx(r) // a read: no mutation lock
 	defer cancel()
-	out, _, err := s.h.r.Run(ctx, "", "python3", "-c", mediaScript, profilesDir+"/"+req.Slug+"/cache/", req.Path, strconv.Itoa(maxMediaBytes))
+	out, _, err := s.h.r.Run(ctx, "", "python3", "-c", mediaScript, profilesDir, req.Slug, req.Path, strconv.Itoa(maxMediaBytes))
 	var ee interface{ ExitCode() int }
 	switch {
 	case err == nil && len(out) > 0:
