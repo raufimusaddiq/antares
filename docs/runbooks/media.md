@@ -154,8 +154,10 @@ Hermes' own tools generate the media; Antares only shows it.
   `agnes-image-2-5-flash:free`; set `image_gen.kenari-image.model` in a profile to change it.
 - **Install** (once per Hermes data volume, and after changing the plugin): copy it to `/opt/data/antares-plugins/`:
 
+      docker exec -u 0 hermes mkdir -p /opt/data/antares-plugins   # first: docker cp into a missing dir renames instead
       docker cp deploy/hermes-plugins/kenari-image hermes:/opt/data/antares-plugins/
       docker exec -u 0 hermes chown -R hermes:hermes /opt/data/antares-plugins
+      docker exec hermes test -f /opt/data/antares-plugins/kenari-image/plugin.yaml   # the policy step looks here
 
   The provisioner's policy step (every provision and rotate) copies it into the profile's `plugins/` and sets
   `plugins.enabled: [kenari-image]` and `image_gen.provider: kenari-image`. Existing profiles get it on their next
