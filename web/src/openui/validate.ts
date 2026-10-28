@@ -21,7 +21,7 @@ export const MAX_TEXT = 20_000;
 // A component with an image address makes the browser fetch it with the reader's cookies (CSP allows same-origin
 // images), so no image is accepted: no image field (src, bgImageSrc, a gallery's or list item's image) and no Markdown
 // image. Every address the reader can follow (a url or href field, such as a Card's sources, and every Markdown link)
-// must pass outsideUrl: absolute http(s), no credentials, never Antares itself. While streaming, an address that is
+// must pass outsideUrl: absolute http(s), no user or password, never Antares itself. While streaming, an address that is
 // still only a prefix of "https://" is let through until more of it arrives.
 const IMAGE_FIELD = /^src$|Src$/;
 const URL_FIELD = /^url$|Url$|^href$/;
