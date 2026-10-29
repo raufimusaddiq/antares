@@ -199,9 +199,8 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
       </div>
       {!following && (
         <div className="vjump">
-          <button type="button" data-icon="arrow-down" onClick={jumpToLatest}>
-            Jump to latest
-          </button>
+          {/* A small round arrow, as in other chat apps: the label is for assistive technology and the tooltip. */}
+          <button type="button" data-icon="arrow-down" aria-label="Jump to latest" title="Jump to latest" onClick={jumpToLatest} />
         </div>
       )}
     </div>

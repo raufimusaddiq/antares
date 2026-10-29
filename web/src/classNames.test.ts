@@ -7,7 +7,6 @@ import { describe, expect, it } from "vitest";
 // nothing in the suite notices (that is how .quiet was lost). Classes that are deliberately styleless go
 // in STYLELESS with the reason.
 const STYLELESS: Record<string, string> = {
-  pending: "state hook on a user turn awaiting its server copy; styling comes from .turn.user",
 };
 
 const src = join(__dirname);
