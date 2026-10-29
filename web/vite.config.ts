@@ -1,3 +1,4 @@
+/// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 
@@ -49,4 +50,6 @@ export default defineConfig({
     sourcemap: false,
   },
   server: { proxy: { "/api": "http://localhost:8080" } },
+  // Every test file starts clean: rendered trees unmounted (src/testSetup.ts) and stubbed globals restored.
+  test: { setupFiles: ["./src/testSetup.ts"], unstubGlobals: true },
 });

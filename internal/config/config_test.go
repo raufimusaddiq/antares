@@ -66,9 +66,10 @@ func TestSecretNeverPrints(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range []string{fmt.Sprintf("%v", c), fmt.Sprintf("%+v", c), fmt.Sprintf("%#v", c)} {
-		if strings.Contains(s, "kkkk") || strings.Contains(s, goodKey) {
-			t.Fatalf("secret leaked: %s", s)
+	out := fmt.Sprintf("%v %+v %#v %s %q", c, c, c, c.GoogleClientSecret, c.GoogleClientSecret)
+	for _, secret := range []string{"kkkk", goodKey, googleOK["ANTARES_GOOGLE_CLIENT_SECRET"]} {
+		if strings.Contains(out, secret) {
+			t.Fatalf("secret leaked: %s", out)
 		}
 	}
 }
@@ -141,18 +142,6 @@ func TestLoadPublicOriginMustBeBareHTTPS(t *testing.T) {
 	c, err := Load(env(map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey, "ANTARES_PUBLIC_ORIGIN": "https://Chat.Example.test/"}))
 	if err != nil || c.PublicOrigin != "https://chat.example.test" {
 		t.Fatalf("origin = %q, err %v", c.PublicOrigin, err)
-	}
-}
-
-func TestGoogleClientSecretNeverPrints(t *testing.T) {
-	c, err := Load(env(map[string]string{"ANTARES_DB_PATH": "/x/a.db", "ANTARES_SECRET_KEY": goodKey}))
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, out := range []string{fmt.Sprintf("%v %+v %#v %s %q", c, c, c, c.GoogleClientSecret, c.GoogleClientSecret)} {
-		if strings.Contains(out, googleOK["ANTARES_GOOGLE_CLIENT_SECRET"]) {
-			t.Fatalf("client secret leaked: %s", out)
-		}
 	}
 }
 

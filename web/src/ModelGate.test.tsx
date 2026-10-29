@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ChatSummary, Inventory } from "./chatApi";
 
 const api = vi.hoisted(() => ({ listChats: vi.fn(), getMessages: vi.fn(), getRun: vi.fn(), getCapabilities: vi.fn(), getUsage: vi.fn() }));
@@ -20,8 +20,6 @@ beforeEach(() => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({ id: "c1", model: null }), { status: 200 })));
 });
 afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
   Object.values(api).forEach((m) => m.mockReset());
 });
 

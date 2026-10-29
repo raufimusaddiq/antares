@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { act, fireEvent, render, screen } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { Dictation } from "./Dictation";
 
 type Handler = ((e: unknown) => void) | null;
@@ -34,10 +34,6 @@ class FakeRecognition {
 beforeEach(() => {
   localStorage.clear();
   last = null;
-});
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
 });
 
 // #167: dictation is offered only when the browser can do it, explains where the audio goes before first use, puts

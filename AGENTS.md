@@ -78,6 +78,24 @@ do not copy its data model, and do not treat "aixell does it this way" as a reas
 - **Never claim security readiness you have not demonstrated.** "Should be isolated" is not
   isolation.
 
+## Tests: only what is needed
+
+A test earns its place by guarding one behaviour that nothing else guards. Lean, not thin:
+
+- **Test what a user, an attacker or the next caller can observe**: a response, a stored row, a
+  rendered screen, a refused request. Not private helpers, call order or CSS text.
+- **One behaviour, one test.** Variants of the same behaviour are one table-driven test (Go
+  subtests, `it.each` or a loop in TypeScript), not copies.
+- **Don't re-prove a lower layer** in every caller: prove it where it lives, and once end to end.
+- **Always kept, never folded away:** the security invariants (default deny, two-user ownership,
+  backend-selected profile, no credential in any response or log, admin blind, CSP) and the
+  regression test of a bug the owner reported.
+- **No measuring code:** no timing, benchmark or "measure" tests unless the ticket asks for one.
+- **Share setup:** one harness per package. Don't copy fake servers or fixtures into each file.
+- **Short:** a test's name says what it proves; a comment only says why when the name can't.
+- **Cutting tests keeps coverage:** compare per-package coverage (`go test -cover`, vitest
+  `--coverage`) before and after, and say so in the PR.
+
 ## Secrets
 
 - No credential in a file you commit, in a log, in an error string, or in a read model.

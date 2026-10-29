@@ -1,12 +1,8 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { SearchPanel } from "./Search";
 
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-});
 
 const body = (cursor: string) =>
   JSON.stringify({

@@ -58,9 +58,7 @@ beforeEach(() => {
   vi.stubGlobal("fetch", srv.f);
 });
 afterEach(() => {
-  cleanup();
   vi.useRealTimers();
-  vi.unstubAllGlobals();
 });
 
 const settle = () => act(async () => void (await vi.advanceTimersByTimeAsync(1000)));

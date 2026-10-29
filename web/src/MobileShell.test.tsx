@@ -2,7 +2,7 @@
 // Behaviour of the phone-layout toggles (#138). jsdom applies no CSS, so this proves the state, ARIA and keyboard
 // contract only; the layout itself is checked in a real browser by scripts/browser-check.mjs (ONLY=mobile-layout).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 const api = vi.hoisted(() => ({ listChats: vi.fn(), getMessages: vi.fn(), getRun: vi.fn(), getUsage: vi.fn() }));
 vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi")>()), ...api }));
@@ -19,8 +19,6 @@ beforeEach(() => {
   api.getUsage.mockResolvedValue({ ok: false, code: "NOT_FOUND" });
 });
 afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
   Object.values(api).forEach((m) => m.mockReset());
 });
 

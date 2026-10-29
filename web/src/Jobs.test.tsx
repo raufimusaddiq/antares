@@ -1,12 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { JobsPanel, when } from "./Jobs";
 
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-});
 
 const open = (c: HTMLElement) => {
   const d = c.querySelector("details")!;

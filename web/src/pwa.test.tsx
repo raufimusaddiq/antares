@@ -5,7 +5,7 @@ import { reloadForUpdate, watchUpdates } from "./pwa";
 import { loadSession, signOut } from "./api";
 import { listChats } from "./chatApi";
 
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
+afterEach(() => {vi.unstubAllEnvs(); });
 
 it("announces the waiting update and offers an explicit keyboard action", () => {
   const markup = renderToStaticMarkup(<UpdateNotice onReload={() => {}} />);

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, waitFor } from "@testing-library/react";
+import { render, waitFor } from "@testing-library/react";
 
 const api = vi.hoisted(() => ({ listChats: vi.fn(), getChat: vi.fn(), getMessages: vi.fn(), getRun: vi.fn() }));
 vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi")>()), ...api }));
@@ -20,8 +20,6 @@ beforeEach(() => {
   );
 });
 afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
   sessionStorage.clear();
   vi.clearAllMocks();
 });

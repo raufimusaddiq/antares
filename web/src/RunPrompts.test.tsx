@@ -1,12 +1,8 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { RunPrompts } from "./RunPrompts";
 
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-});
 
 type Call = { method: string; path: string; body: unknown };
 

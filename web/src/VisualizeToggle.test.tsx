@@ -1,13 +1,9 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import type { ChatSummary } from "./chatApi";
 import { OpenChatVisualize, VisualizeToggle } from "./VisualizeToggle";
 
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-});
 
 const chat: ChatSummary = { id: "c1", title: "T", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false, visualize: false };
 
