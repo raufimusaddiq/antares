@@ -51,5 +51,7 @@ export default defineConfig({
   },
   server: { proxy: { "/api": "http://localhost:8080" } },
   // Every test file starts clean: rendered trees unmounted (src/testSetup.ts) and stubbed globals restored.
-  test: { setupFiles: ["./src/testSetup.ts"], unstubGlobals: true },
+  // "list" runs afterEach hooks in the order written, so the setup file's unmount comes before a
+  // test file's mockReset: a still-mounted chat must not call a mock that was just reset.
+  test: { setupFiles: ["./src/testSetup.ts"], unstubGlobals: true, sequence: { hooks: "list" } },
 });
