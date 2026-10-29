@@ -81,3 +81,12 @@ able to approve the model's own tool call. A test pins the allowlist.
 `internal/chat/prompts_test.go` (blocked-until-approved, foreign and unauthenticated, clarification round trip,
 fail-closed, stale, suspended, undelivered), `internal/store/prompts_test.go` (ownership in the queries),
 `internal/hermes/prompts_test.go` and `discovery_test.go` (wire shapes, advertised routes), `web/src/RunPrompts.test.tsx`.
+
+## Clarification route on Hermes v0.22.5
+
+Hermes registers `POST /v1/runs/{run_id}/clarify` but leaves it out of `/v1/capabilities`' endpoint table, so
+clarification prompts were reported unsupported. The rule that an answer goes only to an advertised route has one
+explicit exception (`hermes.Client.proven`, list `provenRoutes`, only `run_clarify`): the route is accepted when a probe
+about a run that cannot exist (`run_0000000000000000antaresprobe`) gets Hermes' own answer, 404 with code
+`run_not_found`. A bare 404 or a 405 is not proof, and no other unlisted route is probed. The `clarify` tool itself is
+enabled for API chats by the toolset policy (tenant-toolsets.md), so the model can ask.

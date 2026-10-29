@@ -39,7 +39,7 @@ func runPolicy(t *testing.T, withPlugin bool) (calls []string, profiles string) 
 			t.Fatal(err)
 		}
 	}
-	cmd := exec.Command("sh", "-c", policyScript, "sh", "u_abcdefgh", `["terminal"]`, shared, profiles, "/root-of-hermes", reloadScript)
+	cmd := exec.Command("sh", "-c", policyScript, "sh", "u_abcdefgh", `["terminal"]`, shared, profiles, "/root-of-hermes", reloadScript, "web memory clarify")
 	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("policy script: %v %s", err, out)
@@ -52,6 +52,7 @@ func TestPolicyScriptInstallsAndSelectsTheImagePlugin(t *testing.T) {
 	calls, profiles := runPolicy(t, true)
 	want := []string{
 		`-p u_abcdefgh config set agent.disabled_toolsets ["terminal"]`,
+		`-p u_abcdefgh tools enable web memory clarify --platform api_server`,
 		`-p u_abcdefgh config set plugins.enabled ["kenari-image"]`,
 		`-p u_abcdefgh config set image_gen.provider kenari-image`,
 		"reload /root-of-hermes " + profiles + "/u_abcdefgh",
@@ -64,9 +65,11 @@ func TestPolicyScriptInstallsAndSelectsTheImagePlugin(t *testing.T) {
 	}
 }
 
+// Without the plugin only the toolsets are written: the disabled list, and the allowed ones enabled for api_server
+// (Hermes' default API toolset leaves clarify, tts, stt, video, video_gen and x_search out).
 func TestPolicyScriptWithoutThePluginWritesOnlyTheToolsets(t *testing.T) {
 	calls, profiles := runPolicy(t, false)
-	if len(calls) != 1 || !strings.Contains(calls[0], "agent.disabled_toolsets") {
+	if len(calls) != 2 || !strings.Contains(calls[0], "agent.disabled_toolsets") || calls[1] != "-p u_abcdefgh tools enable web memory clarify --platform api_server" {
 		t.Fatalf("hermes calls: %v", calls)
 	}
 	if _, err := os.Stat(filepath.Join(profiles, "u_abcdefgh", "plugins")); !os.IsNotExist(err) {

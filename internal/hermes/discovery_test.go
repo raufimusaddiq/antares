@@ -118,11 +118,18 @@ func TestDiscoverDerivesFromTheRealCapturedPayloads(t *testing.T) {
 		t.Errorf("skills = %+v", inv.Skills)
 	}
 	for _, r := range *seen {
+		// The one exception: the clarify route probe, a POST about a run that cannot exist (client.go, proven).
+		if r == clarifyProbe {
+			continue
+		}
 		if !strings.HasPrefix(r, "GET /p/"+testProfile+"/") {
 			t.Errorf("discovery made a non-GET or off-profile request: %s", r)
 		}
 	}
 }
+
+// clarifyProbe is the only request discovery makes that is not a GET of an advertised route.
+var clarifyProbe = "POST /p/" + testProfile + "/v1/runs/" + proveRunID + "/clarify"
 
 func TestDiscoverNeverDefaultsToAvailable(t *testing.T) {
 	cases := map[string]func(m map[string]string){
@@ -219,8 +226,67 @@ func TestDiscoverUsesOnlyAdvertisedSafeRoutes(t *testing.T) {
 			t.Errorf("%s offered from a route Hermes did not advertise as a plain GET", id)
 		}
 	}
-	if len(*seen) != 1 {
-		t.Errorf("only /v1/capabilities should have been requested, got %v", *seen)
+	// Besides /v1/capabilities only the clarify route probe (a POST about a run that cannot exist) may be made.
+	if len(*seen) != 2 || (*seen)[0] != "GET /p/"+testProfile+"/v1/capabilities" || (*seen)[1] != clarifyProbe {
+		t.Errorf("only /v1/capabilities and the clarify probe should have been requested, got %v", *seen)
+	}
+}
+
+// Hermes v0.22.5 serves POST /v1/runs/{id}/clarify without listing it in /v1/capabilities. Antares accepts it only
+// when Hermes' own handler answers the probe (404 with code run_not_found); a bare 404 or a 405 is not proof, and no
+// other unlisted route is ever probed.
+func TestClarifyRouteIsAcceptedOnlyWhenHermesOwnHandlerAnswers(t *testing.T) {
+	for name, c := range map[string]struct {
+		status int
+		body   string
+		want   string
+	}{
+		"hermes handler":    {404, `{"error":{"message":"Run not found","code":"run_not_found"}}`, StatusAvailable},
+		"bare 404":          {404, `404: Not Found`, StatusUnsupported},
+		"other json 404":    {404, `{"error":{"code":"not_found"}}`, StatusUnsupported},
+		"method not served": {405, `{"error":{"code":"run_not_found"}}`, StatusUnsupported},
+	} {
+		t.Run(name, func(t *testing.T) {
+			caps := fixture(t, "../../docs/hermes/fixtures/capabilities.body.json")
+			var probes []string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				path := strings.TrimPrefix(r.URL.Path, "/p/"+testProfile)
+				switch {
+				case r.Method == http.MethodGet && path == "/v1/capabilities":
+					_, _ = w.Write([]byte(caps))
+				case r.Method == http.MethodPost && strings.HasSuffix(path, "/clarify"):
+					probes = append(probes, path)
+					w.WriteHeader(c.status)
+					_, _ = w.Write([]byte(c.body))
+				default:
+					http.NotFound(w, r)
+				}
+			}))
+			defer srv.Close()
+			cl, err := NewClient(srv.URL, ClientOptions{})
+			if err != nil {
+				t.Fatal(err)
+			}
+			inv, err := cl.Discover(context.Background(), bind())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got := byID(inv, CapClarify).Status; got != c.want {
+				t.Errorf("clarification = %s, want %s", got, c.want)
+			}
+			ok, err := cl.Advertises(context.Background(), bind(), "run_clarify")
+			if err != nil || ok != (c.want == StatusAvailable) {
+				t.Errorf("Advertises(run_clarify) = %v %v", ok, err)
+			}
+			if ok, _ := cl.Advertises(context.Background(), bind(), "run_steer_unlisted"); ok {
+				t.Error("an unlisted route other than clarify was accepted")
+			}
+			for _, p := range probes {
+				if p != "/v1/runs/"+proveRunID+"/clarify" {
+					t.Errorf("probe went to %s", p)
+				}
+			}
+		})
 	}
 }
 

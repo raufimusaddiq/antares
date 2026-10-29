@@ -55,6 +55,7 @@ func (s *server) routes() http.Handler {
 	mux.HandleFunc("POST /deprovision", s.auth(s.deprovision))
 	mux.HandleFunc("POST /rotate", s.auth(s.rotate))
 	mux.HandleFunc("POST /media", s.auth(s.media))
+	mux.HandleFunc("POST /skills", s.auth(s.skills))
 	return mux
 }
 

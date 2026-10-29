@@ -199,3 +199,28 @@ func TestOnlyRotateMissingProfileOrKeyAllowsProvisionFallback(t *testing.T) {
 		}
 	}
 }
+
+// The skills a profile can load, read through the helper because Hermes' own route fails (helper.go, Skills).
+func TestHelperSkillsReadsOneProfilesList(t *testing.T) {
+	h, calls := fakeHelper(t, func(w http.ResponseWriter, _ *http.Request, c helperCall) {
+		_, _ = w.Write([]byte(`{"object":"list","data":[{"name":"deep-research","description":"Research","category":"research"},{"name":"bad\u0007name"}]}`))
+	})
+	list, err := h.Skills(context.Background(), slA)
+	if err != nil || len(list) != 1 || list[0].Name != "deep-research" {
+		t.Fatalf("list %+v err %v", list, err)
+	}
+	if c := (*calls)[0]; c.path != "/skills" || c.body != `{"slug":"`+slA+`"}` || c.auth != "Bearer "+helperToken {
+		t.Fatalf("call %+v", c)
+	}
+	missing, _ := fakeHelper(t, func(w http.ResponseWriter, _ *http.Request, _ helperCall) { w.WriteHeader(http.StatusNotFound) })
+	if list, err := missing.Skills(context.Background(), slA); err != nil || len(list) != 0 {
+		t.Fatalf("a missing profile: %v %v", list, err)
+	}
+	broken, _ := fakeHelper(t, func(w http.ResponseWriter, _ *http.Request, _ helperCall) { w.WriteHeader(http.StatusBadGateway) })
+	if _, err := broken.Skills(context.Background(), slA); err == nil {
+		t.Fatal("a failing helper must be an error, not an empty list")
+	}
+	if _, err := h.Skills(context.Background(), "../x"); err == nil {
+		t.Fatal("an invalid slug reached the helper")
+	}
+}

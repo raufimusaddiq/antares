@@ -51,6 +51,13 @@ type Options struct {
 	Media MediaSource
 	// Titler, if set, writes a chat's automatic title from its first message (title.go). Nil: the first words.
 	Titler Titler
+	// Skills, if set, lists a profile's skills when Hermes' own skills route does not (capabilities.go).
+	Skills SkillSource
+}
+
+// SkillSource lists the skills one profile can load (hermes.Helper.Skills).
+type SkillSource interface {
+	Skills(ctx context.Context, slug string) ([]hermes.Skill, error)
 }
 
 // MediaSource reads a generated media file from one profile's cache (hermes.Helper.Media).
@@ -90,6 +97,7 @@ type Service struct {
 
 	media         MediaSource
 	titler        Titler
+	skills        SkillSource
 	titling       map[string]bool // chats with a title job in flight (title.go); guarded by mu
 	jobs          bool
 	jobLocks      sync.Map // user id -> *sync.Mutex (jobs.go jobLock)
@@ -118,7 +126,7 @@ func New(o Options) (*Service, error) {
 		o.Heartbeat = 15 * time.Second
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs, media: o.Media, titler: o.Titler,
+	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs, media: o.Media, titler: o.Titler, skills: o.Skills,
 		base: ctx, stop: cancel, live: map[string]*liveRun{}}
 	s.wg.Add(1)
 	go s.jobShutdownLoop()

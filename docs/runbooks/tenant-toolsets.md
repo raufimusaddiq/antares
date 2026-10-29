@@ -178,3 +178,12 @@ Regression tests cover both requeue modes repairing policy, a helper that leaves
 deterministic versus transient retry behavior, lost rotation responses, owner-scoped replacement,
 and suspension during repair. Existing verifier and provisioner tests still enforce the denied
 floor, policy writes on rotation and failure before key issuance when policy application fails.
+
+## Allowed means enabled for API chats (2026-10-29)
+
+Hermes' default toolset for the `api_server` platform leaves out `clarify`, `tts`, `stt`, `video`, `video_gen` and
+`x_search`, so writing only `agent.disabled_toolsets` left those off even when allowed (an Assistant tools switch had
+no effect for them). The policy step now also runs `hermes -p <slug> tools enable <allowed...> --platform api_server`
+(writes `platform_toolsets.api_server`), measured on a throwaway profile: `clarify` and `tts` went from disabled to
+enabled. `agent.disabled_toolsets` is still written first and applied last, so nothing outside the allowed set can be
+on. Existing profiles get it on their next provision or rotate (a tenant-verify, or saving Assistant tools).
