@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 
 const virtual = vi.hoisted(() => ({ layout: undefined as unknown as ReturnType<typeof vi.fn> }));
 vi.mock("./virtual", async (orig) => {
@@ -15,9 +15,7 @@ import { VirtualList } from "./VirtualList";
 // the whole loaded history on each of those renders were the measured costs, so a render that mounts nothing new must do
 // neither; the ResizeObserver re-reads items that change on their own.
 afterEach(() => {
-  cleanup();
   vi.restoreAllMocks();
-  vi.unstubAllGlobals();
 });
 
 const items = Array.from({ length: 20 }, (_, i) => `m${i}`);

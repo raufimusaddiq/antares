@@ -50,9 +50,7 @@ beforeEach(() => {
   api.getRun.mockResolvedValue({ ok: false, code: "NOT_FOUND" });
 });
 afterEach(() => {
-  cleanup();
   FakeSource.all = [];
-  vi.unstubAllGlobals();
   Object.values(api).forEach((m) => m.mockReset());
 });
 

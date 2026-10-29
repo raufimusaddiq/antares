@@ -1,15 +1,11 @@
 // @vitest-environment jsdom
 // #139 stage 3: the Settings dialog holds every account and device panel as a section. Only the open section is
 // mounted, so it loads when shown; a panel shown as a page has no disclosure to open.
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { Panel } from "./Panel";
 import { SettingsDialog } from "./SettingsDialog";
 
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-});
 
 const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
 

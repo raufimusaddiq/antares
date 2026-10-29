@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ChatSummary } from "./chatApi";
 
 const api = vi.hoisted(() => ({ listChats: vi.fn(), createChat: vi.fn(), getMessages: vi.fn(), sendMessage: vi.fn(), getRun: vi.fn(), cancelRun: vi.fn() }));
@@ -56,8 +56,6 @@ beforeEach(() => {
   api.sendMessage.mockResolvedValue(ok({ runId: "r1", status: "PENDING" }));
 });
 afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
   FakeSource.all = [];
   [...Object.values(api), ...Object.values(media)].forEach((m) => m.mockReset());
 });

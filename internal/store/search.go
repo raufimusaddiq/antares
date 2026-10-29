@@ -14,8 +14,8 @@ import (
 const (
 	MaxIndexedText     = 4000   // runes kept per turn
 	MaxIndexedUserDocs = 100000 // turns per user, across all chats
-	// MaxIndexedUserRunes bounds what one search scans (instr over every folded body). Measured in
-	// TestMeasureSearchAtQuota; the figures are in docs/runbooks/search.md.
+	// MaxIndexedUserRunes bounds what one search scans (instr over every folded body); the measured
+	// figures are in docs/runbooks/search.md.
 	MaxIndexedUserRunes = 25_000_000
 )
 

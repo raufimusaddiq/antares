@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import type { ChatSummary } from "./chatApi";
 
 const api = vi.hoisted(() => ({
@@ -25,7 +25,6 @@ beforeEach(() => {
   window.history.replaceState(null, "", `/chat/${THEIRS}`);
 });
 afterEach(() => {
-  cleanup();
   vi.clearAllMocks();
 });
 

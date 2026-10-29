@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { MAX_SECONDS, Recorder } from "./Recorder";
 
 class FakeRecorder {
@@ -35,9 +35,7 @@ beforeEach(() => {
   URL.revokeObjectURL = vi.fn();
 });
 afterEach(() => {
-  cleanup();
   vi.useRealTimers();
-  vi.unstubAllGlobals();
   vi.clearAllMocks();
 });
 

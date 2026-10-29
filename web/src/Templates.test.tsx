@@ -1,14 +1,10 @@
 // @vitest-environment jsdom
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { useState } from "react";
 import { Templates } from "./Templates";
 import type { OwnTemplate } from "./draftApi";
 
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-});
 
 function stub(status: number, json: unknown) {
   const f = vi.fn(async () => ({ status, ok: status < 400, json: async () => json }) as Response);

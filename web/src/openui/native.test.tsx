@@ -2,7 +2,7 @@
 // Native OpenUI (the openuiChatLibrary of @openuidev/react-ui): the gate, whole-reply detection, and the two
 // built-in actions, which only ever reach the composer or a confirmed new tab.
 import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { openuiChatExamples } from "@openuidev/react-ui/genui-lib";
 import { ALLOWED_ACTIONS, followUpText, runAction, safeUrl } from "./actions";
 import RichBlock from "./Block";
@@ -16,8 +16,6 @@ beforeAll(() => {
   globalThis.IntersectionObserver ??= class { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } } as never;
 });
 afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
   vi.restoreAllMocks();
 });
 

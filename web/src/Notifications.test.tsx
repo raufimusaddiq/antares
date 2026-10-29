@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { Notifications as State } from "./push";
 
 const push = vi.hoisted(() => ({
@@ -35,7 +35,6 @@ beforeEach(() => {
   push.setMode.mockResolvedValue(ok(state()));
 });
 afterEach(() => {
-  cleanup();
   vi.clearAllMocks();
 });
 

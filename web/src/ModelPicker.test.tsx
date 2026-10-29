@@ -54,7 +54,6 @@ function respond(map: Record<string, unknown>) {
 }
 
 afterEach(() => {
-  vi.unstubAllGlobals();
   document.body.innerHTML = "";
 });
 
@@ -79,7 +78,7 @@ describe("ModelPicker", () => {
 
 // ---- races: responses arrive in a different order than the requests were made ----------
 
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 interface Call {
   method: string;
@@ -125,11 +124,7 @@ async function open(d: ReturnType<typeof deferred>) {
 const checkedModel = () => [...document.querySelectorAll<HTMLInputElement>("input[type=radio]")].filter((r) => r.checked).map((r) => r.parentElement!.textContent!.trim());
 
 describe("ModelPicker races", () => {
-  afterEach(() => {
-    cleanup();
-    vi.unstubAllGlobals();
-  });
-
+  
   it("a save started in chat A that resolves after switching to chat B does not change B", async () => {
     const d = deferred();
     const { rerender } = render(<ModelPicker chatId="A" disabled={false} />);
@@ -210,11 +205,7 @@ describe("ModelPicker races", () => {
 });
 
 describe("ModelPicker settings", () => {
-  afterEach(() => {
-    cleanup();
-    vi.unstubAllGlobals();
-  });
-
+  
   it("offers only the published effort levels, and says so when a reasoning model publishes none", async () => {
     const d = deferred();
     const { rerender } = render(<ModelPicker chatId="A" disabled={false} />);
@@ -323,11 +314,7 @@ function serverFake(initial: Record<string, unknown>) {
 }
 
 describe("ModelPicker keeps one chat's writes ordered across chat switches", () => {
-  afterEach(() => {
-    cleanup();
-    vi.unstubAllGlobals();
-  });
-
+  
   it("A1,A2 queued, switch to B, back to A, A3: the stale A2 never overwrites the server", async () => {
     const f = serverFake({ A: null, B: mB });
     const { rerender } = render(<ModelPicker chatId="A" disabled={false} />);
@@ -363,11 +350,7 @@ describe("ModelPicker keeps one chat's writes ordered across chat switches", () 
 // ---- #145: the picker is reliable on demand -----------------------------------------------
 
 describe("ModelPicker on demand (#145)", () => {
-  afterEach(() => {
-    cleanup();
-    vi.unstubAllGlobals();
-  });
-
+  
   // jsdom fires the toggle event itself (a second, manual one would be a second request); let it run before the next step.
   const toggle = async (open: boolean) => {
     document.querySelector("details")!.open = open;

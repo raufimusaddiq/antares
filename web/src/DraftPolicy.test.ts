@@ -20,7 +20,6 @@ beforeEach(() => {
 });
 afterEach(() => {
   localStorage.clear();
-  vi.unstubAllGlobals();
 });
 
 describe("local drafts follow the session (#172)", () => {

@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ChatSummary } from "./chatApi";
 
 const api = vi.hoisted(() => ({
@@ -51,9 +51,7 @@ beforeEach(() => {
   api.getRun.mockResolvedValue({ ok: false, code: "NOT_FOUND" });
 });
 afterEach(() => {
-  cleanup();
   FakeSource.all = [];
-  vi.unstubAllGlobals();
   Object.values(api).forEach((m) => m.mockReset());
 });
 
