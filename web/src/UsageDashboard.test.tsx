@@ -1,12 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import { tokens, UsageDashboard } from "./UsageDashboard";
 
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-});
 
 const t = (o: Partial<Record<string, number | null>> = {}) => ({ runs: 0, unreported: 0, unpriced: 0, input: 0, output: 0, cacheRead: 0, estimate: null, ...o });
 const range = (days: number) => ({

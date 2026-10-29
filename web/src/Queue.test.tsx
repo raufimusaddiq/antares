@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import type { ChatQueue, ChatSummary, Inventory } from "./chatApi";
 
 const api = vi.hoisted(() => ({
@@ -72,9 +72,7 @@ beforeEach(() => {
   api.getQueue.mockResolvedValue(ok(queued([])));
 });
 afterEach(() => {
-  cleanup();
   FakeSource.all = [];
-  vi.unstubAllGlobals();
   Object.values(api).forEach((m) => m.mockReset());
 });
 

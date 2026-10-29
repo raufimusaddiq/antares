@@ -107,15 +107,6 @@ func TestAuthRequired(t *testing.T) {
 	}
 }
 
-func TestHealthNeedsNoToken(t *testing.T) {
-	req := httptest.NewRequest(http.MethodGet, "/health", nil)
-	rec := httptest.NewRecorder()
-	newServer(&fakeRunner{}, testToken).routes().ServeHTTP(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d", rec.Code)
-	}
-}
-
 // create failing must return an error and never attempt to write a key.
 type failCreate struct{ calls [][]string }
 
@@ -645,10 +636,14 @@ func TestRevisionFrom(t *testing.T) {
 	}
 }
 
+// /health needs no token and reports the revision fields.
 func TestHealthReportsRevisionFields(t *testing.T) {
 	req := httptest.NewRequest(http.MethodGet, "/health", nil)
 	rec := httptest.NewRecorder()
 	newServer(&fakeRunner{}, testToken).routes().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("want 200 without a token, got %d", rec.Code)
+	}
 	var got map[string]any
 	if err := json.Unmarshal(rec.Body.Bytes(), &got); err != nil {
 		t.Fatal(err)

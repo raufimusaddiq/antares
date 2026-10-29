@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { VirtualList } from "./VirtualList";
 
 let height = 1200;
@@ -24,7 +24,7 @@ beforeEach(() => {
     disconnect() {}
   });
 });
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
+afterEach(() => {vi.restoreAllMocks();});
 
 it("follows streaming at the bottom, holds the reader's position above it, and resumes on jump", () => {
   const { rerender } = render(<VirtualList {...props} footer="First delta" />);

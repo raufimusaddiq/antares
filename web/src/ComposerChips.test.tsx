@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 
 const api = vi.hoisted(() => ({ listChats: vi.fn(), getMessages: vi.fn(), sendMessage: vi.fn(), getCapabilities: vi.fn(), getChatModel: vi.fn(), getUsage: vi.fn(), putChatModel: vi.fn() }));
 vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi")>()), ...api }));
@@ -18,7 +18,6 @@ beforeEach(() => {
   api.getUsage.mockResolvedValue(ok(usage));
 });
 afterEach(() => {
-  cleanup();
   Object.values(api).forEach((m) => m.mockReset());
 });
 

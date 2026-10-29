@@ -13,7 +13,6 @@ beforeEach(() => {
   localStorage.clear();
 });
 afterEach(() => {
-  vi.unstubAllGlobals();
   localStorage.clear();
 });
 

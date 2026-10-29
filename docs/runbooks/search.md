@@ -33,7 +33,7 @@ every row; a hit stops after `limit` rows). It is therefore bounded by a per-use
 whichever comes first; a chat cut by either is `truncated` and reported as "partly indexed". A search that
 runs past 10 s is cancelled (`SEARCH_TIMEOUT`).
 
-Measured with `ANTARES_SEARCH_MEASURE=1 go test ./internal/store -run TestMeasureSearchAtQuota -v` (2 vCPU
+Measured once when the budget was set (2 vCPU
 host, random text, warm cache, best of 3, `limit` 20, one search of one user, nothing else running):
 
 | index (docs × runes/doc) | miss (full scan) | rare hit | two terms, miss |

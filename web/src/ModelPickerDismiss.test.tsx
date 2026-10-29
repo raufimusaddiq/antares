@@ -1,13 +1,9 @@
 // @vitest-environment jsdom
 // The open model picker floats over the conversation: Escape or a press outside closes it; a press inside does not.
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { fireEvent, render } from "@testing-library/react";
 import { ModelPicker } from "./ModelPicker";
 
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
-});
 
 describe("model picker dismissal", () => {
   it("closes on Escape and on a press outside, stays open on a press inside", () => {

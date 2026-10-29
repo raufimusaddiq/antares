@@ -2,7 +2,7 @@
 // The markup the stylesheet's grid relies on (#139): the header holds the brand and one account group (identity, Menu toggle,
 // actions popover), the starting card is real markup, and decorative parts are hidden from assistive technology.
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 
 const api = vi.hoisted(() => ({ listChats: vi.fn(), getMessages: vi.fn(), getRun: vi.fn(), getUsage: vi.fn() }));
 vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi")>()), ...api }));
@@ -17,8 +17,6 @@ beforeEach(() => {
   api.getUsage.mockResolvedValue({ ok: false, code: "NOT_FOUND" });
 });
 afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
   Object.values(api).forEach((m) => m.mockReset());
 });
 

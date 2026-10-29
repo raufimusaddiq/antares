@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, cleanup, fireEvent, render, renderHook, screen } from "@testing-library/react";
+import { act, fireEvent, render, renderHook, screen } from "@testing-library/react";
 import { ImageStrip, useImageAttachments } from "./ImageAttachments";
 import { OwnedAudio, SentImage } from "./MediaPreview";
 import * as api from "./mediaApi";
@@ -12,7 +12,6 @@ beforeEach(() => {
   URL.revokeObjectURL = vi.fn();
 });
 afterEach(() => {
-  cleanup();
   vi.restoreAllMocks();
 });
 

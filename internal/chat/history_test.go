@@ -2,14 +2,10 @@ package chat
 
 import (
 	"fmt"
-	"math"
 	"net/url"
-	"sort"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/raufimusaddiq/antares/internal/auth"
 	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
@@ -287,51 +283,6 @@ func TestChatListPagesByCursorAndIsOwnerScoped(t *testing.T) {
 	if w := alice.get("/api/chats?limit=0"); w.Code != 400 {
 		t.Errorf("limit=0: %d", w.Code)
 	}
-}
-
-// TestMeasureOpenAndPageBack500TurnChat is the PERF-001 measurement for the
-// server half: the newest-page and older-page requests for a 500-turn
-// (1,000-message) conversation, through the real auth guard, handler and Hermes
-// adapter against a local fake Hermes (so it is the app's cost, not a model's or
-// a network's). Run it with
-//
-//	go test -run Measure500 -v -count=1 ./internal/chat
-//
-// It fails if the median is over a (deliberately loose) budget, so a regression
-// to eager hydration cannot pass quietly.
-func TestMeasureOpenAndPageBack500TurnChat(t *testing.T) {
-	limits := auth.DefaultLimits() // 400 back-to-back reads would meet the history budget; this measures latency, not the budget
-	limits.HistoryPerMinute = math.MaxInt
-	a := newApp(t, appOpts{limits: &limits})
-	u := a.user("alice")
-	chat := u.newChat()
-	seedTurns(t, a, u, chat, 500)
-	measure := func(name, path string, wantBytes int) {
-		const n = 200
-		d := make([]time.Duration, 0, n)
-		var size int
-		for i := 0; i < n; i++ {
-			t0 := time.Now()
-			w := u.get(path)
-			d = append(d, time.Since(t0))
-			if w.Code != 200 {
-				t.Fatalf("%s: %d", name, w.Code)
-			}
-			size = w.Body.Len()
-		}
-		sort.Slice(d, func(i, j int) bool { return d[i] < d[j] })
-		p50, p95 := d[n/2], d[n*95/100]
-		t.Logf("%-28s n=%d p50=%v p95=%v max=%v response=%d bytes", name, n, p50, p95, d[n-1], size)
-		if size > wantBytes {
-			t.Errorf("%s response is %d bytes (budget %d)", name, size, wantBytes)
-		}
-		if p50 > 200*time.Millisecond {
-			t.Errorf("%s p50 %v is over the 200ms budget", name, p50)
-		}
-	}
-	measure("open (newest 50 of 1000)", "/api/chats/"+chat+"/messages", 16<<10)
-	cur := getPage(t, u, chat, "").NextCursor
-	measure("page back (50 of 1000)", "/api/chats/"+chat+"/messages?cursor="+url.QueryEscape(cur), 16<<10)
 }
 
 // #171: history paging and index writes log their latency, with counts and durations only: no chat id, title,

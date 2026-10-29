@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { APPEARANCE_KEY, applyAppearance, DEFAULT_APPEARANCE, loadAppearance, saveAppearance } from "./appearance";
 import { AppearancePanel, DiagnosticsPanel } from "./Settings";
 
@@ -14,10 +14,6 @@ const openPanel = (c: HTMLElement) => {
 beforeEach(() => {
   localStorage.clear();
   for (const a of ["data-theme", "data-openui-theme", "data-text", "data-focus", "data-sidebar"]) root.removeAttribute(a);
-});
-afterEach(() => {
-  cleanup();
-  vi.unstubAllGlobals();
 });
 
 // #113: appearance is per device, survives a reload, and refuses values it does not know.

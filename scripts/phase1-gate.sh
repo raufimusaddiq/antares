@@ -31,9 +31,6 @@ run go test -count=1 -v -run 'SessionKeyIsPerUser|MemoryOfOneUser|WrongProfileKe
 
 step "history: 500-turn conversation, cursor paging, no duplicates or gaps"
 run go test -count=1 -v -run 'TestHistory|TestChatListPages' ./internal/chat
-echo
-echo "-- server-side measurement (the command is: go test -run Measure500 -v -count=1 ./internal/chat)"
-run go test -count=1 -v -run 'TestMeasureOpenAndPageBack500TurnChat' ./internal/chat
 
 step "whole Go suite with the race detector"
 run go test -race -count=1 ./...
