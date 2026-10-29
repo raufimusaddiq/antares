@@ -467,6 +467,18 @@ button.quiet.on { background: var(--ink); color: var(--canvas); font-weight: 700
 .badge.bad { background: var(--blush); color: var(--ink); }
 .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.25rem 1.5rem; margin: 0.5rem 0; padding: 0.9rem 1.25rem; max-width: 40rem; border: 2px solid var(--ink); border-radius: var(--r-lg); background: var(--card); }
 .facts dd { margin: 0; }
+/* Figures side by side (Admin → Provider usage balance): one tile each, wrapping on a narrow screen. */
+.stat-tiles { display: grid; grid-template-columns: repeat(auto-fit, minmax(10rem, 1fr)); gap: 0.75rem; max-width: 44rem; margin: 0.5rem 0 1rem; }
+.stat-tile { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.8rem 1rem; border: 2px solid var(--ink); border-radius: var(--r-lg); background: var(--card); }
+.stat-tile dt { font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
+.stat-tile dd { margin: 0; font-size: 1.15rem; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; overflow-wrap: normal; }
+.stat-tiles:has(> .lead) { grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); }
+@media (max-width: 40rem) { .stat-tile.lead { grid-column: 1 / -1; } }
+/* The usage table keeps a model name and every figure on one line; it scrolls inside its frame on a narrow screen. */
+.usage-table th, .usage-table td { white-space: nowrap; overflow-wrap: normal; }
+.stat-tile.lead { background: var(--mark); border-color: var(--ink); box-shadow: var(--hard-sm); }
+.stat-tile.lead dt { color: var(--mark-ink); }
+.stat-tile.lead dd { color: var(--mark-ink); font-size: 1.4rem; }
 .failure pre { max-width: 40rem; margin: 0.25rem 0 0; padding: 0.65rem 0.85rem; overflow: auto; font-family: var(--font-mono); font-size: 0.85rem; background: var(--card); border: 1px solid var(--hair); border-radius: var(--r-sm); }
 .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
 /* Admin → Assistant tools: one row per tool, a 44px checkbox target, the description under the name. */

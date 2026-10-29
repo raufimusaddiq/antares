@@ -800,7 +800,7 @@ function SectionNote({ s, what }: { s: UsageSection<unknown> | null; what: strin
 function UsageTotals({ u }: { u: KenariUsage }) {
   return (
     <div className="table-wrap">
-      <table className="admin-table">
+      <table className="admin-table usage-table">
         <caption className="label">
           Whole provider account, {day(u.start)} to {day(u.end)} (UTC)
         </caption>
@@ -868,13 +868,19 @@ export function UsagePanel({ v, onRefresh, busy }: { v: KenariUsageView; onRefre
           )}
           <h2>Balance</h2>
           {v.balance?.state === "OK" && v.balance.data ? (
-            <dl>
-              <dt>Available to spend</dt>
-              <dd>{microRp(v.balance.data.availableMicroIdr)}</dd>
-              <dt>Balance</dt>
-              <dd>{microRp(v.balance.data.balanceMicroIdr)}</dd>
-              <dt>Held by running requests</dt>
-              <dd>{microRp(v.balance.data.reservedMicroIdr)}</dd>
+            <dl className="stat-tiles">
+              <div className="stat-tile lead">
+                <dt>Available to spend</dt>
+                <dd>{microRp(v.balance.data.availableMicroIdr)}</dd>
+              </div>
+              <div className="stat-tile">
+                <dt>Balance</dt>
+                <dd>{microRp(v.balance.data.balanceMicroIdr)}</dd>
+              </div>
+              <div className="stat-tile">
+                <dt>Held by running requests</dt>
+                <dd>{microRp(v.balance.data.reservedMicroIdr)}</dd>
+              </div>
             </dl>
           ) : (
             <SectionNote s={v.balance} what="Balance" />
