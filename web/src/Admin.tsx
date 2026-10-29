@@ -26,6 +26,7 @@ import { getCapabilities, type Inventory } from "./chatApi";
 import { userPath, type AdminRoute } from "./route";
 import { saveText } from "./exportChat";
 import { AntaresMark } from "./brand/AntaresMark";
+import { QuotaBar, WINDOW_LABELS, grouped } from "./QuotaBar";
 
 // ---- load state: every screen renders all four of these ----------------------
 
@@ -779,7 +780,6 @@ const rupiahCents = new Intl.NumberFormat("id-ID", { style: "currency", currency
 /** Kenari reports balance and spend in micro-Rupiah (Rp 1 = 1,000,000); a request costs fractions of a Rupiah, so two decimals are kept. */
 export const microRp = (n: number): string => rupiahCents.format(n / 1_000_000);
 export const wholeRp = (n: number): string => rupiah.format(n);
-const WINDOW_LABELS: Record<string, string> = { five_hour: "5 hours", week: "Week", month: "Month" };
 const day = (s: number) => new Date(s * 1000).toISOString().slice(0, 10);
 
 function SectionNote({ s, what }: { s: UsageSection<unknown> | null; what: string }) {
@@ -819,18 +819,18 @@ function UsageTotals({ u }: { u: KenariUsage }) {
             <tr key={`${r.model}/${r.billingKind}`}>
               <th scope="row">{r.model}</th>
               <td>{r.billingKind}</td>
-              <td>{r.requests}</td>
-              <td>{r.promptTokens}</td>
-              <td>{r.completionTokens}</td>
+              <td>{grouped(r.requests)}</td>
+              <td>{grouped(r.promptTokens)}</td>
+              <td>{grouped(r.completionTokens)}</td>
               <td>{microRp(r.costMicroIdr)}</td>
             </tr>
           ))}
           <tr>
             <th scope="row">Total</th>
             <td />
-            <td>{u.total.requests}</td>
-            <td>{u.total.promptTokens}</td>
-            <td>{u.total.completionTokens}</td>
+            <td>{grouped(u.total.requests)}</td>
+            <td>{grouped(u.total.promptTokens)}</td>
+            <td>{grouped(u.total.completionTokens)}</td>
             <td>{microRp(u.total.costMicroIdr)}</td>
           </tr>
         </tbody>
@@ -883,31 +883,18 @@ export function UsagePanel({ v, onRefresh, busy }: { v: KenariUsageView; onRefre
           {v.quota?.state === "OK" && v.quota.data ? (
             <>
               {v.quota.data.plan ? (
-                <div className="table-wrap">
-                  <table className="admin-table">
-                    <caption className="label">Plan {v.quota.data.plan.name}</caption>
-                    <thead>
-                      <tr>
-                        <th scope="col">Window</th>
-                        <th scope="col">Used</th>
-                        <th scope="col">Remaining</th>
-                        <th scope="col">Resets</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {v.quota.data.plan.windows.map((w) => (
-                        <tr key={w.key}>
-                          <th scope="row">{WINDOW_LABELS[w.key] ?? w.key}</th>
-                          <td>
-                            {Math.round(w.usedFrac * 1000) / 10}% ({wholeRp(w.usedRp)} of {wholeRp(w.budgetRp)})
-                          </td>
-                          <td>{wholeRp(w.remainingRp)}</td>
-                          <td>{when(w.resetsAt)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                <section className="quota-meter quota-admin" aria-label={`Plan ${v.quota.data.plan.name} quota`}>
+                  <p className="quota-title">Plan {v.quota.data.plan.name}, shared by every account</p>
+                  {v.quota.data.plan.windows.map((w) => (
+                    <QuotaBar
+                      key={w.key}
+                      label={WINDOW_LABELS[w.key] ?? w.key}
+                      frac={w.usedFrac}
+                      resetsAt={w.resetsAt}
+                      detail={`${wholeRp(w.usedRp)} of ${wholeRp(w.budgetRp)}, ${wholeRp(w.remainingRp)} left`}
+                    />
+                  ))}
+                </section>
               ) : (
                 <p className="label">The account has no active plan.</p>
               )}

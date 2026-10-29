@@ -51,3 +51,41 @@ func (a *Auth) adminKenariUsage(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, v)
 }
+
+// quotaView is the shared plan quota as every user sees it (#139 follow-up, owner request 2026-10-29): one plan
+// serves every Antares account, so its limit is everyone's limit, and a user should see how close it is. It carries
+// how much of each window is used and when it resets, never an amount: balance, Rupiah figures and per-model spend
+// stay on the admin route above.
+type quotaView struct {
+	State   string       `json:"state"` // OK, NOT_CONFIGURED, UNAVAILABLE, or NONE (the account has no plan)
+	Plan    string       `json:"plan,omitempty"`
+	Windows []quotaShare `json:"windows,omitempty"`
+}
+
+type quotaShare struct {
+	Key      string  `json:"key"` // five_hour, week or month
+	UsedFrac float64 `json:"usedFrac"`
+	ResetsAt string  `json:"resetsAt"`
+}
+
+// GET /api/quota. Any active account. Read from the same cached snapshot as the admin page (never a refresh), so
+// users opening the app cannot drive Kenari's 60-a-minute usage limit.
+func (a *Auth) sharedQuota(w http.ResponseWriter, r *http.Request) {
+	v := quotaView{State: "NOT_CONFIGURED"}
+	if a.usage != nil {
+		s, err := a.usage.Snapshot(r.Context(), false)
+		switch {
+		case errors.Is(err, kenari.ErrNotConfigured):
+		case err != nil || s.Quota.Data == nil:
+			v.State = "UNAVAILABLE"
+		case s.Quota.Data.Plan == nil:
+			v.State = "NONE"
+		default:
+			v.State, v.Plan = "OK", s.Quota.Data.Plan.Name
+			for _, q := range s.Quota.Data.Plan.Windows {
+				v.Windows = append(v.Windows, quotaShare{Key: q.Key, UsedFrac: q.UsedFrac, ResetsAt: q.ResetsAt})
+			}
+		}
+	}
+	writeJSON(w, http.StatusOK, v) // no-store, like every API answer
+}

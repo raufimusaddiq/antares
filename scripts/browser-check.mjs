@@ -74,6 +74,9 @@ function api(req, res, url) {
   };
   state.log.push(`${req.method} ${url.pathname}${url.search}`);
   if (url.pathname === "/api/me") return send(200, { email: state.email, displayName: "Reader", requestedAt: "", state: "ACTIVE", ...(state.admin ? { canAdmin: true } : {}) });
+  // The shared plan quota every account sees in the chat (GET /api/quota): shares and reset times, no amounts.
+  if (url.pathname === "/api/quota")
+    return send(200, { state: "OK", plan: "Studio", windows: [{ key: "week", usedFrac: 0.365, resetsAt: "2026-11-03T05:08:00Z" }, { key: "month", usedFrac: 0.92, resetsAt: "2026-11-19T05:08:00Z" }] });
   // The admin user list (#215): a long name, a long email and every kind of status.
   if (state.admin && url.pathname === "/api/admin/users")
     return send(200, {

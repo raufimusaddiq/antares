@@ -976,3 +976,28 @@ export function describeJobCode(code: string): string {
       return describeCode(code);
   }
 }
+
+// ---- the shared plan quota (GET /api/quota) ------------------------------------------------------------------------
+
+/** The share of each quota window used on the one plan every account shares; no amounts (QuotaBar.tsx). */
+export interface SharedQuota {
+  state: "OK" | "NOT_CONFIGURED" | "UNAVAILABLE" | "NONE";
+  plan: string;
+  windows: { key: string; usedFrac: number; resetsAt: string }[];
+}
+
+export function parseSharedQuota(v: unknown): SharedQuota | null {
+  const o = obj(v);
+  const state = o && str(o.state);
+  if (!o || (state !== "OK" && state !== "NOT_CONFIGURED" && state !== "UNAVAILABLE" && state !== "NONE")) return null;
+  const windows: SharedQuota["windows"] = [];
+  for (const w of Array.isArray(o.windows) ? o.windows : []) {
+    const wo = obj(w);
+    const f = wo ? num(wo.usedFrac) : null;
+    if (!wo || f === null || !str(wo.key)) return null;
+    windows.push({ key: str(wo.key), usedFrac: f, resetsAt: str(wo.resetsAt) });
+  }
+  return { state, plan: str(o.plan), windows };
+}
+
+export const getQuota = (signal?: AbortSignal) => call("GET", "/api/quota", parseSharedQuota, undefined, undefined, signal);

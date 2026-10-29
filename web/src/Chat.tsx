@@ -64,6 +64,7 @@ import { forgetChatDrafts, loadDraft, matchTemplates, mergeTemplates, saveDraft,
 import { DraftNotice, sharedTextApplied, takeSharedText, useDraftSync, NO_HOLD, type SendHold } from "./DraftSync";
 import { listOwnTemplates, type OwnTemplate } from "./draftApi";
 import { Templates } from "./Templates";
+import { SharedQuotaMeter, useSharedQuota } from "./QuotaBar";
 
 const MAX_INPUT = 32_000;
 const RECONNECT_TRIES = 5;
@@ -582,6 +583,7 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
 // ---- the app --------------------------------------------------------------------
 
 export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatId = null, signOutError = "" }: { email: string; onSignOut: (everywhere?: boolean) => void; canAdmin?: boolean; onAdmin?: () => void; initialChatId?: string | null; signOutError?: string }) {
+  const quota = useSharedQuota(); // the plan quota every account shares (QuotaBar.tsx)
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [listState, setListState] = useState<"loading" | "ready" | "error">("loading");
   const [current, setCurrent] = useState<string | null>(null);
@@ -1324,11 +1326,14 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           Antares
         </strong>
         <div className="account">
+          {/* Desktop: above the account line. On a phone it moves into the menu (only one is ever displayed). */}
+          <SharedQuotaMeter quota={quota} className="quota-side" />
           <span className="who-am-i">{email}</span>
           <button type="button" className="quiet bar-toggle" data-icon="chevron" aria-expanded={menuOpen} aria-controls="bar-actions" onClick={() => setMenuOpen((o) => !o)}>
             Menu
           </button>
           <div id="bar-actions" className={menuOpen ? "bar-actions open" : "bar-actions"}>
+            <SharedQuotaMeter quota={quota} className="quota-menu" />
             <button type="button" className="quiet" data-icon="settings" onClick={() => { setMenuOpen(false); setSettings("general"); }}>
               Settings
             </button>
