@@ -26,7 +26,6 @@ vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi"
 import { Chat } from "./Chat";
 
 const ok = <T,>(value: T) => ({ ok: true as const, value });
-const fail = (code: string, status: number) => ({ ok: false as const, code, status });
 const chat = (extra: Partial<ChatSummary> = {}): ChatSummary => ({ id: "c1", title: "Talk", createdAt: "", updatedAt: "", activeRunId: "", pinned: false, archived: false, deleteFailed: false, visualize: false, ...extra });
 const inventory: Inventory = { capabilities: [], toolsets: [], providers: [], skills: [] };
 const queued = (): ChatQueue => ({ items: [], paused: "", started: null });
