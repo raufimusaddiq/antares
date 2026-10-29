@@ -1,1 +1,0 @@
-export{_ as __iconNode,g as default}from"./Block-CbWdavJv.js";

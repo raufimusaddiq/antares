@@ -59,7 +59,7 @@ function transcript(rich) {
 const DATA = { [PLAIN]: transcript(false), [RICH]: transcript(true) };
 const b64 = (s) => Buffer.from(s).toString("base64url");
 
-const state = { log: [], delayMs: 15, models: false, email: "reader@example.test", budgetReached: false, emptyList: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map() };
+const state = { log: [], delayMs: 15, models: false, admin: false, email: "reader@example.test", budgetReached: false, emptyList: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map() };
 // A slow runner answers later than a fast one. MOCK_DELAY_MS adds that latency to the image endpoints of the mock (upload, delete, send) so
 // the ordering a slow CI runner produces can be reproduced on demand. Unset (the default) the mock answers at once.
 const MOCK_DELAY = Number(process.env.MOCK_DELAY_MS || 0);
@@ -73,7 +73,16 @@ function api(req, res, url) {
     res.end(JSON.stringify(body));
   };
   state.log.push(`${req.method} ${url.pathname}${url.search}`);
-  if (url.pathname === "/api/me") return send(200, { email: state.email, displayName: "Reader", requestedAt: "", state: "ACTIVE" });
+  if (url.pathname === "/api/me") return send(200, { email: state.email, displayName: "Reader", requestedAt: "", state: "ACTIVE", ...(state.admin ? { canAdmin: true } : {}) });
+  // The admin user list (#215): a long name, a long email and every kind of status.
+  if (state.admin && url.pathname === "/api/admin/users")
+    return send(200, {
+      users: [
+        { id: "a".repeat(32), email: "raufimusaddiq@example.test", displayName: "Raufi Musaddiq", role: "ADMIN", approvalStatus: "APPROVED", tenantStatus: "READY", tenantCheckedAt: "2026-10-29T00:40:19Z", tenantAttempts: 0 },
+        { id: "b".repeat(32), email: "a.rather.long.address.for.a.phone@example.test", displayName: "Raufi Musaddiq", role: "USER", approvalStatus: "PENDING", tenantStatus: "UNPROVISIONED", tenantCheckedAt: "", tenantAttempts: 0 },
+        { id: "c".repeat(32), email: "failing@example.test", displayName: "", role: "USER", approvalStatus: "APPROVED", tenantStatus: "FAILED", tenantCheckedAt: "2026-10-28T10:00:00Z", tenantAttempts: 3 },
+      ],
+    });
   // Image upload, removal and send (the #138 gap): the same shapes the Go server documents, no model behind them.
   if (url.pathname === "/api/assets" && req.method === "POST") {
     const chunks = [];
@@ -603,6 +612,46 @@ async function modelPicker(browser) {
   }
 }
 
+// #215: Admin → Users on a phone, at 320 and 390px, at the default size and with a 20px root font. Each account is a
+// card whose name and email get most of the width (the table left them ~60px, broken letter by letter), nothing scrolls
+// sideways, no nav label breaks inside itself, every cell names its column in visible text, and the list is still a
+// table to assistive technology: five column headers and a row header per account.
+async function adminPhone(browser) {
+  state.admin = true;
+  try {
+    for (const w of [320, 390]) {
+      for (const big of [false, true]) {
+        const { ctx, page } = await openPage(browser, { viewport: { width: w, height: 760 }, isMobile: true, hasTouch: true });
+        await page.goto(base + "/admin/users");
+        await page.waitForSelector(".admin-table tbody tr");
+        if (big) await page.evaluate(() => (document.documentElement.style.fontSize = "20px"));
+        await page.waitForTimeout(200);
+        const m = await page.evaluate(() => {
+          const names = [...document.querySelectorAll(".admin-table tbody th")].map((th) => th.getBoundingClientRect().width);
+          const cells = [...document.querySelectorAll(".admin-table tbody td")];
+          return {
+            overflowX: document.documentElement.scrollWidth - innerWidth,
+            minName: Math.round(Math.min(...names)),
+            vw: innerWidth,
+            // A label on two lines has two line boxes for its text (the link's own height counts padding and the 44px target).
+            brokenNav: [...document.querySelectorAll(".admin-nav a")].filter((a) => { const r = document.createRange(); r.selectNodeContents(a); return new Set([...r.getClientRects()].map((b) => Math.round(b.top))).size > 1; }).map((a) => a.textContent),
+            unlabelled: cells.filter((td) => { const l = td.querySelector(".cell-label"); return !l || !l.textContent || l.getBoundingClientRect().width === 0; }).length,
+          };
+        });
+        const headers = await page.getByRole("columnheader").count();
+        const rows = await page.getByRole("rowheader").count();
+        // innerWidth must stay the phone's: content wider than the screen makes a mobile browser widen the layout
+        // viewport (the old table took a 320px phone to 478px), which would hide the overflow from overflowX.
+        const ok = m.vw === w && m.overflowX <= 0 && m.minName >= w * 0.6 && m.brokenNav.length === 0 && m.unlabelled === 0 && headers === 5 && rows === 3;
+        check(`admin users ${w}px${big ? " (20px text)" : ""}: cards, labelled cells, unbroken nav, still a table`, ok, JSON.stringify({ ...m, headers, rows }));
+        await ctx.close();
+      }
+    }
+  } finally {
+    state.admin = false;
+  }
+}
+
 async function shots(browser) {
   state.models = true;
   for (const scheme of ["light", "dark"]) {
@@ -653,6 +702,7 @@ try {
   if (!only || only === "starting-card") await startingCard(browser);
   if (!only || only === "images") await images(browser);
   if (!only || only === "mobile-layout" || only === "mobile-budget") await mobileBudget(browser);
+  if (!only || only === "mobile-layout") await adminPhone(browser);
   if (only === "shots") await shots(browser);
 } finally {
   await browser.close();

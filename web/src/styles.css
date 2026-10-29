@@ -446,6 +446,7 @@ button.quiet.on { background: var(--ink); color: var(--canvas); font-weight: 700
 .admin-table tbody th { font-weight: 500; }
 .admin-table tr:last-child > * { border-bottom: 0; }
 .admin-table a { color: var(--ink); }
+.user-table .cell-label { display: none; } /* the column header names it; shown on a phone's card */
 .admin-table .sub { display: block; font-size: 0.8rem; color: var(--ink-2); font-weight: 400; }
 .mono { font-family: var(--font-mono); font-size: 0.8rem; }
 .badge.bad { background: var(--blush); color: var(--ink); }
@@ -479,13 +480,14 @@ button.quiet.on { background: var(--ink); color: var(--canvas); font-weight: 700
   .admin-nav a.navlink { padding: 0.3rem 0.65rem; }
   /* The user list as cards: the name and email get the full width, then role, the two statuses and the last attempt.
      A five-column table at phone width left the name a few letters wide. */
-  .user-table thead { display: none; }
+  /* The header row stays in the accessibility tree, only out of sight; each cell shows its own label instead. */
+  .user-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .user-table .cell-label { display: inline; margin-right: 0.4rem; font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2); }
   .user-table, .user-table tbody { display: block; }
   .user-table tr { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem; padding: 0.8rem 0.9rem; border-bottom: 1px solid var(--hair); }
   .user-table tr:last-child { border-bottom: 0; }
   .user-table th, .user-table td { display: block; padding: 0; border-bottom: 0; }
   .user-table tbody th { flex: 1 0 100%; font-size: 1rem; }
-  .user-table td[data-label]::before { content: attr(data-label) " · "; font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2); }
   .user-table td.when { flex: 1 0 100%; font-size: 0.8rem; color: var(--ink-2); }
   .facts { grid-template-columns: minmax(0, 1fr); }
   .facts dd { margin-bottom: 0.5rem; }
