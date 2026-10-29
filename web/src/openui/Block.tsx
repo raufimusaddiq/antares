@@ -7,7 +7,7 @@ import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib";
 import { runAction, type Sinks } from "./actions";
 import { ReplyContext } from "./reply";
 import { SourceFallback } from "./Fallback";
-import { check } from "./validate";
+import { attachSources, check } from "./validate";
 
 // The only module that imports the OpenUI runtime and its component library (native OpenUI: the
 // openuiChatLibrary of @openuidev/react-ui). It is loaded on demand (MessageBody.tsx), so a chat with no
@@ -43,14 +43,16 @@ export default function RichBlock({ source, streaming = false }: { source: strin
   const sinks: Sinks = { reply: toComposer, open: openConfirmed };
   // Every update is checked before it is rendered: a partial program against the gate's safety rules and limits,
   // the finished one against all of it. A failure is shown as source.
-  const verdict = useMemo(() => check(source, streaming), [source, streaming]);
+  // A finished program first has a stray sources statement attached to its Card (validate.ts).
+  const program = useMemo(() => (streaming ? source : attachSources(source)), [source, streaming]);
+  const verdict = useMemo(() => check(program, streaming), [program, streaming]);
   if (!verdict.ok) return <SourceFallback source={source} why={verdict.reason} />;
   return (
     <Boundary source={source}>
       <div className="ou-block openui-root">
         {/* Root + Content, not the all-in-one Renderer: that one adds a loading spinner that injects a <style>
             element, which the CSP refuses. A program here has no queries, so nothing needs a loader. */}
-        <Renderer.Root response={source} library={openuiChatLibrary} isStreaming={streaming} onAction={(e) => runAction(e?.type, e, sinks)}>
+        <Renderer.Root response={program} library={openuiChatLibrary} isStreaming={streaming} onAction={(e) => runAction(e?.type, e, sinks)}>
           <Renderer.Content />
         </Renderer.Root>
         {added && (

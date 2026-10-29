@@ -116,6 +116,14 @@ body {
 body.chat { height: 100vh; height: 100dvh; min-height: 0; overflow: hidden; }
 body.chat #root { height: 100%; display: flex; flex-direction: column; }
 body.chat .chat-app { flex: 1; min-height: 0; height: auto; }
+/* iOS with the keyboard up (keyboard.ts): the chat fills only the visible area above the keyboard, and on a phone the header
+   and conversation strip step aside so the conversation keeps the room; they return when the keyboard closes. Search keeps
+   its strip: there the keyboard belongs to the search box. */
+:root[data-keyboard="open"] body.chat { height: var(--keyboard-h, 100dvh); }
+@media (max-width: 40rem) {
+  :root[data-keyboard="open"] .chat-app:not(:has(.search.open)) > .bar,
+  :root[data-keyboard="open"] .chat-app:not(:has(.search.open)) > .side { display: none; }
+}
 
 .pwa-notice { position: relative; z-index: 10; display: flex; flex-wrap: wrap; align-items: center; gap: .75rem; padding: .75rem 1.25rem; background: var(--mark); color: var(--mark-ink); border-bottom: 2px solid var(--ink); }
 .pwa-notice p { flex: 1 1 18rem; margin: 0; }
@@ -303,6 +311,7 @@ dd:where(:not(.openui-root *)):last-child { margin-bottom: 0; }
 .side .archive ul::before { content: "Archived"; }
 .chat-actions-slot { display: contents; }
 @media (min-width: 40.01rem) { .chat-actions-slot { display: none; } } /* a wide screen has the button on every row */
+.extras.open .chat-actions-slot > * { margin: 0 0 0.6rem; } /* its button sits in the panel, so it takes the spacing of the panel's own items */
 .row-menu { position: fixed; z-index: 25; width: 14rem; padding: 0.35rem; background: var(--card); color: var(--ink); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
 .row-menu [role="menuitem"] { display: flex; width: 100%; min-height: 2.75rem; margin: 0; padding: 0 0.8rem; justify-content: flex-start; font-weight: 500; border-color: transparent; background: transparent; border-radius: var(--r-md); }
 .row-menu [role="menuitem"][aria-disabled="true"] { color: var(--ink-2); cursor: not-allowed; }
@@ -396,8 +405,9 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (hover: hover) { .turn-control:hover small { position: static; width: auto; height: auto; flex-basis: 100%; margin: 0.25rem 0 0; overflow: visible; clip: auto; clip-path: none; white-space: normal; padding: 0.2rem 0.7rem; background: var(--ink); color: var(--canvas); border-radius: var(--r-pill); font-family: var(--font-mono); font-size: 0.75rem; } }
 
 /* ---- composer: the dock, the one boxed control on the page ------------------------- */
-.composer { display: flex; flex-wrap: wrap; flex-shrink: 0; align-items: center; gap: 0.3rem; width: 100%; max-width: 44rem; margin: 0 auto 1rem; padding: 0.3rem 0.35rem 0.3rem 1.1rem; background: var(--card); border: 2px solid var(--ink); border-radius: 28px; box-shadow: 5px 5px 0 var(--ink); }
+.composer { display: flex; flex-wrap: wrap; flex-shrink: 0; align-items: center; gap: 0.3rem; width: 100%; max-width: 44rem; margin: 0 auto 1rem; padding: 0.3rem 0.35rem 0.3rem 1.1rem; background: var(--card); border: 2px solid var(--ink); border-radius: 28px; box-shadow: 5px 5px 0 var(--ink); column-gap: 0.5rem; }
 .composer textarea { flex: 1; min-width: 0; font: inherit; padding: 0.55rem 0; color: var(--ink); background: transparent; border: 0; border-radius: 0; resize: vertical; min-height: 2.5rem; max-height: 12rem; field-sizing: content; }
+@supports (field-sizing: content) { .composer textarea { resize: none; } }
 .composer textarea::placeholder { color: var(--ink-2); }
 .composer textarea:focus-visible { outline: none; box-shadow: none; }
 .composer:focus-within { outline: 3px solid var(--focus); outline-offset: 3px; }
@@ -483,6 +493,8 @@ button.quiet.on:where(:not(.openui-root *)) { background: var(--ink); color: var
 @media (max-width: 40rem) { .stat-tile.lead { grid-column: 1 / -1; } }
 /* The usage table keeps a model name and every figure on one line; it scrolls inside its frame on a narrow screen. */
 .usage-table th, .usage-table td { white-space: nowrap; overflow-wrap: normal; }
+/* In Settings → Usage a chat's title may wrap, so on a phone the figures fit beside it without scrolling. */
+.usage-panel .usage-table tbody td:first-child { white-space: normal; overflow-wrap: anywhere; min-width: 7rem; }
 .stat-tile.lead { background: var(--mark); border-color: var(--ink); box-shadow: var(--hard-sm); }
 .stat-tile.lead dt { color: var(--mark-ink); }
 .stat-tile.lead dd { color: var(--mark-ink); font-size: 1.4rem; }
@@ -559,9 +571,10 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 
 /* ---- the options under the conversation: Record, templates, model, usage ------------------ */
 /* The chat's model and usage beside the input (#164): one compact, wrapping row above the composer. */
-.composer-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.9rem; width: 100%; max-width: 44rem; margin: 0 auto 0.3rem; }
+.composer-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.9rem; width: 100%; max-width: 44rem; margin: 0.5rem auto 0.6rem; }
+.composer-chips button.quiet { border-color: transparent; padding-inline: 0.4rem; }
 .composer-chips summary, .composer-chips button { font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; color: var(--ink); cursor: pointer; min-height: 2rem; }
-.extras { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.9rem; width: 100%; max-width: 44rem; margin: 0 auto 0.45rem; }
+.extras { display: flex; flex-wrap: wrap; align-items: center; gap: 0.1rem 0.9rem; width: 100%; max-width: 44rem; margin: 0 auto 0.9rem; }
 .extras summary { font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; color: var(--ink); cursor: pointer; min-height: 2rem; }
 .extras summary[data-icon]::before { width: 1.05em; height: 1.05em; }
 .extras button { font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; }
@@ -575,9 +588,9 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 .extras-toggle { display: inline-flex; align-self: center; margin: 0; padding: 0 0.4rem; background: transparent; border-color: transparent; font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; color: var(--ink); }
 .extras { display: none; }
 .extras.open { display: block; max-height: min(50dvh, 30rem); overflow: auto; box-sizing: border-box; padding: 0.75rem 1rem 0.85rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: var(--hard-sm); }
-.extras.open > * { margin-block: 0 0.6rem; max-width: 100%; }
+.extras.open > * { margin-block: 0 0.85rem; max-width: 100%; }
 .extras.open > :last-child { margin-bottom: 0; }
-.extras-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.5rem; }
+.extras-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
 /* Voice: Dictate and Record side by side, their notes and messages on the line below. */
 .extras-row > .dictation, .extras-row > .recorder { display: contents; }
 .extras-row .notice, .extras-row [role="alert"], .extras-row [role="status"] { flex: 1 1 100%; }
@@ -595,7 +608,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 .artifacts { list-style: none; margin: 0.5rem 0 0; padding: 0; display: grid; gap: 0.4rem; }
 .artifacts li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 .artifacts .preview { flex: 0 0 100%; width: 100%; height: 22rem; border: 2px solid var(--ink); border-radius: var(--r-sm); background: #fff; color-scheme: light; }
-.export { display: flex; flex-wrap: wrap; min-width: 0; align-items: center; gap: 0.4rem; }
+.export { display: flex; flex-wrap: wrap; min-width: 0; align-items: center; gap: 0.5rem 0.6rem; }
 .print-root { display: none; }
 @media print {
   /* Only the print copy is printed: the app, its chrome and the virtual log are not. */
@@ -669,7 +682,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   .chat-app { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto auto minmax(0, 1fr); grid-template-areas: "bar" "side" "pane"; padding: max(0.5rem, env(safe-area-inset-top)) max(0.5rem, env(safe-area-inset-right)) max(0.5rem, env(safe-area-inset-bottom)) max(0.5rem, env(safe-area-inset-left)); gap: 0.25rem; }
   .chat-app::before { display: none; }
   /* The header's own z-index keeps its menu panel above the (later, positioned) log. */
-  .chat-app > .bar { grid-area: bar; display: flex; align-items: center; position: relative; z-index: 6; flex-wrap: nowrap; gap: 0.5rem; min-height: 2.75rem; padding: 0 0.25rem 0 0.5rem; }
+  .chat-app > .bar { grid-area: bar; display: flex; align-items: center; position: relative; z-index: 6; flex-wrap: nowrap; gap: 0.75rem; min-height: 2.75rem; padding: 0.25rem 0.5rem; }
   .brand { padding: 0; font-size: 1.3rem; gap: 0.4rem; }
   .brand svg { width: 1.9rem; height: 1.9rem; padding: 0.28rem; }
   .account { display: contents; }
@@ -682,7 +695,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   .bar-actions.open { top: calc(100% + 0.25rem); bottom: auto; left: 0; right: 0; }
   .bar-actions .notify-panel { position: static; width: auto; }
   /* Strip: New chat, Search and the conversation chips on one scrolling line; an open search takes the strip. */
-  .side { display: flex; align-items: center; gap: 0.4rem; overflow: hidden; padding: 0 0.25rem; border-bottom: 1px solid var(--hair); }
+  .side { display: flex; align-items: center; gap: 0.4rem; overflow: hidden; padding: 0 0.25rem 0.35rem; border-bottom: 1px solid var(--hair); }
   .side > button, .side button.item, .search-toggle { flex: none; width: auto; min-height: 2.75rem; margin: 0; padding: 0 0.6rem; border: 6px solid transparent; background-clip: padding-box; border-radius: var(--r-pill); }
   .side > button { background-color: var(--card); box-shadow: inset 0 0 0 1.5px var(--ink); }
   .side > button[data-icon]::before { width: 1.15rem; height: 1.15rem; margin-right: 0.3rem; }
@@ -718,7 +731,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   .search-filters label { display: inline-flex; align-items: center; gap: 0.5rem; min-height: 2.75rem; }
   .search-filters input[type="checkbox"] { width: 1.5rem; height: 1.5rem; }
   .chat-app .search input[type="search"] { min-height: 2.75rem; }
-  .pane { gap: 0.25rem; padding: 0 0.9rem; }
+  .pane { gap: 0.25rem; padding: 0.25rem 0.5rem 0; }
   .log { --log-pad: 0.5rem; }
   /* The note above the history is in the flow, so it scrolls away with the history. */
   .hero { padding: 7.2rem 1.25rem 1.5rem; min-height: 0; margin: 1.2rem 0 auto; }
@@ -730,21 +743,32 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   .turn.assistant h2:not(.who) { font-size: 1.3rem; }
   /* The chip row stays one short line on a phone, so the conversation keeps its height: chips shrink and end in an
      ellipsis rather than leave the screen (their accessible names keep the whole text). */
-  .composer-chips { flex-wrap: nowrap; gap: 0.6rem; margin: 0; }
+  .composer-chips { flex-wrap: nowrap; gap: 0.75rem; margin: 0.4rem 0 0.5rem; padding-inline: 0.25rem; }
+  /* The model gets the room; the usage summary shortens first. */
   .composer-chips > * { flex: 0 1 auto; min-width: 0; white-space: nowrap; }
   .composer-chips > .extras-toggle { flex: none; }
   .composer-chips summary, .composer-chips button { min-height: 1.6rem; font-size: 0.72rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   /* A chip's text starts at its left edge and ends in the ellipsis (centred, it was cut at both ends). */
   .composer-chips button[data-chip] { display: block; text-align: left; }
-  .extras.open { max-height: 40dvh; margin: 0.25rem 0 0.5rem; padding: 0.6rem 0.75rem 0.75rem; }
+  /* The usage summary opens the same Options panel, which shows it in full: on a phone the model gets its room. */
+  .composer-chips > button[data-chip="usage"] { display: none; }
+  .extras.open { max-height: 40dvh; margin: 0.25rem 0 0.75rem; padding: 0.75rem 0.85rem 0.85rem; }
   /* Composer: one row — attach, camera, the message, send. The words stay in the DOM as the accessible names. */
-  .composer { gap: 0.1rem; padding: 0.2rem 0.25rem; margin-bottom: 0.6rem; border-radius: 26px; box-shadow: 3px 3px 0 var(--ink); }
+  .composer { gap: 0.25rem; padding: 0.25rem 0.35rem; margin-bottom: 0.6rem; border-radius: 26px; box-shadow: 3px 3px 0 var(--ink); }
   .composer textarea { order: 3; flex: 1 1 6rem; padding: 0.55rem 0.4rem; resize: none; min-height: 2.75rem; max-height: min(7rem, 16dvh); }
   .composer button.quiet { order: 1; flex: 0 0 2.75rem; width: 2.75rem; padding: 0; }
   .composer button.quiet .btn-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
   .composer button.quiet[data-icon]::before { width: 1.45rem; height: 1.45rem; margin: 0; color: var(--ink); }
   .composer button[type="submit"] { order: 4; flex: 0 0 auto; padding: 0 1rem; font-size: 0.9375rem; }
   .composer .templates { order: 5; }
+  /* While a reply runs, Steer and Queue join Send: the message gets the whole first row and the buttons share the second,
+     attach and photo on the left, Steer, Queue and Send on the right. */
+  .composer:has([data-intent]) textarea { order: 0; flex: 1 0 100%; padding-inline: 0.75rem; }
+  .composer [data-intent] { order: 4; flex: 0 0 auto; padding-inline: 0.9rem; }
+  .composer :not([data-intent]) + [data-intent] { margin-left: auto; }
+  /* Send cannot be used while a reply runs (Queue sends after it), so on a phone it gives its room to Steer and Queue. */
+  .composer:has([data-intent]) button[type="submit"] { display: none; }
+  .composer [data-steer], .composer [data-queue] { order: 6; flex: 1 0 100%; padding: 0 0.75rem 0.25rem; }
 }
 /* Narrower than a phone in portrait: the arrow goes, the word stays, so the dock keeps its message field. */
 @media (max-width: 23.75rem) {
@@ -872,7 +896,7 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 .settings-dialog > header { display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 1rem 0.9rem 1.25rem; border-bottom: 1px solid var(--hair); }
 .settings-dialog > header h2 { margin: 0; font-size: 1.15rem; }
 .settings-dialog > header button { min-width: 2.75rem; min-height: 2.75rem; justify-content: center; }
-.settings-body { display: grid; grid-template-columns: 12rem 1fr; min-height: 0; max-height: calc(min(640px, 100dvh - 2rem) - 4.6rem); }
+.settings-body { display: grid; grid-template-columns: 12rem minmax(0, 1fr); min-height: 0; max-height: calc(min(640px, 100dvh - 2rem) - 4.6rem); }
 .settings-body > nav { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.75rem; border-right: 1px solid var(--hair); background: var(--rail); }
 .settings-body > nav button { justify-content: flex-start; min-height: 2.75rem; padding: 0 0.8rem; border: 0; border-radius: var(--r-md); background: transparent; color: var(--ink); font-weight: 500; text-align: left; }
 .settings-body > nav button[aria-current="page"] { background: var(--card); font-weight: 700; box-shadow: inset 0 0 0 2px var(--ink); }
@@ -883,7 +907,7 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 .settings-body label { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-height: 2.75rem; }
 @media (max-width: 640px) {
   .settings-dialog { width: 100vw; max-width: 100vw; height: 100dvh; max-height: 100dvh; border-radius: 0; border: 0; box-shadow: none; }
-  .settings-body { grid-template-columns: 1fr; grid-template-rows: auto 1fr; max-height: calc(100dvh - 4.6rem); }
+  .settings-body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); max-height: calc(100dvh - 4.6rem); }
   .settings-body > nav { flex-direction: row; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--hair); padding: 0.5rem; }
   .settings-body > nav button { flex: none; }
 }
@@ -999,24 +1023,40 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 .openui-root a { color: var(--cobalt); }
 
 /* ---- motion ----------------------------------------------------------------------------------------------------
-   Short, purposeful movement: what you just sent and the reply being written rise into place; popovers, menus and
-   dialogs pop open from where they belong; buttons lift under the pointer and press into their hard shadow; bars
-   fill. Each animated element mounts once (a virtualised turn scrolled back into view is not animated). The
-   prefers-reduced-motion rule above turns all of it off. */
-@keyframes rise-in { from { opacity: 0; transform: translateY(10px); } }
+   After ailene.id (its easing, distances and timings): what you just sent and the reply being written rise into place
+   from 24px, the starting card's parts and a new conversation in the list arrive one after another, settings slide up as
+   a sheet on a phone and pop on a wide screen, every button presses 1px into its shadow (touch included) and the
+   hard-shadow ones lift under the pointer, bars fill. Each animated element mounts once (a virtualised turn scrolled back
+   into view is not animated). The prefers-reduced-motion rule above turns all of it off. */
+@keyframes rise-in { from { opacity: 0; transform: translateY(24px); } }
+@keyframes sheet-up { from { opacity: 0; transform: translateY(40px); } }
 @keyframes pop-in { from { opacity: 0; transform: scale(0.94); } }
 @keyframes fade-in { from { opacity: 0; } }
 @keyframes bar-grow { from { transform: scaleX(0); } }
 
-.turn.user.pending, .turn.assistant[class*="run-"] { animation: rise-in 0.45s var(--ease-out) both; }
-.pane.empty .hero { animation: rise-in 0.6s var(--ease-out) both; }
+.turn.user.pending, .turn.assistant[class*="run-"] { animation: rise-in 0.6s var(--ease-out) both; }
+.pane.empty .hero { animation: rise-in 0.7s var(--ease-out) both; }
+.pane.empty .hero > * { animation: rise-in 0.6s var(--ease-out) both; }
+.pane.empty .hero > :nth-child(2) { animation-delay: 0.12s; }
+.pane.empty .hero > :nth-child(3) { animation-delay: 0.19s; }
+.pane.empty .hero > :nth-child(n + 4) { animation-delay: 0.26s; }
+/* In the rail a conversation joins the list (first load, a new chat) one row after another; a row already there does not
+   move again. Not in the phone's strip: it hides and returns with search and the keyboard, which would replay it. */
+@media (min-width: 40.01rem) {
+  .side ul > li { animation: rise-in 0.5s var(--ease-out) both; }
+  .side ul > li:nth-child(2) { animation-delay: 0.05s; }
+  .side ul > li:nth-child(3) { animation-delay: 0.1s; }
+  .side ul > li:nth-child(4) { animation-delay: 0.15s; }
+  .side ul > li:nth-child(n + 5) { animation-delay: 0.2s; }
+}
 .composer { transition: box-shadow 0.2s var(--ease-out), transform 0.2s var(--ease-out); }
 .composer:focus-within { box-shadow: 7px 7px 0 var(--ink); transform: translate(-1px, -1px); }
 
 /* Menus and popovers fade in: opacity only, so their size and place are final from the first frame (touch targets keep
    their 44px, hit tests see where they will be). The settings dialog, a whole sheet, pops. */
 .model-menu, .row-menu, .bar-actions.open { animation: fade-in 0.16s var(--ease-out) both; }
-.settings-dialog[open] { animation: pop-in 0.28s var(--ease-pop) both; }
+.settings-dialog[open] { animation: pop-in 0.32s var(--ease-pop) both; }
+@media (max-width: 40rem) { .settings-dialog[open] { animation: sheet-up 0.45s var(--ease-out) both; } }
 .settings-dialog[open]::backdrop { animation: fade-in 0.2s ease both; }
 
 a.btn, button:where(:not(.openui-root *)) {
@@ -1026,6 +1066,7 @@ a.btn, button:where(:not(.openui-root *)) {
 /* A button with a hard shadow lifts toward the pointer and presses flat into its shadow. */
 a.btn:hover, .composer button[type="submit"]:hover:not(:disabled), .vjump button:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
 a.btn:active, .composer button[type="submit"]:active:not(:disabled), .vjump button:active { transform: translate(2px, 2px); box-shadow: none; }
+button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(1px, 1px); }
 .side button.item { transition: background-color 0.15s var(--ease-out), transform 0.15s var(--ease-out); }
 .side button.item:hover:not(.current) { transform: translateX(2px); }
 

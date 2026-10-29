@@ -8,7 +8,7 @@ import { ALLOWED_ACTIONS, followUpText, runAction, safeUrl } from "./actions";
 import RichBlock from "./Block";
 import { ReplyContext } from "./reply";
 import { MAX_BLOCK_CHARS, splitSegments } from "./segments";
-import { check, MAX_ARRAY } from "./validate";
+import { attachSources, check, MAX_ARRAY } from "./validate";
 
 beforeAll(() => {
   // jsdom has no layout observers; the charts and carousels ask for them.
@@ -170,6 +170,26 @@ describe("rendering", () => {
     }
     expect(check('root = Card([TextContent("[x](htt', true)).toEqual({ ok: true }); // still arriving
     expect(safeUrl({ params: { url: own } })).toBeNull();
+  });
+  it("attaches a Card's sources written as their own statement, unused or among the children, as the Card's sources", () => {
+    const list = 'sources = [\n  {title: "A review", sourceName: "Site", url: "https://example.com/a"}\n]';
+    const unused = `root = Card([\n  intro\n])\n\nintro = TextContent("A fact [1]")\n\n${list}`;
+    const listed = `root = Card([\n  intro,\n  sources\n])\n\nintro = TextContent("A fact [1]")\n\n${list}`;
+    for (const source of [unused, listed]) {
+      const fixed = attachSources(source);
+      expect(fixed).toContain("root = Card([\n  intro\n], sources)");
+      expect(check(fixed)).toEqual({ ok: true });
+      const { unmount } = render(<RichBlock source={source} />);
+      expect(document.querySelector(".ou-fallback")).toBeNull();
+      expect(document.body.textContent).toContain("A fact");
+      unmount();
+    }
+    // Anything else is left as written: a Card that already has sources, a list used elsewhere, an unsafe link.
+    const already = 'root = Card([TextContent("x")], [{title: "t", sourceName: "s", url: "https://example.com"}])\nother = [{title: "t"}]';
+    expect(attachSources(already)).toBe(already);
+    const shared = `root = Card([intro, sources])\nintro = TextContent("x")\nt = Table([Col("A", sources)])\n${list}`;
+    expect(attachSources(shared)).toBe(shared);
+    expect(check(attachSources(unused.replace("https://example.com/a", "javascript:alert(1)"))).ok).toBe(false);
   });
   it("labels a block from the earlier Antares component set instead of calling it broken", () => {
     render(<RichBlock source={'root = Stack([Text("old answer")])'} />);
