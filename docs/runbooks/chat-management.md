@@ -64,8 +64,10 @@ After a delete the browser also forgets that chat's local draft, resets the sear
 
 Like ChatGPT, a chat without a title gets one from its first message. When the message is sent, Antares asks a small
 model for a 2 to 6 word title in the user's language, in the background, while the reply is written
-(`internal/chat/title.go`). The browser shows it when the reply completes, and reads the chat once more 4 seconds
-later if the title was not ready yet.
+(`internal/chat/title.go`). The browser shows it when the reply completes. If it was not ready yet, the browser
+reads the chat again at 4, 10 and 22 seconds (past the job's 20-second budget), stopping once it has the title.
+The first message to arrive reserves the chat's title job, so a second message sent while the model is still writing
+does not start another and the title always comes from the message that started the chat.
 
 - **Where it is sent**: only the first message (at most 2,000 characters) and a fixed instruction, to the
   OpenAI-compatible endpoint `ANTARES_TITLE_BASE_URL` (default `https://kenari.id/v1`, the same provider that serves

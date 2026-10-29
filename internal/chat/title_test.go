@@ -168,3 +168,48 @@ func TestTitleModelRequest(t *testing.T) {
 		t.Fatalf("error %v", err)
 	}
 }
+
+// A slow title model: a call returns only when released, with the title of the message it was given.
+type slowTitler struct {
+	mu      sync.Mutex
+	calls   []string
+	release chan struct{}
+}
+
+func (f *slowTitler) Title(ctx context.Context, first string) (string, error) {
+	f.mu.Lock()
+	f.calls = append(f.calls, first)
+	f.mu.Unlock()
+	select {
+	case <-f.release:
+	case <-ctx.Done():
+		return "", ctx.Err()
+	}
+	return "Title of " + strings.Fields(first)[0], nil
+}
+
+// The first message reserves the chat's title: a second message sent while the model is still writing that title
+// starts no second job, so the chat is titled from the message that started it.
+func TestTitleComesFromTheFirstMessageEvenWhenTheModelIsSlow(t *testing.T) {
+	f := &slowTitler{release: make(chan struct{})}
+	a := newApp(t, appOpts{titler: f})
+	alice := a.user("alice")
+	id := untitledChat(t, alice)
+	first := alice.send(id, "laptops for students")
+	_, fr := a.hx.runWithInput(t, "laptops for students") // finish the first run so the chat takes another message
+	st := alice.open(first, "")
+	recv(t, fr.opens, "stream")
+	a.hx.push(fr, "run.completed", `{"output":"ok"}`)
+	st.waitFor(t, "run.completed")
+	alice.send(id, "recipes for dinner")
+	time.Sleep(100 * time.Millisecond)
+	close(f.release)
+	if got := titleOf(t, alice, id, func(s string) bool { return s != "" }); got != "Title of laptops" {
+		t.Fatalf("title %q", got)
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if len(f.calls) != 1 || f.calls[0] != "laptops for students" {
+		t.Fatalf("title model calls %q", f.calls)
+	}
+}

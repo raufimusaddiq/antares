@@ -132,13 +132,31 @@ func fallbackTitle(first string) string {
 
 // autoTitle titles an untitled chat from its first message, in the background. One attempt: the fallback always
 // produces a title for a message with words, so the chat is not untitled on its next message.
+//
+// The first message to arrive reserves the chat (s.titling) for its job: a second message sent while that job is still
+// waiting for the model is not a candidate, so the title always comes from the message that started the chat.
 func (s *Service) autoTitle(userID, chatID, first string) {
 	if strings.TrimSpace(first) == "" {
 		return // an image alone: the chat stays "New chat" until a message with words
 	}
+	s.mu.Lock()
+	if s.titling == nil {
+		s.titling = map[string]bool{}
+	}
+	busy := s.titling[chatID]
+	s.titling[chatID] = true
+	s.mu.Unlock()
+	if busy {
+		return
+	}
 	s.wg.Add(1)
 	go func() {
 		defer s.wg.Done()
+		defer func() {
+			s.mu.Lock()
+			delete(s.titling, chatID)
+			s.mu.Unlock()
+		}()
 		ctx, cancel := context.WithTimeout(s.base, titleBudget)
 		defer cancel()
 		c, err := store.GetChat(ctx, s.db, userID, chatID)

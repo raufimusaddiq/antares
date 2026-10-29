@@ -90,6 +90,7 @@ type Service struct {
 
 	media         MediaSource
 	titler        Titler
+	titling       map[string]bool // chats with a title job in flight (title.go); guarded by mu
 	jobs          bool
 	jobLocks      sync.Map // user id -> *sync.Mutex (jobs.go jobLock)
 	jobRetryAfter string   // where the next pending job shutdown retry starts; only the retry loop touches it

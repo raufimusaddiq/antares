@@ -83,6 +83,40 @@ describe("automatic chat title", () => {
     expect((await screen.findAllByText("Budget Student Laptop")).length).toBeGreaterThan(0);
   });
 
+  it("keeps reading for a title that takes longer than the reply, up to the server's 20-second budget", async () => {
+    await mount(chat({ title: "", activeRunId: "r1" }));
+    await screen.findByText("Working…");
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      // Not there at completion, nor at 4 or 10 seconds; written by 22.
+      api.getChat
+        .mockResolvedValueOnce(ok(chat({ title: "" })))
+        .mockResolvedValueOnce(ok(chat({ title: "" })))
+        .mockResolvedValueOnce(ok(chat({ title: "" })))
+        .mockResolvedValue(ok(chat({ title: "Slow Model Title" })));
+      const run = FakeSource.all.find((s) => s.url.includes("/r1/"))!;
+      await act(async () => run.emit("run.completed", { status: "COMPLETED", output: "done" }));
+      await waitFor(() => expect(api.getChat).toHaveBeenCalledTimes(1));
+      for (const [wait, calls] of [[4000, 2], [6000, 3]] as const) {
+        await act(async () => {
+          vi.advanceTimersByTime(wait);
+        });
+        await waitFor(() => expect(api.getChat).toHaveBeenCalledTimes(calls));
+        expect(screen.queryByText("Slow Model Title")).toBeNull();
+      }
+      await act(async () => {
+        vi.advanceTimersByTime(12000);
+      });
+      expect((await screen.findAllByText("Slow Model Title")).length).toBeGreaterThan(0);
+      await act(async () => {
+        vi.advanceTimersByTime(60000);
+      });
+      expect(api.getChat).toHaveBeenCalledTimes(4); // stops once it has the title
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("reads the chat once more when the reply ended before the title was written", async () => {
     await mount(chat({ title: "", activeRunId: "r1" }));
     await screen.findByText("Working…");
