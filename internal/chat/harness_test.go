@@ -379,6 +379,7 @@ type appOpts struct {
 	client    hermes.ClientOptions
 	heartbeat time.Duration
 	noJobs    bool // the scheduled-task routes off, as by default in production
+	titler    Titler
 }
 
 func newApp(t testing.TB, o ...appOpts) *app {
@@ -404,7 +405,7 @@ func newApp(t testing.TB, o ...appOpts) *app {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc, err := New(Options{DB: db, Box: box, Hermes: cl, Backoff: opt.backoff, Heartbeat: opt.heartbeat, Jobs: !opt.noJobs})
+	svc, err := New(Options{DB: db, Box: box, Hermes: cl, Backoff: opt.backoff, Heartbeat: opt.heartbeat, Jobs: !opt.noJobs, Titler: opt.titler})
 	if err != nil {
 		t.Fatal(err)
 	}

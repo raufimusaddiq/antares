@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strings"
 	"time"
 )
 
@@ -32,6 +33,32 @@ func RenameChat(ctx context.Context, db *sql.DB, userID, chatID, title string) e
 		return err
 	}
 	return tx.Commit()
+}
+
+// SetAutoTitle gives the user's own chat a title only while it still has none, so a rename (by the user, at any
+// time) always wins over the automatic title. It reports whether the title was set; an untitled chat that is gone,
+// archived or someone else's is left alone.
+func SetAutoTitle(ctx context.Context, db *sql.DB, userID, chatID, title string) (bool, error) {
+	if strings.TrimSpace(title) == "" {
+		return false, nil
+	}
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, `UPDATE chats SET title = ? WHERE id = ? AND user_id = ? AND (title IS NULL OR title = '') AND status IN `+liveChat,
+		title, chatID, userID)
+	if err != nil {
+		return false, err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return false, nil
+	}
+	if err := setTitleDoc(ctx, tx, userID, chatID, title); err != nil {
+		return false, err
+	}
+	return true, tx.Commit()
 }
 
 // SetChatPinned pins or unpins the user's own chat. Only a chat in use can be pinned: an archived

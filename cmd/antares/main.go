@@ -151,9 +151,13 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer pusher.Close() // after chats.Close below has stopped the workers that call it
+	defer pusher.Close()   // after chats.Close below has stopped the workers that call it
+	var titler chat.Titler // without a key, a chat's title is its first words
+	if len(cfg.TitleAPIKey) > 0 {
+		titler = &chat.TitleModel{URL: cfg.TitleBaseURL, Key: string(cfg.TitleAPIKey), Model: cfg.TitleModel}
+	}
 	chats, err := chat.New(chat.Options{DB: db, Box: box, Hermes: hermesClient, Kenari: kenari.New(kenari.DefaultURL, nil), Notifier: pusher,
-		Jobs: os.Getenv("ANTARES_JOBS") == "on", Media: helper}) // scheduled tasks: off until proven on the deployed Hermes (docs/runbooks/jobs.md)
+		Jobs: os.Getenv("ANTARES_JOBS") == "on", Media: helper, Titler: titler}) // scheduled tasks: off until proven on the deployed Hermes (docs/runbooks/jobs.md)
 	if err != nil {
 		return err
 	}

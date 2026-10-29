@@ -60,3 +60,23 @@ Escape closes and returns focus. Rename and delete are modal dialogs (focus trap
 A change shows only after the server confirms it. `Show archived` lists the archive. On a phone the strip stays a line of chips (the open one whole; `mobile layout` CI enforces it) and the open chat's actions are under Options → Conversation actions; the archive replaces the strip like an open search, and its rows keep their buttons. A message sent into an archived chat makes it active on the server; the list is read again so it reappears at once.
 After a delete the browser also forgets that chat's local draft, resets the search panel, and opens the next chat (or the empty state).
 
+## Automatic titles
+
+Like ChatGPT, a chat without a title gets one from its first message. When the message is sent, Antares asks a small
+model for a 2 to 6 word title in the user's language, in the background, while the reply is written
+(`internal/chat/title.go`). The browser shows it when the reply completes. If it was not ready yet, the browser
+reads the chat again at 4, 10 and 22 seconds (past the job's 20-second budget), stopping once it has the title.
+The first message to arrive reserves the chat's title job, so a second message sent while the model is still writing
+does not start another and the title always comes from the message that started the chat.
+
+- **Where it is sent**: only the first message (at most 2,000 characters) and a fixed instruction, to the
+  OpenAI-compatible endpoint `ANTARES_TITLE_BASE_URL` (default `https://kenari.id/v1`, the same provider that serves
+  the chat) with `ANTARES_TITLE_API_KEY` and `ANTARES_TITLE_MODEL` (default `gpt-oss-20b`, about Rp 0.2 per title;
+  about 1 second). Nothing goes to Hermes, so the person's sessions and memory are untouched. The answer is cut to one
+  line of at most 60 characters, and labels, quotes and markdown are removed.
+- **Without a key, or when the model fails** (logged as `chat: title for chat <id>: ...`), the title is the first six
+  words of the message. A message with only an image leaves the chat as "New chat" until one with words.
+- **A title the user chose always wins**: one given at creation or by a rename is never replaced
+  (`store.SetAutoTitle` writes only while the title is empty). The automatic title is indexed for search like a typed one.
+- Tests: `internal/chat/title_test.go`, `web/src/AutoTitle.test.tsx`.
+

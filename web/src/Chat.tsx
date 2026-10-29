@@ -67,6 +67,9 @@ import { Templates } from "./Templates";
 
 const MAX_INPUT = 32_000;
 const RECONNECT_TRIES = 5;
+/** Waits between reads of a chat whose reply ended before its automatic title: at 4, 10 and 22 seconds, past the
+ * server's 20-second title budget (internal/chat/title.go). */
+const TITLE_RECHECKS = [4000, 6000, 12000] as const;
 
 type Action = { k: "start"; runId: string } | { k: "event"; ev: RunEvent } | { k: "maybe" } | { k: "clear" };
 
@@ -735,6 +738,26 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     setCursor(r.value.nextCursor);
   }, [loadTurns]);
 
+  /** Puts a chat's (automatic) title in the list; a title that did not change leaves the list as it is. */
+  const showTitle = useCallback((chatId: string, title: string) => {
+    if (title) setChats((l) => (l.some((x) => x.id === chatId && x.title !== title) ? l.map((x) => (x.id === chatId ? { ...x, title } : x)) : l));
+  }, []);
+
+  /** The reply ended before its chat's title was written: read the chat again until it has one, for as long as the
+   * server may take to write it (its title job gives up after 20 seconds). */
+  const awaitTitle = useCallback(
+    (chatId: string, delays: readonly number[] = TITLE_RECHECKS) => {
+      if (delays.length === 0) return;
+      window.setTimeout(() => {
+        void getChat(chatId).then((c) => {
+          if (c.ok && c.value.title) showTitle(chatId, c.value.title);
+          else if (c.ok) awaitTitle(chatId, delays.slice(1));
+        });
+      }, delays[0]);
+    },
+    [showTitle],
+  );
+
   const attach = useCallback(
     (runId: string, chatId: string) => {
       detach();
@@ -753,6 +776,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             if (ok && currentRef.current === chatId) dispatch({ k: "clear" });
             // The server sends the next queued message before it announces the end: follow the run it became.
             void getChat(chatId).then((c) => {
+              // A chat's first message gets it a title in the background (like ChatGPT): show it once it is there.
+              if (c.ok) showTitle(chatId, c.value.title);
+              if (c.ok && !c.value.title) awaitTitle(chatId);
               const next = c.ok ? c.value.activeRunId : "";
               if (!next || next === runId || currentRef.current !== chatId) return;
               const head = queueRef.current?.items[0];
@@ -807,7 +833,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         } else dispatch({ k: "event", ev: { type: "stream.lost" } });
       };
     },
-    [detach, loadTurns],
+    [detach, loadTurns, showTitle, awaitTitle],
   );
 
   // The open chat as it was opened: a chat from search, from Archived, or one archived while open is not in `chats`, and
