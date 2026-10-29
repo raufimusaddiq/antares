@@ -154,6 +154,10 @@ const approvalFrame = `{"request_id":"req-1","command":"rm -rf /tmp/scratch","de
 func respondCalls(a *app) int {
 	n := 0
 	for _, r := range a.hx.requests() {
+		// The clarify route probe asks about a run that cannot exist (hermes.Client.proven): not an answer.
+		if strings.Contains(r.Path, "/run_0000000000000000antaresprobe/") {
+			continue
+		}
 		if r.Method == "POST" && (strings.HasSuffix(r.Path, "/approval") || strings.HasSuffix(r.Path, "/clarify")) {
 			n++
 		}

@@ -225,5 +225,50 @@ func (h *Helper) Media(ctx context.Context, slug, path string) ([]byte, string, 
 	return raw, resp.Header.Get("Content-Type"), nil
 }
 
+// Skills lists the skills one profile can load, through the helper's POST /skills (Hermes v0.22.5's own
+// GET /v1/skills fails on every call: tools/hermes-provisioner/skills.go). A profile the helper does not find is an
+// empty list, never an error the caller could mistake for "Hermes is down".
+func (h *Helper) Skills(ctx context.Context, slug string) ([]Skill, error) {
+	if !ValidSlug(slug) {
+		return nil, permanent("invalid profile name")
+	}
+	body, _ := json.Marshal(map[string]string{"slug": slug})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.base.String()+"/skills", bytes.NewReader(body))
+	if err != nil {
+		return nil, permanent("could not build helper request")
+	}
+	req.Header.Set("Authorization", "Bearer "+h.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return nil, transient("provisioning helper unreachable")
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		return nil, nil
+	case resp.StatusCode != http.StatusOK:
+		return nil, transient("provisioning helper failed to list skills")
+	}
+	var d struct {
+		Object string  `json:"object"`
+		Data   []Skill `json:"data"`
+	}
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+	if err != nil || len(raw) > maxBody || json.Unmarshal(raw, &d) != nil || d.Object != "list" {
+		return nil, transient("provisioning helper sent an unreadable skills list")
+	}
+	out := make([]Skill, 0, len(d.Data))
+	for _, s := range d.Data {
+		if len(out) >= maxListed {
+			break
+		}
+		if printable(s.Name) {
+			out = append(out, Skill{Name: s.Name, Description: clip(s.Description, 300), Category: clip(s.Category, 60)})
+		}
+	}
+	return out, nil
+}
+
 // ErrMediaNotFound is any refused or missing media file.
 var ErrMediaNotFound = errors.New("hermes: media not found")

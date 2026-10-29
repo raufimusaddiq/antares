@@ -27,3 +27,13 @@ profile's own prompt (`agent/chat_completion_helpers.py`), and Antares prefixes 
 the instructions above. Nothing is written to a profile file, a SOUL or another profile. The base agent policy is the
 operator's and is not shown. `TestPersonalityAppliesToTheOwnersNextRunOnly` checks A's run carries it, B's does not,
 and clearing it stops it.
+
+## Skills list on Hermes v0.22.5
+
+The deployed Hermes' `GET /v1/skills` calls its skill lister with an argument the lister no longer accepts
+(`include_editorial`) and answers 500 every time, so Capabilities showed "Hermes did not return a usable skills
+list" while 53 skills were installed. When Hermes' own list fails, Antares asks the provisioning helper
+(`POST /skills {slug}`, `tools/hermes-provisioner/skills.go`), which runs Hermes' own lister read-only with
+`HERMES_HOME` set to the caller's own profile (so a person's own saved skills are included, and nobody else's). A
+failure there leaves Hermes' reason in place. When a Hermes upgrade fixes the route, its list is used and the helper is
+not asked.

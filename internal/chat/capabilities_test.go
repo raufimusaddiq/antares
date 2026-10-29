@@ -76,7 +76,9 @@ func TestCapabilitiesReportsWhatHermesConfirmsAndNoMore(t *testing.T) {
 	}
 	// Discovery used the caller's own profile and key, and nothing else.
 	for _, r := range a.hx.requests() {
-		if r.Method != "GET" || !strings.HasPrefix(r.Path, "/p/"+alice.profile+"/") || r.Auth != "Bearer "+alice.key {
+		// The one non-GET: the clarify route probe, about a run that cannot exist, on the caller's own profile.
+		probe := r.Method == "POST" && r.Path == "/p/"+alice.profile+"/v1/runs/run_0000000000000000antaresprobe/clarify"
+		if (r.Method != "GET" && !probe) || !strings.HasPrefix(r.Path, "/p/"+alice.profile+"/") || r.Auth != "Bearer "+alice.key {
 			t.Errorf("unexpected Hermes request %s %s", r.Method, r.Path)
 		}
 	}

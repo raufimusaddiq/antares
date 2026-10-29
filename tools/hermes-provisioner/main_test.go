@@ -424,7 +424,7 @@ func TestProvisionDisablesToolsetsBeforeIssuingKey(t *testing.T) {
 	}
 	cfg, py := -1, -1
 	for i, c := range f.calls {
-		if len(c) == 10 && c[0] == "sh" && c[2] == policyScript && c[4] == "u_newuser01" {
+		if len(c) == 11 && c[0] == "sh" && c[2] == policyScript && c[4] == "u_newuser01" {
 			cfg = i
 			var got []string
 			if err := json.Unmarshal([]byte(c[5]), &got); err != nil {
@@ -471,7 +471,7 @@ func TestProvisionFailsClosedWhenToolsetPolicyFails(t *testing.T) {
 type toolsetFail struct{ scripted }
 
 func (f *toolsetFail) Run(ctx context.Context, in string, args ...string) (string, string, error) {
-	if len(args) == 10 && args[0] == "sh" && args[2] == policyScript {
+	if len(args) == 11 && args[0] == "sh" && args[2] == policyScript {
 		f.calls = append(f.calls, args)
 		return "", "boom", exitErr(1)
 	}
@@ -546,7 +546,7 @@ func TestPolicyFromEnv(t *testing.T) {
 
 func toolsetCall(f *scripted) []string {
 	for _, c := range f.calls {
-		if len(c) == 10 && c[0] == "sh" && c[2] == policyScript {
+		if len(c) == 11 && c[0] == "sh" && c[2] == policyScript {
 			return c
 		}
 	}
@@ -598,6 +598,10 @@ func TestRequestToolsetsReplaceTheDefaultAndStayInsideTheOffer(t *testing.T) {
 		var got []string
 		if err := json.Unmarshal([]byte(toolsetCall(f)[5]), &got); err != nil {
 			t.Fatal(err)
+		}
+		// The same choice is enabled for the api_server platform, which by default leaves tts and video_gen out.
+		if allowed := strings.Fields(toolsetCall(f)[10]); strings.Join(allowed, ",") != "web,tts,video_gen" && !(len(allowed) == 3 && contains(allowed, "web") && contains(allowed, "tts") && contains(allowed, "video_gen")) {
+			t.Errorf("%s enables %v for api_server", c.path, allowed)
 		}
 		if contains(got, "web") || contains(got, "tts") || contains(got, "video_gen") || !contains(got, "memory") || !contains(got, "terminal") {
 			t.Errorf("%s applied %v", c.path, got)

@@ -298,7 +298,7 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 	clarify := unsupported(CapClarify, "Clarification prompts", "Hermes does not advertise a clarification route")
 	if !capsOK {
 		clarify.Reason = why("run_clarify")
-	} else if caps.hasPost("run_clarify") {
+	} else if caps.hasPost("run_clarify") || c.proven(ctx, b, "run_clarify") {
 		clarify = available(CapClarify, "Clarification prompts")
 	}
 

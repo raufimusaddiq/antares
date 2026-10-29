@@ -178,8 +178,13 @@ func (h hermes) create(ctx context.Context, slug string) error {
 // One docker exec: two config writes about 6 s each and a reload under a second, measured on the deployed host, within
 // callTimeout. Slug, list, directories and the reload script arrive as arguments ($1-$6), never in the script.
 // plugins.enabled is replaced, not merged: a tenant profile is provisioner-owned and holds no other plugin.
+// $7 is the allowed toolsets, space separated (names from knownToolsets only, so unquoted word splitting is safe):
+// Hermes' default toolset for API chats leaves several of them out (clarify, tts, stt, video, video_gen, x_search),
+// so allowing a toolset must also enable it for the api_server platform, as "hermes tools enable" does.
+// agent.disabled_toolsets is still applied last, so anything not allowed stays off whatever the platform list says.
 const policyScript = `set -e
 hermes -p "$1" config set ` + toolsetsConfigKey + ` "$2"
+hermes -p "$1" tools enable $7 --platform api_server >/dev/null
 if [ -d "$3/kenari-image" ]; then
   mkdir -p "$4/$1/plugins/kenari-image"
   cp -r "$3/kenari-image/." "$4/$1/plugins/kenari-image/"
@@ -207,7 +212,7 @@ const sharedPlugins = "/opt/data/antares-plugins"
 
 // applyPolicy runs policyScript for one profile.
 func (h hermes) applyPolicy(ctx context.Context, slug string, disabled []string) error {
-	stdout, stderr, err := h.r.Run(ctx, "", "sh", "-c", policyScript, "sh", slug, toolsetsValue(disabled), sharedPlugins, profilesDir, hermesRoot, reloadScript)
+	stdout, stderr, err := h.r.Run(ctx, "", "sh", "-c", policyScript, "sh", slug, toolsetsValue(disabled), sharedPlugins, profilesDir, hermesRoot, reloadScript, strings.Join(allowedFrom(disabled), " "))
 	if err != nil {
 		return fmt.Errorf("%w: applying the profile policy: %s", errUpstream, brief(stderr))
 	}

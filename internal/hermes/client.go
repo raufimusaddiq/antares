@@ -563,13 +563,50 @@ func (c *Client) respond(ctx context.Context, b Binding, runID, route string, bo
 }
 
 // Advertises reports whether Hermes lists a POST route under the endpoint name in /v1/capabilities.
-// Anything unclear is false: an answer is only ever sent to a route Hermes itself advertised.
+// Anything unclear is false: an answer is only ever sent to a route Hermes itself advertised, with one
+// explicit exception (provenRoutes): a route the deployed Hermes serves without listing it, accepted only
+// once a probe has shown Hermes' own handler answering on it.
 func (c *Client) Advertises(ctx context.Context, b Binding, endpoint string) (bool, error) {
 	caps, ok, tenant := c.discoveryDoc(ctx, b)
 	if tenant {
 		return false, fail(CodeTenantNotReady)
 	}
-	return ok && caps.hasPost(endpoint), nil
+	if ok && caps.hasPost(endpoint) {
+		return true, nil
+	}
+	return ok && c.proven(ctx, b, endpoint), nil
+}
+
+// provenRoutes are POST routes Hermes v0.22.5 registers but leaves out of /v1/capabilities' endpoint table
+// (gateway/platforms/api_server_runs.py registers POST /v1/runs/{run_id}/clarify; api_server.py's
+// _CAPABILITY_ENDPOINTS has no run_clarify). Only these are ever probed.
+var provenRoutes = map[string]string{"run_clarify": "clarify"}
+
+// proveRunID names no run: it only has to pass Hermes' own run lookup, which answers 404 run_not_found.
+const proveRunID = "run_0000000000000000antaresprobe"
+
+// proven asks the route about a run that cannot exist. Hermes' own handler answers 404 with
+// {"error":{"code":"run_not_found"}}; a route Hermes does not serve answers a bare 404 or 405, which is not proof.
+// Nothing can be changed by it: there is no such run.
+func (c *Client) proven(ctx context.Context, b Binding, endpoint string) bool {
+	tail, ok := provenRoutes[endpoint]
+	if !ok {
+		return false
+	}
+	ctx, cancel := c.withTimeout(ctx)
+	defer cancel()
+	resp, err := c.send(ctx, b, http.MethodPost, "/v1/runs/"+proveRunID+"/"+tail, nil, map[string]any{})
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	var e struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	raw, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+	return resp.StatusCode == http.StatusNotFound && json.Unmarshal(raw, &e) == nil && e.Error.Code == "run_not_found"
 }
 
 // Event is one upstream SSE frame, undecoded.

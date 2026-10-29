@@ -123,3 +123,14 @@ func requestPolicy(allowed []string) ([]string, error) {
 	}
 	return disabledFor(allowed)
 }
+
+// allowedFrom is the complement of a disabled list: the known toolsets a profile keeps, in known order.
+func allowedFrom(disabled []string) []string {
+	var out []string
+	for _, n := range knownToolsets {
+		if !contains(disabled, n) {
+			out = append(out, n)
+		}
+	}
+	return out
+}
