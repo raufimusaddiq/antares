@@ -49,6 +49,8 @@ type Options struct {
 	// Media, if set, reads files Hermes generated (MEDIA:<path> in a reply) from the caller's own profile cache.
 	// Nil: /api/media answers 404 and the UI says the media is not available.
 	Media MediaSource
+	// Titler, if set, writes a chat's automatic title from its first message (title.go). Nil: the first words.
+	Titler Titler
 }
 
 // MediaSource reads a generated media file from one profile's cache (hermes.Helper.Media).
@@ -87,6 +89,7 @@ type Service struct {
 	admitHook func()
 
 	media         MediaSource
+	titler        Titler
 	jobs          bool
 	jobLocks      sync.Map // user id -> *sync.Mutex (jobs.go jobLock)
 	jobRetryAfter string   // where the next pending job shutdown retry starts; only the retry loop touches it
@@ -114,7 +117,7 @@ func New(o Options) (*Service, error) {
 		o.Heartbeat = 15 * time.Second
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs, media: o.Media,
+	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs, media: o.Media, titler: o.Titler,
 		base: ctx, stop: cancel, live: map[string]*liveRun{}}
 	s.wg.Add(1)
 	go s.jobShutdownLoop()
@@ -174,6 +177,7 @@ func sessionKey(userID string) string { return "chatui:user:" + userID }
 
 // start launches the worker for a freshly admitted run.
 func (s *Service) start(run store.Run, input string, imgs *turnImages) *liveRun {
+	s.autoTitle(run.UserID, run.ChatID, input) // an untitled chat gets one while the reply is written
 	l := newLive(run.ID, run.UserID, run.ChatID)
 	ctx, cancel := context.WithCancel(s.base)
 	l.cancelWorker = cancel

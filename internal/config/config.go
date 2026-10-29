@@ -71,6 +71,13 @@ type Config struct {
 	// It never reaches a browser, a log or a response.
 	KenariAPIKey Secret
 
+	// Automatic chat titles (internal/chat/title.go): an OpenAI-compatible endpoint, key and small model that
+	// write a chat's title from its first message. Without TitleAPIKey a title is the message's first words.
+	// The key is an inference key (the same kind every tenant profile is given); it never reaches a browser or a log.
+	TitleAPIKey  Secret
+	TitleBaseURL string // default https://kenari.id/v1
+	TitleModel   string // default gpt-oss-20b
+
 	// Admin bootstrap. All three are set, or none (no bootstrap).
 	AdminIssuer string
 	AdminSub    string
@@ -178,6 +185,21 @@ func Load(getenv func(string) string) (Config, error) {
 	}
 	if raw := strings.TrimSpace(getenv("ANTARES_KENARI_API_KEY")); raw != "" {
 		c.KenariAPIKey = Secret(raw)
+	}
+	if raw := strings.TrimSpace(getenv("ANTARES_TITLE_API_KEY")); raw != "" {
+		c.TitleAPIKey = Secret(raw)
+	}
+	c.TitleBaseURL = "https://kenari.id/v1"
+	if raw := strings.TrimSpace(getenv("ANTARES_TITLE_BASE_URL")); raw != "" {
+		if u, err := url.Parse(raw); err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil {
+			problems = append(problems, "ANTARES_TITLE_BASE_URL must be an https URL")
+		} else {
+			c.TitleBaseURL = strings.TrimRight(raw, "/")
+		}
+	}
+	c.TitleModel = "gpt-oss-20b"
+	if raw := strings.TrimSpace(getenv("ANTARES_TITLE_MODEL")); raw != "" {
+		c.TitleModel = raw
 	}
 	c.TenantToolsets = hermes.DefaultAllowedToolsets
 	if raw := getenv("ANTARES_TENANT_ALLOWED_TOOLSETS"); raw != "" {

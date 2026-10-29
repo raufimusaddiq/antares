@@ -735,6 +735,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     setCursor(r.value.nextCursor);
   }, [loadTurns]);
 
+  /** Puts a chat's (automatic) title in the list; a title that did not change leaves the list as it is. */
+  const showTitle = useCallback((chatId: string, title: string) => {
+    if (title) setChats((l) => (l.some((x) => x.id === chatId && x.title !== title) ? l.map((x) => (x.id === chatId ? { ...x, title } : x)) : l));
+  }, []);
+
   const attach = useCallback(
     (runId: string, chatId: string) => {
       detach();
@@ -753,6 +758,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             if (ok && currentRef.current === chatId) dispatch({ k: "clear" });
             // The server sends the next queued message before it announces the end: follow the run it became.
             void getChat(chatId).then((c) => {
+              // A chat's first message gets it a title in the background (like ChatGPT): show it once it is there,
+              // reading once more a little later if the reply ended before the title was written.
+              if (c.ok) showTitle(chatId, c.value.title);
+              if (c.ok && !c.value.title) window.setTimeout(() => void getChat(chatId).then((again) => again.ok && showTitle(chatId, again.value.title)), 4000);
               const next = c.ok ? c.value.activeRunId : "";
               if (!next || next === runId || currentRef.current !== chatId) return;
               const head = queueRef.current?.items[0];
@@ -807,7 +816,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         } else dispatch({ k: "event", ev: { type: "stream.lost" } });
       };
     },
-    [detach, loadTurns],
+    [detach, loadTurns, showTitle],
   );
 
   // The open chat as it was opened: a chat from search, from Archived, or one archived while open is not in `chats`, and
