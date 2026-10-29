@@ -10,6 +10,9 @@
 
 :root {
   color-scheme: light dark;
+  /* Motion: settle smoothly (out), or land with a little overshoot (pop) for things that appear. */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-pop: cubic-bezier(0.34, 1.56, 0.64, 1);
 
   --font-ui: "Space Grotesk Variable", "Space Grotesk Fallback", system-ui, sans-serif;
   --font-display: var(--font-ui);
@@ -165,7 +168,7 @@ a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.2em
 [data-icon="chevron"][aria-expanded="true"]::after { transform: rotate(180deg); }
 
 /* ---- buttons: flat pills ----------------------------------------------------------- */
-a.btn, button {
+a.btn, button:where(:not(.openui-root *)) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -182,15 +185,17 @@ a.btn, button {
   text-decoration: none;
   cursor: pointer;
 }
-a.btn:hover, button:hover:not(:disabled) { background: color-mix(in srgb, var(--mark) 55%, var(--card)); color: var(--mark-ink); }
-a.btn:active, button:active:not(:disabled) { transform: translate(1px, 1px); }
+a.btn:hover, button:where(:not(.openui-root *)):hover:not(:disabled) { background: color-mix(in srgb, var(--mark) 55%, var(--card)); color: var(--mark-ink); }
+a.btn:active, button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(1px, 1px); }
+/* Element rules below are :where(:not(.openui-root *)): zero extra specificity, and they leave OpenUI's own controls
+   (rich blocks) to OpenUI's stylesheet. Without it an OpenUI accordion trigger became an Antares pill button. */
 /* Disabled reads as quieter, not broken: a solid, faded outline (a dashed one looked like a drop zone or an error). */
-button:disabled { color: var(--ink-2); background: transparent; border-color: var(--ink-2); opacity: 0.55; cursor: not-allowed; }
+button:where(:not(.openui-root *)):disabled { color: var(--ink-2); background: transparent; border-color: var(--ink-2); opacity: 0.55; cursor: not-allowed; }
 .icon { width: 1.1rem; height: 1.1rem; flex: none; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 
 /* Secondary actions (Cancel, Try again, Show more, Refresh, Sign out): text on the page, a thin outline. */
-button.quiet { background: transparent; border-width: 1.5px; font-weight: 500; }
-button.quiet:hover:not(:disabled) { background: color-mix(in srgb, var(--mark) 55%, transparent); }
+button.quiet:where(:not(.openui-root *)) { background: transparent; border-width: 1.5px; font-weight: 500; }
+button.quiet:where(:not(.openui-root *)):hover:not(:disabled) { background: color-mix(in srgb, var(--mark) 55%, transparent); }
 .notice button.quiet { border-color: var(--ink); color: var(--ink); }
 
 /* The two actions that are filled: sign-in and send. */
@@ -204,9 +209,9 @@ body:not(.chat):not(.admin) { display: grid; align-items: center; background-col
 .screen h1 { color: var(--ink); }
 .screen dl { position: relative; margin: 1.75rem 0; padding: 1.4rem 1.4rem 1rem; background-color: var(--peri); background-image: var(--dots); border: 2px solid var(--ink); border-radius: 22px; box-shadow: 5px 5px 0 var(--ink); }
 .screen dl::before { content: "Account"; position: absolute; left: 1rem; top: -0.9rem; padding: 0.15rem 0.8rem; background: var(--mark); color: var(--mark-ink); border: 2px solid var(--ink); border-radius: var(--r-pill); font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; transform: rotate(-3deg); box-shadow: var(--hard-sm); }
-dt { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
-dd { margin: 0 0 0.6rem; color: var(--ink); overflow-wrap: anywhere; }
-dd:last-child { margin-bottom: 0; }
+dt:where(:not(.openui-root *)) { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
+dd:where(:not(.openui-root *)) { margin: 0 0 0.6rem; color: var(--ink); overflow-wrap: anywhere; }
+dd:where(:not(.openui-root *)):last-child { margin-bottom: 0; }
 .screen button, .screen a.btn { margin: 0.25rem 0.5rem 0.25rem 0; box-shadow: 3px 3px 0 var(--ink); }
 .screen button[data-icon="regenerate"] { background: var(--cobalt); color: var(--cobalt-ink); }
 
@@ -311,7 +316,7 @@ dd:last-child { margin-bottom: 0; }
 .dialog input { width: 100%; box-sizing: border-box; min-height: 2.75rem; font: inherit; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 0.4rem; }
 .dialog-actions button { min-height: 2.75rem; }
-button.danger { background: var(--blush); color: var(--ink); font-weight: 700; }
+button.danger:where(:not(.openui-root *)) { background: var(--blush); color: var(--ink); font-weight: 700; }
 
 .pane { grid-area: pane; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; padding: 0 2rem; }
 .log { --log-pad: 0.5rem; flex: 1; min-height: 0; overflow: auto; padding: var(--log-pad) 0.25rem 0; position: relative; overflow-anchor: none; overscroll-behavior: contain; }
@@ -414,8 +419,10 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .vstatus button { min-height: 1.75rem; padding: 0.1rem 0.7rem; margin: 0 0 0 0.25rem; }
 /* Jump to latest is a control that floats over the log while the reader is away from the newest turn. */
 .vjump { position: sticky; bottom: 0.5rem; height: 0; text-align: center; }
-.vjump button { position: relative; top: -2.75rem; margin: 0; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; box-shadow: 3px 3px 0 var(--ink); }
-.vjump button[data-icon]::before { width: 1em; height: 1em; margin-right: 0.3rem; }
+/* "Jump to latest": a small round arrow over the transcript, not a labelled pill that pulls the eye off the chat. */
+.vjump button { position: relative; top: -2.9rem; width: 2.4rem; height: 2.4rem; min-height: 0; margin: 0; padding: 0; border-radius: 50%; box-shadow: 2px 2px 0 var(--ink); animation: fade-in 0.18s var(--ease-out) both; }
+.vjump button[data-icon]::before { width: 1.05rem; height: 1.05rem; margin: 0; }
+@media (pointer: coarse) { .vjump button { width: 2.75rem; height: 2.75rem; } }
 
 /* ---- generative UI blocks (OpenUI): the one hero-card language ---------------- */
 .ou-block, .ou-fallback { max-width: 100%; }
@@ -453,7 +460,7 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .search { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin: 0 0 0.75rem; }
 .search input { flex: 1 1 14rem; max-width: 24rem; min-height: 2.5rem; box-sizing: border-box; padding: 0.4rem 1rem; font: inherit; color: var(--ink); background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-pill); }
 .filters { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0 0 0.75rem; }
-button.quiet.on { background: var(--ink); color: var(--canvas); font-weight: 700; }
+button.quiet.on:where(:not(.openui-root *)) { background: var(--ink); color: var(--canvas); font-weight: 700; }
 .table-wrap { overflow-x: auto; max-width: 100%; margin: 0.5rem 0 1rem; border: 2px solid var(--ink); border-radius: var(--r-lg); background: var(--card); }
 .admin-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
 .admin-table th, .admin-table td { padding: 0.55rem 0.8rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--hair); overflow-wrap: anywhere; }
@@ -525,9 +532,9 @@ button.quiet.on { background: var(--ink); color: var(--canvas); font-weight: 700
 }
 
 /* ---- inputs --------------------------------------------------------------------- */
-select { min-height: 2rem; font-family: var(--font-ui); color: var(--ink); background: var(--card); border: 1.5px solid var(--ink); border-radius: var(--r-sm); }
-input[type="checkbox"] { width: 1.5rem; height: 1.5rem; min-height: 0; flex: none; accent-color: var(--cobalt); }
-input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="search"]) { font-family: var(--font-ui); color: var(--ink); background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); padding: 0.3rem 0.7rem; }
+select:where(:not(.openui-root *)) { min-height: 2rem; font-family: var(--font-ui); color: var(--ink); background: var(--card); border: 1.5px solid var(--ink); border-radius: var(--r-sm); }
+input[type="checkbox"]:where(:not(.openui-root *)) { width: 1.5rem; height: 1.5rem; min-height: 0; flex: none; accent-color: var(--cobalt); }
+input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="search"]):where(:not(.openui-root *)) { font-family: var(--font-ui); color: var(--ink); background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); padding: 0.3rem 0.7rem; }
 
 /* Notifications opt-in (UXP-002) */
 .notify { position: relative; }
@@ -849,12 +856,12 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 .settings label { display: block; margin: 0.25rem 0; }
 
 /* ---- disclosures (#139 stage 3): no native ▶ marker anywhere; a quiet chevron after the label turns when open ---- */
-summary { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.35rem; }
-summary::-webkit-details-marker { display: none; }
-summary::after { content: ""; flex: none; width: 0.9em; height: 0.9em; margin-left: auto; background: currentColor; opacity: 0.6;
+summary:where(:not(.openui-root *)) { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 0.35rem; }
+summary:where(:not(.openui-root *))::-webkit-details-marker { display: none; }
+summary:where(:not(.openui-root *))::after { content: ""; flex: none; width: 0.9em; height: 0.9em; margin-left: auto; background: currentColor; opacity: 0.6;
   -webkit-mask: url("/icons/chevron.svg") center / contain no-repeat; mask: url("/icons/chevron.svg") center / contain no-repeat;
   transform: rotate(-90deg); transition: transform 150ms ease; }
-details[open] > summary::after { transform: none; }
+details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 @media (prefers-reduced-motion: reduce) { summary::after { transition: none; } }
 
 /* ---- Settings dialog ---- */
@@ -990,3 +997,40 @@ details[open] > summary::after { transform: none; }
   --openui-text-numbers-xs-heavy:  560 12px/1.5 var(--font-ui);
 }
 .openui-root a { color: var(--cobalt); }
+
+/* ---- motion ----------------------------------------------------------------------------------------------------
+   Short, purposeful movement: what you just sent and the reply being written rise into place; popovers, menus and
+   dialogs pop open from where they belong; buttons lift under the pointer and press into their hard shadow; bars
+   fill. Each animated element mounts once (a virtualised turn scrolled back into view is not animated). The
+   prefers-reduced-motion rule above turns all of it off. */
+@keyframes rise-in { from { opacity: 0; transform: translateY(10px); } }
+@keyframes pop-in { from { opacity: 0; transform: scale(0.94); } }
+@keyframes fade-in { from { opacity: 0; } }
+@keyframes bar-grow { from { transform: scaleX(0); } }
+
+.turn.user.pending, .turn.assistant[class*="run-"] { animation: rise-in 0.45s var(--ease-out) both; }
+.pane.empty .hero { animation: rise-in 0.6s var(--ease-out) both; }
+.composer { transition: box-shadow 0.2s var(--ease-out), transform 0.2s var(--ease-out); }
+.composer:focus-within { box-shadow: 7px 7px 0 var(--ink); transform: translate(-1px, -1px); }
+
+/* Menus and popovers fade in: opacity only, so their size and place are final from the first frame (touch targets keep
+   their 44px, hit tests see where they will be). The settings dialog, a whole sheet, pops. */
+.model-menu, .row-menu, .bar-actions.open { animation: fade-in 0.16s var(--ease-out) both; }
+.settings-dialog[open] { animation: pop-in 0.28s var(--ease-pop) both; }
+.settings-dialog[open]::backdrop { animation: fade-in 0.2s ease both; }
+
+a.btn, button:where(:not(.openui-root *)) {
+  transition: background-color 0.15s var(--ease-out), color 0.15s var(--ease-out), border-color 0.15s var(--ease-out),
+    box-shadow 0.2s var(--ease-out), transform 0.15s var(--ease-out);
+}
+/* A button with a hard shadow lifts toward the pointer and presses flat into its shadow. */
+a.btn:hover, .composer button[type="submit"]:hover:not(:disabled), .vjump button:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
+a.btn:active, .composer button[type="submit"]:active:not(:disabled), .vjump button:active { transform: translate(2px, 2px); box-shadow: none; }
+.side button.item { transition: background-color 0.15s var(--ease-out), transform 0.15s var(--ease-out); }
+.side button.item:hover:not(.current) { transform: translateX(2px); }
+
+.quota-fill { transform-origin: left center; animation: bar-grow 0.8s var(--ease-out) both; }
+.stat-tile { animation: rise-in 0.5s var(--ease-out) both; }
+.stat-tile:nth-child(2) { animation-delay: 0.06s; }
+.stat-tile:nth-child(3) { animation-delay: 0.12s; }
+

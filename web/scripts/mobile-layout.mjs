@@ -66,7 +66,10 @@ export const measure = async (scope) => {
   const reach = {};
   for (const name of ["Menu", "New chat", "Search", "Close search", "Options", "Attach image", "Take photo", "Send", "Jump to latest"]) {
     // The Options toggle also says when a token limit is reached ("Options · token limit reached").
-    const el = [...document.querySelectorAll("button")].find((b) => (name === "Options" ? b.textContent.trim().startsWith("Options") : b.textContent.trim() === name) && visible(b));
+    // Matched by accessible name (aria-label, else text), as a screen reader and getByRole find it: an icon-only
+    // button such as the round "Jump to latest" arrow has no visible text.
+    const named = (b) => (b.getAttribute("aria-label") || b.textContent).trim();
+    const el = [...document.querySelectorAll("button")].find((b) => (name === "Options" ? named(b).startsWith("Options") : named(b) === name) && visible(b));
     const r = el && shown(el);
     reach[name] = Boolean(r && r.bottom <= vh + 0.5 && r.top >= -0.5 && r.left >= -0.5 && (r.right <= vw + 0.5 || el.closest(".side")));
   }

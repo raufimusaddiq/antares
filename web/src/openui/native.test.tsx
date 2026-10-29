@@ -178,6 +178,15 @@ describe("rendering", () => {
     expect(document.body.textContent).toContain("earlier version of rich replies");
     expect(document.body.textContent).toContain('Text("old answer")');
   });
+  it("renders a program with one mistyped or surplus argument; the rest of the answer is not hidden as source", () => {
+    const source = 'root = Card([TextContent("Kept text"), bad])\nbad = TextContent(42, "default", "surplus")';
+    expect(check(source)).toEqual({ ok: true });
+    render(<RichBlock source={source} />);
+    expect(document.querySelector(".ou-block")).not.toBeNull();
+    expect(document.querySelector(".ou-fallback")).toBeNull();
+    expect(document.body.textContent).toContain("Kept text");
+    expect(check('root = Card([Bogus("x")])').ok).toBe(false); // structural errors still fall back
+  });
   it("shows an invalid finished program as its source, not a half-built view", () => {
     render(<RichBlock source={'root = Card([Bogus("x")])'} />);
     expect(document.body.textContent).toContain('Bogus("x")');

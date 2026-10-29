@@ -63,6 +63,9 @@ function markdownProblem(text: string, partial: boolean): string | null {
   return walk(markdown.runSync(markdown.parse(text)) as MdNode);
 }
 
+/** Parser errors about one argument's shape, which OpenUI handles by leaving that value out. */
+const TOLERATED = new Set(["type-mismatch", "excess-args"]);
+
 export type Verdict = { ok: true } | { ok: false; reason: string };
 
 let parser: ReturnType<typeof createParser> | undefined;
@@ -93,7 +96,11 @@ export function check(source: string, partial = false): Verdict {
   if (unknown) return { ok: false, reason: "invalid: unknown-component" };
   if (!partial) {
     if (m.incomplete) return { ok: false, reason: "incomplete" };
-    if (m.errors.length > 0) return { ok: false, reason: `invalid: ${m.errors[0].code}` };
+    // An argument of the wrong type, or one too many, is dropped by OpenUI and the rest renders; showing the whole
+    // answer as source for that hid good content (a model's SectionItem with one mistyped field). Anything structural
+    // (unknown component or function, no root, a dangling reference) still falls back to source.
+    const fatal = m.errors.find((e) => !TOLERATED.has(e.code));
+    if (fatal) return { ok: false, reason: `invalid: ${fatal.code}` };
     if (m.unresolved.length > 0) return { ok: false, reason: "dangling reference" };
     // An unreferenced statement would be dropped silently, losing part of the answer: show the source instead.
     if (m.orphaned.length > 0) return { ok: false, reason: "unused statement" };
