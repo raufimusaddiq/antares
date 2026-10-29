@@ -122,6 +122,8 @@ func (a *Auth) Register(mux *http.ServeMux) {
 		}
 		mux.Handle(key, a.Active(a.csrf(rt.Method, a.limit(key, h))))
 	}
+	// The shared plan quota, for every active account (admin_usage.go): fractions and reset times only.
+	mux.Handle("GET /api/quota", a.Active(http.HandlerFunc(a.sharedQuota)))
 	if a.push != nil {
 		pushHandlers := a.push.Handlers()
 		for _, rt := range PushRoutes {

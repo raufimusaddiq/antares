@@ -32,7 +32,9 @@ describe("provider usage screen (#146)", () => {
     const plain = html.replace(/&nbsp;|\u00a0/g, " ");
     expect(plain).toContain("Rp 24.998,5");
     expect(plain).toContain("Rp 15,4");
-    expect(html).toContain("16% (");
+    expect(plain).toContain("16% used · Rp 12.000 of Rp 75.000, Rp 63.000 left"); // the quota as a bar, with its amounts
+    expect(html).toContain('role="meter" aria-label="Week quota"');
+    expect(plain).toContain("480.000"); // token counts grouped: 480.000, not 480000
     expect(html).toContain("Whole provider account");
     expect(html).not.toContain("Stale");
   });

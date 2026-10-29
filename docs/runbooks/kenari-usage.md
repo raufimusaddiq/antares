@@ -49,3 +49,21 @@ the parsing is tested against the shapes Kenari documents with a fake server. Fi
 If the owner wants every user to see something, the least revealing option is the plan quota's `used_frac` and `resets_at`
 per window only (no Rupiah, no balance, no per-model spend). It would still disclose the account's load to everyone, so it
 needs an explicit owner decision. Not built.
+
+## Shared limit for every user (`GET /api/quota`)
+
+One plan serves every Antares account, so its quota is everyone's limit (owner request, 2026-10-29). Every active
+account sees it in the chat: under "Shared limit, all users", above the account line on a wide screen and in the
+Menu on a phone, as one bar per window with the share used and when it resets (`web/src/QuotaBar.tsx`).
+
+- **What a user gets**: `state`, the plan's name, and per window only `key`, `usedFrac` and `resetsAt`. Balance,
+  Rupiah amounts, per-model spend and the key stay on the admin route; `TestSharedQuotaShowsFractionsToActiveUsersOnly`
+  checks that none of them reaches the user answer, and that an anonymous or pending caller gets nothing.
+- **Load on Kenari**: the answer comes from the same cached snapshot as the admin page, never a refresh (fresh for a
+  minute, attempts 15 seconds apart), so users cannot drive Kenari's 60-a-minute usage limit. The browser reads it when
+  the chat opens and every five minutes.
+- **Nearly spent**: from 80% (Kenari's own `alert_pct` default) a window's bar turns marigold and says "nearly used
+  up" in words.
+- Admin → Provider usage shows the same bars with the Rupiah figures, and token counts grouped the Indonesian way
+  (6.000.000).
+
