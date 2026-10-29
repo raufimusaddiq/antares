@@ -217,7 +217,7 @@ export function UserList({ users, filter, search, onOpen, hasMore, loadingMore, 
       {users.length > 0 && shown.length === 0 && <p className="label">None of the {users.length} accounts loaded so far match this filter.</p>}
       {shown.length > 0 && (
         <div className="table-wrap">
-          <table className="admin-table">
+          <table className="admin-table user-table">
             <thead>
               <tr>
                 <th scope="col">User</th>
@@ -236,14 +236,15 @@ export function UserList({ users, filter, search, onOpen, hasMore, loadingMore, 
                     </a>
                     {u.displayName && <span className="sub">{u.email}</span>}
                   </th>
-                  <td>{u.role === "ADMIN" ? "Admin" : "User"}</td>
+                  {/* data-label names the column when a phone shows each row as a card (styles.css, .user-table). */}
+                  <td data-label="Role">{u.role === "ADMIN" ? "Admin" : "User"}</td>
                   <td>
                     <Badge value={u.approvalStatus} />
                   </td>
                   <td>
                     <Badge value={u.tenantStatus} bad={u.tenantStatus === "FAILED"} />
                   </td>
-                  <td>{u.tenantCheckedAt ? `${when(u.tenantCheckedAt)}${u.tenantAttempts ? ` · ${u.tenantAttempts} attempt${u.tenantAttempts === 1 ? "" : "s"}` : ""}` : "—"}</td>
+                  <td data-label="Last attempt" className="when">{u.tenantCheckedAt ? `${when(u.tenantCheckedAt)}${u.tenantAttempts ? ` · ${u.tenantAttempts} attempt${u.tenantAttempts === 1 ? "" : "s"}` : ""}` : "—"}</td>
                 </tr>
               ))}
             </tbody>
