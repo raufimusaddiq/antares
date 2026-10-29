@@ -647,6 +647,16 @@ async function adminPhone(browser) {
         await ctx.close();
       }
     }
+    // Between the phone layout and a wide desktop the bar and nav must still shrink: the page never scrolls sideways
+    // and the signed-in email stays on screen (a nowrap nav once pushed both out from 640 to 1015px).
+    for (const w of [641, 700, 860, 900, 960, 961, 1000, 1016]) {
+      const { ctx, page } = await openPage(browser, { viewport: { width: w, height: 760 } });
+      await page.goto(base + "/admin/users");
+      await page.waitForSelector(".admin-table tbody tr");
+      const m = await page.evaluate(() => ({ vw: innerWidth, overflowX: document.documentElement.scrollWidth - innerWidth, who: Math.round(document.querySelector(".admin-app .who-am-i").getBoundingClientRect().right) }));
+      check(`admin users ${w}px: no sideways scroll, email on screen`, m.vw === w && m.overflowX <= 0 && m.who <= w, JSON.stringify(m));
+      await ctx.close();
+    }
   } finally {
     state.admin = false;
   }
