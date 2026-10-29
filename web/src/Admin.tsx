@@ -217,33 +217,44 @@ export function UserList({ users, filter, search, onOpen, hasMore, loadingMore, 
       {users.length > 0 && shown.length === 0 && <p className="label">None of the {users.length} accounts loaded so far match this filter.</p>}
       {shown.length > 0 && (
         <div className="table-wrap">
-          <table className="admin-table">
-            <thead>
-              <tr>
-                <th scope="col">User</th>
-                <th scope="col">Role</th>
-                <th scope="col">Approval</th>
-                <th scope="col">Tenant</th>
-                <th scope="col">Last attempt</th>
+          {/* On a phone this table is shown as cards (styles.css, .user-table). The explicit roles keep it a table for
+              assistive technology whatever the display, the header row stays in the accessibility tree (only visually
+              hidden), and each cell carries its column name as real text, shown on the card. */}
+          <table className="admin-table user-table" role="table">
+            <thead role="rowgroup">
+              <tr role="row">
+                <th scope="col" role="columnheader">User</th>
+                <th scope="col" role="columnheader">Role</th>
+                <th scope="col" role="columnheader">Approval</th>
+                <th scope="col" role="columnheader">Tenant</th>
+                <th scope="col" role="columnheader">Last attempt</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody role="rowgroup">
               {shown.map((u) => (
-                <tr key={u.id}>
-                  <th scope="row">
+                <tr key={u.id} role="row">
+                  <th scope="row" role="rowheader">
                     <a href={userPath(u.id)} onClick={(e) => go(e, onOpen, userPath(u.id))}>
                       {u.displayName || u.email}
                     </a>
                     {u.displayName && <span className="sub">{u.email}</span>}
                   </th>
-                  <td>{u.role === "ADMIN" ? "Admin" : "User"}</td>
-                  <td>
+                  <td role="cell">
+                    <span className="cell-label">Role</span>
+                    {u.role === "ADMIN" ? "Admin" : "User"}
+                  </td>
+                  <td role="cell">
+                    <span className="cell-label">Approval</span>
                     <Badge value={u.approvalStatus} />
                   </td>
-                  <td>
+                  <td role="cell">
+                    <span className="cell-label">Tenant</span>
                     <Badge value={u.tenantStatus} bad={u.tenantStatus === "FAILED"} />
                   </td>
-                  <td>{u.tenantCheckedAt ? `${when(u.tenantCheckedAt)}${u.tenantAttempts ? ` · ${u.tenantAttempts} attempt${u.tenantAttempts === 1 ? "" : "s"}` : ""}` : "—"}</td>
+                  <td role="cell" className="when">
+                    <span className="cell-label">Last attempt</span>
+                    {u.tenantCheckedAt ? `${when(u.tenantCheckedAt)}${u.tenantAttempts ? ` · ${u.tenantAttempts} attempt${u.tenantAttempts === 1 ? "" : "s"}` : ""}` : "—"}
+                  </td>
                 </tr>
               ))}
             </tbody>

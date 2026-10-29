@@ -431,7 +431,7 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .admin-main h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin: 1rem 0 1rem; }
 .admin-main h2 { font-size: 1rem; font-weight: 700; margin: 1.75rem 0 0.5rem; color: var(--ink); }
 .admin-main > section > p { max-width: 40rem; }
-.admin-nav { display: flex; align-items: center; gap: 0.25rem; margin-left: 0.5rem; }
+.admin-nav { display: flex; align-items: center; gap: 0.25rem; min-width: 0; margin-left: 0.5rem; }
 .admin-nav a.navlink { padding: 0.3rem 0.8rem; border: 2px solid transparent; border-radius: var(--r-pill); color: var(--ink-2); text-decoration: none; }
 .admin-nav a.navlink:hover { color: var(--ink); }
 .admin-nav a.navlink.current { color: var(--ink); font-weight: 700; border-color: var(--ink); background: var(--mark); color: var(--mark-ink); }
@@ -446,6 +446,7 @@ button.quiet.on { background: var(--ink); color: var(--canvas); font-weight: 700
 .admin-table tbody th { font-weight: 500; }
 .admin-table tr:last-child > * { border-bottom: 0; }
 .admin-table a { color: var(--ink); }
+.user-table .cell-label { display: none; } /* the column header names it; shown on a phone's card */
 .admin-table .sub { display: block; font-size: 0.8rem; color: var(--ink-2); font-weight: 400; }
 .mono { font-family: var(--font-mono); font-size: 0.8rem; }
 .badge.bad { background: var(--blush); color: var(--ink); }
@@ -472,9 +473,26 @@ button.quiet.on { background: var(--ink); color: var(--canvas); font-weight: 700
 .confirm textarea { width: 100%; box-sizing: border-box; padding: 0.5rem 0.7rem; font: inherit; color: var(--ink); background: var(--canvas); border: 2px solid var(--ink); border-radius: var(--r-sm); resize: vertical; }
 .confirm button { margin: 0.5rem 0.5rem 0 0; }
 .pager { display: flex; align-items: center; gap: 0.75rem; }
-@media (max-width: 40rem) {
+/* Brand, five links, the email and Sign out need ~900px on one line. Below that the nav takes its own row, where its
+   links wrap as whole chips; a label never breaks inside itself (nowrap only here, where wrapping makes room). */
+@media (max-width: 60rem) {
   .admin-app .bar { flex-wrap: wrap; row-gap: 0.25rem; }
-  .admin-nav { order: 3; flex-basis: 100%; margin-left: 0; overflow-x: auto; }
+  .admin-nav { order: 3; flex-basis: 100%; flex-wrap: wrap; margin-left: 0; }
+  .admin-nav a.navlink { white-space: nowrap; }
+}
+@media (max-width: 40rem) {
+  .admin-nav a.navlink { padding: 0.3rem 0.65rem; }
+  /* The user list as cards: the name and email get the full width, then role, the two statuses and the last attempt.
+     A five-column table at phone width left the name a few letters wide. */
+  /* The header row stays in the accessibility tree, only out of sight; each cell shows its own label instead. */
+  .user-table thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .user-table .cell-label { display: inline; margin-right: 0.4rem; font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2); }
+  .user-table, .user-table tbody { display: block; }
+  .user-table tr { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem 0.6rem; padding: 0.8rem 0.9rem; border-bottom: 1px solid var(--hair); }
+  .user-table tr:last-child { border-bottom: 0; }
+  .user-table th, .user-table td { display: block; padding: 0; border-bottom: 0; }
+  .user-table tbody th { flex: 1 0 100%; font-size: 1rem; }
+  .user-table td.when { flex: 1 0 100%; font-size: 0.8rem; color: var(--ink-2); }
   .facts { grid-template-columns: minmax(0, 1fr); }
   .facts dd { margin-bottom: 0.5rem; }
 }
