@@ -76,6 +76,42 @@ interface Node {
   props?: Record<string, unknown>;
 }
 
+// A model often writes a Card's sources as a statement of their own (`sources = [{title, sourceName, url}, …]`) and
+// then lists it among the Card's children or never uses it, instead of passing it as the Card's second argument. The
+// library drops it from the children (the sources vanish) and the gate refuses an unused one (the whole answer is shown
+// as source). attachSources moves that statement into the second argument. It is kept only if the result parses as a
+// Card that has those sources and no error the original did not have; otherwise the original is returned unchanged.
+const STATEMENT = /^[A-Za-z_]\w*\s*=/m;
+
+export function attachSources(source: string): string {
+  const start = source.search(/^root\s*=\s*Card\(/m);
+  if (start < 0) return source;
+  const line = source.indexOf("\n", start) + 1 || source.length; // the next statement starts on a later line
+  const after = source.slice(line).search(STATEMENT);
+  const end = after < 0 ? source.length : line + after;
+  const root = /^root\s*=\s*Card\(\s*\[([\s\S]*)\]\s*\)\s*$/.exec(source.slice(start, end).trimEnd() + "\n");
+  if (!root) return source; // not a one-argument Card([...])
+  const def = /^([A-Za-z_]\w*)\s*=\s*\[\s*\{/m.exec(source);
+  if (!def) return source;
+  const name = def[1];
+  // Used only by its own definition, and at most once more among the root's children.
+  const uses = source.match(new RegExp(`\\b${name}\\b`, "g"))?.length ?? 0;
+  const inner = root[1].trimEnd().replace(/,\s*$/, "");
+  const children = inner.replace(new RegExp(`(^|,)\\s*${name}\\s*(?=,|$)`), "").replace(/^\s*,/, "").trimEnd();
+  const listed = children !== inner;
+  if (uses !== (listed ? 2 : 1)) return source;
+  const fixed = source.slice(0, start) + `root = Card([${children}\n], ${name})\n` + source.slice(end);
+  parser ??= createParser(openuiChatLibrary.toJSONSchema(), openuiChatLibrary.root);
+  try {
+    const was = parser.parse(source).meta.errors.length;
+    const r = parser.parse(fixed);
+    if (!Array.isArray(r.root?.props?.sources) || r.meta.errors.length > was || r.meta.orphaned.length > 0) return source;
+  } catch {
+    return source;
+  }
+  return fixed;
+}
+
 export function check(source: string, partial = false): Verdict {
   // Antares' own first component set (v1, before native OpenUI) had a Stack root, which this library lacks (the
   // parser drops it); such a block is shown as source, labelled as such.

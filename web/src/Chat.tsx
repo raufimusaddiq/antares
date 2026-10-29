@@ -56,6 +56,7 @@ import { VirtualList } from "./VirtualList";
 import { EVENT_NAMES, describeFolded, describeTool, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
 import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
+import { watchKeyboard } from "./keyboard";
 import { Dictation } from "./Dictation";
 import type { AttachmentRef } from "./MediaPreview";
 import { RunPrompts } from "./RunPrompts";
@@ -551,12 +552,12 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
         </span>
       )}
       {steer?.available && (
-        <button type="button" onClick={steer.onSteer} disabled={empty || blocked || steer.note === "sending"} aria-describedby="steer-note">
+        <button type="button" data-intent="steer" onClick={steer.onSteer} disabled={empty || blocked || steer.note === "sending"} aria-describedby="steer-note">
           <span className="btn-label">Steer</span>
         </button>
       )}
       {queue && (
-        <button type="button" onClick={queue.onQueue} disabled={empty || blocked}>
+        <button type="button" data-intent="queue" onClick={queue.onQueue} disabled={empty || blocked}>
           <span className="btn-label">Queue</span>
         </button>
       )}
@@ -686,8 +687,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
 
   useEffect(() => {
     document.body.classList.add("chat");
+    const unwatch = watchKeyboard(); // iOS: keep the conversation readable with the keyboard up (keyboard.ts)
     return () => {
       document.body.classList.remove("chat");
+      unwatch();
       detach();
     };
   }, [detach]);

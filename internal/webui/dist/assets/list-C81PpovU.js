@@ -1,1 +1,0 @@
-export{p as __iconNode,f as default}from"./Block-C5VPc8HE.js";

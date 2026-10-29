@@ -78,53 +78,59 @@ export function UsageDashboard({ page = false }: { page?: boolean } = {}) {
               </div>
               <details>
                 <summary>Per day as a table</summary>
-                <table className="usage-table">
-                  <thead>
-                    <tr><th scope="col">Day (UTC)</th><th scope="col">Replies</th><th scope="col">Tokens</th><th scope="col">Estimate</th></tr>
-                  </thead>
-                  <tbody>
-                    {data.byDay.map((d) => (
-                      <tr key={d.day}><td>{d.day}</td><td>{num(d.runs)}</td><td>{tokens(d)}</td><td>{rp(d.estimate)}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="table-wrap">
+                  <table className="usage-table">
+                    <thead>
+                      <tr><th scope="col">Day (UTC)</th><th scope="col">Replies</th><th scope="col">Tokens</th><th scope="col">Estimate</th></tr>
+                    </thead>
+                    <tbody>
+                      {data.byDay.map((d) => (
+                        <tr key={d.day}><td>{d.day}</td><td>{num(d.runs)}</td><td>{tokens(d)}</td><td>{rp(d.estimate)}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </details>
 
               <h3>By model</h3>
               {data.byModel.length === 0 ? (
                 <p className="label">No reported usage in this range.</p>
               ) : (
-                <table className="usage-table">
-                  <thead>
-                    <tr><th scope="col">Model</th><th scope="col">Replies</th><th scope="col">Input</th><th scope="col">Output</th><th scope="col">Estimate</th></tr>
-                  </thead>
-                  <tbody>
-                    {data.byModel.map((m) => (
-                      <tr key={m.model}><td>{m.model || "not reported"}</td><td>{num(m.runs)}</td><td>{num(m.input)}</td><td>{num(m.output)}</td><td>{m.unpriced ? "no known price" : rp(m.estimate)}</td></tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="table-wrap">
+                  <table className="usage-table">
+                    <thead>
+                      <tr><th scope="col">Model</th><th scope="col">Replies</th><th scope="col">Input</th><th scope="col">Output</th><th scope="col">Estimate</th></tr>
+                    </thead>
+                    <tbody>
+                      {data.byModel.map((m) => (
+                        <tr key={m.model}><td>{m.model || "not reported"}</td><td>{num(m.runs)}</td><td>{num(m.input)}</td><td>{num(m.output)}</td><td>{m.unpriced ? "no known price" : rp(m.estimate)}</td></tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
 
               <h3>By chat</h3>
               {data.byChat.length === 0 ? (
                 <p className="label">No replies in this range.</p>
               ) : (
-                <table className="usage-table">
-                  <thead>
-                    <tr><th scope="col">Chat</th><th scope="col">Replies</th><th scope="col">Tokens</th><th scope="col">Estimate</th></tr>
-                  </thead>
-                  <tbody>
-                    {data.byChat.map((c) => (
-                      <tr key={c.chatId || "deleted"}>
-                        <td>{c.deleted ? "Deleted chats" : c.title || "Untitled"}</td>
-                        <td>{num(c.runs)}{c.unreported ? ` (${c.unreported} unreported)` : ""}</td>
-                        <td>{tokens(c)}</td>
-                        <td>{rp(c.estimate)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+                <div className="table-wrap">
+                  <table className="usage-table">
+                    <thead>
+                      <tr><th scope="col">Chat</th><th scope="col">Replies</th><th scope="col">Tokens</th><th scope="col">Estimate</th></tr>
+                    </thead>
+                    <tbody>
+                      {data.byChat.map((c) => (
+                        <tr key={c.chatId || "deleted"}>
+                          <td>{c.deleted ? "Deleted chats" : c.title || "Untitled"}</td>
+                          <td>{num(c.runs)}{c.unreported ? ` (${c.unreported} unreported)` : ""}</td>
+                          <td>{tokens(c)}</td>
+                          <td>{rp(c.estimate)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               )}
             </>
           )}

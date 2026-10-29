@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|shots)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|shots|phone-shots)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -59,7 +59,7 @@ function transcript(rich) {
 const DATA = { [PLAIN]: transcript(false), [RICH]: transcript(true) };
 const b64 = (s) => Buffer.from(s).toString("base64url");
 
-const state = { log: [], delayMs: 15, models: false, admin: false, email: "reader@example.test", budgetReached: false, emptyList: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map() };
+const state = { log: [], delayMs: 15, models: false, admin: false, email: "reader@example.test", budgetReached: false, emptyList: false, hold: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map() };
 // A slow runner answers later than a fast one. MOCK_DELAY_MS adds that latency to the image endpoints of the mock (upload, delete, send) so
 // the ordering a slow CI runner produces can be reproduced on demand. Unset (the default) the mock answers at once.
 const MOCK_DELAY = Number(process.env.MOCK_DELAY_MS || 0);
@@ -132,6 +132,8 @@ function api(req, res, url) {
       all.push({ seq: all.length, role: "assistant", text: `Received ${r.ids.length} image(s) and: ${r.input}` });
     }
     ev("run.started", {});
+    // ONLY=phone-shots holds the reply open, so the composer shows Steer and Queue beside Send.
+    if (state.hold) return void ev("assistant.delta", { text: "Working on it" });
     ev("assistant.delta", { text: `Received ${r.ids.length} image(s) and: ${r.input}` });
     ev("run.completed", { status: "COMPLETED", output: `Received ${r.ids.length} image(s) and: ${r.input}` });
     return void res.end();
@@ -154,11 +156,16 @@ function api(req, res, url) {
     return void setTimeout(reply, state.delayMs);
   }
   // The rest of what the chat screen reads on load, with the real response shapes, so no failure notice distorts the layout.
-  if (url.pathname === "/api/capabilities") return send(200, { capabilities: state.models ? [{ id: "models", label: "Models", status: "available" }] : [], toolsets: [], providers: [], skills: [] });
+  if (url.pathname === "/api/capabilities") return send(200, { capabilities: [...(state.models ? [{ id: "models", label: "Models", status: "available" }] : []), ...(state.hold ? [{ id: "steer", label: "Steer", status: "available" }] : [])], toolsets: [], providers: [], skills: [] });
   // ONLY=shots shows the model picker with a long catalogue, as in production.
   if (state.models && url.pathname === "/api/models") {
     const model = (i) => ({ id: `model-${String(i).padStart(2, "0")}-${["flash", "pro", "mini", "vision"][i % 4]}`, available: true, hidden: false, reasoning: i % 3 === 0, reasoningEfforts: i % 3 === 0 ? ["low", "high"] : [], modalities: { input: i % 4 === 3 ? ["text", "image"] : ["text"], output: ["text"] }, contextWindow: 128000, price: null });
     return send(200, { source: "kenari", fetchedAt: "2026-10-28T08:00:00Z", stale: false, default: { provider: "custom", model: "model-00-flash" }, unsupported: {}, providers: [{ slug: "custom", name: "Kenari", available: true, models: Array.from({ length: 40 }, (_, i) => model(i)) }] });
+  }
+  // Settings → Usage with production-like figures: long chat titles and seven-digit token counts.
+  if (url.pathname === "/api/me/usage") {
+    const t = (runs, input, output) => ({ runs, unreported: 0, unpriced: runs, input, output, cacheRead: 0, estimate: null });
+    return send(200, { days: 7, since: "2026-10-23", currency: "IDR", priceDate: "2026-10-23", total: t(37, 1267791, 34914), byModel: [{ model: "minimax-m3-1-flash", ...t(37, 1267791, 34914) }], byChat: [{ chatId: PLAIN, title: "Kemampuan yang Bisa Dibantu", deleted: false, ...t(5, 340000, 6743) }, { chatId: RICH, title: "Saran Game untuk Weekend", deleted: false, ...t(1, 38000, 1047) }, { chatId: "", title: "", deleted: true, ...t(29, 830000, 21168), unreported: 9 }], byDay: Array.from({ length: 7 }, (_, i) => ({ day: `2026-10-${23 + i}`, ...t(i * 2, 40000 * i * i, 1000 * i) })) });
   }
   if (url.pathname === "/api/me/templates") return send(200, { templates: [] });
   if (/^\/api\/(me\/new-chat-draft|chats\/[0-9a-f]{32}\/draft)$/.test(url.pathname)) {
@@ -703,6 +710,43 @@ async function shots(browser) {
   }
 }
 
+// ONLY=phone-shots: review screenshots (no checks) at 390px, light and dark: the composer while a reply runs (Steer and
+// Queue), Settings → Usage, and the chat as iOS lays it out with the keyboard up (keyboard.ts, simulated by its markers).
+async function phoneShots(browser) {
+  state.hold = true;
+  try {
+    for (const scheme of ["light", "dark"]) {
+      const { ctx, page } = await openPage(browser, { viewport: { width: 390, height: 844 }, colorScheme: scheme, isMobile: true, hasTouch: true });
+      await page.goto(base + "/");
+      await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
+      await page.fill("#composer-input", "Plan a weekend");
+      await page.keyboard.press("Enter");
+      await page.waitForSelector(".composer [data-intent]");
+      await page.fill("#composer-input", "Make it cheaper");
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(outDir, `phone-${scheme}-running.png`) });
+      await page.evaluate(() => { document.documentElement.dataset.keyboard = "open"; document.documentElement.style.setProperty("--keyboard-h", "420px"); });
+      await page.waitForTimeout(300);
+      await page.screenshot({ path: path.join(outDir, `phone-${scheme}-keyboard.png`) });
+      await page.evaluate(() => { delete document.documentElement.dataset.keyboard; document.documentElement.style.removeProperty("--keyboard-h"); });
+      await page.getByRole("button", { name: "Menu" }).first().click();
+      await page.getByRole("button", { name: "Settings" }).click();
+      await page.getByRole("button", { name: "Usage", exact: true }).click();
+      await page.waitForSelector(".usage-table", { state: "attached" });
+      await page.waitForTimeout(400);
+      const overflow = await page.evaluate(() => { const b = document.querySelector(".settings-page"); return b.scrollWidth - b.clientWidth; });
+      console.log(`phone ${scheme} settings usage: sideways overflow ${overflow}px`);
+      await page.screenshot({ path: path.join(outDir, `phone-${scheme}-usage.png`), fullPage: false });
+      await page.locator(".settings-page").evaluate((el) => (el.scrollTop = el.scrollHeight));
+      await page.waitForTimeout(200);
+      await page.screenshot({ path: path.join(outDir, `phone-${scheme}-usage-end.png`) });
+      await ctx.close();
+    }
+  } finally {
+    state.hold = false;
+  }
+}
+
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
@@ -717,6 +761,7 @@ try {
   if (!only || only === "mobile-layout" || only === "mobile-budget") await mobileBudget(browser);
   if (!only || only === "mobile-layout") await adminPhone(browser);
   if (only === "shots") await shots(browser);
+  if (only === "phone-shots") await phoneShots(browser);
 } finally {
   await browser.close();
   server.close();
