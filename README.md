@@ -39,11 +39,45 @@ bounds — the PRD says so in §21.9 and §18.3, and the reasons are recorded th
 
 ## Status
 
-**Pre-implementation.** This repository holds the baseline specification only.
+**In production** for one trusted user, with signed-in accounts held pending until an admin approves
+them. Shipped: streaming chat with cancel, retry and rewind; per-user Hermes profiles created by a
+host-side provisioner; images, voice input, search, drafts and templates; generative UI (OpenUI)
+cards; a usage view; web push; an installable PWA; and nightly backups.
 
-- [`docs/PRD.md`](docs/PRD.md) — the complete Product Requirements Document (v2.4). Source of truth
-  for scope, security constraints and acceptance criteria.
-- Work is tracked as issues; delivery order follows the PRD's §16 phases.
+The PRD ([`docs/PRD.md`](docs/PRD.md), v2.4) is the baseline. Work is tracked as issues on the
+project board, and later features follow the owner's requests.
+
+## Repository layout
+
+| Path | What it holds |
+|---|---|
+| `cmd/antares` | the service: API, embedded web bundle, SQLite, `backup` / `restore` / `check` subcommands |
+| `cmd/antares-smoke` | the production smoke test |
+| `internal/` | auth, chat, store, tenant binding, Hermes client, push, quota, observability |
+| `web/` | the React + Vite front end; its build is committed to `internal/webui/dist` |
+| `tools/hermes-provisioner` | the host helper that creates and deletes Hermes profiles |
+| `deploy/` | compose file, systemd units and backup script |
+| `docs/runbooks/` | how each part works and how to operate it |
+
+## Development
+
+```sh
+make test                                   # go build, vet and race tests
+make threat                                 # cross-user threat suite
+npm --prefix web ci && npm --prefix web test
+npm --prefix web run build                  # rebuild internal/webui/dist after any web change
+```
+
+CI requires these checks: go, web, security, mobile layout, sandbox probe and Hermes Review.
+Before you change anything, read [`AGENTS.md`](AGENTS.md).
+
+## Deploying
+
+Every push to `main` publishes `ghcr.io/raufimusaddiq/antares:<commit sha>`. To deploy, back up the
+database, pull that tag with `deploy/compose.yml`, then run the smoke test against production. The
+steps are in [`docs/runbooks/deployment.md`](docs/runbooks/deployment.md),
+[`docs/runbooks/backup-restore.md`](docs/runbooks/backup-restore.md) and
+[`docs/runbooks/smoke-test.md`](docs/runbooks/smoke-test.md).
 
 ## The hard gate
 
