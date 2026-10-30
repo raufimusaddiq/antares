@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
-import { cleanup, render, screen } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach } from "vitest";
 import { RunView } from "./Chat";
 import { MAX_TOOL_ROWS, describeFolded, describeTool, newRun, parseEvent, reduce, type LiveRun, type RunEvent } from "./runState";
@@ -94,19 +94,47 @@ describe("tool activity is truthful (#163)", () => {
 });
 
 describe("the activity group", () => {
-  it("shows Working, then Activity, then the answer, open while the reply runs", () => {
+  it("shows the running tool, then Activity, then the answer, open while the reply runs", () => {
     const s = play([started("a", "Web search")]);
     const { container } = render(<RunView run={s} onCancel={noop} onRetry={noop} onReconnect={noop} />);
-    expect(screen.getByText("Working…")).toBeTruthy();
+    expect(screen.getByRole("status").textContent).toBe("Using Web search…");
     const group = container.querySelector("details.activity") as HTMLDetailsElement;
     expect(group.open).toBe(true);
     expect(group.querySelector("summary")!.textContent).toBe("Activity: 1 tool call");
     expect(screen.getByText(/Web search: running/)).toBeTruthy();
   });
 
-  it("says Thinking while the assistant reasons and nothing is written yet", () => {
-    render(<RunView run={play([ev("run.thinking")])} onCancel={noop} onRetry={noop} onReconnect={noop} />);
-    expect(screen.getByText("Thinking…")).toBeTruthy();
+  // The owner saw only "Working…" through long runs: the line now names the step the stream reported.
+  it.each([
+    ["nothing reported yet", [], "Working…"],
+    ["reasoning", [ev("run.thinking")], "Thinking…"],
+    ["a tool running, by its name", [started("a", "web_search")], "Using web search…"],
+    ["the newest of two running tools", [started("a", "web_search"), started("b", "web_extract")], "Using web extract…"],
+    ["between steps", [started("a", "web_search"), ended("a")], "Working…"],
+    ["writing the answer", [started("a"), ended("a"), ev("assistant.delta", { text: "Hi" })], "Writing…"],
+  ])("says what the reply is doing: %s", (_, events, says) => {
+    render(<RunView run={play(events as RunEvent[])} onCancel={noop} onRetry={noop} onReconnect={noop} />);
+    expect(screen.getByRole("status").textContent).toBe(says);
+  });
+
+  it("shows how long the current step has run, from 5 s, restarting when the step changes; none once the reply ends", () => {
+    vi.useFakeTimers();
+    try {
+      const view = (r: LiveRun) => <RunView run={r} onCancel={noop} onRetry={noop} onReconnect={noop} />;
+      const searching = play([started("a", "web_search")]);
+      const { container, rerender } = render(view(searching));
+      const clock = () => container.querySelector(".run-status .elapsed")?.textContent ?? null;
+      act(() => vi.advanceTimersByTime(4000));
+      expect(clock()).toBeNull();
+      act(() => vi.advanceTimersByTime(61_000));
+      expect(clock()).toBe("1:05");
+      rerender(view(play([ended("a")], searching)));
+      expect(clock()).toBeNull();
+      rerender(view(play([ended("a"), ev("run.completed", { status: "COMPLETED", output: "x" })], searching)));
+      expect(container.querySelector(".run-status")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("folds after the reply ends and opens again on request, with failures counted", () => {
