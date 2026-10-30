@@ -8,7 +8,7 @@ import { ALLOWED_ACTIONS, followUpText, runAction, safeUrl } from "./actions";
 import RichBlock from "./Block";
 import { ReplyContext } from "./reply";
 import { MAX_BLOCK_CHARS, splitSegments } from "./segments";
-import { attachSources, check, MAX_ARRAY } from "./validate";
+import { attachSources, check, MAX_ARRAY, repair } from "./validate";
 
 beforeAll(() => {
   // jsdom has no layout observers; the charts and carousels ask for them.
@@ -32,9 +32,8 @@ describe("the gate over the chat library", () => {
     }
     expect(verdicts.filter((v) => v.ok).length).toBeGreaterThanOrEqual(2);
   });
-  it("refuses what is not a complete, plain program of the library", () => {
+  it("refuses what is not a plain program of the library", () => {
     expect(check('root = Card([Bogus("x")])').ok).toBe(false);
-    expect(check('root = Card([TextContent("x")').ok).toBe(false); // incomplete
     expect(check('root = TextContent("x")').ok).toBe(false); // not the library's root
     expect(check('$n = 0\nroot = Card([TextContent("x")])').ok).toBe(false); // state
     expect(check(`root = Card([TextContent("${"a".repeat(20_001)}")])`).ok).toBe(false);
@@ -99,19 +98,50 @@ describe("rendering", () => {
     expect(add).toHaveBeenCalledWith("Order 2 coffees");
     expect(screen.getByRole("status").textContent).toBe("Added to your message. Nothing was sent.");
   });
-  it("a finished program with an unused statement is shown as source, not with that part silently dropped", () => {
-    const source = 'root = Card([TextContent("kept")])\nlost = TextContent("this part is not referenced")';
-    expect(check(source)).toEqual({ ok: false, reason: "unused statement" });
-    render(<RichBlock source={source} />);
-    expect(document.body.textContent).toContain("this part is not referenced");
-    expect(document.querySelector(".ou-block")).toBeNull();
+  // The shapes of real replies that were shown as source (#231), with made-up text: a part listed under another name,
+  // in order (the ids inside strings are not references and stay as written); a part no parent lists; references to
+  // parts never written beside parts nothing lists; a reply cut off. Each renders what it has, and says what it did.
+  it.each([
+    ["a misnamed part", 'root = Card([intro, z5t])\nintro = TextContent("intro")\ns5t = TextContent("fifth step")', ["intro", "fifth step"], "reconnected"],
+    [
+      "misnamed parts, in order",
+      'root = Card([live])\nlive = SectionBlock([v1, v2])\nf1 = SectionItem("v1", "One", [e1])\ne1 = TextContent("first")\nf2 = SectionItem("v2", "Two", [e2])\ne2 = TextContent("second")',
+      ["One", "Two"],
+      "reconnected",
+    ],
+    ["a part no parent lists", 'root = Card([TextContent("kept")])\nlost = TextContent("not referenced")', ["kept", "not referenced"], "reconnected"],
+    [
+      "parts never written beside parts nothing lists",
+      'root = Card([intro, detail])\nintro = TextContent("intro")\ndetail = SectionBlock([d1, d2])\nt1 = TextContent("alpha")\nt2 = TextContent("beta")\nt3 = TextContent("gamma")',
+      ["intro", "alpha", "beta", "gamma"],
+      "never written",
+    ],
+    ["a reply cut off", 'root = Card([a, b])\na = TextContent("first")\nb = TextContent("cut of', ["first", "cut of"], "cut off"],
+  ])("%s: rendered, with a note that holds the source", (_, source, shown, says) => {
+    const { container } = render(<RichBlock source={source} />);
+    const block = container.querySelector(".ou-block")!;
+    const card = block.cloneNode(true) as Element;
+    card.querySelector(".ou-note")?.remove();
+    for (const text of shown) expect(card.textContent).toContain(text);
+    const note = block.querySelector(".ou-note")!;
+    expect(note.querySelector("summary")!.textContent).toContain(says);
+    expect(note.querySelector("code")!.textContent).toBe(source);
+  });
+  it("a repaired or cut-off program passes the same safety checks", () => {
+    expect(check('root = Card([a, b])\na = TextContent("[x](javascript:alert(1))")\nb = TextContent("cut').ok).toBe(false);
+    const { program } = repair('root = Card([TextContent("a")])\nlost = TextContent("[x](javascript:alert(1))")');
+    expect(check(program).ok).toBe(false);
+  });
+  it("a rename touches references only, never text", () => {
+    const { program } = repair('root = Card([v1])\nf1 = SectionItem("v1", "v1 is a name", [TextContent("v1")])');
+    expect(program).toBe('root = Card([f1])\nf1 = SectionItem("v1", "v1 is a name", [TextContent("v1")])');
   });
   it("checks a streaming program before rendering it: unsafe or oversized partial output is never rendered", () => {
     const fetchSpy = vi.fn();
     vi.stubGlobal("fetch", fetchSpy);
     const partial = "root = Card([TextContent(\"Hi\"), t])\nt = TextContent(\"unfinished";
     expect(check(partial, true)).toEqual({ ok: true });
-    expect(check(partial).ok).toBe(false);
+    expect(check(partial)).toEqual({ ok: true, degraded: "the reply was cut off" });
     const unsafe = [
       'root = Card([TextContent("x")])\n$n = 1\nmore = TextContent("y',
       'root = Card([TextContent("x"), q])\nq = Query("tool", {})\nmore = TextContent("y',

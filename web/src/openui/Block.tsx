@@ -7,7 +7,7 @@ import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib";
 import { runAction, type Sinks } from "./actions";
 import { ReplyContext } from "./reply";
 import { SourceFallback } from "./Fallback";
-import { attachSources, check } from "./validate";
+import { check, repair } from "./validate";
 
 // The only module that imports the OpenUI runtime and its component library (native OpenUI: the
 // openuiChatLibrary of @openuidev/react-ui). It is loaded on demand (MessageBody.tsx), so a chat with no
@@ -43,10 +43,11 @@ export default function RichBlock({ source, streaming = false }: { source: strin
   const sinks: Sinks = { reply: toComposer, open: openConfirmed };
   // Every update is checked before it is rendered: a partial program against the gate's safety rules and limits,
   // the finished one against all of it. A failure is shown as source.
-  // A finished program first has a stray sources statement attached to its Card (validate.ts).
-  const program = useMemo(() => (streaming ? source : attachSources(source)), [source, streaming]);
+  // A finished program is first repaired: stray sources attached to its Card, misnamed parts re-linked (validate.ts).
+  const { program, repaired } = useMemo(() => (streaming ? { program: source, repaired: false } : repair(source)), [source, streaming]);
   const verdict = useMemo(() => check(program, streaming), [program, streaming]);
   if (!verdict.ok) return <SourceFallback source={source} why={verdict.reason} />;
+  const note = verdict.degraded ? `Part of this reply could not be shown: ${verdict.degraded}.` : repaired ? "Parts of this reply were misnamed and have been reconnected." : "";
   return (
     <Boundary source={source}>
       <div className="ou-block openui-root">
@@ -55,6 +56,14 @@ export default function RichBlock({ source, streaming = false }: { source: strin
         <Renderer.Root response={program} library={openuiChatLibrary} isStreaming={streaming} onAction={(e) => runAction(e?.type, e, sinks)}>
           <Renderer.Content />
         </Renderer.Root>
+        {note && (
+          <details className="ou-note">
+            <summary>{note}</summary>
+            <pre className="plain">
+              <code>{source}</code>
+            </pre>
+          </details>
+        )}
         {added && (
           <p className="label" role="status">
             Added to your message. Nothing was sent.

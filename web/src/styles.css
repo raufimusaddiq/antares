@@ -436,6 +436,9 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 /* ---- generative UI blocks (OpenUI): the one hero-card language ---------------- */
 .ou-block, .ou-fallback { max-width: 100%; }
+.ou-note { margin: 0.5rem 0 0; font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2); }
+.ou-note summary { cursor: pointer; }
+.ou-note pre { max-height: 20rem; overflow: auto; }
 .ou-stack { display: flex; flex-direction: column; gap: 0.5rem; }
 .ou-card { padding: 0.8rem 1rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: 5px 5px 0 var(--ink); }
 .ou-card > .ou-heading { margin-top: 0; }

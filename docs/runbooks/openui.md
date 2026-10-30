@@ -15,13 +15,21 @@ Antares-specific component set to keep in step with the prompt.
 - **Lazy runtime**: renderer, library, its CSS and the lucide icons are on-demand chunks (`Block-*.js` ~1.9 MB,
   `Block-*.css` ~370 kB, one small chunk per icon). A chat with no rich content never fetches them;
   `TestOpenUIChunksAreNotInTheInitialBundle` (`internal/webui`) fails if the shell preloads or contains `Block`.
-- **Strict gate** (`validate.ts`): the parser is permissive, so a block is rendered only if it parses with zero errors,
-  is complete, has a `Card` root, uses only components of `openuiChatLibrary`, has no `Query`/`Mutation`/`$state`, no
-  unresolved or orphan statements, ≤ 600 nodes, depth ≤ 12, ≤ 300 statements, ≤ 200 items per array and ≤ 20,000
+- **Strict gate** (`validate.ts`): the parser is permissive, so a block is rendered only if it parses with no error
+  other than a mistyped or extra argument, has a `Card` root, uses only components of `openuiChatLibrary`, has no
+  `Query`/`Mutation`/`$state`, ≤ 600 nodes, depth ≤ 12, ≤ 300 statements, ≤ 200 items per array and ≤ 20,000
   characters per string. Otherwise the block is shown as its **source, as text**, with a one-line reason.
+- **Repair, then render what is whole** (#231): in the owner's own replies, 6 of 15 were shown as source for a model
+  slip, not a safety problem: a part listed under another name (`s5t` defined, `z5t` listed), parts listed but never
+  written, or a reply cut off (truncated, leaked tool-call markup, a repetition loop). `repair` first renames such
+  references to the unused statements, in order, when their counts match, and appends any statement still unused to
+  the root Card; a step is kept only if it leaves fewer problems and no new parse error. Whatever is still cut off or
+  missing renders without those parts. Either way a note under the card says what happened ("reconnected", "never
+  written", "cut off") and holds the source. The safety checks above are the same for a repaired or partial block. The
+  prompt also asks the model to check its names before finishing (`ANTARES_RULES`).
 - **Streaming**: while the reply streams, the block renders progressively (`isStreaming`), but every update is checked
-  first (`check(source, true)`): root, unknown components, no query/mutation/state and every size limit. Only
-  completeness, parse errors and dangling references wait for the end. A partial program that fails is shown as source
+  first (`check(source, true)`): root, unknown components, no query/mutation/state and every size limit. Parse
+  errors, completeness and dangling references wait for the end. A partial program that fails is shown as source
   at once (those failures cannot be fixed by more text). A reply that ends with a fenced block still open shows the source.
 - **No images, absolute links only**: a component with an image address would make the browser fetch it with the
   reader's cookies (the CSP allows same-origin images), so the gate refuses any non-empty image field (`src`,
