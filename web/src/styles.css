@@ -658,6 +658,8 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 /* Pending approvals and questions from the assistant (RunPrompts). */
 /* Tool activity (issue #163): one group per reply, folded once the reply ends. */
 .activity { margin: 0.25rem 0 0.5rem; }
+.run-status { display: flex; gap: 0.5rem; align-items: baseline; }
+.run-status .elapsed { font-variant-numeric: tabular-nums; }
 .activity summary { cursor: pointer; }
 .activity li { overflow-wrap: anywhere; }
 .run-prompts { display: grid; gap: 0.75rem; margin: 0.75rem 0; }

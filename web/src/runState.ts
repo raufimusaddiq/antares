@@ -208,6 +208,15 @@ export function describeTool(t: Tool, phase: Phase): string {
   return "running";
 }
 
+/** What a live reply is doing now, in a few words: the newest tool still running, reasoning, writing, or working (before
+ * anything is reported, and between steps). Only what the stream reported. */
+export function runStatus(run: LiveRun): string {
+  const tool = [...run.tools].reverse().find((t) => t.state === "running");
+  if (tool) return `Using ${tool.label.replace(/_/g, " ").trim() || "a tool"}…`;
+  if (run.thinking) return "Thinking…";
+  return run.text === "" ? "Working…" : "Writing…";
+}
+
 /** The one line a run shows when it did not complete. Empty while streaming or completed. */
 export function runNotice(r: LiveRun): string {
   switch (r.phase) {

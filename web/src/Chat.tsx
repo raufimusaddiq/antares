@@ -53,7 +53,8 @@ import { describeImageReason, describeImageSend, getImageInput, imageFilesFrom, 
 import { splitMedia } from "./mediaTags";
 import { planRetry } from "./retry";
 import { VirtualList } from "./VirtualList";
-import { EVENT_NAMES, describeFolded, describeTool, isTerminal, newRun, parseEvent, reduce, runNotice, type LiveRun, type RunEvent } from "./runState";
+import { EVENT_NAMES, describeFolded, describeTool, isTerminal, newRun, parseEvent, reduce, runNotice, runStatus, type LiveRun, type RunEvent } from "./runState";
+import { RunStatus } from "./RunStatus";
 import { AntaresMark } from "./brand/AntaresMark";
 import { Recorder } from "./Recorder";
 import { watchKeyboard } from "./keyboard";
@@ -105,7 +106,6 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
   return (
     <article className={`turn assistant run-${run.phase}`} aria-label="Assistant reply">
       <h2 className="who">Assistant</h2>
-      {live && run.text === "" && <p className="label">{run.thinking ? "Thinking…" : "Working…"}</p>}
       <Activity run={run} live={live} />
       {run.text !== "" && (
         <div className={run.phase === "completed" ? "" : "partial"}>
@@ -113,6 +113,8 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
           <AssistantBody text={run.text} streaming={live} media={false} />
         </div>
       )}
+      {/* Under the newest content, where a reader following the reply is looking. */}
+      {live && <RunStatus text={runStatus(run)} />}
       {notice && (
         <p className="notice" role={run.phase === "reconnecting" ? "status" : "alert"}>
           {notice}
