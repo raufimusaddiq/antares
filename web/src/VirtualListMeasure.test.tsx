@@ -52,6 +52,17 @@ describe("a scroll that mounts nothing new (#170)", () => {
     scroll(container.querySelector(".log")!, 10);
     expect(virtual.layout.mock.calls.length).toBe(built);
   });
+
+  it("renders no item again (a chat of rich cards stuttered)", () => {
+    rect();
+    const draw = vi.fn((x: string) => <p>{x}</p>);
+    const { container } = render(
+      <VirtualList items={items} itemKey={(x) => x} render={draw} label="Conversation" hasMore={false} loadingMore={false} topNote="" onLoadMore={() => {}} />,
+    );
+    draw.mockClear();
+    scroll(container.querySelector(".log")!, 10);
+    expect(draw).not.toHaveBeenCalled();
+  });
 });
 
 describe("a width change (#170 review)", () => {
