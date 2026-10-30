@@ -1,4 +1,4 @@
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { anchorAt, atBottom, layout, scrollTopFor, visibleRange, type Layout } from "./virtual";
 
 // A windowed, variable-height list for the conversation (PRD PERF-001 items 1-2).
@@ -37,6 +37,12 @@ interface Props<T> {
   /** Changes each time the same result is opened again, so it scrolls back even if the key is unchanged. */
   focusNonce?: number;
 }
+
+// One mounted item. Memoised so a scroll frame, which re-renders the list for its window, does not re-render (and
+// re-parse) every turn on screen: only an item whose content, position or renderer changed renders again.
+const Row = memo(function Row<T>({ item, index, render }: { item: T; index: number; render: (item: T, index: number) => ReactNode }) {
+  return <>{render(item, index)}</>;
+}) as <T>(p: { item: T; index: number; render: (item: T, index: number) => ReactNode }) => ReactNode;
 
 export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore, loadingMore, topNote, onLoadMore, focusKey, focusNonce = 0 }: Props<T>) {
   const scroller = useRef<HTMLDivElement | null>(null);
@@ -191,7 +197,7 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
         <div style={{ height: lay.offsets[start] }} aria-hidden="true" />
         {items.slice(start, end).map((item, i) => (
           <div key={keys[start + i]} data-vkey={keys[start + i]} className="vitem" aria-posinset={start + i + 1} aria-setsize={keys.length}>
-            {render(item, start + i)}
+            <Row item={item} index={start + i} render={render} />
           </div>
         ))}
         <div style={{ height: total - lay.offsets[end] }} aria-hidden="true" />
