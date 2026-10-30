@@ -334,8 +334,8 @@ func TestForeignAndUnauthenticatedCannotAnswerAnotherUsersPrompt(t *testing.T) {
 		}
 	}
 	// B answering with B's own run id and A's prompt id is just as foreign.
-	run2 := bob.send(bob.newChat(), "bob work")
-	a.hx.runWithInput(t, "bob work")
+	// Started (its stream open, so the run holds its Hermes id): an unstarted run answers 409 for any prompt id.
+	run2, _, _ := promptRun(t, a, bob, "bob work")
 	if w := bob.do("POST", "/api/runs/"+run2+"/approve", nil, map[string]string{"promptId": apr, "choice": "once"}); w.Code != 404 {
 		t.Errorf("cross-run prompt id: %d %s", w.Code, w.Body.String())
 	}
