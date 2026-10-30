@@ -8,8 +8,10 @@ import { outsideUrl } from "./actions";
 
 // Gate in front of the renderer for a finished reply (PRD §7.4), over OpenUI's own chat library. The parser
 // checks every component and argument against the library's schema; on top of that a block is rendered only if
-// it parses with no error, is complete, has the library's root, holds no query, mutation or state (no tools are
-// wired to it), and stays within the size limits below. Anything else is shown as its source (Block.tsx).
+// it parses with no error, has the library's root, holds no query, mutation or state (no tools are wired to it), and
+// stays within the size limits below. Anything else is shown as its source (Block.tsx). A finished program that is
+// only structurally short (cut off, a reference to a part never written, a part nothing uses) is still rendered, with
+// a note (`degraded`): the safety checks above are the same, and the whole answer as source hid every part that was fine.
 // While the reply streams the program is partial, so completeness, parse errors and dangling references wait for
 // the end; everything else (root, no query/mutation/state, known components, every limit) is checked on each update
 // before anything is rendered. Those failures only grow with more text, so a partial program that fails one is
@@ -66,7 +68,7 @@ function markdownProblem(text: string, partial: boolean): string | null {
 /** Parser errors about one argument's shape, which OpenUI handles by leaving that value out. */
 const TOLERATED = new Set(["type-mismatch", "excess-args"]);
 
-export type Verdict = { ok: true } | { ok: false; reason: string };
+export type Verdict = { ok: true; degraded?: string } | { ok: false; reason: string };
 
 let parser: ReturnType<typeof createParser> | undefined;
 
@@ -112,6 +114,94 @@ export function attachSources(source: string): string {
   return fixed;
 }
 
+// A model sometimes names a statement one thing and refers to it by another (`s5t = …` listed as `z5t`), or writes a
+// statement no parent lists. repair re-links them: when the references that resolve to nothing and the outermost unused
+// statements are equal in number, each reference is renamed to the statement in the same order; statements still
+// unused are appended to the root Card (`repaired`, which Block.tsx tells the reader). A step is kept only if it leaves fewer such problems and no new parse error.
+// A cut-off program is left alone: its missing parts were never written.
+export function repair(source: string): { program: string; repaired: boolean } {
+  const attached = attachSources(source); // not a repair the reader needs told about: nothing is moved or renamed
+  let program = attached;
+  parser ??= createParser(openuiChatLibrary.toJSONSchema(), openuiChatLibrary.root);
+  const p = parser;
+  const read = (src: string) => {
+    try {
+      const m = p.parse(src).meta;
+      return { m, n: m.unresolved.length + m.orphaned.length };
+    } catch {
+      return null;
+    }
+  };
+  let best = read(program);
+  if (!best || best.n === 0 || best.m.incomplete) return { program, repaired: false };
+  const step = (next: string | null) => {
+    const r = next === null ? null : read(next);
+    if (r && best && r.n < best.n && r.m.errors.length <= best.m.errors.length) [best, program] = [r, next!];
+  };
+  const dangling = [...best.m.unresolved].sort((a, b) => firstUse(program, a) - firstUse(program, b));
+  const loose = outermost(program, best.m.orphaned);
+  if (dangling.length > 0 && dangling.length === loose.length) step(rename(program, new Map(dangling.map((d, i) => [d, loose[i]]))));
+  const left = outermost(program, best.m.orphaned);
+  if (left.length > 0) step(appendToRoot(program, left));
+  return { program, repaired: program !== attached };
+}
+
+const LITERAL = /"(?:[^"\\\n]|\\.)*"/g;
+/** The program with every string literal emptied, so a name inside text is never taken for a reference. */
+const code = (src: string) => src.replace(LITERAL, '""');
+const firstUse = (src: string, name: string) => code(src).search(new RegExp(`\\b${name}\\b`));
+
+/** The text of statement `name`, up to the next statement. */
+function statement(src: string, name: string): { at: number; text: string } {
+  const m = new RegExp(`^${name}\\s*=`, "m").exec(src);
+  if (!m) return { at: -1, text: "" };
+  const rest = src.slice(m.index + m[0].length);
+  const next = rest.search(STATEMENT);
+  return { at: m.index, text: next < 0 ? rest : rest.slice(0, next) };
+}
+
+/** The unused statements no other unused statement refers to, in the order they were written. */
+function outermost(src: string, orphaned: readonly string[]): string[] {
+  const bodies = orphaned.map((n) => code(statement(src, n).text));
+  return orphaned
+    .filter((n) => !bodies.some((b) => new RegExp(`\\b${n}\\b`).test(b)))
+    .sort((a, b) => statement(src, a).at - statement(src, b).at);
+}
+
+/** Renames references outside string literals. */
+function rename(src: string, names: Map<string, string>): string {
+  const ref = new RegExp(`\\b(${[...names.keys()].join("|")})\\b`, "g");
+  let out = "";
+  let last = 0;
+  for (const m of src.matchAll(LITERAL)) {
+    out += src.slice(last, m.index).replace(ref, (n) => names.get(n)!) + m[0];
+    last = m.index + m[0].length;
+  }
+  return out + src.slice(last).replace(ref, (n) => names.get(n)!);
+}
+
+/** Adds names to the end of the root Card's children, or null if the root is not `Card([...]`. */
+function appendToRoot(src: string, names: string[]): string | null {
+  const open = /^root\s*=\s*Card\(\s*\[/m.exec(src);
+  if (!open) return null;
+  let depth = 1;
+  for (let i = open.index + open[0].length; i < src.length; i++) {
+    const c = src[i];
+    if (c === '"') {
+      LITERAL.lastIndex = i;
+      const lit = LITERAL.exec(src);
+      if (!lit || lit.index !== i) return null;
+      i += lit[0].length - 1;
+    } else if (c === "[") depth++;
+    else if (c === "]" && --depth === 0) {
+      const before = src.slice(0, i).trimEnd();
+      const sep = before.endsWith("[") || before.endsWith(",") ? " " : ", ";
+      return before + sep + names.join(", ") + src.slice(i);
+    }
+  }
+  return null;
+}
+
 export function check(source: string, partial = false): Verdict {
   // Antares' own first component set (v1, before native OpenUI) had a Stack root, which this library lacks (the
   // parser drops it); such a block is shown as source, labelled as such.
@@ -124,6 +214,7 @@ export function check(source: string, partial = false): Verdict {
     return { ok: false, reason: "parse error" };
   }
   const m = r.meta;
+  let degraded: string | undefined;
   if (!r.root) return partial ? { ok: true } : { ok: false, reason: "no root" };
   if (r.root.typeName !== openuiChatLibrary.root) return { ok: false, reason: `root must be ${openuiChatLibrary.root}` };
   if (r.rootExpression) return { ok: false, reason: "computed root" };
@@ -131,15 +222,15 @@ export function check(source: string, partial = false): Verdict {
   const unknown = m.errors.find((e) => e.code === "unknown-component");
   if (unknown) return { ok: false, reason: "invalid: unknown-component" };
   if (!partial) {
-    if (m.incomplete) return { ok: false, reason: "incomplete" };
     // An argument of the wrong type, or one too many, is dropped by OpenUI and the rest renders; showing the whole
-    // answer as source for that hid good content (a model's SectionItem with one mistyped field). Anything structural
-    // (unknown component or function, no root, a dangling reference) still falls back to source.
+    // answer as source for that hid good content (a model's SectionItem with one mistyped field). Any other parse error
+    // (an unknown function, no root) still falls back to source.
     const fatal = m.errors.find((e) => !TOLERATED.has(e.code));
     if (fatal) return { ok: false, reason: `invalid: ${fatal.code}` };
-    if (m.unresolved.length > 0) return { ok: false, reason: "dangling reference" };
-    // An unreferenced statement would be dropped silently, losing part of the answer: show the source instead.
-    if (m.orphaned.length > 0) return { ok: false, reason: "unused statement" };
+    // What the renderer leaves out here is named in the note, and the source is one click away (Block.tsx).
+    if (m.incomplete) degraded = "the reply was cut off";
+    else if (m.unresolved.length > 0) degraded = "it refers to a part that was never written";
+    else if (m.orphaned.length > 0) degraded = "a part was not placed in the card";
   }
   if (m.statementCount > MAX_STATEMENTS) return { ok: false, reason: "too many statements" };
   if (r.queryStatements.length > 0 || r.mutationStatements.length > 0) return { ok: false, reason: "queries and mutations are not allowed" };
@@ -183,5 +274,6 @@ export function check(source: string, partial = false): Verdict {
     return null;
   };
   const bad = visit(r.root, 1);
-  return bad ? { ok: false, reason: bad } : { ok: true };
+  if (bad) return { ok: false, reason: bad };
+  return degraded ? { ok: true, degraded } : { ok: true };
 }
