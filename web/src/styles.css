@@ -18,25 +18,25 @@
   --font-display: var(--font-ui);
   --font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
 
-  /* Paper: a tinted canvas, white cards, a rail one step deeper. */
-  --canvas: #f0f2f7;
-  --rail: #e4e8fa;
+  /* Neo-brutalist paper: a warm off-white canvas, white cards, near-black ink, every edge drawn. */
+  --canvas: #f4f1e8;
+  --rail: #e9e4d4;
   --card: #ffffff;
-  --ink: #11142b;
-  --ink-2: #4b5070;
-  --hair: #c9cee6;
-  /* One action colour, one highlighter colour, three pastels that mean something. */
-  --cobalt: #2b50ff;
+  --ink: #0b0b0b;
+  --ink-2: #4f4a40;
+  --hair: #8f8878;
+  /* One action colour (cobalt), one highlighter (hot pink), three flat colour blocks that mean something. */
+  --cobalt: #2d4bff;
   --cobalt-ink: #ffffff;
-  --mark: #ffc93c;
-  --mark-ink: #11142b;
-  --peri: #c9d3ff;
-  --mint: #c6f0dc;
-  --blush: #ffd0dd;
-  --code: #11142b;
-  --code-ink: #e9ecff;
-  --focus: #11142b;
-  --focus-halo: #ffc93c;
+  --mark: #ff6fae;
+  --mark-ink: #0b0b0b;
+  --peri: #b3c1ff;
+  --mint: #8ef0c0;
+  --blush: #ffb199;
+  --code: #0b0b0b;
+  --code-ink: #f4f1e8;
+  --focus: #0b0b0b;
+  --focus-halo: #ff6fae;
   /* The highlighter stroke behind a key word; the dark theme tints it so light text stays readable on it. */
   --marker: linear-gradient(transparent 44%, var(--mark) 44% 94%, transparent 94%);
   --marker-thin: linear-gradient(transparent 66%, var(--mark) 66% 94%, transparent 94%);
@@ -45,31 +45,33 @@
   --search-glyph: url("/icons/search-ink.svg");
   --tag-glyph: url("/icons/mark-light.svg");
 
-  --r-sm: 8px;
-  --r-md: 14px;
-  --r-lg: 20px;
-  --r-pill: 999px;
-  --hard: 4px 4px 0 var(--ink);
-  --hard-sm: 2px 2px 0 var(--ink);
+  /* Square corners: a whisper of rounding so edges stay crisp, never a pill. */
+  --r-sm: 2px;
+  --r-md: 4px;
+  --r-lg: 6px;
+  --r-pill: 4px;
+  --line: 3px;
+  --hard: 6px 6px 0 var(--ink);
+  --hard-sm: 3px 3px 0 var(--ink);
 }
 
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme="light"]) {
-    --canvas: #0d1024;
-    --rail: #11153a;
-    --card: #171b3f;
-    --ink: #eef0ff;
-    --ink-2: #a4aad0;
-    --hair: #2a3070;
-    --cobalt: #7c93ff;
-    --cobalt-ink: #0d1024;
-    --mark-ink: #0d1024;
-    --peri: #2a3270;
-    --mint: #14403a;
-    --blush: #4b1f36;
-    --code: #080a1a;
-    --code-ink: #e9ecff;
-    --focus: #eef0ff;
+    --canvas: #111111;
+    --rail: #181818;
+    --card: #1e1e1e;
+    --ink: #f4f1e8;
+    --ink-2: #b5ae9f;
+    --hair: #5a564d;
+    --cobalt: #7d92ff;
+    --cobalt-ink: #0b0b0b;
+    --mark-ink: #0b0b0b;
+    --peri: #2c3a8c;
+    --mint: #135c43;
+    --blush: #7a2a3e;
+    --code: #050505;
+    --code-ink: #f4f1e8;
+    --focus: #f4f1e8;
     --marker: linear-gradient(transparent 40%, color-mix(in srgb, var(--mark) 42%, transparent) 40% 94%, transparent 94%);
     --marker-thin: linear-gradient(transparent 66%, color-mix(in srgb, var(--mark) 60%, transparent) 66% 94%, transparent 94%);
     --marker-ink: var(--ink);
@@ -80,21 +82,21 @@
 }
 /* An explicit choice wins over the OS (#113): dark here, and light by the :not() above. */
 :root[data-theme="dark"] {
-    --canvas: #0d1024;
-    --rail: #11153a;
-    --card: #171b3f;
-    --ink: #eef0ff;
-    --ink-2: #a4aad0;
-    --hair: #2a3070;
-    --cobalt: #7c93ff;
-    --cobalt-ink: #0d1024;
-    --mark-ink: #0d1024;
-    --peri: #2a3270;
-    --mint: #14403a;
-    --blush: #4b1f36;
-    --code: #080a1a;
-    --code-ink: #e9ecff;
-    --focus: #eef0ff;
+    --canvas: #111111;
+    --rail: #181818;
+    --card: #1e1e1e;
+    --ink: #f4f1e8;
+    --ink-2: #b5ae9f;
+    --hair: #5a564d;
+    --cobalt: #7d92ff;
+    --cobalt-ink: #0b0b0b;
+    --mark-ink: #0b0b0b;
+    --peri: #2c3a8c;
+    --mint: #135c43;
+    --blush: #7a2a3e;
+    --code: #050505;
+    --code-ink: #f4f1e8;
+    --focus: #f4f1e8;
     --marker: linear-gradient(transparent 40%, color-mix(in srgb, var(--mark) 42%, transparent) 40% 94%, transparent 94%);
     --marker-thin: linear-gradient(transparent 66%, color-mix(in srgb, var(--mark) 60%, transparent) 66% 94%, transparent 94%);
     --marker-ink: var(--ink);
@@ -185,7 +187,7 @@ a.btn, button:where(:not(.openui-root *)) {
   padding: 0.45rem 1.15rem;
   white-space: nowrap;
   font: inherit;
-  font-weight: 600;
+  font-weight: 700;
   color: var(--ink);
   background: var(--card);
   border: 2px solid var(--ink);
@@ -193,7 +195,7 @@ a.btn, button:where(:not(.openui-root *)) {
   text-decoration: none;
   cursor: pointer;
 }
-a.btn:hover, button:where(:not(.openui-root *)):hover:not(:disabled) { background: color-mix(in srgb, var(--mark) 55%, var(--card)); color: var(--mark-ink); }
+a.btn:hover, button:where(:not(.openui-root *)):hover:not(:disabled) { background: var(--mark); color: var(--mark-ink); }
 a.btn:active, button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(1px, 1px); }
 /* Element rules below are :where(:not(.openui-root *)): zero extra specificity, and they leave OpenUI's own controls
    (rich blocks) to OpenUI's stylesheet. Without it an OpenUI accordion trigger became an Antares pill button. */
@@ -215,7 +217,7 @@ body:not(.chat):not(.admin) { display: grid; align-items: center; background-col
 .screen { width: min(34rem, 100% - 2rem); margin: 2rem 1rem 2rem clamp(1rem, 9vw, 8rem); padding: 0; }
 .screen p { color: var(--ink-2); margin: 0 0 1rem; max-width: 32rem; }
 .screen h1 { color: var(--ink); }
-.screen dl { position: relative; margin: 1.75rem 0; padding: 1.4rem 1.4rem 1rem; background-color: var(--peri); background-image: var(--dots); border: 2px solid var(--ink); border-radius: 22px; box-shadow: 5px 5px 0 var(--ink); }
+.screen dl { position: relative; margin: 1.75rem 0; padding: 1.4rem 1.4rem 1rem; background-color: var(--peri); background-image: var(--dots); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: var(--hard); }
 .screen dl::before { content: "Account"; position: absolute; left: 1rem; top: -0.9rem; padding: 0.15rem 0.8rem; background: var(--mark); color: var(--mark-ink); border: 2px solid var(--ink); border-radius: var(--r-pill); font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; transform: rotate(-3deg); box-shadow: var(--hard-sm); }
 dt:where(:not(.openui-root *)) { font-family: var(--font-mono); font-size: 0.75rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
 dd:where(:not(.openui-root *)) { margin: 0 0 0.6rem; color: var(--ink); overflow-wrap: anywhere; }
@@ -236,23 +238,23 @@ dd:where(:not(.openui-root *)):last-child { margin-bottom: 0; }
   padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
 }
 /* The rail's tinted, dotted backdrop is one decorative grid item behind brand, conversations and account. */
-.chat-app::before { content: ""; grid-area: 1 / 1 / -1 / 2; background-color: var(--rail); background-image: var(--dots); border-right: 1px solid var(--hair); }
+.chat-app::before { content: ""; grid-area: 1 / 1 / -1 / 2; background-color: var(--rail); background-image: var(--dots); border-right: var(--line) solid var(--ink); }
 .chat-app > .bar { display: contents; }
 .brand { grid-area: brand; position: relative; display: flex; align-items: center; gap: 0.6rem; padding: 1.1rem 1.25rem 0.6rem; font-size: 1.8rem; font-weight: 700; letter-spacing: -0.05em; }
-.brand svg { width: 2.15rem; height: 2.15rem; padding: 0.32rem; background: var(--mark); color: var(--mark-ink); border: 2px solid var(--ink); border-radius: 11px; box-shadow: var(--hard-sm); }
+.brand svg { width: 2.15rem; height: 2.15rem; padding: 0.32rem; background: var(--mark); color: var(--mark-ink); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
 .account { grid-area: account; position: relative; display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.6rem 0.6rem 0.75rem 1.25rem; }
 /* The shared plan quota (QuotaBar.tsx): a label, the share used, a bar and when it resets, per window. In the chat it
    sits above the account line on a wide screen and inside the menu on a phone; only one of the two is displayed. */
 .quota-meter { display: grid; gap: 0.55rem; min-width: 0; }
-.quota-meter.quota-side { flex: 1 0 100%; padding-bottom: 0.5rem; border-bottom: 1px solid var(--hair); }
+.quota-meter.quota-side { flex: 1 0 100%; padding-bottom: 0.6rem; border-bottom: 2px solid var(--ink); }
 .quota-meter.quota-menu { display: none; padding: 0.4rem 0.8rem 0.6rem; }
 .quota-meter.quota-admin { max-width: 44rem; margin: 0.5rem 0 1rem; padding: 0.9rem 1.1rem; border: 2px solid var(--ink); border-radius: var(--r-lg); background: var(--card); }
 .quota-title { margin: 0; font-family: var(--font-mono); font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); }
 .quota-row { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 0.15rem 0.6rem; }
 .quota-label { font-size: 0.85rem; font-weight: 700; }
 .quota-pct { justify-self: end; text-align: right; font-size: 0.8rem; color: var(--ink-2); font-variant-numeric: tabular-nums; }
-.quota-track { grid-column: 1 / -1; height: 0.55rem; overflow: hidden; border: 1.5px solid var(--ink); border-radius: var(--r-pill); background: var(--rail); }
-.quota-fill { height: 100%; background: var(--cobalt); border-radius: var(--r-pill); }
+.quota-track { grid-column: 1 / -1; height: 0.7rem; overflow: hidden; border: 2px solid var(--ink); border-radius: 0; background: var(--card); }
+.quota-fill { height: 100%; background: var(--cobalt); border-right: 2px solid var(--ink); }
 .quota-row.nearly .quota-fill { background: var(--mark); }
 .quota-row.nearly .quota-pct { color: var(--ink); font-weight: 700; }
 .quota-reset { grid-column: 1 / -1; font-size: 0.72rem; color: var(--ink-2); }
@@ -266,7 +268,7 @@ dd:where(:not(.openui-root *)):last-child { margin-bottom: 0; }
   display: flex; flex-direction: column; align-items: stretch; gap: 0.1rem;
   position: absolute; z-index: 6; left: 0.75rem; right: 0.75rem; bottom: calc(100% - 0.4rem);
   max-height: min(70dvh, 28rem); overflow: auto; padding: 0.4rem;
-  background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: var(--hard);
+  background: var(--card); border: var(--line) solid var(--ink); border-radius: var(--r-lg); box-shadow: var(--hard);
 }
 .bar-actions button { width: 100%; justify-content: flex-start; min-height: 2.5rem; padding: 0 0.8rem; font-weight: 500; border-color: transparent; background: transparent; border-radius: var(--r-md); }
 .bar-actions button:hover:not(:disabled) { border-color: var(--ink); }
@@ -277,7 +279,7 @@ dd:where(:not(.openui-root *)):last-child { margin-bottom: 0; }
 .side { grid-area: side; position: relative; overflow: auto; padding: 0.4rem 0.9rem; }
 .side ul { list-style: none; counter-reset: chat; margin: 0.5rem 0 0; padding: 0; }
 .side ul::before { content: "Chats"; display: block; margin: 0.9rem 0.25rem 0.4rem; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; }
-.side > button { width: 100%; justify-content: flex-start; min-height: 2.75rem; padding: 0 0.9rem; font-weight: 700; }
+.side > button { width: 100%; justify-content: flex-start; min-height: 2.75rem; padding: 0 0.9rem; font-weight: 700; background: var(--cobalt); color: var(--cobalt-ink); box-shadow: var(--hard-sm); }
 .side > button[data-icon]::before { width: 1.3rem; height: 1.3rem; margin-right: 0.6rem; }
 /* A conversation: a numbered tile (three pastels in turn) and a title; the open one is a filled pill. */
 .side button.item {
@@ -289,14 +291,14 @@ dd:where(:not(.openui-root *)):last-child { margin-bottom: 0; }
   content: counter(chat, decimal-leading-zero); position: absolute; left: 0.35rem; top: 50%; transform: translateY(-50%);
   display: grid; place-items: center; width: 2rem; height: 2rem; line-height: 1;
   font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; color: var(--mark-ink);
-  background: var(--card); border: 2px solid var(--ink); border-radius: 9px; box-shadow: var(--hard-sm);
+  background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-sm); box-shadow: var(--hard-sm);
 }
 .side li:nth-child(3n + 1) button.item::before { background: var(--mark); }
 .side li:nth-child(3n + 2) button.item::before { background: var(--peri); color: var(--ink); }
 .side li:nth-child(3n) button.item::before { background: var(--mint); color: var(--ink); }
 .side button.item:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
-.side button.item.current { background: var(--ink); color: var(--canvas); font-weight: 700; border-radius: var(--r-pill); }
-.side button.item.current::before { background: var(--mark); color: var(--mark-ink); border-color: var(--mark); box-shadow: none; }
+.side button.item.current { background: var(--ink); color: var(--canvas); font-weight: 700; border-radius: var(--r-md); box-shadow: var(--hard-sm); }
+.side button.item.current::before { background: var(--mark); color: var(--mark-ink); border-color: var(--canvas); box-shadow: none; }
 .side .label { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2); margin: 0.3rem 0; }
 
 /* Managing a conversation: a row is the open button and its actions button; the menu and the dialogs are fixed over the page,
@@ -318,13 +320,13 @@ dd:where(:not(.openui-root *)):last-child { margin-bottom: 0; }
 .row-menu [role="menuitem"][aria-disabled="true"]:hover { background: transparent; color: var(--ink-2); }
 .row-menu .label { margin: 0.2rem 0.4rem 0.3rem; }
 .scrim { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 1rem; background: color-mix(in srgb, var(--ink) 45%, transparent); }
-.dialog { width: min(26rem, 100%); max-height: 100%; overflow: auto; padding: 1.1rem 1.2rem; background: var(--card); color: var(--ink); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: 5px 5px 0 var(--ink); }
+.dialog { width: min(26rem, 100%); max-height: 100%; overflow: auto; padding: 1.1rem 1.2rem; background: var(--card); color: var(--ink); border: var(--line) solid var(--ink); border-radius: var(--r-lg); box-shadow: var(--hard); }
 .dialog h2 { margin: 0 0 0.6rem; font-size: 1.1rem; overflow-wrap: anywhere; }
 .dialog p { margin: 0 0 0.8rem; overflow-wrap: anywhere; }
 .dialog form { display: grid; gap: 0.5rem; }
 .dialog input { width: 100%; box-sizing: border-box; min-height: 2.75rem; font: inherit; }
 .dialog-actions { display: flex; justify-content: flex-end; gap: 0.6rem; margin-top: 0.4rem; }
-.dialog-actions button { min-height: 2.75rem; }
+.dialog-actions button { min-height: 2.75rem; box-shadow: var(--hard-sm); }
 button.danger:where(:not(.openui-root *)) { background: var(--blush); color: var(--ink); font-weight: 700; }
 
 .pane { grid-area: pane; display: flex; flex-direction: column; min-width: 0; min-height: 0; position: relative; padding: 0 2rem; }
@@ -332,8 +334,8 @@ button.danger:where(:not(.openui-root *)) { background: var(--blush); color: var
 
 /* ---- starting card: the one place the empty conversation gets colour ---------------------- */
 .pane.empty .log { flex: 0 0 0; min-height: 0; padding: 0; overflow: hidden; }
-.hero { position: relative; width: min(40rem, 100%); margin: auto; padding: 2.2rem 2rem 2.2rem 11.5rem; min-height: 11rem; background: var(--card); border: 2px solid var(--ink); border-radius: 26px; box-shadow: 6px 6px 0 var(--ink); }
-.hero::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 9.5rem; background-color: var(--peri); background-image: var(--dots); border-right: 2px solid var(--ink); border-radius: 24px 0 0 24px; }
+.hero { position: relative; width: min(40rem, 100%); margin: auto; padding: 2.2rem 2rem 2.2rem 11.5rem; min-height: 11rem; background: var(--card); border: var(--line) solid var(--ink); border-radius: var(--r-lg); box-shadow: var(--hard); }
+.hero::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 9.5rem; background-color: var(--peri); background-image: var(--dots); border-right: var(--line) solid var(--ink); border-radius: var(--r-md) 0 0 var(--r-md); }
 .hero-tag { position: absolute; left: 0.9rem; top: -0.9rem; padding: 0.15rem 0.8rem; background: var(--mark); color: var(--mark-ink); border: 2px solid var(--ink); border-radius: var(--r-pill); font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase; transform: rotate(-3deg); box-shadow: var(--hard-sm); }
 .hero-text { margin: 0; font-family: var(--font-display); font-size: clamp(2rem, 4.2vw, 3rem); font-weight: 700; line-height: 1.05; letter-spacing: -0.045em; }
 
@@ -342,7 +344,7 @@ button.danger:where(:not(.openui-root *)) { background: var(--blush); color: var
 /* The assistant's answer is open text on the page; its tag is the only thing that marks it. */
 .turn.assistant { font-size: 1.125rem; line-height: 1.7; }
 .turn .who { display: flex; align-items: center; gap: 0.5rem; margin: 0 0 0.3rem; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.2em; text-transform: uppercase; color: var(--ink); }
-.turn.assistant .who::before { content: ""; width: 1.6rem; height: 1.6rem; background: var(--tag-glyph) center / 62% no-repeat, var(--cobalt); border: 2px solid var(--ink); border-radius: 8px; box-shadow: var(--hard-sm); }
+.turn.assistant .who::before { content: ""; width: 1.6rem; height: 1.6rem; background: var(--tag-glyph) center / 62% no-repeat, var(--cobalt); border: 2px solid var(--ink); border-radius: var(--r-sm); box-shadow: var(--hard-sm); }
 /* The user's message is the headline: large, tight, with a marker stroke behind its first line. It has no box. */
 .turn.user { position: relative; width: 100%; margin: 1.8rem auto 0.5rem; }
 .turn.user .who { position: absolute; width: 1px; height: 1px; margin: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -365,7 +367,7 @@ button.danger:where(:not(.openui-root *)) { background: var(--blush); color: var
 .turn tr:last-child td { border-bottom: 0; }
 .turn th { font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
 .turn code { font-family: var(--font-mono); font-size: 0.9em; }
-.turn :not(pre) > code { padding: 0.05em 0.35em; background: color-mix(in srgb, var(--cobalt) 14%, transparent); border-radius: 5px; }
+.turn :not(pre) > code { padding: 0.05em 0.35em; background: color-mix(in srgb, var(--cobalt) 14%, transparent); border-radius: var(--r-sm); }
 .turn blockquote { margin: 0.3rem 0; padding-left: 0.85rem; border-left: 3px solid var(--ink); color: var(--ink-2); }
 pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .label { color: var(--ink-2); font-family: var(--font-mono); font-size: 0.75rem; margin: 0.3rem 0; }
@@ -379,7 +381,7 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .run-streaming::after, .run-reconnecting::after { content: ""; position: absolute; top: 0; left: 0; width: 4.5rem; height: 5px; border-radius: var(--r-pill); background: var(--cobalt); animation: progress 1.6s ease-in-out infinite alternate; }
 @keyframes progress { to { transform: translateX(calc(min(44rem, 90vw) - 4.5rem)); } }
 
-/* Notices are colour-coded by meaning: status is marigold, an alert is blush. */
+/* Notices are colour-coded by meaning: status is the pink highlighter, an alert is blush. */
 .notice { margin: 0.5rem 0.25rem; padding: 0.7rem 1rem; background: var(--mark); color: var(--mark-ink); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: 3px 3px 0 var(--ink); }
 .notice[role="alert"] { background: var(--blush); color: var(--ink); }
 .notice button { background: var(--card); color: var(--ink); }
@@ -405,7 +407,7 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 @media (hover: hover) { .turn-control:hover small { position: static; width: auto; height: auto; flex-basis: 100%; margin: 0.25rem 0 0; overflow: visible; clip: auto; clip-path: none; white-space: normal; padding: 0.2rem 0.7rem; background: var(--ink); color: var(--canvas); border-radius: var(--r-pill); font-family: var(--font-mono); font-size: 0.75rem; } }
 
 /* ---- composer: the dock, the one boxed control on the page ------------------------- */
-.composer { display: flex; flex-wrap: wrap; flex-shrink: 0; align-items: center; gap: 0.3rem; width: 100%; max-width: 44rem; margin: 0 auto 1rem; padding: 0.3rem 0.35rem 0.3rem 1.1rem; background: var(--card); border: 2px solid var(--ink); border-radius: 28px; box-shadow: 5px 5px 0 var(--ink); column-gap: 0.5rem; }
+.composer { display: flex; flex-wrap: wrap; flex-shrink: 0; align-items: center; gap: 0.3rem; width: 100%; max-width: 44rem; margin: 0 auto 1rem; padding: 0.3rem 0.35rem 0.3rem 1.1rem; background: var(--card); border: var(--line) solid var(--ink); border-radius: var(--r-lg); box-shadow: var(--hard); column-gap: 0.5rem; }
 .composer textarea { flex: 1; min-width: 0; font: inherit; padding: 0.55rem 0; color: var(--ink); background: transparent; border: 0; border-radius: 0; resize: vertical; min-height: 2.5rem; max-height: 12rem; field-sizing: content; }
 @supports (field-sizing: content) { .composer textarea { resize: none; } }
 .composer textarea::placeholder { color: var(--ink-2); }
@@ -430,7 +432,7 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Jump to latest is a control that floats over the log while the reader is away from the newest turn. */
 .vjump { position: sticky; bottom: 0.5rem; height: 0; text-align: center; }
 /* "Jump to latest": a small round arrow over the transcript, not a labelled pill that pulls the eye off the chat. */
-.vjump button { position: relative; top: -2.9rem; width: 2.4rem; height: 2.4rem; min-height: 0; margin: 0; padding: 0; border-radius: 50%; box-shadow: 2px 2px 0 var(--ink); animation: fade-in 0.18s var(--ease-out) both; }
+.vjump button { position: relative; top: -2.9rem; width: 2.4rem; height: 2.4rem; min-height: 0; margin: 0; padding: 0; border-radius: var(--r-md); box-shadow: var(--hard-sm); animation: fade-in 0.18s var(--ease-out) both; }
 .vjump button[data-icon]::before { width: 1.05rem; height: 1.05rem; margin: 0; }
 @media (pointer: coarse) { .vjump button { width: 2.75rem; height: 2.75rem; } }
 
@@ -559,7 +561,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 
 /* ---- search (UXP-003) ---------------------------------------------------------- */
 .search { margin: 0.6rem 0 0; }
-.search input[type="search"] { width: 100%; box-sizing: border-box; min-height: 2.5rem; padding: 0.3rem 0.8rem 0.3rem 2.4rem; font: inherit; color: var(--ink); background: transparent var(--search-glyph) 0.8rem center / 1.1rem no-repeat; border: 1.5px solid var(--ink-2); border-radius: var(--r-md); }
+.search input[type="search"] { width: 100%; box-sizing: border-box; min-height: 2.5rem; padding: 0.3rem 0.8rem 0.3rem 2.4rem; font: inherit; color: var(--ink); background: transparent var(--search-glyph) 0.8rem center / 1.1rem no-repeat; border: 2px solid var(--ink); border-radius: var(--r-md); background-color: var(--card); }
 .search-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 0.2rem 0.75rem; margin: 0.4rem 0; font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2); }
 .search-filters label { display: inline-flex; align-items: center; gap: 0.4rem; }
 .search-results ul { list-style: none; margin: 0.4rem 0; padding: 0; }
@@ -590,7 +592,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
    details and limits, Visualize, voice, templates) lives in this drawer, so the conversation keeps its height. */
 .extras-toggle { display: inline-flex; align-self: center; margin: 0; padding: 0 0.4rem; background: transparent; border-color: transparent; font-family: var(--font-mono); font-size: 0.8rem; font-weight: 700; color: var(--ink); }
 .extras { display: none; }
-.extras.open { display: block; max-height: min(50dvh, 30rem); overflow: auto; box-sizing: border-box; padding: 0.75rem 1rem 0.85rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: var(--hard-sm); }
+.extras.open { display: block; max-height: min(50dvh, 30rem); overflow: auto; box-sizing: border-box; padding: 0.75rem 1rem 0.85rem; background: var(--card); border: var(--line) solid var(--ink); border-radius: var(--r-lg); box-shadow: var(--hard); }
 .extras.open > * { margin-block: 0 0.85rem; max-width: 100%; }
 .extras.open > :last-child { margin-bottom: 0; }
 .extras-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 0.75rem; }
@@ -702,7 +704,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   /* Strip: New chat, Search and the conversation chips on one scrolling line; an open search takes the strip. */
   .side { display: flex; align-items: center; gap: 0.4rem; overflow: hidden; padding: 0 0.25rem 0.35rem; border-bottom: 1px solid var(--hair); }
   .side > button, .side button.item, .search-toggle { flex: none; width: auto; min-height: 2.75rem; margin: 0; padding: 0 0.6rem; border: 6px solid transparent; background-clip: padding-box; border-radius: var(--r-pill); }
-  .side > button { background-color: var(--card); box-shadow: inset 0 0 0 1.5px var(--ink); }
+  .side > button { background-color: var(--cobalt); color: var(--cobalt-ink); box-shadow: inset 0 0 0 2px var(--ink); }
   .side > button[data-icon]::before { width: 1.15rem; height: 1.15rem; margin-right: 0.3rem; }
   /* A conversation chip: 44px hit area, a 32px visible pill. */
   .side ul { display: flex; flex: 1 1 0; min-width: 0; gap: 0.4rem; margin: 0; overflow-x: auto; overflow-y: hidden; }
@@ -740,7 +742,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   .log { --log-pad: 0.5rem; }
   /* The note above the history is in the flow, so it scrolls away with the history. */
   .hero { padding: 7.2rem 1.25rem 1.5rem; min-height: 0; margin: 1.2rem 0 auto; }
-  .hero::before { width: auto; right: 0; bottom: auto; height: 5.6rem; border-right: 0; border-bottom: 2px solid var(--ink); border-radius: 24px 24px 0 0; }
+  .hero::before { width: auto; right: 0; bottom: auto; height: 5.6rem; border-right: 0; border-bottom: var(--line) solid var(--ink); border-radius: var(--r-md) var(--r-md) 0 0; }
   .hero-text { font-size: 2rem; }
   .turn.user { max-width: 100%; }
   .turn.user :is(p, .plain) { font-size: 1.6rem; }
@@ -759,7 +761,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   .composer-chips > button[data-chip="usage"] { display: none; }
   .extras.open { max-height: 40dvh; margin: 0.25rem 0 0.75rem; padding: 0.75rem 0.85rem 0.85rem; }
   /* Composer: one row — attach, camera, the message, send. The words stay in the DOM as the accessible names. */
-  .composer { gap: 0.25rem; padding: 0.25rem 0.35rem; margin-bottom: 0.6rem; border-radius: 26px; box-shadow: 3px 3px 0 var(--ink); }
+  .composer { gap: 0.25rem; padding: 0.25rem 0.35rem; margin-bottom: 0.6rem; border-radius: var(--r-lg); box-shadow: var(--hard-sm); }
   .composer textarea { order: 3; flex: 1 1 6rem; padding: 0.55rem 0.4rem; resize: none; min-height: 2.75rem; max-height: min(7rem, 16dvh); }
   .composer button.quiet { order: 1; flex: 0 0 2.75rem; width: 2.75rem; padding: 0; }
   .composer button.quiet .btn-label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); clip-path: inset(50%); white-space: nowrap; }
@@ -856,7 +858,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 .usage-bars { display: flex; align-items: flex-end; gap: 2px; height: 6rem; padding-bottom: 1px; border-bottom: 1px solid var(--ink-2); }
 .usage-bar { flex: 1 1 0; height: 100%; display: flex; align-items: flex-end; min-width: 2px; }
 .usage-bar:hover > span { opacity: 0.7; }
-.usage-bar > span { display: block; width: 100%; background: var(--ink); border-radius: 4px 4px 0 0; }
+.usage-bar > span { display: block; width: 100%; background: var(--cobalt); border-radius: 0; }
 .usage-table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
 .usage-table th, .usage-table td { text-align: left; padding: 0.15rem 0.4rem; border-bottom: 1px solid var(--ink-2); }
 
@@ -895,16 +897,16 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 
 /* ---- Settings dialog ---- */
 .icon-only[data-icon]::before { margin-right: 0; }
-.settings-dialog { width: min(760px, calc(100vw - 2rem)); max-height: min(640px, calc(100dvh - 2rem)); padding: 0; border: 2px solid var(--ink);
+.settings-dialog { width: min(760px, calc(100vw - 2rem)); max-height: min(640px, calc(100dvh - 2rem)); padding: 0; border: var(--line) solid var(--ink);
   border-radius: var(--r-lg); background: var(--card); color: var(--ink); box-shadow: var(--hard); overflow: hidden; }
-.settings-dialog::backdrop { background: rgb(13 16 36 / 0.45); }
-.settings-dialog > header { display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 1rem 0.9rem 1.25rem; border-bottom: 1px solid var(--hair); }
+.settings-dialog::backdrop { background: rgb(0 0 0 / 0.55); }
+.settings-dialog > header { display: flex; align-items: center; justify-content: space-between; padding: 0.9rem 1rem 0.9rem 1.25rem; border-bottom: var(--line) solid var(--ink); background: var(--mark); color: var(--mark-ink); }
 .settings-dialog > header h2 { margin: 0; font-size: 1.15rem; }
 .settings-dialog > header button { min-width: 2.75rem; min-height: 2.75rem; justify-content: center; }
 .settings-body { display: grid; grid-template-columns: 12rem minmax(0, 1fr); min-height: 0; max-height: calc(min(640px, 100dvh - 2rem) - 4.6rem); }
-.settings-body > nav { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.75rem; border-right: 1px solid var(--hair); background: var(--rail); }
+.settings-body > nav { display: flex; flex-direction: column; gap: 0.15rem; padding: 0.75rem; border-right: var(--line) solid var(--ink); background: var(--rail); }
 .settings-body > nav button { justify-content: flex-start; min-height: 2.75rem; padding: 0 0.8rem; border: 0; border-radius: var(--r-md); background: transparent; color: var(--ink); font-weight: 500; text-align: left; }
-.settings-body > nav button[aria-current="page"] { background: var(--card); font-weight: 700; box-shadow: inset 0 0 0 2px var(--ink); }
+.settings-body > nav button[aria-current="page"] { background: var(--ink); color: var(--canvas); font-weight: 700; }
 .settings-page { padding: 1rem 1.25rem 1.5rem; overflow-y: auto; }
 .settings-page > h3 { margin: 1.25rem 0 0.5rem; font-size: 0.95rem; }
 .settings-page > h3:first-child { margin-top: 0; }
@@ -923,7 +925,7 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 
 /* ---- conversation as a chat (#139 stage 3): your message is a bubble on the right, the reply reads as plain text ---- */
 .turn.user { display: flex; flex-direction: column; align-items: flex-end; margin: 1.5rem auto 0.75rem; }
-.turn.user > :is(.md, .plain) { max-width: min(85%, 40rem); padding: 0.65rem 1rem; background: var(--card); border: 1px solid var(--hair); border-radius: 18px 18px 4px 18px; }
+.turn.user > :is(.md, .plain) { max-width: min(85%, 40rem); padding: 0.65rem 1rem; background: var(--peri); color: var(--ink); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
 .turn.user :is(p, .plain) { font-family: var(--font-ui); font-size: 1.0625rem; font-weight: 500; line-height: 1.5; letter-spacing: normal; }
 .turn.user :is(p, .plain) + p { margin-top: 0.5rem; }
 .turn.assistant { font-size: 1.0625rem; line-height: 1.65; }
@@ -936,12 +938,12 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 .settings-body .notify, .settings-body .notify-panel { position: static; width: auto; padding: 0; border: 0; box-shadow: none; background: none; }
 
 /* ---- rich replies, cleaner (#139 stage 3): soft cards, upright badges, readable table headers, colour in charts ---- */
-.ou-card { border: 1px solid var(--hair); border-radius: var(--r-md); box-shadow: 0 1px 3px rgb(17 20 43 / 0.08); }
-.ou-badge { transform: none; box-shadow: none; border-width: 1px; font-family: var(--font-ui); font-size: 0.8rem; letter-spacing: 0; text-transform: none; }
-.turn table, .ou-table { border-top: 1px solid var(--hair); border-bottom: 1px solid var(--hair); }
+.ou-card { border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
+.ou-badge { transform: none; box-shadow: none; border-width: 2px; font-family: var(--font-ui); font-size: 0.8rem; letter-spacing: 0; text-transform: none; }
+.turn table, .ou-table { border-top: 2px solid var(--ink); border-bottom: 2px solid var(--ink); }
 .turn th, .ou-table th { font-family: var(--font-ui); font-size: 0.85rem; font-weight: 600; letter-spacing: 0; text-transform: none; color: var(--ink); white-space: nowrap; }
 .turn :is(th, td), .ou-table :is(th, td) { overflow-wrap: normal; word-break: normal; }
-.ou-metric { padding: 0.5rem 0.9rem; border: 1px solid var(--hair); border-radius: var(--r-md); background: var(--card); }
+.ou-metric { padding: 0.5rem 0.9rem; border: 2px solid var(--ink); border-radius: var(--r-md); background: var(--card); box-shadow: var(--hard-sm); }
 .ou-bar, .ou-dot, .ou-slice:nth-child(6n+1) { fill: var(--cobalt); }
 .ou-line { stroke: var(--cobalt); }
 .ou-slice:nth-child(6n+2) { fill: var(--mark); }
@@ -950,7 +952,7 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 .ou-slice:nth-child(6n+5) { fill: var(--peri); opacity: 1; }
 .ou-slice:nth-child(6n) { fill: var(--ink); }
 /* A pie's value table carries each slice's colour, so the colours have a key. */
-.ou-swatch { display: inline-block; width: 0.75em; height: 0.75em; margin-right: 0.45em; border-radius: 3px; vertical-align: -0.05em; }
+.ou-swatch { display: inline-block; width: 0.75em; height: 0.75em; margin-right: 0.45em; border-radius: 0; border: 1.5px solid var(--ink); vertical-align: -0.05em; }
 .ou-swatch[data-slice="0"] { background: var(--cobalt); }
 .ou-swatch[data-slice="1"] { background: var(--mark); }
 .ou-swatch[data-slice="2"] { background: var(--ink-2); }
@@ -963,16 +965,16 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 .composer-chips { position: relative; }
 .model-menu { position: absolute; bottom: calc(100% + 0.5rem); left: 0; right: 0; z-index: 30; box-sizing: border-box;
   max-height: min(60vh, 30rem); overflow-y: auto; overscroll-behavior: contain; -webkit-overflow-scrolling: touch;
-  padding: 0.75rem 1rem 1rem; background: var(--card); color: var(--ink); border: 2px solid var(--ink); border-radius: var(--r-md);
+  padding: 0.75rem 1rem 1rem; background: var(--card); color: var(--ink); border: var(--line) solid var(--ink); border-radius: var(--r-md);
   box-shadow: var(--hard); font-family: var(--font-ui); font-size: 0.875rem; font-weight: 400; white-space: normal; text-align: left; }
 .model-menu > * + * { margin-top: 0.5rem; }
 .model-menu p { margin: 0; color: var(--ink-2); }
 .model-menu label { display: flex; align-items: center; gap: 0.5rem; min-height: 2.25rem; }
-.model-menu input[type="search"] { flex: 1; min-width: 0; padding: 0.5rem 0.75rem; border: 1px solid var(--hair); border-radius: 10px; background: var(--canvas); color: var(--ink); font: inherit; }
+.model-menu input[type="search"] { flex: 1; min-width: 0; padding: 0.5rem 0.75rem; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--canvas); color: var(--ink); font: inherit; }
 .model-menu input[type="radio"] { flex: none; }
 .model-menu fieldset { margin: 0.75rem 0 0; padding: 0; border: 0; }
 .model-menu legend { padding: 0; margin-bottom: 0.25rem; font-size: 0.8rem; font-weight: 600; color: var(--ink-2); }
-.model-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 0.5rem; padding: 0.35rem 0.5rem; border-radius: 10px; }
+.model-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0 0.5rem; padding: 0.35rem 0.5rem; border-radius: var(--r-sm); }
 .model-row:hover { background: var(--rail); }
 .model-row label { min-height: 2rem; overflow-wrap: anywhere; }
 .model-row small { grid-column: 1 / -1; padding-left: 1.6rem; color: var(--ink-2); font-size: 0.75rem; line-height: 1.4; }
@@ -1055,7 +1057,7 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
   .side ul > li:nth-child(n + 5) { animation-delay: 0.2s; }
 }
 .composer { transition: box-shadow 0.2s var(--ease-out), transform 0.2s var(--ease-out); }
-.composer:focus-within { box-shadow: 7px 7px 0 var(--ink); transform: translate(-1px, -1px); }
+.composer:focus-within { box-shadow: 8px 8px 0 var(--ink); transform: translate(-2px, -2px); }
 
 /* Menus and popovers fade in: opacity only, so their size and place are final from the first frame (touch targets keep
    their 44px, hit tests see where they will be). The settings dialog, a whole sheet, pops. */
@@ -1069,11 +1071,16 @@ a.btn, button:where(:not(.openui-root *)) {
     box-shadow 0.2s var(--ease-out), transform 0.15s var(--ease-out);
 }
 /* A button with a hard shadow lifts toward the pointer and presses flat into its shadow. */
-a.btn:hover, .composer button[type="submit"]:hover:not(:disabled), .vjump button:hover { transform: translate(-1px, -1px); box-shadow: 3px 3px 0 var(--ink); }
-a.btn:active, .composer button[type="submit"]:active:not(:disabled), .vjump button:active { transform: translate(2px, 2px); box-shadow: none; }
+a.btn:hover, .composer button[type="submit"]:hover:not(:disabled), .vjump button:hover, .dialog-actions button:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--ink); }
+a.btn:active, .composer button[type="submit"]:active:not(:disabled), .vjump button:active, .dialog-actions button:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
 button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(1px, 1px); }
 .side button.item { transition: background-color 0.15s var(--ease-out), transform 0.15s var(--ease-out); }
 .side button.item:hover:not(.current) { transform: translateX(2px); }
+/* New chat lifts like the other hard-shadow buttons in the rail; in the phone's strip it stays inside its row. */
+@media (min-width: 40.01rem) {
+  .side > button:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--ink); }
+  .side > button:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
+}
 
 .quota-fill { transform-origin: left center; animation: bar-grow 0.8s var(--ease-out) both; }
 .stat-tile { animation: rise-in 0.5s var(--ease-out) both; }
