@@ -447,11 +447,16 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .vstatus:has(> span:empty:only-child) { display: none; }
 .vstatus button { min-height: 1.75rem; padding: 0.1rem 0.7rem; margin: 0 0 0 0.25rem; }
 /* Jump to latest is a control that floats over the log while the reader is away from the newest turn. */
-.vjump { position: sticky; bottom: 0.5rem; height: 0; text-align: right; } /* at the edge, where it covers the least text */
+.vjump { position: sticky; bottom: 0.5rem; height: 0; text-align: center; }
 /* "Jump to latest": a small round arrow over the transcript, not a labelled pill that pulls the eye off the chat. */
-.vjump button { position: relative; top: -2.9rem; right: 0.25rem; width: 2.4rem; height: 2.4rem; min-height: 0; margin: 0; padding: 0; border-radius: 50%; box-shadow: var(--hard-sm); animation: fade-in 0.18s var(--ease-out) both; }
+.vjump button { position: relative; top: -2.9rem; width: 2.4rem; height: 2.4rem; min-height: 0; margin: 0; padding: 0; border-radius: 50%; box-shadow: var(--hard-sm); animation: fade-in 0.18s var(--ease-out) both; }
 .vjump button[data-icon]::before { width: 1.05rem; height: 1.05rem; margin: 0; }
 @media (pointer: coarse) { .vjump button { width: 2.75rem; height: 2.75rem; } }
+/* In the chat it sits at the end of the chip row under the conversation, so it never covers a line of it. */
+.jump-slot { display: inline-flex; flex: none; margin-left: auto; }
+.jump-slot:empty { display: none; }
+.jump-slot button { width: 2.4rem; height: 2.4rem; min-height: 0; margin: 0; padding: 0; border-radius: 50%; box-shadow: var(--hard-sm); animation: fade-in 0.18s var(--ease-out) both; }
+.jump-slot button[data-icon]::before { width: 1.05rem; height: 1.05rem; margin: 0; }
 
 /* ---- generative UI blocks (OpenUI): the one hero-card language ---------------- */
 .ou-block, .ou-fallback { max-width: 100%; }
@@ -770,7 +775,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   .composer-chips { flex-wrap: nowrap; gap: 0.75rem; margin: 0.4rem 0 0.5rem; padding-inline: 0.25rem; }
   /* The model gets the room; the usage summary shortens first. */
   .composer-chips > * { flex: 0 1 auto; min-width: 0; white-space: nowrap; }
-  .composer-chips > .extras-toggle { flex: none; }
+  .composer-chips > .extras-toggle, .composer-chips > .jump-slot { flex: none; }
   .composer-chips summary, .composer-chips button { min-height: 1.6rem; font-size: 0.72rem; max-width: 100%; overflow: hidden; text-overflow: ellipsis; }
   /* A chip's text starts at its left edge and ends in the ellipsis (centred, it was cut at both ends). */
   .composer-chips button[data-chip] { display: block; text-align: left; }
@@ -1082,6 +1087,13 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 .pane.empty .hero > :nth-child(n + 4) { animation-delay: 0.26s; }
 /* In the rail a conversation joins the list (first load, a new chat) one row after another; a row already there does not
    move again. Not in the phone's strip: it hides and returns with search and the keyboard, which would replay it. */
+/* The rail's rows breathe: room for the open chat's hard shadow between rows, and Show archived set apart from the list. */
+@media (min-width: 40.01rem) {
+  .side li + li { margin-top: 0.3rem; }
+  .side li.archive-toggle { margin-top: 0.9rem; }
+  .side button.item { padding-left: 3.25rem; }
+  .side button.item::before { left: 0.45rem; }
+}
 @media (min-width: 40.01rem) {
   .side ul > li { animation: rise-in 0.5s var(--ease-out) both; }
   .side ul > li:nth-child(2) { animation-delay: 0.05s; }
@@ -1104,8 +1116,8 @@ a.btn, button:where(:not(.openui-root *)) {
     box-shadow 0.2s var(--ease-out), transform 0.15s var(--ease-out);
 }
 /* A button with a hard shadow lifts toward the pointer and presses flat into its shadow. */
-a.btn:hover, .composer button[type="submit"]:hover:not(:disabled), .vjump button:hover, .dialog-actions button:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--ink); }
-a.btn:active, .composer button[type="submit"]:active:not(:disabled), .vjump button:active, .dialog-actions button:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
+a.btn:hover, .composer button[type="submit"]:hover:not(:disabled), .vjump button:hover, .jump-slot button:hover, .dialog-actions button:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--ink); }
+a.btn:active, .composer button[type="submit"]:active:not(:disabled), .vjump button:active, .jump-slot button:active, .dialog-actions button:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
 button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(1px, 1px); }
 .side button.item { transition: background-color 0.15s var(--ease-out), transform 0.15s var(--ease-out); }
 .side button.item:hover:not(.current) { transform: translateX(2px); }

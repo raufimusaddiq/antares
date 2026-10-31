@@ -214,6 +214,8 @@ export interface TranscriptProps {
   /** The turn a search result opened at: scrolled to and marked. */
   focusSeq?: number | null;
   focusNonce?: number;
+  /** Where "Jump to latest" goes (the chip row under the conversation). */
+  jumpSlot?: HTMLElement | null;
   /** The chat these turns belong to; without it nothing is offered for download. */
   chatId?: string;
   /** The capability answer the turn controls read; null shows them disabled as unknown. */
@@ -242,7 +244,7 @@ function describeManage(code: string, what: "change" | "delete"): string {
 }
 
 export function Transcript(props: TranscriptProps) {
-  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0, chatId, onReuse } = props;
+  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0, jumpSlot = null, chatId, onReuse } = props;
   // Compact: the controls sit on the newest turn of each role only, not on every message.
   const lastUser = turns.reduce((n, t) => (t.role === "user" ? t.seq : n), -1);
   const lastAssistant = turns.reduce((n, t) => (t.role === "assistant" ? t.seq : n), -1);
@@ -317,6 +319,7 @@ export function Transcript(props: TranscriptProps) {
       onLoadMore={onLoadMore}
       focusKey={focusSeq === null ? undefined : String(focusSeq)}
       focusNonce={focusNonce}
+      jumpSlot={jumpSlot}
     />
   );
 }
@@ -641,6 +644,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const [menuOpen, setMenuOpen] = useState(false);
   const [settings, setSettings] = useState<SettingsTab | null>(null);
   const [moreOpen, setMoreOpen] = useState(false);
+  const [jumpSlot, setJumpSlot] = useState<HTMLElement | null>(null);
   useEffect(() => {
     if (!menuOpen) return;
     const away = (e: PointerEvent) => {
@@ -1413,6 +1417,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
           olderError={olderError}
           onLoadMore={() => void loadOlder()}
           focusNonce={focus?.nonce ?? 0}
+          jumpSlot={jumpSlot}
           focusSeq={focus && focus.chat === current && reachOf(turns, cursor, focus.seq) === "held" ? focus.seq : null}
           onCancel={onCancel}
           onRetry={() => {
@@ -1460,6 +1465,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
               {usage.spending.hardReached ? "The daily spending limit is reached: new messages are refused." : `Spending warning: the ${usage.spending.warnings.join(" and ")} warning is reached. Messages still go through.`}
             </span>
           )}
+          <span className="jump-slot" ref={setJumpSlot} />
         </div>
         <div id="chat-extras" className={moreOpen ? "extras open" : "extras"}>
           <div className="chat-actions-slot" ref={setActionsSlot} />
