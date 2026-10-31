@@ -33,24 +33,24 @@ manifest revalidate; the app document and API responses retain `no-store`.
 ## Visual contract (#139)
 
 All styling lives in `src/styles.css` (plus `src/media.css` for image attachments, restyled in a later stage of #139). The look is
-flat and retro: tinted paper, one saturated action colour, one highlighter colour, a few meaningful pastels, hard offset shadows,
+neo-brutalist: warm off-white paper, square corners, thick ink outlines, one saturated action colour, one highlighter colour, a few meaningful pastels, hard offset shadows,
 crisp ink outlines **only where a box means something**. It is not glass: there is no blur, no translucent tier, no ambient layer,
 no gradient surface. `src/cssContract.test.ts` pins this (see "What is tested").
 
 **Composition.**
 
 - *Wide screen:* a left rail beside the conversation. Brand on top, the conversation list in the middle (numbered tiles, three
-  pastels in turn; the open one is a filled pill), the account (address, Menu) at the bottom. The Menu opens an actions popover
+  colour blocks in turn; the open one is a filled ink block), the account (address, Menu) at the bottom. The Menu opens an actions popover
   upward. There is no top bar. The header element is `display: contents` here, so its two children, `.brand` and `.account`, are
   grid items of `.chat-app` (areas `brand` / `side` / `account` / `pane`); the rail's tinted dotted backdrop is `.chat-app::before`.
-- *Phone (max 40rem):* one slim header row (mark, address, Menu), a one-line conversation strip (chips are a 32px pill inside a
+- *Phone (max 40rem):* one slim header row (mark, address, Menu), a one-line conversation strip (chips are a 32px block inside a
   44px hit area), the conversation, an `Options` toggle, a one-row dock (attach, camera, message, send). Options opens the same card panel
   as on a wide screen. The header is a flex row here and the account actions open as a panel over the log.
 - *Reading:* the assistant's answer is open text on the page (tag: mono caps and a small star tile). The user's message is the
   headline: large, tight, with a marker stroke behind its first line, no box. Code is an ink block, tables are two ink rules, a
   badge is a tilted sticker.
-- *Boxed, on purpose:* the composer dock (2px outline, hard shadow), generated-UI (OpenUI) cards, notices (status marigold, alert
-  blush), popovers and panels, the starting card (`.hero`, the empty conversation) and the status-screen account card.
+- *Boxed, on purpose:* the composer dock (3px outline, 6px hard shadow), the user's message (a periwinkle block), generated-UI (OpenUI) cards,
+  notices (status pink, alert blush), popovers and panels, the starting card (`.hero`, the empty conversation) and the status-screen account card.
 - *Note above the history* ("Start of the conversation", "Scroll up for older messages") is the first row of the log, **in the flow**
   (never sticky, fixed or absolute), so it cannot cover text. `scripts/browser-check.mjs` (`ONLY=desktop-layout`) tests every text
   node in the log against it at every scroll position, with no exemption.
@@ -58,8 +58,9 @@ no gradient surface. `src/cssContract.test.ts` pins this (see "What is tested").
 **Tokens** (`:root`, redefined under `prefers-color-scheme: dark` with the same names): `--canvas` `--rail` `--card` `--ink`
 `--ink-2` `--hair`; `--cobalt` / `--cobalt-ink` (send, sign-in, the live-run bar); `--mark` / `--mark-ink` (the highlighter,
 stickers, hover, status notices); `--peri` `--mint` `--blush` (panels and tiles, by meaning); `--code`; `--focus` / `--focus-halo`;
-`--r-sm|md|lg|pill`; `--hard` / `--hard-sm` (the offset shadow). Light: canvas `#f0f2f7`, ink `#11142b`, cobalt `#2b50ff`,
-marigold `#ffc93c`. Dark: canvas `#0d1024`, ink `#eef0ff`, cobalt `#7c93ff`. Every text pair is at least 4.5:1 in both themes
+`--r-sm|md|lg|pill` (2–6px: square, never round); `--line` (3px, the outline of a major surface); `--hard` / `--hard-sm` (6px / 3px
+offset shadow). Light: canvas `#f4f1e8`, ink `#0b0b0b`, cobalt `#2d4bff`, pink `#ff6fae`. Dark: canvas `#111111`, ink `#f4f1e8`,
+cobalt `#7d92ff`. Every text pair is at least 4.5:1 in both themes
 (`cssContract.test.ts` computes them). Type: `--font-ui` and `--font-display` are Space Grotesk Variable (self-hosted); `--font-mono`
 is the system monospace (tags, labels, table heads, code). No new font file was added. In dark, the marker is a translucent block
 behind light text (`--marker-ink`), because dark text above a stripe would vanish on the dark page.
@@ -107,7 +108,7 @@ reason).
 ## Brand, type and social card
 
 - **Mark:** `src/brand/AntaresMark.tsx` (B · Rival), generated from `docs/design/logo/b-rival.svg`, `currentColor`, `size` prop.
-  It sits on a marigold tile in the brand row.
+  It sits on a pink tile in the brand row.
 - **Assets:** `public/` holds the favicon set, `og.png` (1200x630) and the fonts. Regenerate the icons and card with
   `python3 docs/design/logo/assets.py` (one-shot, needs the Python `playwright` package; not an app dependency).
 - **Type:** `--font-ui` and `--font-display` are Space Grotesk Variable, `--font-mono` is the system monospace. The face is a

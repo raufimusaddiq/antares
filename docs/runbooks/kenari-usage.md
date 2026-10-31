@@ -62,7 +62,7 @@ Menu on a phone, as one bar per window with the share used and when it resets (`
 - **Load on Kenari**: the answer comes from the same cached snapshot as the admin page, never a refresh (fresh for a
   minute, attempts 15 seconds apart), so users cannot drive Kenari's 60-a-minute usage limit. The browser reads it when
   the chat opens and every five minutes.
-- **Nearly spent**: from 80% (Kenari's own `alert_pct` default) a window's bar turns marigold and says "nearly used
+- **Nearly spent**: from 80% (Kenari's own `alert_pct` default) a window's bar turns pink and says "nearly used
   up" in words.
 - Admin → Provider usage shows the same bars with the Rupiah figures, and token counts grouped the Indonesian way
   (6.000.000).
