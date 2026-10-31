@@ -1,1 +1,0 @@
-import{t as e}from"./createLucideIcon-D71onehT.js";var t=[[`path`,{d:`M12 6v6l-2-4`,key:`ns39ag`}],[`circle`,{cx:`12`,cy:`12`,r:`10`,key:`1mglay`}]],n=e(`clock-11`,t);export{t as __iconNode,n as default};

@@ -1,4 +1,5 @@
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { anchorAt, atBottom, layout, scrollTopFor, visibleRange, type Layout } from "./virtual";
 
 // A windowed, variable-height list for the conversation (PRD PERF-001 items 1-2).
@@ -36,6 +37,8 @@ interface Props<T> {
   focusKey?: string;
   /** Changes each time the same result is opened again, so it scrolls back even if the key is unchanged. */
   focusNonce?: number;
+  /** Where "Jump to latest" goes; without one it floats over the bottom of the list. */
+  jumpSlot?: HTMLElement | null;
 }
 
 // One mounted item. Memoised so a scroll frame, which re-renders the list for its window, does not re-render (and
@@ -44,7 +47,7 @@ const Row = memo(function Row<T>({ item, index, render }: { item: T; index: numb
   return <>{render(item, index)}</>;
 }) as <T>(p: { item: T; index: number; render: (item: T, index: number) => ReactNode }) => ReactNode;
 
-export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore, loadingMore, topNote, onLoadMore, focusKey, focusNonce = 0 }: Props<T>) {
+export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore, loadingMore, topNote, onLoadMore, focusKey, focusNonce = 0, jumpSlot = null }: Props<T>) {
   const scroller = useRef<HTMLDivElement | null>(null);
   const content = useRef<HTMLDivElement | null>(null);
   const heights = useRef(new Map<string, number>()); // per turn key, at measuredWidth
@@ -203,12 +206,13 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
         <div style={{ height: total - lay.offsets[end] }} aria-hidden="true" />
         <div aria-live="polite">{footer}</div>
       </div>
-      {!following && (
-        <div className="vjump">
-          {/* A small round arrow, as in other chat apps: the label is for assistive technology and the tooltip. */}
-          <button type="button" data-icon="arrow-down" aria-label="Jump to latest" title="Jump to latest" onClick={jumpToLatest} />
-        </div>
-      )}
+      {!following &&
+        (() => {
+          // A small round arrow, as in other chat apps: the label is for assistive technology and the tooltip.
+          const jump = <button type="button" data-icon="arrow-down" aria-label="Jump to latest" title="Jump to latest" onClick={jumpToLatest} />;
+          // In a slot outside the list (the chat's chip row) it never covers a line of the conversation.
+          return jumpSlot ? createPortal(jump, jumpSlot) : <div className="vjump">{jump}</div>;
+        })()}
     </div>
   );
 }
