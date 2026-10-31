@@ -1,1 +1,0 @@
-import{t as e}from"./createLucideIcon-C_oTc7-s.js";var t=[[`path`,{d:`M12 6v10`,key:`wf7rdh`}],[`circle`,{cx:`12`,cy:`12`,r:`10`,key:`1mglay`}]],n=e(`clock-6`,t);export{t as __iconNode,n as default};
