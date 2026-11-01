@@ -54,6 +54,9 @@ var builtProbes = []probe{
 	{"draft read", "GET /api/chats/{chatId}/draft"},
 	{"draft write", "PUT /api/chats/{chatId}/draft"},
 	{"draft delete", "DELETE /api/chats/{chatId}/draft"},
+	{"share status", "GET /api/chats/{chatId}/share"},
+	{"share create", "POST /api/chats/{chatId}/share"},
+	{"share stop", "DELETE /api/chats/{chatId}/share"},
 	{"run status", "GET /api/runs/{runId}"},
 	{"run events (SSE recovery)", "GET /api/runs/{runId}/events"},
 	{"run cancel", "POST /api/runs/{runId}/cancel"},
@@ -108,6 +111,7 @@ type victim struct {
 	runRows, chatRows, hxAlice int
 	assetID                    string
 	itemID                     string // alice's queued message, in a paused queue
+	shareToken                 string // alice's link to her chat
 }
 
 const aliceAudio = "\x1a\x45\xdf\xa3alice-voice-marker-8b2f"
@@ -169,6 +173,12 @@ func newVictim(t testing.TB) *victim {
 	if v.ref == "" {
 		t.Fatal("history stamped no ref on alice's assistant turn")
 	}
+	w = alice.do("POST", "/api/chats/"+v.chatID+"/share", nil, nil)
+	if w.Code != 201 {
+		t.Fatalf("share alice's chat: %d %s", w.Code, w.Body.String())
+	}
+	v.shareToken = decodeBody[struct{ Token string }](t, w).Token
+	v.markers = append(v.markers, v.shareToken)
 	v.snapshot(t)
 	return v
 }
@@ -230,6 +240,9 @@ func (v *victim) untouched(t testing.TB, what string) {
 	if q, err := store.GetQueue(v.a.svc.base, v.a.db, v.alice.id, v.chatID); err != nil || len(q.Items) != 1 || q.Items[0].ID != v.itemID ||
 		q.Items[0].Input != "alice-private-queued-3c9a" || q.Items[0].Status != "QUEUED" || q.Paused != "USER" {
 		t.Errorf("%s: alice's queue changed: %+v %v", what, q, err)
+	}
+	if w := v.a.anon("GET", "/api/shared/"+v.shareToken); w.Code != 200 {
+		t.Errorf("%s: alice's share link stopped working: %d", what, w.Code)
 	}
 	if n := v.aliceHermesReqs(); n != v.hxAlice {
 		t.Errorf("%s: probes made %d request(s) to Hermes under alice's profile", what, n-v.hxAlice)

@@ -43,7 +43,11 @@ export function fileName(title: string, ext: string): string {
 }
 
 export function saveText(name: string, text: string, type = "text/markdown") {
-  const url = URL.createObjectURL(new Blob([text], { type: `${type};charset=utf-8` }));
+  saveBlob(name, new Blob([text], { type: `${type};charset=utf-8` }));
+}
+
+export function saveBlob(name: string, blob: Blob) {
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
   a.download = name;

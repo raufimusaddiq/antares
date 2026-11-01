@@ -189,6 +189,7 @@ a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 0.2em
 [data-icon="settings"] { --icon: url("/icons/settings.svg"); }
 [data-icon="close"] { --icon: url("/icons/close.svg"); }
 [data-icon="arrow-down"] { --icon: url("/icons/arrow-down.svg"); }
+[data-icon="share"] { --icon: url("/icons/share.svg"); }
 /* The chevron follows its label and turns over when what it controls is open. */
 [data-icon="chevron"]::before { display: none; }
 [data-icon="chevron"]::after { content: ""; display: inline-block; width: 1em; height: 1em; margin-left: 0.35rem; vertical-align: -0.15em; background: currentColor; -webkit-mask: url("/icons/chevron.svg") center / contain no-repeat; mask: url("/icons/chevron.svg") center / contain no-repeat; }
@@ -636,6 +637,22 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 .artifacts li { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; }
 .artifacts .preview { flex: 0 0 100%; width: 100%; height: 22rem; border: 2px solid var(--ink); border-radius: var(--r-sm); background: #fff; color-scheme: light; }
 .export { display: flex; flex-wrap: wrap; min-width: 0; align-items: center; gap: 0.5rem 0.6rem; }
+/* Share (#250): the link panel in the chat drawer, the picture dialog, and the public read-only page. */
+.share { display: grid; gap: 0.5rem; min-width: 0; }
+.share > button { justify-self: start; }
+.share-panel { display: grid; gap: 0.6rem; padding: 0.8rem; border: 2px solid var(--ink); border-radius: var(--r-md); background: var(--card); }
+.share-panel p { margin: 0; }
+.share-link { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.share-link input { flex: 1 1 14rem; min-width: 0; font-family: var(--font-mono); font-size: 0.8125rem; }
+.share-panel .actions, .share-image-body .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.share-image { width: min(640px, calc(100vw - 2rem)); }
+.share-image-body { display: grid; gap: 1rem; padding: 1.25rem; overflow: auto; }
+.share-image-body img { display: block; width: 100%; max-height: 60dvh; object-fit: contain; object-position: top; border: 2px solid var(--ink); border-radius: var(--r-md); background: var(--canvas); }
+.shared { width: min(760px, 100%); margin: 0 auto; padding: 2rem 1rem 3rem; display: grid; gap: 1.25rem; align-self: start; }
+.shared .turn { width: 100%; max-width: none; min-width: 0; margin-inline: 0; }
+.shared-head { display: grid; gap: 0.4rem; padding-bottom: 1rem; border-bottom: var(--line) solid var(--ink); }
+.shared-head h1 { font-size: clamp(1.8rem, 4.5vw, 2.6rem); margin: 0; overflow-wrap: anywhere; }
+.shared-head p, .shared-foot { margin: 0; }
 .print-root { display: none; }
 @media print {
   /* Only the print copy is printed: the app, its chrome and the virtual log are not. */

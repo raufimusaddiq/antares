@@ -275,6 +275,9 @@ func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r) // no bundle: say so, never substitute another page
 		return
 	}
+	if strings.HasPrefix(r.URL.Path, "/s/") { // a shared chat (#250): readable by link, never listed by a search engine
+		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
+	}
 	s.serveFile(w, r, "index.html")
 }
 

@@ -127,6 +127,9 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		"/api/me/new-chat-draft": true, "/api/me/templates": true, "/api/me/templates/": true,
 		// #248 what the assistant remembers in the caller's own workspace, read only; the server picks the profile.
 		"/api/me/memory": true,
+		// #250 a chat shared by link: the public read of /api/shared/{token}, the only route that needs no session. The
+		// owner's own link is /api/chats/{id}/share, covered above.
+		"/api/shared/": true,
 	}
 	pathRe := regexp.MustCompile(`/api/[A-Za-z0-9_/.-]*`)
 	badRe := regexp.MustCompile(`(?i)ciphertext|fingerprint|tenant_binding|profile_name|profileSlug|memory_scope|client_secret|api_key|apikey|hermes|authorization`)

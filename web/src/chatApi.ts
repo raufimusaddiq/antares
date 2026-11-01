@@ -1020,3 +1020,27 @@ export function parseSharedQuota(v: unknown): SharedQuota | null {
 }
 
 export const getQuota = (signal?: AbortSignal) => call("GET", "/api/quota", parseSharedQuota, undefined, undefined, signal);
+
+/** The owner's link to one chat (#250). The address is known only when it is made: the server keeps a hash. */
+export interface ShareStatus {
+  shared: boolean;
+  createdAt: string;
+  turns: number;
+}
+export interface NewShare {
+  token: string;
+  createdAt: string;
+  turns: number;
+}
+function parseShareStatus(v: unknown): ShareStatus | null {
+  const o = obj(v);
+  return o && typeof o.shared === "boolean" ? { shared: o.shared, createdAt: str(o.createdAt), turns: typeof o.turns === "number" ? o.turns : 0 } : null;
+}
+function parseNewShare(v: unknown): NewShare | null {
+  const o = obj(v);
+  return o && /^[A-Za-z0-9_-]{43}$/.test(str(o.token)) ? { token: str(o.token), createdAt: str(o.createdAt), turns: typeof o.turns === "number" ? o.turns : 0 } : null;
+}
+export const getShare = (chatId: string) => call("GET", `/api/chats/${encodeURIComponent(chatId)}/share`, parseShareStatus);
+export const createShare = (chatId: string) => call("POST", `/api/chats/${encodeURIComponent(chatId)}/share`, parseNewShare);
+export const stopShare = (chatId: string) => call("DELETE", `/api/chats/${encodeURIComponent(chatId)}/share`, () => true);
+export const shareUrl = (token: string) => `${window.location.origin}/s/${token}`;
