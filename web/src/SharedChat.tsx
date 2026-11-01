@@ -25,11 +25,11 @@ export const sharedToken = (path: string): string | null => /^\/s\/([A-Za-z0-9_-
  * and the page shows only what the link holds: the title, the date and the turns' text.
  */
 export function SharedChat({ token }: { token: string }) {
-  const [state, setState] = useState<Shared | "loading" | "gone" | "error">("loading");
+  const [state, setState] = useState<Shared | "loading" | "gone" | "busy" | "error">("loading");
   useEffect(() => {
     const ctl = new AbortController();
     fetch(`/api/shared/${token}`, { credentials: "same-origin", headers: { Accept: "application/json" }, signal: ctl.signal })
-      .then(async (r) => (r.status === 404 ? "gone" : r.ok ? (parseShared(await r.json()) ?? "error") : "error"))
+      .then(async (r) => (r.status === 404 ? "gone" : r.status === 429 ? "busy" : r.ok ? (parseShared(await r.json()) ?? "error") : "error"))
       .catch(() => (ctl.signal.aborted ? "loading" : "error"))
       .then((s) => !ctl.signal.aborted && setState(s));
     return () => ctl.abort();
@@ -44,13 +44,19 @@ export function SharedChat({ token }: { token: string }) {
         <p>Loading…</p>
       </main>
     );
-  if (state === "gone" || state === "error")
+  if (typeof state === "string") {
+    const [head, body] = {
+      gone: ["This link does not open", "The person who shared it may have stopped sharing, made a new link, or deleted the chat."],
+      busy: ["Too many people are reading shared chats", "Wait a minute, then reload the page."],
+      error: ["Could not load this chat", "Check your connection and reload the page."],
+    }[state];
     return (
       <main className="shared">
-        <h1>{state === "gone" ? "This link does not open" : "Could not load this chat"}</h1>
-        <p>{state === "gone" ? "The person who shared it may have stopped sharing, made a new link, or deleted the chat." : "Check your connection and reload the page."}</p>
+        <h1>{head}</h1>
+        <p>{body}</p>
       </main>
     );
+  }
   return (
     <main className="shared">
       <header className="shared-head">

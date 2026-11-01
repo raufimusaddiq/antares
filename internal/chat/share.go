@@ -49,8 +49,7 @@ func shareText(text string) string {
 		return text
 	}
 	return mediaTag.ReplaceAllStringFunc(text, func(tag string) string {
-		m := mediaTag.FindStringSubmatch(tag)
-		tail := m[3][len(strings.TrimRight(m[3], ".,;:!?)]}>")):]
+		_, tail := mediaTagParts(tag)
 		return "[media not shared]" + tail
 	})
 }

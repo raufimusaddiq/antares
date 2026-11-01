@@ -141,7 +141,7 @@ func (a *Auth) Register(mux *http.ServeMux) {
 		ph := p.PublicHandlers()
 		for _, rt := range PublicRoutes {
 			if h, ok := ph[rt.Method+" "+rt.Path]; ok {
-				mux.Handle(rt.Method+" "+rt.Path, h)
+				mux.Handle(rt.Method+" "+rt.Path, a.publicLimit(h))
 			}
 		}
 	}

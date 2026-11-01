@@ -241,8 +241,8 @@ func (v *victim) untouched(t testing.TB, what string) {
 		q.Items[0].Input != "alice-private-queued-3c9a" || q.Items[0].Status != "QUEUED" || q.Paused != "USER" {
 		t.Errorf("%s: alice's queue changed: %+v %v", what, q, err)
 	}
-	if w := v.a.anon("GET", "/api/shared/"+v.shareToken); w.Code != 200 {
-		t.Errorf("%s: alice's share link stopped working: %d", what, w.Code)
+	if _, err := store.ReadShare(v.a.svc.base, v.a.db, shareHash(v.shareToken)); err != nil {
+		t.Errorf("%s: alice's share link stopped working: %v", what, err)
 	}
 	if n := v.aliceHermesReqs(); n != v.hxAlice {
 		t.Errorf("%s: probes made %d request(s) to Hermes under alice's profile", what, n-v.hxAlice)

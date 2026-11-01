@@ -98,3 +98,21 @@ func TestShareLinkDies(t *testing.T) {
 		})
 	}
 }
+
+// The session-less read is throttled for everyone together, and says when to come back.
+func TestShareReadsAreThrottled(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	chat := alice.newChat()
+	seedTurns(t, a, alice, chat, 1)
+	token := shareChat(t, alice, chat)
+	for i := 0; i < 60; i++ {
+		if w := a.anon("GET", "/api/shared/"+token); w.Code != 200 {
+			t.Fatalf("read %d = %d", i+1, w.Code)
+		}
+	}
+	w := a.anon("GET", "/api/shared/"+token)
+	if w.Code != 429 || w.Header().Get("Retry-After") == "" {
+		t.Fatalf("read 61 = %d %v", w.Code, w.Header())
+	}
+}

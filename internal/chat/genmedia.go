@@ -39,12 +39,7 @@ func (s *Service) sealMediaTags(uid, text string) string {
 		return text
 	}
 	return mediaTag.ReplaceAllStringFunc(text, func(tag string) string {
-		m := mediaTag.FindStringSubmatch(tag)
-		path, tail := m[1]+m[2], ""
-		if m[3] != "" {
-			path = strings.TrimRight(m[3], ".,;:!?)]}>")
-			tail = m[3][len(path):]
-		}
+		path, tail := mediaTagParts(tag)
 		kind := mediaKinds[strings.ToLower(filepath.Ext(path))]
 		if kind == "" {
 			return tail
@@ -55,6 +50,17 @@ func (s *Service) sealMediaTags(uid, text string) string {
 		}
 		return "MEDIA:" + kind + "-" + base64.RawURLEncoding.EncodeToString(sealed) + tail
 	})
+}
+
+// mediaTagParts splits one MEDIA: tag into the file it names and the punctuation after an unquoted path, which
+// belongs to the sentence and stays in the text.
+func mediaTagParts(tag string) (path, tail string) {
+	m := mediaTag.FindStringSubmatch(tag)
+	if m[3] == "" {
+		return m[1] + m[2], ""
+	}
+	path = strings.TrimRight(m[3], ".,;:!?)]}>")
+	return path, m[3][len(path):]
 }
 
 // getMedia serves one generated file to the user its id was issued to. The bytes are the user's own: private, never
