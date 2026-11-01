@@ -119,8 +119,11 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
     const prev = placed.current;
     // Following the newest content: at the end last time (in last time's coordinates), or just opened.
     const wasFollowing = prev === null || atBottom(el.scrollTop, prev.viewport, prev.scrollHeight);
+    // Only re-pin when the content or the viewport changed: a render caused by the reader's own scroll must not pull
+    // them back, or the first pixels of a scroll up fight the snap until one frame jumps past the slack.
+    const resized = prev === null || prev.scrollHeight !== el.scrollHeight || prev.viewport !== el.clientHeight;
     if (wasFollowing) {
-      if (el.scrollTop + el.clientHeight < el.scrollHeight - 0.5) el.scrollTop = el.scrollHeight;
+      if (resized && el.scrollTop + el.clientHeight < el.scrollHeight - 0.5) el.scrollTop = el.scrollHeight;
     } else {
       const a = anchorAt(prev.keys, prev.lay, el.scrollTop);
       const y = a ? scrollTopFor(keys, lay, a) : null;
