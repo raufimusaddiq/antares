@@ -4,8 +4,9 @@ import { anchorAt, atBottom, layout, scrollTopFor, visibleRange, type Layout } f
 
 // A windowed, variable-height list for the conversation (PRD PERF-001 items 1-2).
 //
-//  - Only the items near the viewport are mounted. Up to WINDOW_ABOVE items every
-//    item is mounted, so an ordinary chat keeps native text selection and find.
+//  - Only the items near the viewport are mounted. Up to WINDOW_ABOVE items (one
+//    page) every item is mounted, so a short chat keeps native text selection and
+//    find; past it, rendering a whole older page at once froze the scroll.
 //  - Each item is measured in a layout effect, before paint, the first time it is
 //    mounted at the current width; later changes are re-read by a ResizeObserver
 //    (a width change clears the cache, so every item is measured again). The
@@ -16,7 +17,7 @@ import { anchorAt, atBottom, layout, scrollTopFor, visibleRange, type Layout } f
 //  - While the reader is at the bottom the list follows the newest content,
 //    including a streaming reply in `footer`; once they scroll up it stops.
 
-export const WINDOW_ABOVE = 100;
+export const WINDOW_ABOVE = 50;
 const ESTIMATE = 96;
 const OVERSCAN = 600;
 const NEAR_TOP = 320;
@@ -72,7 +73,13 @@ export function VirtualList<T>({ items, itemKey, render, footer, label, hasMore,
   const windowed = keys.length > WINDOW_ABOVE;
   // The first paint is the newest end, where a conversation opens.
   const [top, setTop] = useState(() => Math.max(0, keys.length * ESTIMATE - 800));
-  const [start, end] = windowed ? visibleRange(lay, top, viewport, OVERSCAN) : [0, keys.length];
+  // When the items change (a page of older turns prepended), `top` is still in the old layout's coordinates: carry the
+  // reader's anchor into the new layout, so the first render mounts what they are reading and not the new oldest turns,
+  // which would be measured (a forced layout) and dropped again a render later.
+  const prev = placed.current;
+  const anchor = prev && prev.keys !== keys ? anchorAt(prev.keys, prev.lay, top) : null;
+  const viewTop = (anchor && scrollTopFor(keys, lay, anchor)) ?? top;
+  const [start, end] = windowed ? visibleRange(lay, viewTop, viewport, OVERSCAN) : [0, keys.length];
 
   const latest = useRef({ keys, lay, hasMore, loadingMore, onLoadMore });
   latest.current = { keys, lay, hasMore, loadingMore, onLoadMore };
