@@ -67,3 +67,11 @@ it("holds the reader's position when the viewport shrinks while scrolled up", ()
   expect(feed.scrollTop).toBe(300);
   expect(screen.getByRole("button", { name: "Jump to latest" })).toBeTruthy();
 });
+
+it("lets the reader scroll up from the bottom without snapping back", () => {
+  render(<VirtualList {...props} footer="Done" />);
+  const feed = screen.getByRole("feed");
+  feed.scrollTop = 790;
+  fireEvent.scroll(feed);
+  expect(feed.scrollTop).toBe(790);
+});
