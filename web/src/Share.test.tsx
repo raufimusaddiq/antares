@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ShareChat } from "./ShareChat";
 import { SharedChat } from "./SharedChat";
-import { plainText, wrap } from "./shareImage";
+import { answerText, plainText, wrap } from "./shareImage";
 
 const json = (status: number, body?: unknown) => new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const TOKEN = "A".repeat(40) + "b-_";
@@ -39,12 +39,14 @@ describe("Share", () => {
       "fetch",
       vi.fn(async () => {
         seen++;
-        return seen === 1 ? json(200, { title: "Trip plan", sharedAt: "2026-11-01T10:00:00Z", turns: [{ role: "user", text: "where to?" }, { role: "assistant", text: "**Bali**" }] }) : json(404, {});
+        return seen === 1 ? json(200, { title: "Trip plan", sharedAt: "2026-11-01T10:00:00Z", turns: [{ role: "user", text: "where to?" }, { role: "assistant", text: "**Bali**" }, { role: "assistant", text: 'root = Card([h])\nh = CardHeader("Day one")' }] }) : json(404, {});
       }),
     );
     const { unmount } = render(<SharedChat token={TOKEN} />);
     expect(await screen.findByRole("heading", { name: "Trip plan" })).toBeTruthy();
     expect(screen.getByText("Bali").tagName).toBe("STRONG");
+    expect(await screen.findByText("Day one", {}, { timeout: 5000 })).toBeTruthy(); // an OpenUI answer is drawn, not shown as code
+    expect(screen.queryByText(/root = Card/)).toBeNull();
     unmount();
     render(<SharedChat token={TOKEN} />);
     await waitFor(() => expect(screen.getByRole("heading", { name: "This link does not open" })).toBeTruthy());
@@ -58,5 +60,20 @@ describe("Share", () => {
     const cut = wrap("a b c d e f", 30, measure, 2);
     expect(cut.cut).toBe(true);
     expect(cut.lines[1].endsWith("…")).toBe(true);
+  });
+
+  it("draws an OpenUI answer as its words, not its program", async () => {
+    const program = [
+      "root = Card([header, text, facts, followups])",
+      'header = CardHeader("What I know")',
+      'text = MarkDownRenderer("Here is a **summary**.")',
+      'facts = EntityList([row1, row2], "default")',
+      'row1 = {left: "Name", right: "Raufi"}',
+      'row2 = {left: "Zone", right: "WIB"}',
+      "followups = FollowUpBlock([f1])",
+      'f1 = FollowUpItem("Update my profile")',
+    ].join("\n");
+    expect(await answerText(program)).toBe("What I know\nHere is a **summary**.\nName: Raufi\nZone: WIB");
+    expect(await answerText("plain **text**")).toBe("plain **text**");
   });
 });
