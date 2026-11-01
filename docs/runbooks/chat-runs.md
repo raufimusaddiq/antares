@@ -86,7 +86,7 @@ Configurable per-account request rates and SSE quotas: [rate-limits.md](rate-lim
 
 Browser side (`web/src/VirtualList.tsx`, `virtual.ts`, `history.ts`): the first paint is the newest page;
 older pages load when the reader is within ~320 px of the top, one at a time, never twice (`seq` merge drops
-duplicates). Up to 100 turns are all mounted (text selection and find work); beyond that only the turns near
+duplicates). Up to 50 turns (one page) are all mounted (text selection and find work); beyond that only the turns near
 the viewport are. Each mounted turn is measured before paint and the scroll position is re-derived from the
 turn at the top of the viewport, so a prepended page or a late height change above does not move what is being
 read. Native scroll anchoring is off (`overflow-anchor:none`). While the reader is at the bottom the list
