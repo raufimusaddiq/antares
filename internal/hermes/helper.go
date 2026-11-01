@@ -270,5 +270,55 @@ func (h *Helper) Skills(ctx context.Context, slug string) ([]Skill, error) {
 	return out, nil
 }
 
+// Memory is what the assistant remembers in one profile: entries about the user (USER.md) and its own notes
+// (MEMORY.md), as Hermes' parser splits them.
+type Memory struct {
+	User   []string `json:"user"`
+	Memory []string `json:"memory"`
+}
+
+// Memory reads one profile's memory through the helper's POST /memory, read only (Hermes v0.22.5 has no memory route:
+// tools/hermes-provisioner/memory.go). A profile the helper does not find has no memory, never an error the caller
+// could mistake for "Hermes is down".
+func (h *Helper) Memory(ctx context.Context, slug string) (Memory, error) {
+	empty := Memory{User: []string{}, Memory: []string{}}
+	if !ValidSlug(slug) {
+		return empty, permanent("invalid profile name")
+	}
+	body, _ := json.Marshal(map[string]string{"slug": slug})
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, h.base.String()+"/memory", bytes.NewReader(body))
+	if err != nil {
+		return empty, permanent("could not build helper request")
+	}
+	req.Header.Set("Authorization", "Bearer "+h.token)
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := h.client.Do(req)
+	if err != nil {
+		return empty, transient("provisioning helper unreachable")
+	}
+	defer resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusNotFound:
+		return empty, nil
+	case resp.StatusCode != http.StatusOK:
+		return empty, transient("provisioning helper failed to read the memory")
+	}
+	var d Memory
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, maxBody+1))
+	if err != nil || len(raw) > maxBody || json.Unmarshal(raw, &d) != nil {
+		return empty, transient("provisioning helper sent an unreadable memory")
+	}
+	keep := func(in []string) []string {
+		out := make([]string, 0, len(in))
+		for _, e := range in {
+			if len(out) < maxListed && e != "" {
+				out = append(out, clip(e, 4000))
+			}
+		}
+		return out
+	}
+	return Memory{User: keep(d.User), Memory: keep(d.Memory)}, nil
+}
+
 // ErrMediaNotFound is any refused or missing media file.
 var ErrMediaNotFound = errors.New("hermes: media not found")

@@ -53,6 +53,13 @@ type Options struct {
 	Titler Titler
 	// Skills, if set, lists a profile's skills when Hermes' own skills route does not (capabilities.go).
 	Skills SkillSource
+	// Memory, if set, reads a profile's memory (memory.go). Nil: GET /api/me/memory says it is not available.
+	Memory MemorySource
+}
+
+// MemorySource reads what the assistant remembers in one profile (hermes.Helper.Memory).
+type MemorySource interface {
+	Memory(ctx context.Context, slug string) (hermes.Memory, error)
 }
 
 // SkillSource lists the skills one profile can load (hermes.Helper.Skills).
@@ -98,6 +105,7 @@ type Service struct {
 	media         MediaSource
 	titler        Titler
 	skills        SkillSource
+	memory        MemorySource
 	titling       map[string]bool // chats with a title job in flight (title.go); guarded by mu
 	jobs          bool
 	jobLocks      sync.Map // user id -> *sync.Mutex (jobs.go jobLock)
@@ -126,7 +134,7 @@ func New(o Options) (*Service, error) {
 		o.Heartbeat = 15 * time.Second
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs, media: o.Media, titler: o.Titler, skills: o.Skills,
+	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs, media: o.Media, titler: o.Titler, skills: o.Skills, memory: o.Memory,
 		base: ctx, stop: cancel, live: map[string]*liveRun{}}
 	s.wg.Add(1)
 	go s.jobShutdownLoop()

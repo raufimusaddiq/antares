@@ -874,6 +874,22 @@ export function parsePersonality(v: unknown): Personality | null {
 
 export const getPersonality = () => call("GET", "/api/me/personality", parsePersonality);
 export const putPersonality = (text: string) => call("PUT", "/api/me/personality", parsePersonality, { text });
+/** What the assistant remembers in the caller's own workspace, read only (#248): about the user, and its own notes. */
+export interface Memory {
+  user: string[];
+  memory: string[];
+}
+
+export function parseMemory(v: unknown): Memory | null {
+  if (typeof v !== "object" || v === null) return null;
+  const o = v as Record<string, unknown>;
+  const list = (x: unknown) => (Array.isArray(x) && x.every((e) => typeof e === "string") ? (x as string[]) : null);
+  const user = list(o.user);
+  const memory = list(o.memory);
+  return user && memory ? { user, memory } : null;
+}
+
+export const getMemory = () => call("GET", "/api/me/memory", parseMemory);
 /** One group of the usage dashboard (#151). estimate is null when nothing in it could be priced. */
 export interface UsageTotals {
   runs: number;

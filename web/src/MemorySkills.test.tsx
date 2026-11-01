@@ -14,20 +14,24 @@ const inventory = {
     { name: "weather", description: "Forecasts", category: "daily" },
   ],
 };
+// #248: what the assistant remembers, read only; every test's fetch answers it.
+const memory = { user: ["Prefers short answers"], memory: [] };
+const withMemory = (f: (path: string, init?: RequestInit) => Promise<Response>) =>
+  vi.fn((path: string, init?: RequestInit) => (path === "/api/me/memory" ? Promise.resolve(json(200, memory)) : f(path, init)));
 const open = (c: HTMLElement) => {
   const d = c.querySelector("details")!;
   d.open = true;
   fireEvent(d, new Event("toggle"));
 };
 
-// #111: the panel reads only while open, lists and searches skills read-only, says memory editing is unavailable,
+// #111: the panel reads only while open, shows the memory and lists and searches skills read-only,
 // and shows the instructions the server stored.
 describe("Memory & Skills", () => {
   it("reads nothing until opened, then searches skills and saves the caller's instructions", async () => {
     const calls: string[] = [];
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (path: string, init?: RequestInit) => {
+      withMemory(async (path: string, init?: RequestInit) => {
         calls.push(`${init?.method ?? "GET"} ${path}`);
         if (path === "/api/capabilities") return json(200, inventory);
         if (init?.method === "PUT") return json(200, { text: "Be brief.", max: 2000 });
@@ -38,7 +42,8 @@ describe("Memory & Skills", () => {
     expect(calls).toEqual([]);
     open(container);
     await screen.findByText("arxiv");
-    expect(container.textContent).toContain("not available");
+    expect(screen.getByText("Prefers short answers")).toBeTruthy();
+    expect(screen.getByText("No notes yet.")).toBeTruthy();
     fireEvent.change(screen.getByLabelText("Search skills"), { target: { value: "forecast" } });
     expect(screen.queryByText("arxiv")).toBeNull();
     expect(screen.getByText("weather")).toBeTruthy();
@@ -53,7 +58,7 @@ describe("Memory & Skills", () => {
     let answer!: (r: Response) => void;
     vi.stubGlobal(
       "fetch",
-      vi.fn((path: string, init?: RequestInit) => {
+      withMemory((path: string, init?: RequestInit) => {
         if (path === "/api/capabilities") return Promise.resolve(json(200, inventory));
         if (init?.method === "PUT") return new Promise<Response>((r) => (answer = r));
         return Promise.resolve(json(200, { text: "", max: 2000 }));
@@ -75,7 +80,7 @@ describe("Memory & Skills", () => {
     let fail = true;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (path: string) => {
+      withMemory(async (path: string) => {
         if (path === "/api/capabilities") return fail ? json(503, { error: { code: "HERMES_UNAVAILABLE", message: "x" } }) : json(200, inventory);
         return json(200, { text: "", max: 2000 });
       }),
@@ -96,7 +101,7 @@ describe("Memory & Skills", () => {
     let answer!: (r: Response) => void;
     vi.stubGlobal(
       "fetch",
-      vi.fn((path: string) => (path === "/api/capabilities" ? Promise.resolve(json(200, inventory)) : new Promise<Response>((r) => (answer = r)))),
+      withMemory((path: string) => (path === "/api/capabilities" ? Promise.resolve(json(200, inventory)) : new Promise<Response>((r) => (answer = r)))),
     );
     const { container } = render(<MemorySkillsPanel />);
     open(container);
@@ -111,7 +116,7 @@ describe("Memory & Skills", () => {
     let failRead = false;
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (path: string) => {
+      withMemory(async (path: string) => {
         if (path === "/api/capabilities") return json(200, inventory);
         return failRead ? json(503, { error: { code: "HERMES_UNAVAILABLE", message: "x" } }) : json(200, { text: "old", max: 2000 });
       }),
@@ -137,7 +142,7 @@ describe("Memory & Skills", () => {
       let reads = 0;
       vi.stubGlobal(
         "fetch",
-        vi.fn((path: string, init?: RequestInit) => {
+        withMemory((path: string, init?: RequestInit) => {
           if (path === "/api/capabilities") return Promise.resolve(json(200, inventory));
           if (init?.method === "PUT") return new Promise<Response>((r) => (put = r));
           reads++;
@@ -171,7 +176,7 @@ describe("Memory & Skills", () => {
   it("says so when no skills are available", async () => {
     vi.stubGlobal(
       "fetch",
-      vi.fn(async (path: string) => (path === "/api/capabilities" ? json(200, { ...inventory, capabilities: [{ id: "skills", label: "Skills", status: "unsupported", reason: "none installed" }], skills: [] }) : json(200, { text: "", max: 2000 }))),
+      withMemory(async (path: string) => (path === "/api/capabilities" ? json(200, { ...inventory, capabilities: [{ id: "skills", label: "Skills", status: "unsupported", reason: "none installed" }], skills: [] }) : json(200, { text: "", max: 2000 }))),
     );
     const { container } = render(<MemorySkillsPanel />);
     open(container);

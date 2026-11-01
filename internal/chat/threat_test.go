@@ -71,7 +71,7 @@ var builtProbes = []probe{
 var idFree = []string{"GET /api/media", "GET /api/chats", "POST /api/chats", "GET /api/search/chats", "GET /api/me/budget", "PUT /api/me/budget", "GET /api/me/spending-limits",
 	"PUT /api/me/spending-limits", "GET /api/capabilities", "POST /api/assets", "GET /api/models", "GET /api/me/model-visibility", "PUT /api/me/model-visibility", "GET /api/me/new-chat-draft",
 	"PUT /api/me/new-chat-draft", "DELETE /api/me/new-chat-draft", "GET /api/me/templates", "POST /api/me/templates", "GET /api/me/personality", "PUT /api/me/personality", "GET /api/jobs",
-	"POST /api/jobs", "GET /api/me/usage"}
+	"POST /api/jobs", "GET /api/me/usage", "GET /api/me/memory"} // memory: memory_view_test.go
 
 // templateRoutes carry a template id, not a chat or run id; their cross-user probes live in
 // drafts_test.go (TestTemplatesAreOwnerScoped), which owns the fixture that creates one.
@@ -90,7 +90,7 @@ var notBuilt = []struct {
 	{"voice uploads", "UXP-ACC-006", "no transcription endpoint exists: Hermes has no speech-to-text route (BLOCKED_BY_UPSTREAM); /api/assets only stages audio, see assets_test.go", []string{"/api/voice", "/api/transcribe", "/api/voice/%s", "/api/assets/%s/transcribe"}, false},
 	{"preview sandbox", "UXP-ACC-015", "previews are served per chat turn (probed above); no free-standing preview/artifact id exists", []string{"/api/preview", "/api/preview/%s", "/api/artifacts/%s"}, false},
 	{"fork", "UXP-ACC-012", "POST /api/chats/{id}/fork is a 501 stub; Hermes forks only a whole session (docs/runbooks/turn-controls.md)", []string{"/api/chats/%s/fork"}, true},
-	{"memory facts", "LLM-ACC-011/KNOW-006", "Hermes v0.22.5 exposes no memory route (UPSTREAM_BLOCKED: gateway/platforms/api_server.py route table has none); facts are never read from memory_store.db", []string{"/api/me/memory", "/api/me/memory/%s", "/api/knowledge/facts", "/api/me/facts/%s"}, false},
+	{"memory edits", "LLM-ACC-011/KNOW-006", "memory is view only (GET /api/me/memory, memory_test.go, owner decision 2026-11-01): no route edits or forgets an entry", []string{"/api/me/memory/%s", "/api/knowledge/facts", "/api/me/facts/%s"}, false},
 	{"delayed notifications", "UXP-ACC-002/019", "no notification outbox or endpoint exists yet", []string{"/api/notifications", "/api/notifications/%s"}, false},
 }
 

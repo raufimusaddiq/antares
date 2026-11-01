@@ -72,6 +72,7 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"PUT /api/me/budget":                                           http.HandlerFunc(s.putBudget),
 		"GET /api/search/chats":                                        http.HandlerFunc(s.searchAll),
 		"GET /api/capabilities":                                        http.HandlerFunc(s.capabilities),
+		"GET /api/me/memory":                                           http.HandlerFunc(s.getMemory),
 		"GET /api/chats/{chatId}/input":                                http.HandlerFunc(s.getChatInput),
 		"POST /api/chats/{chatId}/messages":                            http.HandlerFunc(s.postMessage),
 		"GET /api/chats/{chatId}/queue":                                http.HandlerFunc(s.getQueue),
