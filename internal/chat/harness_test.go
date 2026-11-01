@@ -507,6 +507,13 @@ func (p *person) do(method, path string, hdr map[string]string, body any) *httpt
 	return w
 }
 
+// anon is a request from someone who is not signed in.
+func (a *app) anon(method, path string) *httptest.ResponseRecorder {
+	w := httptest.NewRecorder()
+	a.h.ServeHTTP(w, httptest.NewRequest(method, testOrigin+path, nil))
+	return w
+}
+
 // account creates a signed-in account in any state, with no Hermes binding.
 func (a *app) account(sub, role, approval, tenant string) *person {
 	a.t.Helper()

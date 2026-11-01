@@ -68,6 +68,13 @@ func TestStaticServing(t *testing.T) {
 	if rec := get(h, "/chats/123"); rec.Code != 200 || !strings.Contains(rec.Body.String(), "shell") {
 		t.Fatalf("spa fallback: %d", rec.Code)
 	}
+	// A shared chat (#250) is the app shell, kept out of search engines; other pages are not marked.
+	if rec := get(h, "/s/abc"); rec.Code != 200 || rec.Header().Get("X-Robots-Tag") != "noindex, nofollow" {
+		t.Fatalf("shared chat page: %d %v", rec.Code, rec.Header())
+	}
+	if rec := get(h, "/chats/123"); rec.Header().Get("X-Robots-Tag") != "" {
+		t.Fatal("an ordinary page was marked noindex")
+	}
 	if rec := get(h, "/missing.js"); rec.Code != 404 {
 		t.Fatalf("missing asset: %d", rec.Code)
 	}

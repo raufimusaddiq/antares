@@ -21,6 +21,9 @@ var ChatRoutes = []Route{
 	{"PATCH", "/api/chats/{chatId}"},
 	{"DELETE", "/api/chats/{chatId}"},
 	{"GET", "/api/chats/{chatId}/messages"},
+	{"GET", "/api/chats/{chatId}/share"},
+	{"POST", "/api/chats/{chatId}/share"},
+	{"DELETE", "/api/chats/{chatId}/share"},
 	{"GET", "/api/media"},
 	{"POST", "/api/chats/{chatId}/messages"},
 	{"GET", "/api/chats/{chatId}/queue"},
@@ -98,6 +101,17 @@ var PushRoutes = []Route{
 	{"PUT", "/api/me/notifications"},
 }
 
+// PublicRoutes answer without a session (#250): the read of a chat its owner shared by link. Nothing else may be
+// added here without the same review: each one is reachable by anyone on the internet.
+var PublicRoutes = []Route{
+	{"GET", "/api/shared/{token}"},
+}
+
+// PublicHandlers is what the chat package supplies for PublicRoutes.
+type PublicHandlers interface {
+	PublicHandlers() map[string]http.Handler
+}
+
 // Register mounts the identity routes and the guarded placeholders. The status
 // screens are the React app (web/); it reads /api/me.
 func (a *Auth) Register(mux *http.ServeMux) {
@@ -122,6 +136,14 @@ func (a *Auth) Register(mux *http.ServeMux) {
 			h = bh
 		}
 		mux.Handle(key, a.Active(a.csrf(rt.Method, a.limit(key, h))))
+	}
+	if p, ok := a.chat.(PublicHandlers); ok {
+		ph := p.PublicHandlers()
+		for _, rt := range PublicRoutes {
+			if h, ok := ph[rt.Method+" "+rt.Path]; ok {
+				mux.Handle(rt.Method+" "+rt.Path, a.publicLimit(h))
+			}
+		}
 	}
 	// The shared plan quota, for every active account (admin_usage.go): fractions and reset times only.
 	mux.Handle("GET /api/quota", a.Active(http.HandlerFunc(a.sharedQuota)))

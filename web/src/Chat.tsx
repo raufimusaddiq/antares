@@ -44,6 +44,7 @@ import { Markdown } from "./Markdown";
 import { MAX_REPLY, ReplyContext } from "./openui/reply";
 import { Artifacts } from "./Artifacts";
 import { ExportChat } from "./ExportChat";
+import { ShareChat, ShareImageDialog } from "./ShareChat";
 import { SettingsDialog, type SettingsTab } from "./SettingsDialog";
 import { OpenChatVisualize } from "./VisualizeToggle";
 import { fenceSelection, inFence, indentInFence, toggleList, wrapSelection, type Edit } from "./composerEdit";
@@ -179,13 +180,20 @@ export interface TurnReuse {
 
 /** The turn's one working action, when there is one: it reuses earlier text as a new message (#166, #139 stage 3: an
  * action the assistant cannot honour, such as regenerate, edit or rewind, is not shown at all). */
-export function TurnControls({ reuse }: { reuse?: TurnReuse }) {
-  if (!reuse) return null;
+export function TurnControls({ reuse, onImage }: { reuse?: TurnReuse; onImage?: () => void }) {
+  if (!reuse && !onImage) return null;
   return (
     <div className="turn-controls" role="group" aria-label="Turn controls">
-      <button type="button" className="quiet" data-control="reuse" data-icon="edit" onClick={reuse.onClick}>
-        {reuse.label}
-      </button>
+      {reuse && (
+        <button type="button" className="quiet" data-control="reuse" data-icon="edit" onClick={reuse.onClick}>
+          {reuse.label}
+        </button>
+      )}
+      {onImage && (
+        <button type="button" className="quiet" data-control="image" data-icon="share" onClick={onImage}>
+          Share image
+        </button>
+      )}
     </div>
   );
 }
@@ -250,6 +258,17 @@ export function Transcript(props: TranscriptProps) {
   const lastAssistant = turns.reduce((n, t) => (t.role === "assistant" ? t.seq : n), -1);
   // "Ask again" reuses the question the newest answer replied to: the newest user turn before it.
   const askedText = turns.reduce((q, t) => (t.role === "user" && t.seq < lastAssistant ? t.text : q), "");
+  // The picture of an answer carries the question just before it (#250), when that question is loaded.
+  const [image, setImage] = useState<{ question: string; answer: string } | null>(null);
+  const questionOf = useMemo(() => {
+    const m = new Map<number, string>();
+    let q = "";
+    for (const t of turns) {
+      if (t.role === "user") q = t.text;
+      else m.set(t.seq, q);
+    }
+    return m;
+  }, [turns]);
   const renderTurn = useCallback(
     (t: Turn) => (
       <article className={`turn ${t.role}`} data-found={t.seq === focusSeq ? "true" : undefined} aria-current={t.seq === focusSeq ? "location" : undefined}>
@@ -260,12 +279,15 @@ export function Transcript(props: TranscriptProps) {
         {chatId && t.role === "user" && t.seq === lastUser && (
           <TurnControls reuse={onReuse && { label: "Edit as new message", onClick: () => onReuse(t.text) }} />
         )}
-        {chatId && t.role === "assistant" && t.seq === lastAssistant && (
-          <TurnControls reuse={onReuse && askedText ? { label: "Ask again", onClick: () => onReuse(askedText) } : undefined} />
+        {chatId && t.role === "assistant" && (
+          <TurnControls
+            reuse={t.seq === lastAssistant && onReuse && askedText ? { label: "Ask again", onClick: () => onReuse(askedText) } : undefined}
+            onImage={() => setImage({ question: questionOf.get(t.seq) ?? "", answer: t.text })}
+          />
         )}
       </article>
     ),
-    [focusSeq, chatId, lastUser, lastAssistant, onReuse, askedText],
+    [focusSeq, chatId, lastUser, lastAssistant, onReuse, askedText, questionOf],
   );
   const note = loadingMore ? (
     "Loading older messages…"
@@ -307,20 +329,23 @@ export function Transcript(props: TranscriptProps) {
     </>
   );
   return (
-    <VirtualList
-      items={turns}
-      itemKey={turnKey}
-      render={renderTurn}
-      footer={footer}
-      label="Conversation"
-      hasMore={hasMore && !olderError}
-      loadingMore={loadingMore}
-      topNote={note}
-      onLoadMore={onLoadMore}
-      focusKey={focusSeq === null ? undefined : String(focusSeq)}
-      focusNonce={focusNonce}
-      jumpSlot={jumpSlot}
-    />
+    <>
+      <VirtualList
+        items={turns}
+        itemKey={turnKey}
+        render={renderTurn}
+        footer={footer}
+        label="Conversation"
+        hasMore={hasMore && !olderError}
+        loadingMore={loadingMore}
+        topNote={note}
+        onLoadMore={onLoadMore}
+        focusKey={focusSeq === null ? undefined : String(focusSeq)}
+        focusNonce={focusNonce}
+        jumpSlot={jumpSlot}
+      />
+      {image && <ShareImageDialog question={image.question} answer={image.answer} onClose={() => setImage(null)} />}
+    </>
   );
 }
 
@@ -1470,6 +1495,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         <div id="chat-extras" className={moreOpen ? "extras open" : "extras"}>
           <div className="chat-actions-slot" ref={setActionsSlot} />
           {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? openTitle.current} />}
+          {current && current !== blankChat.current && <ShareChat chatId={current} />}
           {usage && (
             <details className="usage" open={usage.budget.reached}>
               <summary>{usage.budget.reached ? "Token limit reached" : usage.spending?.hardReached ? "Daily spending limit reached" : usage.spending?.warnings.length ? "Usage: spending warning reached" : "Usage details and limits"}</summary>

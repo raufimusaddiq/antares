@@ -188,7 +188,7 @@ type DeleteCounts struct {
 }
 
 // FinishDeleteChat removes everything Antares holds about a chat whose upstream session is gone, in
-// one transaction: the search rows, the draft, the run records and prompts, the message metadata,
+// one transaction: the search rows, the draft, the share link, the run records and prompts, the message metadata,
 // the staged images that were sent only with this chat, and the chat. The tokens its runs reported
 // are kept as two per-user numbers so the owner's token budget is not reset by deleting chats.
 // The chat must be PENDING_DELETE and the user's own, otherwise ErrNoChat and nothing changes.
@@ -246,6 +246,7 @@ func FinishDeleteChat(ctx context.Context, db *sql.DB, userID, chatID string) (D
 		{`DELETE FROM search_docs WHERE chat_id = ? AND user_id = ?`, []any{chatID, userID}, nil},
 		{`DELETE FROM search_state WHERE chat_id = ? AND user_id = ?`, []any{chatID, userID}, nil},
 		{`DELETE FROM chat_drafts WHERE chat_id = ? AND user_id = ?`, []any{chatID, userID}, nil},
+		{`DELETE FROM chat_shares WHERE chat_id = ? AND user_id = ?`, []any{chatID, userID}, nil},
 		{`DELETE FROM chats WHERE id = ? AND user_id = ? AND status = 'PENDING_DELETE'`, []any{chatID, userID}, nil},
 	}
 	for _, s := range steps {

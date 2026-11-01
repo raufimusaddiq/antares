@@ -150,3 +150,31 @@ func WriteRateLimited(w http.ResponseWriter, message string, retry int) {
 		"code": "RATE_LIMITED", "message": message, "requestId": newRequestID(), "retryAfterSeconds": hint,
 	}})
 }
+
+// publicReadsPerMinute bounds the one session-less read, a shared chat (#250), for every caller together. Behind the
+// edge proxy no client address is worth trusting, so the bucket is shared: a link is read by people, not polled, and a
+// flood costs the flooder a 429 rather than the server its database and bandwidth.
+const publicReadsPerMinute = 60
+
+func (a *Auth) publicLimit(next http.Handler) http.Handler {
+	var (
+		mu    sync.Mutex
+		start time.Time
+		n     int
+	)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		now := a.now()
+		mu.Lock()
+		if now.Sub(start) >= time.Minute {
+			start, n = now, 0
+		}
+		n++
+		over, retry := n > publicReadsPerMinute, int((time.Minute-now.Sub(start))/time.Second)+1
+		mu.Unlock()
+		if over {
+			WriteRateLimited(w, "Too many reads of shared chats; retry later", retry)
+			return
+		}
+		next.ServeHTTP(w, r)
+	})
+}
