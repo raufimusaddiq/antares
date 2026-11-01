@@ -16,15 +16,22 @@ import (
 const (
 	maxMemoryFile  = 64 << 10 // Hermes caps them near 2 KB; a hand-edited file may be larger, never this large
 	maxMemoryEntry = 4000
+	maxMemoryItems = 500
 	maxMemoryOut   = 256 << 10
 )
 
 // memoryScript runs in the Hermes container as the hermes user. From the trusted profiles directory it opens the
 // profile, memories/ and each file relative to the one before with O_NOFOLLOW, so a symlink anywhere is refused, never
-// followed. argv: profiles directory, slug, byte limit. Exit 3: no such profile.
+// followed. argv: profiles directory, slug, byte limit. Exit 3: no such profile. A file that is not a regular file, or
+// is larger than the limit (only a hand edit could make it so), does not fail the read: its list is marked partial, with
+// the whole entries that fit.
 const memoryScript = `
 import json, os, stat, sys
-from tools.memory_tool_store import MemoryStore
+try:
+    from tools.memory_tool_store import MemoryStore
+    parse = MemoryStore._parse_entries
+except Exception:  # a private Hermes name: if it moves, split the same way rather than fail the panel
+    parse = lambda raw: [e for e in (x.strip() for x in raw.split("\n\u00a7\n")) if e]
 base, slug, limit = sys.argv[1], sys.argv[2], int(sys.argv[3])
 D = os.O_RDONLY | os.O_DIRECTORY | os.O_NOFOLLOW
 try:
@@ -32,7 +39,7 @@ try:
     pfd = os.open(slug, D, dir_fd=root)
 except OSError:
     sys.exit(3)
-out = {"user": [], "memory": []}
+out = {"user": [], "memory": [], "partial": []}
 try:
     mfd = os.open("memories", D, dir_fd=pfd)
 except FileNotFoundError:
@@ -45,11 +52,19 @@ for key, name in (("user", "USER.md"), ("memory", "MEMORY.md")):
     except FileNotFoundError:
         continue
     st = os.fstat(ffd)
-    if not stat.S_ISREG(st.st_mode) or st.st_size > limit:
-        sys.exit(4)
+    if not stat.S_ISREG(st.st_mode):
+        os.close(ffd)
+        out["partial"].append(key)  # not a file Hermes wrote: shown as unreadable, never followed
+        continue
     with os.fdopen(ffd, "rb") as f:
-        raw = f.read(limit + 1).decode("utf-8-sig")
-    out[key] = list(dict.fromkeys(MemoryStore._parse_entries(raw)))
+        data = f.read(limit + 1)
+    if len(data) > limit:
+        data = data[:limit]
+        out["partial"].append(key)
+    text = data.decode("utf-8-sig", errors="replace")
+    if key in out["partial"]:
+        text = text.rsplit("\n\u00a7\n", 1)[0]  # drop the entry the cut went through
+    out[key] = list(dict.fromkeys(parse(text)))
 sys.stdout.write(json.dumps(out))
 `
 
@@ -75,20 +90,27 @@ func (s *server) memory(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var d struct {
-		User   []string `json:"user"`
-		Memory []string `json:"memory"`
+		User    []string `json:"user"`
+		Memory  []string `json:"memory"`
+		Partial []string `json:"partial"`
 	}
 	if len(out) > maxMemoryOut || json.Unmarshal([]byte(out), &d) != nil {
 		writeErr(w, http.StatusBadGateway, "the memory reader answered in an unexpected shape")
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string][]string{"user": clipEntries(d.User), "memory": clipEntries(d.Memory)})
+	partial := []string{}
+	for _, k := range d.Partial {
+		if k == "user" || k == "memory" {
+			partial = append(partial, k)
+		}
+	}
+	writeJSON(w, http.StatusOK, map[string][]string{"user": clipEntries(d.User), "memory": clipEntries(d.Memory), "partial": partial})
 }
 
 func clipEntries(in []string) []string {
 	out := make([]string, 0, len(in))
 	for _, e := range in {
-		if len(out) >= maxSkills {
+		if len(out) >= maxMemoryItems {
 			break
 		}
 		if r := []rune(e); len(r) > maxMemoryEntry {

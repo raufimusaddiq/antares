@@ -878,6 +878,8 @@ export const putPersonality = (text: string) => call("PUT", "/api/me/personality
 export interface Memory {
   user: string[];
   memory: string[];
+  /** Lists whose file could be read only in part. */
+  partial: string[];
 }
 
 export function parseMemory(v: unknown): Memory | null {
@@ -886,7 +888,8 @@ export function parseMemory(v: unknown): Memory | null {
   const list = (x: unknown) => (Array.isArray(x) && x.every((e) => typeof e === "string") ? (x as string[]) : null);
   const user = list(o.user);
   const memory = list(o.memory);
-  return user && memory ? { user, memory } : null;
+  const partial = list(o.partial) ?? [];
+  return user && memory ? { user, memory, partial } : null;
 }
 
 export const getMemory = () => call("GET", "/api/me/memory", parseMemory);

@@ -15,7 +15,7 @@ const inventory = {
   ],
 };
 // #248: what the assistant remembers, read only; every test's fetch answers it.
-const memory = { user: ["Prefers short answers"], memory: [] };
+const memory = { user: ["Prefers short answers"], memory: [], partial: ["memory"] };
 const withMemory = (f: (path: string, init?: RequestInit) => Promise<Response>) =>
   vi.fn((path: string, init?: RequestInit) => (path === "/api/me/memory" ? Promise.resolve(json(200, memory)) : f(path, init)));
 const open = (c: HTMLElement) => {
@@ -43,7 +43,7 @@ describe("Memory & Skills", () => {
     open(container);
     await screen.findByText("arxiv");
     expect(screen.getByText("Prefers short answers")).toBeTruthy();
-    expect(screen.getByText("No notes yet.")).toBeTruthy();
+    expect(screen.getByText(/Only part of this list could be read/)).toBeTruthy(); // the notes file, flagged partial
     fireEvent.change(screen.getByLabelText("Search skills"), { target: { value: "forecast" } });
     expect(screen.queryByText("arxiv")).toBeNull();
     expect(screen.getByText("weather")).toBeTruthy();

@@ -93,8 +93,8 @@ export function MemorySkillsPanel({ page = false }: { page?: boolean } = {}) {
             <p className="label">Loading…</p>
           ) : (
             <>
-              <MemoryList title="About you" entries={memory.user} empty="Nothing remembered about you yet." />
-              <MemoryList title="The assistant's notes" entries={memory.memory} empty="No notes yet." />
+              <MemoryList title="About you" entries={memory.user} partial={memory.partial.includes("user")} empty="Nothing remembered about you yet." />
+              <MemoryList title="The assistant's notes" entries={memory.memory} partial={memory.partial.includes("memory")} empty="No notes yet." />
             </>
           )}
           <p className="label">Read-only. The assistant adds and updates these itself as you chat. To change or remove one, ask it in a chat.</p>
@@ -143,11 +143,12 @@ export function MemorySkillsPanel({ page = false }: { page?: boolean } = {}) {
   );
 }
 
-function MemoryList({ title, entries, empty }: { title: string; entries: string[]; empty: string }) {
+function MemoryList({ title, entries, partial, empty }: { title: string; entries: string[]; partial: boolean; empty: string }) {
   return (
     <>
       <h4>{title}</h4>
-      {entries.length === 0 ? (
+      {partial && <p className="label">Only part of this list could be read: it was changed outside the assistant. Ask the operator to check it.</p>}
+      {entries.length === 0 && partial ? null : entries.length === 0 ? (
         <p className="label">{empty}</p>
       ) : (
         <ul className="memory-entries">

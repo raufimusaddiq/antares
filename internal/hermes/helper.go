@@ -271,17 +271,19 @@ func (h *Helper) Skills(ctx context.Context, slug string) ([]Skill, error) {
 }
 
 // Memory is what the assistant remembers in one profile: entries about the user (USER.md) and its own notes
-// (MEMORY.md), as Hermes' parser splits them.
+// (MEMORY.md), as Hermes' parser splits them. Partial names a list ("user", "memory") whose file could be read only in
+// part (larger than the helper reads, or not a regular file), so the panel can say so instead of failing.
 type Memory struct {
-	User   []string `json:"user"`
-	Memory []string `json:"memory"`
+	User    []string `json:"user"`
+	Memory  []string `json:"memory"`
+	Partial []string `json:"partial"`
 }
 
 // Memory reads one profile's memory through the helper's POST /memory, read only (Hermes v0.22.5 has no memory route:
 // tools/hermes-provisioner/memory.go). A profile the helper does not find has no memory, never an error the caller
 // could mistake for "Hermes is down".
 func (h *Helper) Memory(ctx context.Context, slug string) (Memory, error) {
-	empty := Memory{User: []string{}, Memory: []string{}}
+	empty := Memory{User: []string{}, Memory: []string{}, Partial: []string{}}
 	if !ValidSlug(slug) {
 		return empty, permanent("invalid profile name")
 	}
@@ -317,7 +319,13 @@ func (h *Helper) Memory(ctx context.Context, slug string) (Memory, error) {
 		}
 		return out
 	}
-	return Memory{User: keep(d.User), Memory: keep(d.Memory)}, nil
+	partial := []string{}
+	for _, k := range d.Partial {
+		if k == "user" || k == "memory" {
+			partial = append(partial, k)
+		}
+	}
+	return Memory{User: keep(d.User), Memory: keep(d.Memory), Partial: partial}, nil
 }
 
 // ErrMediaNotFound is any refused or missing media file.

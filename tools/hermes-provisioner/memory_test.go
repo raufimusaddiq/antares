@@ -14,7 +14,7 @@ import (
 func TestMemoryReadsOneProfile(t *testing.T) {
 	r := &skillsRunner{stdout: `{"user":["Prefers short answers"],"memory":["Project uses Go"]}`}
 	rec := do(t, newServer(r, testToken), "/memory", "Bearer "+testToken, `{"slug":"u_existing1"}`)
-	if rec.Code != http.StatusOK || rec.Body.String() != `{"memory":["Project uses Go"],"user":["Prefers short answers"]}`+"\n" {
+	if rec.Code != http.StatusOK || rec.Body.String() != `{"memory":["Project uses Go"],"partial":[],"user":["Prefers short answers"]}`+"\n" {
 		t.Fatalf("got %d %s", rec.Code, rec.Body)
 	}
 	if len(r.args) != 9 || r.args[2] != memoryCmd || r.args[4] != hermesPython || r.args[5] != memoryScript || r.args[6] != profilesDir || r.args[7] != "u_existing1" {
@@ -32,7 +32,7 @@ func TestMemoryRefusesWhatIsNotAProfilesMemory(t *testing.T) {
 		"bad slug":        {`{"slug":"../etc"}`, "", nil, http.StatusBadRequest},
 		"extra field":     {`{"slug":"u_existing1","path":"/etc"}`, "", nil, http.StatusBadRequest},
 		"missing profile": {`{"slug":"u_existing1"}`, "", exitErr(3), http.StatusNotFound},
-		"refused file":    {`{"slug":"u_existing1"}`, "", exitErr(4), http.StatusBadGateway},
+		"reader failed":   {`{"slug":"u_existing1"}`, "", exitErr(1), http.StatusBadGateway},
 		"not json":        {`{"slug":"u_existing1"}`, `Traceback`, nil, http.StatusBadGateway},
 	} {
 		auth := "Bearer " + testToken
@@ -71,6 +71,9 @@ func TestMemoryScriptReadsOnlyTheProfilesOwnFiles(t *testing.T) {
 	write("u_own", "USER.md", "Likes tea\n§\nLives in Jakarta\n§\nLikes tea")
 	write("u_own", "MEMORY.md", "Uses Go")
 	must(os.MkdirAll(filepath.Join(base, "u_empty"), 0o755))
+	// A hand-edited file past the limit, and a directory where a file should be: shown in part, never a failed panel.
+	write("u_big", "USER.md", "First\n§\n"+strings.Repeat("x", 70000))
+	must(os.MkdirAll(filepath.Join(base, "u_big", "memories", "MEMORY.md"), 0o755))
 	must(os.Symlink(filepath.Join(base, "u_victim"), filepath.Join(base, "u_linkprofile")))
 	must(os.MkdirAll(filepath.Join(base, "u_linkdir"), 0o755))
 	must(os.Symlink(filepath.Join(base, "u_victim", "memories"), filepath.Join(base, "u_linkdir", "memories")))
@@ -98,6 +101,9 @@ func TestMemoryScriptReadsOnlyTheProfilesOwnFiles(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(base, "u_empty", "memories")); !os.IsNotExist(err) {
 		t.Fatal("reading created the memories directory")
+	}
+	if d, exit, _ := run("u_big"); exit != 0 || strings.Join(d["user"], "|") != "First" || len(d["memory"]) != 0 || strings.Join(d["partial"], ",") != "user,memory" {
+		t.Fatalf("oversized and non-regular files: exit %d, %v", exit, d)
 	}
 	if _, exit, _ := run("u_missing"); exit != 3 {
 		t.Fatalf("missing profile: exit %d, want 3", exit)
