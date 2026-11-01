@@ -1,16 +1,19 @@
 import { Panel } from "./Panel";
 import { useEffect, useRef, useState } from "react";
-import { describeCode, getCapabilities, getPersonality, putPersonality, type Inventory } from "./chatApi";
+import { describeCode, getCapabilities, getMemory, getPersonality, putPersonality, type Inventory, type Memory } from "./chatApi";
 
 // Memory & Skills (#111, PRD §26.1 Memory/knowledge and Persona, KNOW-001..007). Everything here is the caller's own
-// workspace: its installed skills (read-only), its memory (the assistant offers no route to read or edit it, so this
-// says so instead of guessing), and the caller's own additional instructions, applied from the next message.
+// workspace: what the assistant remembers (read only, #248: read from the workspace by the provisioning helper, as
+// the assistant offers no memory route), its installed skills (read-only), and the caller's own additional instructions,
+// applied from the next message.
 // Read only while the panel is open.
 
 export function MemorySkillsPanel({ page = false }: { page?: boolean } = {}) {
   const [open, setOpen] = useState(page);
   const [inv, setInv] = useState<Inventory | null>(null);
   const [invError, setInvError] = useState("");
+  const [memory, setMemory] = useState<Memory | null>(null);
+  const [memoryError, setMemoryError] = useState("");
   const [query, setQuery] = useState("");
   const [text, setText] = useState("");
   const [saved, setSaved] = useState<string | null>(null);
@@ -25,6 +28,13 @@ export function MemorySkillsPanel({ page = false }: { page?: boolean } = {}) {
     let live = true;
     setInv(null);
     setInvError(""); // a reopen reads again: an earlier failure is not the answer any more
+    setMemory(null);
+    setMemoryError("");
+    void getMemory().then((r) => {
+      if (!live) return;
+      if (r.ok) setMemory(r.value);
+      else setMemoryError(describeCode(r.code));
+    });
     void getCapabilities().then((r) => {
       if (!live) return;
       if (r.ok) setInv(r.value);
@@ -77,9 +87,17 @@ export function MemorySkillsPanel({ page = false }: { page?: boolean } = {}) {
       {open && (
         <>
           <h3>Memory</h3>
-          <p className="label">
-            The assistant keeps its own long-term memory in your workspace. Viewing, editing or forgetting a stored fact here is not available: the assistant offers no route for it. To have something removed, ask the operator.
-          </p>
+          {memoryError ? (
+            <p role="alert">{memoryError}</p>
+          ) : !memory ? (
+            <p className="label">Loading…</p>
+          ) : (
+            <>
+              <MemoryList title="About you" entries={memory.user} partial={memory.partial.includes("user")} empty="Nothing remembered about you yet." />
+              <MemoryList title="The assistant's notes" entries={memory.memory} partial={memory.partial.includes("memory")} empty="No notes yet." />
+            </>
+          )}
+          <p className="label">Read-only. The assistant adds and updates these itself as you chat. To change or remove one, ask it in a chat.</p>
 
           <h3>Skills</h3>
           {invError ? (
@@ -122,5 +140,23 @@ export function MemorySkillsPanel({ page = false }: { page?: boolean } = {}) {
         </>
       )}
     </Panel>
+  );
+}
+
+function MemoryList({ title, entries, partial, empty }: { title: string; entries: string[]; partial: boolean; empty: string }) {
+  return (
+    <>
+      <h4>{title}</h4>
+      {partial && <p className="label">Only part of this list could be read: it was changed outside the assistant. Ask the operator to check it.</p>}
+      {entries.length === 0 && partial ? null : entries.length === 0 ? (
+        <p className="label">{empty}</p>
+      ) : (
+        <ul className="memory-entries">
+          {entries.map((e, i) => (
+            <li key={i}>{e}</li>
+          ))}
+        </ul>
+      )}
+    </>
   );
 }

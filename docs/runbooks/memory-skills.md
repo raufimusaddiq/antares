@@ -3,14 +3,27 @@
 The account menu's **Memory & Skills** panel (read only while open) covers three things, all from the caller's own
 workspace.
 
-## Memory: UPSTREAM_BLOCKED
+## Memory: view only, through the provisioning helper
 
 Hermes v0.22.5 exposes no memory route: the gateway route table (`gateway/platforms/api_server.py`, `/v1/*` and
-`/api/*`) has `/v1/skills` and `/v1/toolsets` but nothing for facts or notes. Antares therefore shows that viewing,
-editing and forgetting a fact is unavailable and points to the operator. It never reads `memory_store.db`, mounts a
-profile or runs a script against one (KNOW-002/003). `TestCrossUserThreatNotYetBuilt` ("memory facts") fails the day
-a memory path is routed without a test. When Hermes ships a documented per-profile memory API, KNOW-006 needs an
-upstream read-back after each edit, not an optimistic update.
+`/api/*`) has `/v1/skills` and `/v1/toolsets` but nothing for facts or notes. The owner decided (2026-11-01, #248) to
+show memory anyway, view only, the way the helper already serves skills and generated media.
+
+- Hermes keeps a profile's memory in `memories/USER.md` (about the user) and `memories/MEMORY.md` (its own notes),
+  entries separated by `\n§\n`. `GET /api/me/memory` (Active guard) asks the helper's `POST /memory` for the profile
+  bound to the caller's account on the server; a client that names a profile is refused (400). The helper
+  (`tools/hermes-provisioner/memory.go`) reads the two files in the Hermes container as the hermes user, opening every
+  path component with `O_NOFOLLOW` (a symlink is refused, never followed), and splits them with Hermes' own parser.
+  It writes nothing: Hermes' own loader would create `memories/`, so it is not used.
+- The panel lists both, as plain text. Entries Hermes blocks from the prompt as threats are still shown as stored,
+  so the user can see them.
+- There is no edit or forget: changing memory means asking the assistant in a chat (its memory tool). An edit route
+  would need Hermes' own locking and write gate, and a read-back after each change (KNOW-006);
+  `TestCrossUserThreatNotYetBuilt` ("memory edits") fails the day one is routed without a test.
+- Tests: `TestMemoryIsTheCallersOwnOnly` (each person gets only their own profile's memory; accounts that may not
+  use the assistant are refused before the helper is asked), `TestMemoryScriptReadsOnlyTheProfilesOwnFiles` (the
+  script against real files: own profile read, symlinked profile, directory or file refused, nothing created).
+- `memory_store.db` and other profile files are never read.
 
 ## Skills: read-only
 

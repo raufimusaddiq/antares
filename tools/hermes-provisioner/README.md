@@ -27,6 +27,9 @@ All endpoints except `/health` need `Authorization: Bearer $PROVISIONER_TOKEN`.
 | `POST /provision` | `{"slug":"u_xxxxxxxx","toolsets":[...]}` (`toolsets` optional) | creates the profile if absent, bootstraps the declared shared inference key/endpoint for a new profile, writes a distinct fresh `API_SERVER_KEY` to its `.env`, returns `{profile,key,created_at}` once. `409` if the profile already has a key. |
 | `POST /rotate` | `{"slug":...,"toolsets":[...]}` (`toolsets` optional) | reapplies the toolset policy, replaces the key, returns it once. `404` if the profile is absent. |
 | `POST /deprovision` | `{"slug":...}` | `hermes profile delete` then `purge-identity`. Idempotent. Returns no key. |
+| `POST /media` | `{"slug":...,"path":...}` | the bytes of one generated media file in that profile's `cache/`, refused (`404`) outside it or through a symlink. |
+| `POST /skills` | `{"slug":...}` | the profile's skills, from Hermes' own lister with `HERMES_HOME` set to that profile. Read only. |
+| `POST /memory` | `{"slug":...}` | `{"user":[...],"memory":[...]}`: the entries of that profile's `memories/USER.md` and `MEMORY.md`, split by Hermes' own parser. Read only (nothing is written, not even the directory); a symlink anywhere on the path is refused; `404` if the profile is absent (#248). |
 | `GET /health` | – | unauthenticated; `200` when the container answers `hermes --version`, else `503`. Body: `{"status","revision","modified"}`, the build's `vcs.revision` (`"unavailable"` without a VCS stamp). Deploys compare it to the deployed commit: `deploy/verify-helper-revision.sh`. The exact deployed commit is visible to anything that can reach the bind address (the docker bridge), which is why the bind must never be public. |
 
 ## Rules enforced

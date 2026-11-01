@@ -162,6 +162,8 @@ function api(req, res, url) {
     const model = (i) => ({ id: `model-${String(i).padStart(2, "0")}-${["flash", "pro", "mini", "vision"][i % 4]}`, available: true, hidden: false, reasoning: i % 3 === 0, reasoningEfforts: i % 3 === 0 ? ["low", "high"] : [], modalities: { input: i % 4 === 3 ? ["text", "image"] : ["text"], output: ["text"] }, contextWindow: 128000, price: null });
     return send(200, { source: "kenari", fetchedAt: "2026-10-28T08:00:00Z", stale: false, default: { provider: "custom", model: "model-00-flash" }, unsupported: {}, providers: [{ slug: "custom", name: "Kenari", available: true, models: Array.from({ length: 40 }, (_, i) => model(i)) }] });
   }
+  // Settings → Memory & skills (#248): what the assistant remembers, with a long entry that must wrap.
+  if (url.pathname === "/api/me/memory") return send(200, { partial: [], user: ["Prefers short answers in English, with code samples in Go.", "Lives in Jakarta (UTC+7); works on a self-hosted chat app called Antares and wants changes deployed and smoke-tested end to end without being asked each time.", "Dislikes yellow in UIs."], memory: ["Production is antares.investdx.biz.id; deploys are checked with the smoke test."] });
   // Settings → Usage with production-like figures: long chat titles and seven-digit token counts.
   if (url.pathname === "/api/me/usage") {
     const t = (runs, input, output) => ({ runs, unreported: 0, unpriced: runs, input, output, cacheRead: 0, estimate: null });
