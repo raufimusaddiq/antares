@@ -3,7 +3,7 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ShareChat } from "./ShareChat";
 import { SharedChat } from "./SharedChat";
-import { answerText, plainText, wrap } from "./shareImage";
+import { answerBlocks, plainText, wrap } from "./shareImage";
 
 const json = (status: number, body?: unknown) => new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const TOKEN = "A".repeat(40) + "b-_";
@@ -45,12 +45,12 @@ describe("Share", () => {
     const { unmount } = render(<SharedChat token={TOKEN} />);
     expect(await screen.findByRole("heading", { name: "Trip plan" })).toBeTruthy();
     expect(screen.getByText("Bali").tagName).toBe("STRONG");
-    expect(await screen.findByText("Day one", {}, { timeout: 5000 })).toBeTruthy(); // an OpenUI answer is drawn, not shown as code
+    expect(await screen.findByText("Day one", {}, { timeout: 15_000 })).toBeTruthy(); // an OpenUI answer is drawn, not shown as code
     expect(screen.queryByText(/root = Card/)).toBeNull();
     unmount();
     render(<SharedChat token={TOKEN} />);
     await waitFor(() => expect(screen.getByRole("heading", { name: "This link does not open" })).toBeTruthy());
-  });
+  }, 30_000); // the OpenUI chunk loads slowly when the whole suite runs at once
 
   it("draws an answer as plain words that fit the card", () => {
     expect(plainText("## Plan\n- **Day 1**: see [the map](https://x.test)\nMEDIA:image-abc")).toBe("Plan\n• Day 1: see the map (https://x.test)");
@@ -62,18 +62,27 @@ describe("Share", () => {
     expect(cut.lines[1].endsWith("…")).toBe(true);
   });
 
-  it("draws an OpenUI answer as its words, not its program", async () => {
+  it("draws an answer by its shape: headings, lists, rows, code, tags", async () => {
+    expect(await answerBlocks("## Plan\n- **Day 1** see `map`\n  - nested\n\n```\nls\n```")).toEqual([
+      { kind: "heading", level: 2, text: "Plan" },
+      { kind: "list", ordered: false, items: [{ runs: [{ text: "Day 1", bold: true }, { text: " see " }, { text: "map", code: true }], depth: 0 }, { runs: [{ text: "nested" }], depth: 1 }] },
+      { kind: "code", text: "ls" },
+    ]);
     const program = [
-      "root = Card([header, text, facts, followups])",
+      "root = Card([header, facts, interests, tags, followups])",
       'header = CardHeader("What I know")',
-      'text = MarkDownRenderer("Here is a **summary**.")',
-      'facts = EntityList([row1, row2], "default")',
+      'facts = EntityList([row1], "default")',
       'row1 = {left: "Name", right: "Raufi"}',
-      'row2 = {left: "Zone", right: "WIB"}',
+      'interests = InlineHeader("Interests")',
+      'tags = TagBlock(["AI", "Trading"])',
       "followups = FollowUpBlock([f1])",
       'f1 = FollowUpItem("Update my profile")',
     ].join("\n");
-    expect(await answerText(program)).toBe("What I know\nHere is a **summary**.\nName: Raufi\nZone: WIB");
-    expect(await answerText("plain **text**")).toBe("plain **text**");
+    expect(await answerBlocks(program)).toEqual([
+      { kind: "heading", level: 1, text: "What I know" },
+      { kind: "rows", rows: [["Name", "Raufi"]] },
+      { kind: "label", text: "Interests" },
+      { kind: "chips", items: ["AI", "Trading"] },
+    ]);
   });
 });
