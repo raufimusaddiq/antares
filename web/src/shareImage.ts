@@ -2,6 +2,7 @@
 // sent anywhere and no page markup is rasterised, so the picture holds only the words, the date and the app's name.
 
 import { splitMedia } from "./mediaTags";
+import { splitSegments } from "./openui/segments";
 
 /** Markdown read as plain text: the words stay, the markup goes, and a link keeps its address in brackets. */
 export function plainText(md: string): string {
@@ -49,6 +50,14 @@ export function wrap(text: string, width: number, measure: (s: string) => number
   while (last && measure(`${last}…`) > width) last = last.slice(0, -1);
   kept[max - 1] = `${last.trimEnd()}…`;
   return { lines: kept, cut: true };
+}
+
+/** An answer's text with each OpenUI block replaced by its words; a block that does not parse keeps its source. */
+export async function answerText(answer: string): Promise<string> {
+  const segments = splitSegments(answer);
+  if (segments.every((s) => s.kind === "md")) return answer;
+  const { blockText } = await import("./openui/text");
+  return segments.map((s) => (s.kind === "md" ? s.text : (blockText(s.source) ?? s.source))).join("\n\n");
 }
 
 const W = 1080;
@@ -104,6 +113,7 @@ export async function renderShareImage(question: string, answer: string, date: D
   } catch {
     // the fallback face draws the same words
   }
+  const words = await answerText(answer);
   const inner = W - 2 * PAD - 2 * BOX;
   const qFont = `600 34px ${FONT}`;
   const aFont = `400 31px ${FONT}`;
@@ -115,7 +125,7 @@ export async function renderShareImage(question: string, answer: string, date: D
   const q = wrap(plainText(question), inner, (s) => ctx.measureText(s).width, 6);
   const qH = cardH(q.lines.length, qLH);
   ctx.font = aFont;
-  const a = wrap(plainText(answer), inner, (s) => ctx.measureText(s).width, Math.max(4, Math.floor((MAX_H - chrome - qH - cardH(0, aLH)) / aLH)));
+  const a = wrap(plainText(words), inner, (s) => ctx.measureText(s).width, Math.max(4, Math.floor((MAX_H - chrome - qH - cardH(0, aLH)) / aLH)));
   const aH = cardH(a.lines.length, aLH);
   const H = chrome + qH + aH;
   canvas.width = W;

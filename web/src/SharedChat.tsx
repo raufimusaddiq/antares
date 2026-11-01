@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Markdown } from "./Markdown";
+import { MessageBody } from "./MessageBody";
 
 interface Shared {
   title: string;
@@ -67,7 +68,7 @@ export function SharedChat({ token }: { token: string }) {
       {state.turns.map((t, i) => (
         <article key={i} className={`turn ${t.role}`}>
           <h2 className="who">{t.role === "user" ? "Question" : "Assistant"}</h2>
-          <Markdown text={t.text} />
+          {t.role === "user" ? <Markdown text={t.text} /> : <MessageBody text={t.text} streaming={false} />}
         </article>
       ))}
       <p className="shared-foot label">
