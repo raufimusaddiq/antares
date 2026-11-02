@@ -1080,7 +1080,7 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
   --openui-border-default: var(--hair); --openui-border-interactive: var(--ink); --openui-border-interactive-selected: var(--ink);
   --openui-text-neutral-primary: var(--ink); --openui-text-neutral-secondary: var(--ink-2); --openui-text-neutral-tertiary: var(--ink-2); --openui-text-neutral-link: var(--cobalt);
   --openui-info-background: var(--peri); --openui-success-background: var(--mint); --openui-alert-background: var(--blush); --openui-danger-background: var(--mark);
-  --openui-text-info-primary: var(--ink); --openui-text-success-primary: var(--ink); --openui-text-alert-primary: var(--ink); --openui-text-danger-primary: var(--ink);
+  --openui-text-info-primary: var(--ink); --openui-text-success-primary: var(--ink); --openui-text-alert-primary: var(--ink); --openui-text-danger-primary: var(--mark-ink);
   --openui-interactive-accent-default: var(--cobalt); --openui-interactive-accent-hover: var(--cobalt); --openui-interactive-accent-pressed: var(--cobalt); --openui-text-accent-primary: var(--cobalt-ink);
   --openui-radius-s: var(--r-sm); --openui-radius-m: var(--r-md); --openui-radius-l: var(--r-md); --openui-radius-xl: var(--r-lg);
 }
@@ -1135,6 +1135,7 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 .openui-root :is(.openui-callout-success, .openui-text-callout-success) { background: var(--mint); }
 .openui-root :is(.openui-callout-warning, .openui-text-callout-warning) { background: var(--blush); }
 .openui-root :is(.openui-callout-danger, .openui-callout-error, .openui-text-callout-danger) { background: var(--mark); }
+.openui-root :is(.openui-callout-danger, .openui-callout-error, .openui-text-callout-danger) :is(.openui-callout-title, .openui-callout-description, .openui-text-callout-content-title, .openui-text-callout-content-description) { color: var(--mark-ink); }
 .openui-root :is(.openui-callout-title, .openui-text-callout-content-title) { color: var(--ink); font-weight: 700; }
 .openui-root :is(.openui-callout-description, .openui-text-callout-content-description) { color: var(--ink); }
 /* Tabs: a row of pills, the open one in ink. */

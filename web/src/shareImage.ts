@@ -467,21 +467,31 @@ function barUnits(ctx: Ctx, unit: string, series: string[], bars: [string, numbe
       ctx.fillText(v.toLocaleString(), x + labelW + w + 14, y + 32);
     },
   });
+  // The key: a swatch and a name per series, on as many lines as it needs.
+  ctx.font = `500 22px ${SANS}`;
+  const keys: { name: string; x: number; line: number }[] = [];
+  let kx = 0;
+  let line = 0;
+  series.forEach((s) => {
+    const name = fit(s, width - 40);
+    const w = ctx.measureText(name).width + 56;
+    if (kx > 0 && kx + w > width) [kx, line] = [0, line + 1];
+    keys.push({ name, x: kx, line });
+    kx += w;
+  });
   const key: Unit = {
-    h: 50,
+    h: 50 + line * 36,
     draw: (y) => {
-      let kx = x;
       ctx.font = `500 22px ${SANS}`;
-      series.forEach((name, i) => {
+      keys.forEach((k, i) => {
+        const ky = y + k.line * 36;
         ctx.fillStyle = SERIES[i];
-        ctx.fillRect(kx, y + 14, 18, 18);
+        ctx.fillRect(x + k.x, ky + 14, 18, 18);
         ctx.strokeStyle = C.ink;
         ctx.lineWidth = 2;
-        ctx.strokeRect(kx, y + 14, 18, 18);
+        ctx.strokeRect(x + k.x, ky + 14, 18, 18);
         ctx.fillStyle = C.ink;
-        const t = fit(name, width / series.length - 50);
-        ctx.fillText(t, kx + 28, y + 31);
-        kx += ctx.measureText(t).width + 56;
+        ctx.fillText(k.name, x + k.x + 28, ky + 31);
       });
     },
   };

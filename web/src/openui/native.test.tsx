@@ -138,6 +138,11 @@ describe("rendering", () => {
       'root = Card([t], [s1])\nt = TextContent("see [2]")\ns1 = {title: "One", sourceName: "one.example", url: "https://one.example"}\ns2 = {title: "Two", sourceName: "two.example", url: "https://two.example"}',
       ["see", "one.example", "two.example"],
     ],
+    [
+      "a source on a card with no sources",
+      'root = Card([t])\nt = TextContent("see [1]")\ns1 = {title: "One", sourceName: "one.example", url: "https://one.example"}',
+      ["see", "one.example"],
+    ],
   ])("%s: rendered whole, in order, with no note", (_, source, shown) => {
     const { container } = render(<RichBlock source={source} />);
     const block = container.querySelector(".ou-block")!;
