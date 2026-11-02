@@ -150,7 +150,7 @@ function drawLine(ctx: Ctx, line: Piece[], x: number, base: number, size: number
     if (p.code) {
       ctx.fillStyle = C.tint;
       ctx.beginPath();
-      ctx.roundRect(x - 5, base - size * 0.8, p.w + 10, size * 1.04, 7);
+      ctx.roundRect(x - 5, base - size * 0.8, ctx.measureText(p.text.trimEnd()).width + 10, size * 1.04, 7);
       ctx.fill();
     }
     ctx.fillStyle = p.link ? C.cobalt : color;
@@ -227,21 +227,22 @@ function dots(ctx: Ctx, x: number, y: number, w: number, h: number, step: number
 
 const gap = (h: number): Unit => ({ h, draw: () => {}, gap: true });
 
-/** A label: a cobalt square, the words in spaced capitals, and a hairline to the edge. */
-function labelUnit(ctx: Ctx, text: string, x: number, width: number): Unit {
+/** A label: a cobalt square, the words in spaced capitals over as many lines as they need, and a hairline to the edge. */
+function labelUnits(ctx: Ctx, text: string, x: number, width: number): Unit[] {
   const font = `700 20px ${MONO}`;
   ctx.font = font;
   spaced(ctx, 3);
-  let t = text.toUpperCase();
-  while (t.length > 1 && ctx.measureText(t).width > width - 120) t = t.slice(0, -2) + "…";
-  const tw = ctx.measureText(t).width;
+  const { lines } = wrap(text.toUpperCase(), width - 60, (t) => ctx.measureText(t).width, 4);
+  const tw = ctx.measureText(lines[lines.length - 1] ?? "").width;
   spaced(ctx, 0);
-  return {
-    h: 52,
+  return lines.map((t, i) => ({
+    h: i === 0 ? 52 : 34,
     draw: (y) => {
-      const mid = y + 30;
-      ctx.fillStyle = C.cobalt;
-      ctx.fillRect(x, mid - 7, 14, 14);
+      const mid = y + (i === 0 ? 30 : 12);
+      if (i === 0) {
+        ctx.fillStyle = C.cobalt;
+        ctx.fillRect(x, mid - 7, 14, 14);
+      }
       ctx.font = font;
       spaced(ctx, 3);
       ctx.fillStyle = C.ink;
@@ -249,10 +250,11 @@ function labelUnit(ctx: Ctx, text: string, x: number, width: number): Unit {
       ctx.fillText(t, x + 28, mid + 1);
       ctx.textBaseline = "alphabetic";
       spaced(ctx, 0);
+      if (i < lines.length - 1) return;
       ctx.fillStyle = C.hair;
       ctx.fillRect(x + 28 + tw + 20, mid - 1, Math.max(0, width - tw - 48), 2);
     },
-  };
+  }));
 }
 
 function listUnits(ctx: Ctx, ordered: boolean, items: Item[], x: number, width: number): Unit[] {
@@ -433,6 +435,62 @@ function chipUnits(ctx: Ctx, items: string[], x: number, width: number): Unit[] 
   return rows.map((row) => ({ h: 64, draw: (y) => row.forEach((c) => pill(ctx, x + c.x, y + 6, 50, c.text, font, c.fill, C.ink)) }));
 }
 
+const SERIES = [C.cobalt, C.mark, "#0f9d63", "#e8590c", "#7b3fe4"]; // the app's --chart-1..5
+
+/** Bars to scale, in the order given: one row per label, or with several series a label over a bar per series and a key. */
+function barUnits(ctx: Ctx, unit: string, series: string[], bars: [string, number[]][], x: number, width: number): Unit[] {
+  const many = series.length > 1;
+  const labelW = many ? 0 : Math.round(width * 0.3);
+  const track = width - labelW - 150;
+  const max = Math.max(...bars.flatMap(([, v]) => v.map(Math.abs)), 1e-9);
+  const fit = (t: string, w: number) => {
+    while (t.length > 1 && ctx.measureText(t).width > w) t = t.slice(0, -2) + "…";
+    return t;
+  };
+  const bar = (label: string, v: number, color: string): Unit => ({
+    h: many ? 44 : 54,
+    draw: (y) => {
+      ctx.font = `500 24px ${SANS}`;
+      ctx.fillStyle = C.ink;
+      if (!many) ctx.fillText(fit(label, labelW - 20), x, y + 36);
+      const w = Math.max(6, (Math.abs(v) / max) * track);
+      ctx.beginPath();
+      ctx.roundRect(x + labelW, y + 8, w, 30, 8);
+      ctx.fillStyle = color;
+      ctx.fill();
+      ctx.lineWidth = 2.5;
+      ctx.strokeStyle = C.ink;
+      ctx.stroke();
+      ctx.font = `700 24px ${SANS}`;
+      ctx.fillStyle = C.ink;
+      ctx.fillText(v.toLocaleString(), x + labelW + w + 14, y + 32);
+    },
+  });
+  const key: Unit = {
+    h: 50,
+    draw: (y) => {
+      let kx = x;
+      ctx.font = `500 22px ${SANS}`;
+      series.forEach((name, i) => {
+        ctx.fillStyle = SERIES[i];
+        ctx.fillRect(kx, y + 14, 18, 18);
+        ctx.strokeStyle = C.ink;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(kx, y + 14, 18, 18);
+        ctx.fillStyle = C.ink;
+        const t = fit(name, width / series.length - 50);
+        ctx.fillText(t, kx + 28, y + 31);
+        kx += ctx.measureText(t).width + 56;
+      });
+    },
+  };
+  const rows = bars.slice(0, many ? 8 : 16).flatMap(([label, vs]): Unit[] =>
+    many ? [...textUnits(ctx, [{ text: label, bold: true }], x, width, 24, 38), ...vs.map((v, i) => bar(label, v, SERIES[i])), gap(8)] : [bar(label, vs[0], SERIES[0])],
+  );
+  const caption = unit ? textUnits(ctx, [{ text: unit }], x, width, 22, 36, 400, C.ink2) : [];
+  return [...(many ? [key] : []), ...rows, ...caption];
+}
+
 function blockUnits(ctx: Ctx, b: Block, x: number, width: number): Unit[] {
   switch (b.kind) {
     case "heading": {
@@ -454,7 +512,7 @@ function blockUnits(ctx: Ctx, b: Block, x: number, width: number): Unit[] {
       }));
     }
     case "label":
-      return [labelUnit(ctx, b.text, x, width)];
+      return labelUnits(ctx, b.text, x, width);
     case "para":
       return b.muted ? textUnits(ctx, b.runs, x, width, 26, 40, 400, C.ink2) : textUnits(ctx, b.runs, x, width, 30, 46);
     case "list":
@@ -469,6 +527,8 @@ function blockUnits(ctx: Ctx, b: Block, x: number, width: number): Unit[] {
       return [quoteUnit(ctx, b.title, b.runs, x, width)];
     case "chips":
       return chipUnits(ctx, b.items, x, width);
+    case "bars":
+      return barUnits(ctx, b.unit, b.series, b.bars, x, width);
     case "rule":
       return [{ h: 20, draw: (y) => ((ctx.fillStyle = C.hair), ctx.fillRect(x, y + 9, width, 2)) }];
   }

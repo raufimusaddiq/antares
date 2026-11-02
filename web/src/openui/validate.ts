@@ -150,7 +150,11 @@ export function repair(source: string): { program: string } {
   const dangling = [...best.m.unresolved].sort((a, b) => firstUse(program, a) - firstUse(program, b));
   const loose = outermost(program, best.m.orphaned);
   if (dangling.length > 0 && dangling.length === loose.length) step(rename(program, new Map(dangling.map((d, i) => [d, loose[i]]))));
-  const left = outermost(program, best.m.orphaned);
+  // A source the model defined but did not list joins the root's sources; any other unused part goes in the card.
+  const isSource = (n: string) => /^\s*\{/.test(statement(program, n).text);
+  const sources = outermost(program, best.m.orphaned).filter(isSource);
+  if (sources.length > 0) step(addSources(program, sources));
+  const left = outermost(program, best.m.orphaned).filter((n) => !isSource(n));
   if (left.length > 0) step(placeInRoot(program, left));
   return { program };
 }
@@ -235,6 +239,15 @@ function unnest(src: string): string {
 }
 
 /** Puts names among the root Card's children, each after the child written just before it, or null if the root is not `Card([...]`. */
+/** The program with `names` added to the root Card's sources list, when it is a list of names. */
+function addSources(src: string, names: string[]): string | null {
+  const root = statement(src, "root");
+  const list = /\],\s*\[([\w\s,]*)\]\s*\)\s*$/.exec(root.text);
+  if (root.at < 0 || !list) return null;
+  const at = src.indexOf(root.text, root.at) + list.index + list[0].indexOf("[", 1) + 1 + list[1].length;
+  return src.slice(0, at) + (list[1].trim() ? ", " : "") + names.join(", ") + src.slice(at);
+}
+
 function placeInRoot(src: string, names: string[]): string | null {
   const open = /^root\s*=\s*Card\(\s*\[/m.exec(src);
   if (!open) return null;
