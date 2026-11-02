@@ -61,6 +61,7 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"GET /api/media":                                               http.HandlerFunc(s.getMedia),
 		"GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}":         http.HandlerFunc(s.downloadArtifact),
 		"GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview": http.HandlerFunc(s.previewArtifact),
+		"POST /api/chats/{chatId}/messages/{seq}/summary":              http.HandlerFunc(s.summarizeTurn),
 		"GET /api/chats/{chatId}/search":                               http.HandlerFunc(s.searchOne),
 		"GET /api/chats/{chatId}/usage":                                http.HandlerFunc(s.chatUsage),
 		"GET /api/models":                                              http.HandlerFunc(s.listModels),

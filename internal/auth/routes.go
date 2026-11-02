@@ -34,6 +34,7 @@ var ChatRoutes = []Route{
 	{"DELETE", "/api/chats/{chatId}/queue/{itemId}"},
 	{"GET", "/api/chats/{chatId}/messages/{seq}/artifacts/{n}"},
 	{"GET", "/api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview"},
+	{"POST", "/api/chats/{chatId}/messages/{seq}/summary"},
 	{"GET", "/api/chats/{chatId}/search"},
 	{"GET", "/api/chats/{chatId}/usage"},
 	{"GET", "/api/chats/{chatId}/input"},

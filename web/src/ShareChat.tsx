@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { createShare, describeCode, getShare, shareUrl, stopShare } from "./chatApi";
+import { createShare, describeCode, getShare, shareUrl, stopShare, type ApiResult } from "./chatApi";
 import { saveBlob } from "./exportChat";
 import { renderShareImage } from "./shareImage";
 
@@ -130,9 +130,25 @@ export function ShareChat({ chatId }: { chatId: string }) {
   );
 }
 
-/** One answer and the question before it, as a picture to send or save. */
-export function ShareImageDialog({ question, answer, onClose }: { question: string; answer: string; onClose: () => void }) {
+/**
+ * One answer and the question before it, as a picture to send or save. With `summarize` it opens on a 9:16 picture of a
+ * short summary of the answer (#261), and the whole answer is one tap away; when no summary can be written, the whole
+ * answer is shown and the reader is told.
+ */
+export function ShareImageDialog({
+  question,
+  answer,
+  summarize,
+  onClose,
+}: {
+  question: string;
+  answer: string;
+  summarize?: (signal: AbortSignal) => Promise<ApiResult<string>>;
+  onClose: () => void;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
+  const [mode, setMode] = useState<"summary" | "full">(summarize ? "summary" : "full");
+  const [summary, setSummary] = useState<string | null>(null);
   const [img, setImg] = useState<{ url: string; file: File } | "failed" | null>(null);
   const [note, setNote] = useState("");
   useEffect(() => {
@@ -141,9 +157,28 @@ export function ShareImageDialog({ question, answer, onClose }: { question: stri
       if (typeof d.showModal === "function") d.showModal();
       else d.setAttribute("open", "");
     }
+  }, []);
+  // The summary is asked for once, when it is first shown. The caller's function is new on each of its renders, so it is
+  // read from a ref: a re-render while the model writes does not ask again.
+  const ask = useRef(summarize);
+  ask.current = summarize;
+  useEffect(() => {
+    if (mode !== "summary" || summary !== null || !ask.current) return;
+    const ctl = new AbortController();
+    void ask.current(ctl.signal).then((r) => {
+      if (ctl.signal.aborted) return;
+      if (r.ok) return setSummary(r.value);
+      setNote("No summary could be written just now, so this is the whole answer.");
+      setMode("full");
+    });
+    return () => ctl.abort();
+  }, [mode, summary]);
+  useEffect(() => {
+    setImg(null);
+    if (mode === "summary" && summary === null) return;
     let url = "";
     let live = true;
-    void renderShareImage(question, answer, new Date()).then((blob) => {
+    void renderShareImage(question, answer, new Date(), mode === "summary" ? (summary ?? undefined) : undefined).then((blob) => {
       if (!live) return;
       if (!blob) return setImg("failed");
       url = URL.createObjectURL(blob);
@@ -153,7 +188,7 @@ export function ShareImageDialog({ question, answer, onClose }: { question: stri
       live = false;
       if (url) URL.revokeObjectURL(url);
     };
-  }, [question, answer]);
+  }, [question, answer, mode, summary]);
   const ready = img !== null && img !== "failed" ? img : null;
   const canSend = ready !== null && typeof navigator.canShare === "function" && navigator.canShare({ files: [ready.file] });
   const send = () => {
@@ -169,7 +204,29 @@ export function ShareImageDialog({ question, answer, onClose }: { question: stri
         <button type="button" className="quiet icon-only" data-icon="close" aria-label="Close" onClick={onClose} />
       </header>
       <div className="share-image-body">
-        {img === null && <p className="label" role="status">Drawing…</p>}
+        {summarize && (
+          <div className="share-image-mode" role="group" aria-label="What the picture shows">
+            {(["summary", "full"] as const).map((m) => (
+              <button
+                key={m}
+                type="button"
+                className={mode === m ? "quiet on" : "quiet"}
+                aria-pressed={mode === m}
+                onClick={() => {
+                  setNote("");
+                  setMode(m);
+                }}
+              >
+                {m === "summary" ? "Summary" : "Full answer"}
+              </button>
+            ))}
+          </div>
+        )}
+        {img === null && (
+          <p className="label" role="status">
+            {mode === "summary" && summary === null ? "Summarising…" : "Drawing…"}
+          </p>
+        )}
         {img === "failed" && <p role="alert">This browser could not draw the image.</p>}
         {ready && <img src={ready.url} alt="The question and answer as an image" />}
         <div className="actions">

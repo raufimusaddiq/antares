@@ -380,6 +380,7 @@ type appOpts struct {
 	heartbeat time.Duration
 	noJobs    bool // the scheduled-task routes off, as by default in production
 	titler    Titler
+	summary   Summarizer
 	skills    SkillSource
 	memory    MemorySource
 }
@@ -407,7 +408,7 @@ func newApp(t testing.TB, o ...appOpts) *app {
 	if err != nil {
 		t.Fatal(err)
 	}
-	svc, err := New(Options{DB: db, Box: box, Hermes: cl, Backoff: opt.backoff, Heartbeat: opt.heartbeat, Jobs: !opt.noJobs, Titler: opt.titler, Skills: opt.skills, Memory: opt.memory})
+	svc, err := New(Options{DB: db, Box: box, Hermes: cl, Backoff: opt.backoff, Heartbeat: opt.heartbeat, Jobs: !opt.noJobs, Titler: opt.titler, Summarizer: opt.summary, Skills: opt.skills, Memory: opt.memory})
 	if err != nil {
 		t.Fatal(err)
 	}

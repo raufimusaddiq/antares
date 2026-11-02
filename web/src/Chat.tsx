@@ -26,6 +26,7 @@ import {
   runEventsUrl,
   sendMessage,
   steerRun,
+  summarizeTurn,
   enqueueMessage,
   type ChatQueue,
   type ChatSummary,
@@ -259,7 +260,7 @@ export function Transcript(props: TranscriptProps) {
   // "Ask again" reuses the question the newest answer replied to: the newest user turn before it.
   const askedText = turns.reduce((q, t) => (t.role === "user" && t.seq < lastAssistant ? t.text : q), "");
   // The picture of an answer carries the question just before it (#250), when that question is loaded.
-  const [image, setImage] = useState<{ question: string; answer: string } | null>(null);
+  const [image, setImage] = useState<{ question: string; answer: string; seq: number; turnRef?: string } | null>(null);
   const questionOf = useMemo(() => {
     const m = new Map<number, string>();
     let q = "";
@@ -282,7 +283,7 @@ export function Transcript(props: TranscriptProps) {
         {chatId && t.role === "assistant" && (
           <TurnControls
             reuse={t.seq === lastAssistant && onReuse && askedText ? { label: "Ask again", onClick: () => onReuse(askedText) } : undefined}
-            onImage={() => setImage({ question: questionOf.get(t.seq) ?? "", answer: t.text })}
+            onImage={() => setImage({ question: questionOf.get(t.seq) ?? "", answer: t.text, seq: t.seq, turnRef: t.ref })}
           />
         )}
       </article>
@@ -344,7 +345,14 @@ export function Transcript(props: TranscriptProps) {
         focusNonce={focusNonce}
         jumpSlot={jumpSlot}
       />
-      {image && <ShareImageDialog question={image.question} answer={image.answer} onClose={() => setImage(null)} />}
+      {image && (
+        <ShareImageDialog
+          question={image.question}
+          answer={image.answer}
+          summarize={chatId && image.turnRef ? (signal) => summarizeTurn(chatId, image.seq, image.turnRef!, signal) : undefined}
+          onClose={() => setImage(null)}
+        />
+      )}
     </>
   );
 }

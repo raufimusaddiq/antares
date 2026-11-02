@@ -50,11 +50,16 @@ func (m *TitleModel) Title(ctx context.Context, first string) (string, error) {
 	if r := []rune(first); len(r) > titleInputRunes {
 		first = string(r[:titleInputRunes])
 	}
+	return m.complete(ctx, titleInstruction, "<message>\n"+first+"\n</message>\nTitle:", 300)
+}
+
+// complete sends one system and one user message and returns the reply's text.
+func (m *TitleModel) complete(ctx context.Context, system, prompt string, maxTokens int) (string, error) {
 	body, _ := json.Marshal(map[string]any{
-		"model": m.Model, "max_tokens": 300, "temperature": 0.2, "reasoning_effort": "low",
+		"model": m.Model, "max_tokens": maxTokens, "temperature": 0.2, "reasoning_effort": "low",
 		"messages": []map[string]string{
-			{"role": "system", "content": titleInstruction},
-			{"role": "user", "content": "<message>\n" + first + "\n</message>\nTitle:"},
+			{"role": "system", "content": system},
+			{"role": "user", "content": prompt},
 		},
 	})
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(m.URL, "/")+"/chat/completions", bytes.NewReader(body))
@@ -65,7 +70,7 @@ func (m *TitleModel) Title(ctx context.Context, first string) (string, error) {
 	req.Header.Set("Content-Type", "application/json")
 	hc := m.Client
 	if hc == nil {
-		hc = &http.Client{Timeout: titleBudget}
+		hc = &http.Client{Timeout: summaryBudget}
 	}
 	resp, err := hc.Do(req)
 	if err != nil {

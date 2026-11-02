@@ -1043,4 +1043,14 @@ function parseNewShare(v: unknown): NewShare | null {
 export const getShare = (chatId: string) => call("GET", `/api/chats/${encodeURIComponent(chatId)}/share`, parseShareStatus);
 export const createShare = (chatId: string) => call("POST", `/api/chats/${encodeURIComponent(chatId)}/share`, parseNewShare);
 export const stopShare = (chatId: string) => call("DELETE", `/api/chats/${encodeURIComponent(chatId)}/share`, () => true);
+/** A short summary of one answer for its picture (#261), written by a small model; the turn is named by seq and ref. */
+export const summarizeTurn = (chatId: string, seq: number, ref: string, signal?: AbortSignal) =>
+  call(
+    "POST",
+    `/api/chats/${encodeURIComponent(chatId)}/messages/${seq}/summary?ref=${encodeURIComponent(ref)}`,
+    (v) => str(obj(v)?.summary) || null,
+    undefined,
+    undefined,
+    signal,
+  );
 export const shareUrl = (token: string) => `${window.location.origin}/s/${token}`;
