@@ -51,6 +51,8 @@ type Options struct {
 	Media MediaSource
 	// Titler, if set, writes a chat's automatic title from its first message (title.go). Nil: the first words.
 	Titler Titler
+	// Summarizer, if set, writes the summary on a shared picture (summary.go). Nil: no summary, the picture is the answer.
+	Summarizer Summarizer
 	// Skills, if set, lists a profile's skills when Hermes' own skills route does not (capabilities.go).
 	Skills SkillSource
 	// Memory, if set, reads a profile's memory (memory.go). Nil: GET /api/me/memory says it is not available.
@@ -104,6 +106,7 @@ type Service struct {
 
 	media         MediaSource
 	titler        Titler
+	summarizer    Summarizer
 	skills        SkillSource
 	memory        MemorySource
 	titling       map[string]bool // chats with a title job in flight (title.go); guarded by mu
@@ -134,7 +137,7 @@ func New(o Options) (*Service, error) {
 		o.Heartbeat = 15 * time.Second
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs, media: o.Media, titler: o.Titler, skills: o.Skills, memory: o.Memory,
+	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs, media: o.Media, titler: o.Titler, summarizer: o.Summarizer, skills: o.Skills, memory: o.Memory,
 		base: ctx, stop: cancel, live: map[string]*liveRun{}}
 	s.wg.Add(1)
 	go s.jobShutdownLoop()

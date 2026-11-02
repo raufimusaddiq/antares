@@ -548,8 +548,66 @@ function blockUnits(ctx: Ctx, b: Block, x: number, width: number): Unit[] {
   }
 }
 
-/** The picture of one exchange as a PNG, or null when this browser cannot draw it. */
-export async function renderShareImage(question: string, answer: string, date: Date): Promise<Blob | null> {
+const STORY_H = 1920; // 9:16, the shape a phone shows whole
+
+/** A summary in type of `size`: its headline large with the pink bar, each point after a cobalt diamond. */
+function summaryUnits(ctx: Ctx, blocks: Block[], x: number, width: number, size: number): Unit[] {
+  const lh = Math.round(size * 1.38);
+  const out: Unit[] = [];
+  for (const b of blocks) {
+    if (out.length > 0) out.push(gap(Math.round(size * 0.55)));
+    if (b.kind === "heading") {
+      const hs = Math.round(size * 1.3);
+      const hl = Math.round(hs * 1.18);
+      const lines = layout(ctx, [{ text: b.text, bold: true }], width, hs, 700);
+      lines.forEach((line, i) =>
+        out.push({
+          h: i === lines.length - 1 ? hl + 26 : hl,
+          draw: (y) => {
+            const base = y + hl * 0.5 + hs * 0.36;
+            drawLine(ctx, line, x, base, hs, 700, C.ink);
+            if (i < lines.length - 1) return;
+            ctx.fillStyle = C.mark;
+            ctx.beginPath();
+            ctx.roundRect(x, base + hs * 0.36, 110, 10, 5);
+            ctx.fill();
+          },
+        }),
+      );
+    } else if (b.kind === "list") {
+      b.items.forEach((item, j) => {
+        if (j > 0) out.push(gap(Math.round(size * 0.45)));
+        const indent = Math.round(size * 1.3);
+        const lines = layout(ctx, item.runs, width - indent, size, 400);
+        lines.forEach((line, i) =>
+          out.push({
+            h: lh,
+            draw: (y) => {
+              if (i === 0) {
+                const s = size * 0.2;
+                ctx.save();
+                ctx.translate(x + s + 4, y + lh * 0.5);
+                ctx.rotate(Math.PI / 4);
+                ctx.fillStyle = C.cobalt;
+                ctx.fillRect(-s, -s, 2 * s, 2 * s);
+                ctx.lineWidth = 2.5;
+                ctx.strokeStyle = C.ink;
+                ctx.strokeRect(-s, -s, 2 * s, 2 * s);
+                ctx.restore();
+              }
+              drawLine(ctx, line, x + indent, y + lh * 0.5 + size * 0.36, size, 400, C.ink);
+            },
+          }),
+        );
+      });
+    } else if (b.kind === "para") out.push(...textUnits(ctx, b.runs, x, width, size, lh));
+  }
+  return out;
+}
+
+/** The picture of one exchange as a PNG, or null when this browser cannot draw it. With a summary of the answer (#261)
+ * it is 9:16 and carries the summary, in type as large as fits, instead of the whole answer. */
+export async function renderShareImage(question: string, answer: string, date: Date, summary?: string): Promise<Blob | null> {
   const canvas = document.createElement("canvas");
   const ctx = canvas.getContext("2d");
   if (!ctx || typeof ctx.roundRect !== "function") return null;
@@ -558,7 +616,7 @@ export async function renderShareImage(question: string, answer: string, date: D
   } catch {
     // the fallback face draws the same words
   }
-  const blocks = await answerBlocks(answer);
+  const blocks = summary === undefined ? await answerBlocks(answer) : (await import("./shareBlocks")).mdBlocks(summary);
 
   const cardX = PAD;
   const cardW = W - 2 * PAD - 12;
@@ -567,11 +625,21 @@ export async function renderShareImage(question: string, answer: string, date: D
   const qFont = `700 54px ${SANS}`;
   ctx.font = qFont;
   spaced(ctx, -1.5);
-  const q = wrap(plainText(question), W - 2 * PAD - 12, (s) => ctx.measureText(s).width, 5);
+  const q = wrap(plainText(question), W - 2 * PAD - 12, (s) => ctx.measureText(s).width, summary === undefined ? 5 : 3);
   spaced(ctx, 0);
 
-  const units: Unit[] = [];
-  blocks.forEach((b) => {
+  const top = PAD + 64 + 72; // the brand row
+  const qH = 50 + 28 + q.lines.length * 64;
+  const strip = 96;
+  const chrome = top + qH + 64 + strip + 52 + 60 + 52 + 30 + PAD;
+  let units: Unit[] = [];
+  if (summary !== undefined) {
+    // The largest type the summary fits in.
+    for (const size of [56, 52, 48, 44, 40, 36, 32]) {
+      units = summaryUnits(ctx, blocks, inX, inW, size);
+      if (units.reduce((n, u) => n + u.h, 0) <= STORY_H - chrome) break;
+    }
+  } else blocks.forEach((b) => {
     const u = blockUnits(ctx, b, inX, inW);
     if (u.length === 0) return;
     if (units.length > 0) units.push(gap(b.kind === "heading" || b.kind === "label" ? 34 : 24));
@@ -579,11 +647,7 @@ export async function renderShareImage(question: string, answer: string, date: D
   });
   if (units.length === 0) units.push(...textUnits(ctx, [{ text: "(no text)" }], inX, inW, 30, 46, 400, C.ink2));
 
-  const top = PAD + 64 + 72; // the brand row
-  const qH = 50 + 28 + q.lines.length * 64;
-  const strip = 96;
-  const chrome = top + qH + 64 + strip + 52 + 60 + 52 + 30 + PAD;
-  let room = MAX_H - chrome;
+  let room = (summary === undefined ? MAX_H : STORY_H) - chrome;
   const shown: Unit[] = [];
   let cut = q.cut;
   for (const u of units) {
@@ -596,8 +660,9 @@ export async function renderShareImage(question: string, answer: string, date: D
   }
   while (shown.length > 0 && shown[shown.length - 1].gap) shown.pop();
   const bodyH = shown.reduce((n, u) => n + u.h, 0) + (cut ? 40 : 0);
-  const cardH = strip + 52 + bodyH + 60;
-  const H = top + qH + 64 + cardH + 12 + 52 + 30 + PAD - 12;
+  // A summary's card reaches down to the footer, so the picture is exactly 9:16.
+  const cardH = summary === undefined ? strip + 52 + bodyH + 60 : STORY_H - (top + qH + 64) - (52 + 30 + PAD);
+  const H = summary === undefined ? top + qH + 64 + cardH + 12 + 52 + 30 + PAD - 12 : STORY_H;
   canvas.width = W;
   canvas.height = H;
 
@@ -663,7 +728,7 @@ export async function renderShareImage(question: string, answer: string, date: D
   ctx.font = `700 22px ${MONO}`;
   spaced(ctx, 4);
   ctx.fillStyle = C.ink;
-  ctx.fillText("ANSWER", cardX + 32 + 46 + 22, y + 56);
+  ctx.fillText(summary === undefined ? "ANSWER" : "SUMMARY", cardX + 32 + 46 + 22, y + 56);
   spaced(ctx, 0);
 
   let by = y + strip + 52;
@@ -686,6 +751,6 @@ export async function renderShareImage(question: string, answer: string, date: D
 
   ctx.font = `400 21px ${MONO}`;
   ctx.fillStyle = C.ink2;
-  ctx.fillText("Shared from Antares", PAD, H - PAD);
+  ctx.fillText(summary === undefined ? "Shared from Antares" : "Summarised by AI from the full answer · Shared from Antares", PAD, H - PAD);
   return await new Promise<Blob | null>((done) => canvas.toBlob(done, "image/png"));
 }

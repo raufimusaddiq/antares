@@ -45,6 +45,7 @@ var builtProbes = []probe{
 	{"queued message remove", "DELETE /api/chats/{chatId}/queue/{itemId}"},
 	{"artifact download", "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}"},
 	{"artifact preview", "GET /api/chats/{chatId}/messages/{seq}/artifacts/{n}/preview"},
+	{"answer summary for a picture", "POST /api/chats/{chatId}/messages/{seq}/summary"},
 	{"search within a chat", "GET /api/chats/{chatId}/search"},
 	{"chat usage and budget", "GET /api/chats/{chatId}/usage"},
 	{"chat input capabilities", "GET /api/chats/{chatId}/input"},

@@ -646,6 +646,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
 .share-link input { flex: 1 1 14rem; min-width: 0; font-family: var(--font-mono); font-size: 0.8125rem; }
 .share-panel .actions, .share-image-body .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .share-image { width: min(640px, calc(100vw - 2rem)); }
+.share-image-mode { display: flex; flex-wrap: wrap; gap: 0.5rem; }
 .share-image-body { display: grid; gap: 1rem; padding: 1.25rem; overflow: auto; }
 .share-image-body img { display: block; width: 100%; max-height: 60dvh; object-fit: contain; object-position: top; border: 2px solid var(--ink); border-radius: var(--r-md); background: var(--canvas); }
 .shared { width: min(760px, 100%); margin: 0 auto; padding: 2rem 1rem 3rem; display: grid; gap: 1.25rem; align-self: start; }

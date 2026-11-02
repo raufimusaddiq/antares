@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -64,31 +65,49 @@ func findArtifacts(text string) []artifact {
 
 // artifactFor resolves a reference for the caller, or writes the refusal.
 func (s *Service) artifactFor(w http.ResponseWriter, r *http.Request) (artifact, int, int, bool) {
-	uid, _ := user(r)
-	id, ok := pathID(r, "chatId")
-	seq, e1 := strconv.Atoi(r.PathValue("seq"))
-	n, e2 := strconv.Atoi(r.PathValue("n"))
-	if !ok || e1 != nil || e2 != nil || seq < 0 || n < 0 {
+	n, err := strconv.Atoi(r.PathValue("n"))
+	if err != nil || n < 0 {
 		notFound(w)
 		return artifact{}, 0, 0, false
+	}
+	all, i, ok := s.turnFor(w, r)
+	if !ok {
+		return artifact{}, 0, 0, false
+	}
+	if as := findArtifacts(all[i].Text); n < len(as) {
+		return as[n], all[i].Seq, n, true
+	}
+	notFound(w)
+	return artifact{}, 0, 0, false
+}
+
+// turnFor finds the caller's assistant turn named by {chatId}, {seq} and ?ref in their own transcript: the transcript and
+// the turn's index, or false with the refusal written. Someone else's chat, a stale seq or a wrong ref is the same 404.
+func (s *Service) turnFor(w http.ResponseWriter, r *http.Request) ([]hermes.Message, int, bool) {
+	uid, _ := user(r)
+	id, ok := pathID(r, "chatId")
+	seq, err := strconv.Atoi(r.PathValue("seq"))
+	if !ok || err != nil || seq < 0 {
+		notFound(w)
+		return nil, 0, false
 	}
 	c, err := store.GetChat(r.Context(), s.db, uid, id)
 	if errors.Is(err, store.ErrNoChat) {
 		notFound(w)
-		return artifact{}, 0, 0, false
+		return nil, 0, false
 	} else if err != nil {
 		internalError(w, "get chat", err)
-		return artifact{}, 0, 0, false
+		return nil, 0, false
 	}
 	b, _, err := s.gate(r.Context(), uid)
 	if err != nil {
 		s.gateError(w, err)
-		return artifact{}, 0, 0, false
+		return nil, 0, false
 	}
 	all, err := s.hx.Transcript(r.Context(), b, c.HermesSessionID)
 	if err != nil {
 		upstreamError(w, err)
-		return artifact{}, 0, 0, false
+		return nil, 0, false
 	}
 	// seq alone is a position, and compaction moves positions: the caller must also quote
 	// the turn's hash (the ref the history API stamped on it), so a stale seq is a 404
@@ -96,22 +115,20 @@ func (s *Service) artifactFor(w http.ResponseWriter, r *http.Request) (artifact,
 	q, ok := query(r)
 	if !ok {
 		apiError(w, http.StatusBadRequest, "INVALID_REQUEST", "The query string is not valid")
-		return artifact{}, 0, 0, false
+		return nil, 0, false
 	}
 	ref := q.Get("ref")
-	for _, m := range all {
+	for i, m := range all {
 		if m.Seq != seq {
 			continue
 		}
 		if m.Role == "assistant" && ref != "" && ref == turnHash(c.ID, m) {
-			if as := findArtifacts(m.Text); n < len(as) {
-				return as[n], seq, n, true
-			}
+			return all, i, true
 		}
 		break
 	}
 	notFound(w)
-	return artifact{}, 0, 0, false
+	return nil, 0, false
 }
 
 func (s *Service) downloadArtifact(w http.ResponseWriter, r *http.Request) {
