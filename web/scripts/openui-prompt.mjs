@@ -17,6 +17,7 @@ export const ANTARES_RULES = [
   "Never show images: do not use Image, ImageBlock, ImageGallery, ImageText or ImageTextLarge, leave every src, bgImageSrc and ListItem image empty, and write no Markdown images (![...](...)).",
   "Links in text must be absolute https:// addresses.",
   "Every name you list in a children or items array must have its own line defining that exact name (if you list s5t, write s5t = ...); before you finish, check that each listed name is defined and each defined name is listed.",
+  "Write name = only at the start of a line, never inside brackets or arguments: list a part by its name alone ([intro, t1]) or write the component inline without a name ([TextContent(\"...\")]).",
 ];
 export function generate() {
   const require = createRequire(path.join(here, "..", "package.json"));

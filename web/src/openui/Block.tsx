@@ -43,11 +43,12 @@ export default function RichBlock({ source, streaming = false }: { source: strin
   const sinks: Sinks = { reply: toComposer, open: openConfirmed };
   // Every update is checked before it is rendered: a partial program against the gate's safety rules and limits,
   // the finished one against all of it. A failure is shown as source.
-  // A finished program is first repaired: stray sources attached to its Card, misnamed parts re-linked (validate.ts).
-  const { program, repaired } = useMemo(() => (streaming ? { program: source, repaired: false } : repair(source)), [source, streaming]);
+  // A finished program is first repaired: stray sources attached to its Card, misnamed or misplaced parts re-linked
+  // (validate.ts). Only what could not be repaired is named in the note.
+  const program = useMemo(() => (streaming ? source : repair(source).program), [source, streaming]);
   const verdict = useMemo(() => check(program, streaming), [program, streaming]);
   if (!verdict.ok) return <SourceFallback source={source} why={verdict.reason} />;
-  const note = verdict.degraded ? `Part of this reply could not be shown: ${verdict.degraded}.` : repaired ? "Parts of this reply were misnamed and have been reconnected." : "";
+  const note = verdict.degraded ? `Part of this reply could not be shown: ${verdict.degraded}.` : "";
   return (
     <Boundary source={source}>
       <div className="ou-block openui-root">
