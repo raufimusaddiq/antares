@@ -40,6 +40,7 @@ function embedded(text: string): Segment[] | null {
 }
 
 export function splitSegments(text: string): Segment[] {
+  text = text.replace(/\r\n?/g, "\n");
   if (NATIVE.test(text) && text.length <= MAX_BLOCK_CHARS) return [{ kind: "openui", source: text.trim(), closed: true }];
   if (!/```\s*openui/i.test(text)) return embedded(text) ?? [{ kind: "md", text }];
   const lines = text.replace(/\r\n?/g, "\n").split("\n");

@@ -435,7 +435,8 @@ function chipUnits(ctx: Ctx, items: string[], x: number, width: number): Unit[] 
   return rows.map((row) => ({ h: 64, draw: (y) => row.forEach((c) => pill(ctx, x + c.x, y + 6, 50, c.text, font, c.fill, C.ink)) }));
 }
 
-const SERIES = [C.cobalt, C.mark, "#0f9d63", "#e8590c", "#7b3fe4"]; // the app's --chart-1..5
+// The light theme's --chart-1..5: the picture is always on paper, whatever the app's theme.
+const SERIES = [C.cobalt, C.mark, "#0f9d63", "#e8590c", "#7b3fe4"];
 
 /** Bars to scale, in the order given: one row per label, or with several series a label over a bar per series and a key. */
 function barUnits(ctx: Ctx, unit: string, series: string[], bars: [string, number[]][], x: number, width: number): Unit[] {
@@ -484,10 +485,13 @@ function barUnits(ctx: Ctx, unit: string, series: string[], bars: [string, numbe
       });
     },
   };
-  const rows = bars.slice(0, many ? 8 : 16).flatMap(([label, vs]): Unit[] =>
+  const shown = bars.slice(0, many ? 8 : 16);
+  const rows = shown.flatMap(([label, vs]): Unit[] =>
     many ? [...textUnits(ctx, [{ text: label, bold: true }], x, width, 24, 38), ...vs.map((v, i) => bar(label, v, SERIES[i])), gap(8)] : [bar(label, vs[0], SERIES[0])],
   );
-  const caption = unit ? textUnits(ctx, [{ text: unit }], x, width, 22, 36, 400, C.ink2) : [];
+  const more = bars.length - shown.length;
+  const note = [unit, more > 0 ? `${more} more in the chat` : ""].filter(Boolean).join(" · ");
+  const caption = note ? textUnits(ctx, [{ text: note }], x, width, 22, 36, 400, C.ink2) : [];
   return [...(many ? [key] : []), ...rows, ...caption];
 }
 

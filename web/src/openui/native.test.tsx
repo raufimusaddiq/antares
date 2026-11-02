@@ -53,6 +53,7 @@ describe("whole-reply detection", () => {
       { kind: "openui", source: program, closed: true },
       { kind: "md", text: "In short, Dewaweb." },
     ]);
+    expect(splitSegments(`Here it is:\r\n\r\n${program.replace(/\n/g, "\r\n")}\r\n\r\nIn short, Dewaweb.`)[2]).toEqual({ kind: "md", text: "In short, Dewaweb." });
   });
 });
 

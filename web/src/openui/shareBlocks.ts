@@ -104,19 +104,22 @@ function node(v: unknown): Block[] {
 }
 
 // A bar chart (or a pie's slices) is drawn as bars, a group per label when it has several series; a line, area or
-// scatter chart is named.
+// scatter chart, or one with a negative value, is named.
 function chart(t: string, p: Record<string, unknown>): Block[] {
   const labels = list(p.labels).map(str);
   const nums = (v: unknown) => list(v).filter((n): n is number => typeof n === "number");
   const series = p.series === undefined ? [{ name: "", values: nums(p.values) }] : list(p.series).map((x) => ({ name: str(propsOf(x).category), values: nums(propsOf(x).values) }));
-  const drawn = /^(Bar|HorizontalBar|Pie|Radial|SingleStackedBar)Chart$/.test(t) && series.length > 0 && series.length <= 5 && series.every((x) => x.values.length === labels.length && labels.length > 0);
+  const drawn = /^(Bar|HorizontalBar|Pie|Radial|SingleStackedBar)Chart$/.test(t) && series.length > 0 && series.length <= 5 && series.every((x) => x.values.length === labels.length && labels.length > 0 && x.values.every((v) => v >= 0));
   if (!drawn) return muted("A chart is in the chat; it is not drawn here.");
   return [{ kind: "bars", unit: str(p.yLabel), series: series.map((x) => x.name), bars: labels.map((l, i): [string, number[]] => [l, series.map((x) => x.values[i])]) }];
 }
 
-// Inline Markdown (bold, code, links) as one run list; paragraphs and list items each start a line.
+// Inline Markdown (bold, code, links) as one run list; paragraphs and list items each start a line. A table, code or
+// quote in it cannot be drawn inline: then the text is given as written.
 function inline(text: string): Run[] {
-  return mdBlocks(text).flatMap((b, i): Run[] => {
+  const blocks = mdBlocks(text);
+  if (blocks.some((b) => !["para", "list", "heading", "label"].includes(b.kind))) return [{ text: text.trim() }];
+  return blocks.flatMap((b, i): Run[] => {
     const lead = i > 0 ? [{ text: "\n" }] : [];
     if (b.kind === "para") return [...lead, ...b.runs];
     if (b.kind === "list") return b.items.flatMap((it, j) => [...(i > 0 || j > 0 ? [{ text: "\n" }] : []), { text: "• " }, ...it.runs]);
