@@ -114,14 +114,16 @@ export function attachSources(source: string): string {
   return fixed;
 }
 
-// A model sometimes names a statement one thing and refers to it by another (`s5t = …` listed as `z5t`), or writes a
-// statement no parent lists. repair re-links them: when the references that resolve to nothing and the outermost unused
-// statements are equal in number, each reference is renamed to the statement in the same order; statements still
-// unused are appended to the root Card (`repaired`, which Block.tsx tells the reader). A step is kept only if it leaves fewer such problems and no new parse error.
-// A cut-off program is left alone: its missing parts were never written.
-export function repair(source: string): { program: string; repaired: boolean } {
-  const attached = attachSources(source); // not a repair the reader needs told about: nothing is moved or renamed
-  let program = attached;
+// A model sometimes names a statement one thing and refers to it by another (`s5t = …` listed as `z5t`), writes a
+// statement no parent lists, or names a part inside a list (`[t1 = TextContent("…")]`, which OpenUI does not read as a
+// definition, so the part is lost). repair re-links them: inner names are dropped, so the part stays where it is written;
+// when the references that resolve to nothing and the outermost unused statements are equal in number, each reference is
+// renamed to the statement in the same order; statements still unused are placed in the root Card after the child written
+// just before them, so the answer keeps the order the model wrote it in. A step is kept only if it leaves fewer such
+// problems and no new parse error. A fully repaired program is shown as if it had been written right; what cannot be
+// repaired is named by check(). A cut-off program is left alone: its missing parts were never written.
+export function repair(source: string): { program: string } {
+  let program = attachSources(source);
   parser ??= createParser(openuiChatLibrary.toJSONSchema(), openuiChatLibrary.root);
   const p = parser;
   const read = (src: string) => {
@@ -133,17 +135,18 @@ export function repair(source: string): { program: string; repaired: boolean } {
     }
   };
   let best = read(program);
-  if (!best || best.n === 0 || best.m.incomplete) return { program, repaired: false };
+  if (!best || best.n === 0 || best.m.incomplete) return { program };
   const step = (next: string | null) => {
     const r = next === null ? null : read(next);
     if (r && best && r.n < best.n && r.m.errors.length <= best.m.errors.length) [best, program] = [r, next!];
   };
+  step(unnest(program));
   const dangling = [...best.m.unresolved].sort((a, b) => firstUse(program, a) - firstUse(program, b));
   const loose = outermost(program, best.m.orphaned);
   if (dangling.length > 0 && dangling.length === loose.length) step(rename(program, new Map(dangling.map((d, i) => [d, loose[i]]))));
   const left = outermost(program, best.m.orphaned);
-  if (left.length > 0) step(appendToRoot(program, left));
-  return { program, repaired: program !== attached };
+  if (left.length > 0) step(placeInRoot(program, left));
+  return { program };
 }
 
 const LITERAL = /"(?:[^"\\\n]|\\.)*"/g;
@@ -180,26 +183,57 @@ function rename(src: string, names: Map<string, string>): string {
   return out + src.slice(last).replace(ref, (n) => names.get(n)!);
 }
 
-/** Adds names to the end of the root Card's children, or null if the root is not `Card([...]`. */
-function appendToRoot(src: string, names: string[]): string | null {
+// A name written inside a list or call, before a component: `[t1 = TextContent(`, `, f1 = FollowUpItem(`.
+const INNER_NAME = /([[(,]\s*)[A-Za-z_]\w*\s*=\s*(?=[A-Z]\w*\s*\()/g;
+
+/** Drops names written inside lists and calls, outside string literals. */
+function unnest(src: string): string {
+  let out = "";
+  let last = 0;
+  for (const m of src.matchAll(LITERAL)) {
+    out += src.slice(last, m.index).replace(INNER_NAME, "$1") + m[0];
+    last = m.index + m[0].length;
+  }
+  return out + src.slice(last).replace(INNER_NAME, "$1");
+}
+
+/** Puts names among the root Card's children, each after the child written just before it, or null if the root is not `Card([...]`. */
+function placeInRoot(src: string, names: string[]): string | null {
   const open = /^root\s*=\s*Card\(\s*\[/m.exec(src);
   if (!open) return null;
+  const start = open.index + open[0].length;
+  const items: string[] = [];
   let depth = 1;
-  for (let i = open.index + open[0].length; i < src.length; i++) {
+  let from = start;
+  let end = -1;
+  for (let i = start; i < src.length && end < 0; i++) {
     const c = src[i];
     if (c === '"') {
       LITERAL.lastIndex = i;
       const lit = LITERAL.exec(src);
       if (!lit || lit.index !== i) return null;
       i += lit[0].length - 1;
-    } else if (c === "[") depth++;
-    else if (c === "]" && --depth === 0) {
-      const before = src.slice(0, i).trimEnd();
-      const sep = before.endsWith("[") || before.endsWith(",") ? " " : ", ";
-      return before + sep + names.join(", ") + src.slice(i);
+    } else if ("[({".includes(c)) depth++;
+    else if ("])}".includes(c) && --depth === 0) end = i;
+    if ((c === "," && depth === 1) || end === i) {
+      items.push(src.slice(from, i).trim());
+      from = i + 1;
     }
   }
-  return null;
+  if (end < 0) return null;
+  const kids = items.filter(Boolean);
+  // An unnamed child is written on the root's own line.
+  const at = (k: string) => (/^[A-Za-z_]\w*$/.test(k) ? statement(src, k).at : open.index);
+  for (const name of names) {
+    const mine = at(name);
+    let after = -1;
+    kids.forEach((k, i) => {
+      const a = at(k);
+      if (a >= 0 && a < mine && (after < 0 || a >= at(kids[after]))) after = i;
+    });
+    kids.splice(after + 1, 0, name);
+  }
+  return src.slice(0, start) + kids.join(", ") + src.slice(end);
 }
 
 export function check(source: string, partial = false): Verdict {

@@ -98,18 +98,40 @@ describe("rendering", () => {
     expect(add).toHaveBeenCalledWith("Order 2 coffees");
     expect(screen.getByRole("status").textContent).toBe("Added to your message. Nothing was sent.");
   });
-  // The shapes of real replies that were shown as source (#231), with made-up text: a part listed under another name,
-  // in order (the ids inside strings are not references and stay as written); a part no parent lists; references to
-  // parts never written beside parts nothing lists; a reply cut off. Each renders what it has, and says what it did.
+  // The shapes of real replies that were shown as source (#231) or jumbled, with made-up text: a part listed under another
+  // name, in order (the ids inside strings are not references and stay as written); a part no parent lists, which keeps
+  // the place it was written in; parts named inside a list. Each renders whole, in order, with no note.
   it.each([
-    ["a misnamed part", 'root = Card([intro, z5t])\nintro = TextContent("intro")\ns5t = TextContent("fifth step")', ["intro", "fifth step"], "reconnected"],
+    ["a misnamed part", 'root = Card([intro, z5t])\nintro = TextContent("intro")\ns5t = TextContent("fifth step")', ["intro", "fifth step"]],
     [
       "misnamed parts, in order",
       'root = Card([live])\nlive = SectionBlock([v1, v2])\nf1 = SectionItem("v1", "One", [e1])\ne1 = TextContent("first")\nf2 = SectionItem("v2", "Two", [e2])\ne2 = TextContent("second")',
       ["One", "Two"],
-      "reconnected",
     ],
-    ["a part no parent lists", 'root = Card([TextContent("kept")])\nlost = TextContent("not referenced")', ["kept", "not referenced"], "reconnected"],
+    ["a part no parent lists", 'root = Card([TextContent("kept")])\nlost = TextContent("not referenced")', ["kept", "not referenced"]],
+    [
+      "parts no parent lists, each after the part written before it",
+      'root = Card([head, a1, a2, end])\nhead = CardHeader("Title")\na1 = InlineHeader("First")\nt1 = TextContent("one")\na2 = InlineHeader("Second")\nt2 = TextContent("two")\nend = TextCallout("neutral", "Last", "done")',
+      ["Title", "First", "one", "Second", "two", "Last"],
+    ],
+    [
+      "parts named inside a list",
+      'root = Card([guide, follow])\nguide = SectionBlock([g1], true)\ng1 = SectionItem("g1", "Guide", [\n  t1 = TextContent("inside")\n])\nfollow = FollowUpBlock([\n  f1 = FollowUpItem("next?")\n])',
+      ["Guide", "next?"],
+    ],
+  ])("%s: rendered whole, in order, with no note", (_, source, shown) => {
+    const { container } = render(<RichBlock source={source} />);
+    const block = container.querySelector(".ou-block")!;
+    expect(block.querySelector(".ou-note")).toBeNull();
+    const text = block.textContent!;
+    let from = 0;
+    for (const t of shown) {
+      const at = text.indexOf(t, from);
+      expect(at, t).toBeGreaterThanOrEqual(from);
+      from = at + t.length;
+    }
+  });
+  it.each([
     [
       "parts never written beside parts nothing lists",
       'root = Card([intro, detail])\nintro = TextContent("intro")\ndetail = SectionBlock([d1, d2])\nt1 = TextContent("alpha")\nt2 = TextContent("beta")\nt3 = TextContent("gamma")',
