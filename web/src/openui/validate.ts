@@ -115,13 +115,14 @@ export function attachSources(source: string): string {
 }
 
 // A model sometimes names a statement one thing and refers to it by another (`s5t = …` listed as `z5t`), writes a
-// statement no parent lists, or names a part inside a list (`[t1 = TextContent("…")]`, which OpenUI does not read as a
-// definition, so the part is lost). repair re-links them: inner names are dropped, so the part stays where it is written;
-// when the references that resolve to nothing and the outermost unused statements are equal in number, each reference is
-// renamed to the statement in the same order; statements still unused are placed in the root Card after the child written
-// just before them, so the answer keeps the order the model wrote it in. A step is kept only if it leaves fewer such
-// problems and no new parse error. A fully repaired program is shown as if it had been written right; what cannot be
-// repaired is named by check(). A cut-off program is left alone: its missing parts were never written.
+// statement no parent lists, names a part inside a list (`[t1 = TextContent("…")]`, which OpenUI does not read as a
+// definition, so the part is lost), or leaves a call open inside a list. repair first closes such a call (balance), then
+// re-links: inner names are dropped, so the part stays where it is written; when the references that resolve to nothing
+// and the outermost unused statements are equal in number, each reference is renamed to the statement in the same order;
+// statements still unused are placed in the root Card after the child written just before them, so the answer keeps the
+// order the model wrote it in. A step is kept only if it leaves fewer such problems and no new parse error. A fully
+// repaired program is shown as if it had been written right; what cannot be repaired is named by check(). A reply that
+// is really cut off is left alone: its missing parts were never written.
 export function repair(source: string): { program: string } {
   let program = attachSources(source);
   parser ??= createParser(openuiChatLibrary.toJSONSchema(), openuiChatLibrary.root);
@@ -135,6 +136,11 @@ export function repair(source: string): { program: string } {
     }
   };
   let best = read(program);
+  if (best?.m.incomplete) {
+    const closed = balance(program);
+    const r = read(closed);
+    if (r && !r.m.incomplete && r.m.errors.length <= best.m.errors.length) [best, program] = [r, closed];
+  }
   if (!best || best.n === 0 || best.m.incomplete) return { program };
   const step = (next: string | null) => {
     const r = next === null ? null : read(next);
@@ -181,6 +187,37 @@ function rename(src: string, names: Map<string, string>): string {
     last = m.index + m[0].length;
   }
   return out + src.slice(last).replace(ref, (n) => names.get(n)!);
+}
+
+// A model sometimes leaves a call open and closes the list around it (`TextContent("…",\n])`). OpenUI then reads the
+// rest of the reply as part of that call, as if the reply were cut off. balance closes what was left open where a later
+// closing bracket shows it ended (dropping a trailing comma). A closer with no opener, and brackets still open at the
+// end (a reply really cut off), are left as they are.
+const CLOSER: Record<string, string> = { "(": ")", "[": "]", "{": "}" };
+function balance(src: string): string {
+  const open: string[] = [];
+  let out = "";
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (c === '"') {
+      LITERAL.lastIndex = i;
+      const lit = LITERAL.exec(src);
+      if (!lit || lit.index !== i) return out + src.slice(i);
+      out += lit[0];
+      i += lit[0].length - 1;
+      continue;
+    }
+    if (c in CLOSER) open.push(c);
+    else if (")]}".includes(c)) {
+      const at = open.map((o) => CLOSER[o]).lastIndexOf(c);
+      if (at >= 0) {
+        while (open.length - 1 > at) out = out.replace(/,\s*$/, "") + CLOSER[open.pop()!];
+        open.pop();
+      }
+    }
+    out += c;
+  }
+  return out;
 }
 
 // A name written inside a list or call, before a component: `[t1 = TextContent(`, `, f1 = FollowUpItem(`.

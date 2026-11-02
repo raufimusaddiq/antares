@@ -119,6 +119,11 @@ describe("rendering", () => {
       'root = Card([guide, follow])\nguide = SectionBlock([g1], true)\ng1 = SectionItem("g1", "Guide", [\n  t1 = TextContent("inside")\n])\nfollow = FollowUpBlock([\n  f1 = FollowUpItem("next?")\n])',
       ["Guide", "next?"],
     ],
+    [
+      "a call left open inside a list",
+      'root = Card([so, note])\nso = SectionBlock([\n  s1 = SectionItem("a", "First", [\n    t1 = TextContent("one",\n  ])\n], true)\n\nnote = Callout("info", "After", "still here")',
+      ["First", "After", "still here"],
+    ],
   ])("%s: rendered whole, in order, with no note", (_, source, shown) => {
     const { container } = render(<RichBlock source={source} />);
     const block = container.querySelector(".ou-block")!;
