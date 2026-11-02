@@ -53,6 +53,12 @@ describe("whole-reply detection", () => {
       { kind: "openui", source: program, closed: true },
       { kind: "md", text: "In short, Dewaweb." },
     ]);
+    expect(splitSegments(`${program}\n\nIn short, Dewaweb.`)).toEqual([
+      { kind: "openui", source: program, closed: true },
+      { kind: "md", text: "In short, Dewaweb." },
+    ]);
+    const indented = 'root = Card([s])\n\ns = SectionBlock([\n  i1\n\n], true)\n\n    i1 = SectionItem("a", "A", [TextContent("x")])';
+    expect(splitSegments(indented)).toEqual([{ kind: "openui", source: indented, closed: true }]);
     expect(splitSegments(`Here it is:\r\n\r\n${program.replace(/\n/g, "\r\n")}\r\n\r\nIn short, Dewaweb.`)[2]).toEqual({ kind: "md", text: "In short, Dewaweb." });
   });
 });

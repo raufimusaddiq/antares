@@ -22,6 +22,7 @@ let parser: ReturnType<typeof createParser> | undefined;
 let enums: Map<string, Set<string>> | undefined;
 
 const isNode = (v: unknown): v is Node => typeof v === "object" && v !== null && (v as Node).type === "element";
+// Numbers are grouped the way the person making the picture reads them (their locale): it is their picture.
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : typeof v === "number" ? v.toLocaleString() : "");
 const list = (v: unknown) => (Array.isArray(v) ? v : []);
 const propsOf = (v: unknown) => (isNode(v) ? (v.props ?? {}) : typeof v === "object" && v !== null ? (v as Record<string, unknown>) : {});
