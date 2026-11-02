@@ -84,5 +84,20 @@ describe("Share", () => {
       { kind: "label", text: "Interests" },
       { kind: "chips", items: ["AI", "Trading"] },
     ]);
+    // A sentence before the program, a metric card's figure, and a one-series chart as bars.
+    const figures = [
+      "Prices:",
+      "",
+      "root = Card([kpi, chart])",
+      'kpi = OverviewCardBlock([k1, k2])',
+      'k1 = OverviewCardItem("a", IconText(Icon("tag"), "info", "md", "Normal", "global"), MetricIndicatorInline("Rp 220rb"))',
+      'k2 = OverviewCardItem("b", Text("text", "Cheapest"), MetricIndicatorInline("Rp 90rb"))',
+      'chart = HorizontalBarChart(["SAV", "Cloudflare"], [Series("Renewal", [230, 221])], "grouped", "Registrar", "Rp k")',
+    ].join("\n");
+    expect(await answerBlocks(figures)).toEqual([
+      { kind: "para", runs: [{ text: "Prices:" }] },
+      { kind: "rows", rows: [["Normal", "Rp 220rb (global)"], ["Cheapest", "Rp 90rb"]] },
+      { kind: "bars", unit: "Rp k", series: ["Renewal"], bars: [["SAV", [230]], ["Cloudflare", [221]]] },
+    ]);
   });
 });

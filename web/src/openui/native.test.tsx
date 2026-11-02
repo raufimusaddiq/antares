@@ -46,6 +46,21 @@ describe("whole-reply detection", () => {
     expect(splitSegments("The root = cause is here.")).toEqual([{ kind: "md", text: "The root = cause is here." }]);
     expect(splitSegments("root = " + "x".repeat(MAX_BLOCK_CHARS))[0].kind).toBe("md");
   });
+  it("a program between sentences is split out of them", () => {
+    const program = 'root = Card([t, f])\n\nt = TextContent("Rp 300rb")\n\nf = FollowUpBlock([a])\na = FollowUpItem("More")';
+    expect(splitSegments(`Here it is:\n\n${program}\n\nIn short, Dewaweb.`)).toEqual([
+      { kind: "md", text: "Here it is:\n\n" },
+      { kind: "openui", source: program, closed: true },
+      { kind: "md", text: "In short, Dewaweb." },
+    ]);
+    expect(splitSegments(`${program}\n\nIn short, Dewaweb.`)).toEqual([
+      { kind: "openui", source: program, closed: true },
+      { kind: "md", text: "In short, Dewaweb." },
+    ]);
+    const indented = 'root = Card([s])\n\ns = SectionBlock([\n  i1\n\n], true)\n\n    i1 = SectionItem("a", "A", [TextContent("x")])';
+    expect(splitSegments(indented)).toEqual([{ kind: "openui", source: indented, closed: true }]);
+    expect(splitSegments(`Here it is:\r\n\r\n${program.replace(/\n/g, "\r\n")}\r\n\r\nIn short, Dewaweb.`)[2]).toEqual({ kind: "md", text: "In short, Dewaweb." });
+  });
 });
 
 describe("actions", () => {
@@ -123,6 +138,16 @@ describe("rendering", () => {
       "a call left open inside a list",
       'root = Card([so, note])\nso = SectionBlock([\n  s1 = SectionItem("a", "First", [\n    t1 = TextContent("one",\n  ])\n], true)\n\nnote = Callout("info", "After", "still here")',
       ["First", "After", "still here"],
+    ],
+    [
+      "a source the card does not list",
+      'root = Card([t], [s1])\nt = TextContent("see [2]")\ns1 = {title: "One", sourceName: "one.example", url: "https://one.example"}\ns2 = {title: "Two", sourceName: "two.example", url: "https://two.example"}',
+      ["see", "one.example", "two.example"],
+    ],
+    [
+      "a source on a card with no sources",
+      'root = Card([t])\nt = TextContent("see [1]")\ns1 = {title: "One", sourceName: "one.example", url: "https://one.example"}',
+      ["see", "one.example"],
     ],
   ])("%s: rendered whole, in order, with no note", (_, source, shown) => {
     const { container } = render(<RichBlock source={source} />);

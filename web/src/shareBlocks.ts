@@ -19,6 +19,7 @@ export type Block =
   | { kind: "code"; text: string }
   | { kind: "quote"; title: string; runs: Run[] }
   | { kind: "chips"; items: string[] }
+  | { kind: "bars"; unit: string; series: string[]; bars: [string, number[]][] }
   | { kind: "rule" };
 
 interface MdNode {

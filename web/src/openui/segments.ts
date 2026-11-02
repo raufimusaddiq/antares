@@ -17,11 +17,37 @@ const OPEN = /^(\s{0,3})(`{3,})\s*([A-Za-z0-9_-]*)\s*$/;
 // Native OpenUI: the whole reply is an openui-lang program whose first statement is `root = ...`. While it streams
 // it is rendered progressively; the closed flag is the caller's (a finished reply is complete).
 const NATIVE = /^\s*root\s*=/;
+// A model sometimes writes a sentence before the program, or after it: the program starts at a `root = Card(` line and
+// runs until a paragraph that reads as prose, one that starts at the margin with neither `name =` nor a closing bracket,
+// quote or comma; what is around it is Markdown.
+const ROOT_LINE = /^root\s*=\s*Card\(/m;
+const STATEMENT = /^[A-Za-z_]\w*\s*=/;
+const prose = (para: string) => /^[^\s\])}"',]/.test(para) && !STATEMENT.test(para);
+
+function embedded(text: string): Segment[] | null {
+  const m = ROOT_LINE.exec(text);
+  if (!m || text.includes("```")) return null;
+  const paras = text.slice(m.index).split(/\n[ \t]*\n/);
+  let n = 1;
+  while (n < paras.length && !prose(paras[n])) n++;
+  const source = paras.slice(0, n).join("\n\n").trim();
+  if (source.length > MAX_BLOCK_CHARS) return null;
+  const before = text.slice(0, m.index);
+  const after = paras.slice(n).join("\n\n");
+  return [
+    ...(before.trim() ? [{ kind: "md" as const, text: before }] : []),
+    { kind: "openui", source, closed: true },
+    ...(after.trim() ? [{ kind: "md" as const, text: after }] : []),
+  ];
+}
 
 export function splitSegments(text: string): Segment[] {
+  text = text.replace(/\r\n?/g, "\n");
+  const around = embedded(text);
+  if (around) return around;
   if (NATIVE.test(text) && text.length <= MAX_BLOCK_CHARS) return [{ kind: "openui", source: text.trim(), closed: true }];
   if (!/```\s*openui/i.test(text)) return [{ kind: "md", text }];
-  const lines = text.replace(/\r\n?/g, "\n").split("\n");
+  const lines = text.split("\n");
   const out: Segment[] = [];
   let md: string[] = [];
   const flush = () => {

@@ -1071,6 +1071,101 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 }
 .openui-root a { color: var(--cobalt); }
 
+/* OpenUI's components in the Antares look (#259): its colour tokens point at the app's ink, paper and flat colour blocks
+   (no yellow: a warning is blush), then the parts that read as objects (cards, callouts, tags, buttons, follow-ups,
+   sources) get drawn edges, rounded corners and a hard shadow. The app's tokens change with the theme, so these do too. */
+.openui-root {
+  --openui-background: var(--canvas); --openui-foreground: var(--card); --openui-elevated: var(--card); --openui-popover-background: var(--card);
+  --openui-sunk: var(--rail); --openui-sunk-light: var(--rail); --openui-sunk-deep: var(--rail); --openui-highlight: var(--rail);
+  --openui-border-default: var(--hair); --openui-border-interactive: var(--ink); --openui-border-interactive-selected: var(--ink);
+  --openui-text-neutral-primary: var(--ink); --openui-text-neutral-secondary: var(--ink-2); --openui-text-neutral-tertiary: var(--ink-2); --openui-text-neutral-link: var(--cobalt);
+  --openui-info-background: var(--peri); --openui-success-background: var(--mint); --openui-alert-background: var(--blush); --openui-danger-background: var(--mark);
+  --openui-text-info-primary: var(--ink); --openui-text-success-primary: var(--ink); --openui-text-alert-primary: var(--ink); --openui-text-danger-primary: var(--mark-ink);
+  --openui-interactive-accent-default: var(--cobalt); --openui-interactive-accent-hover: var(--cobalt); --openui-interactive-accent-pressed: var(--cobalt); --openui-text-accent-primary: var(--cobalt-ink);
+  --openui-radius-s: var(--r-sm); --openui-radius-m: var(--r-md); --openui-radius-l: var(--r-md); --openui-radius-xl: var(--r-lg);
+}
+.openui-root .openui-card { gap: 0.9rem; }
+/* Headings: a bold title with a short pink bar under it; a section label in spaced mono capitals after a cobalt square. */
+.openui-root .openui-header-top-left { display: block; font: 700 1.35rem/1.2 var(--font-ui); letter-spacing: -0.02em; }
+.openui-root .openui-header-top-left::after { content: ""; display: block; width: 3rem; height: 5px; margin-top: 0.45rem; background: var(--mark); border-radius: var(--r-pill); }
+.openui-root .openui-header-top { flex-direction: column; align-items: flex-start; }
+.openui-root .openui-inline-header { margin-top: 0.4rem; }
+.openui-root .openui-inline-header-heading { display: flex; align-items: center; gap: 0.5rem; font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink); }
+.openui-root .openui-inline-header-heading::before { content: ""; flex: none; width: 0.6rem; height: 0.6rem; background: var(--cobalt); }
+.openui-root .openui-inline-header-description { color: var(--ink-2); }
+/* Small cards: white, drawn, a hard shadow; the figure large and tabular. */
+.openui-root :is(.openui-overview-card, .openui-value-card, .openui-context-card, .openui-composite-card) {
+  background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm);
+}
+.openui-root .openui-context-card--variant-gray { background: var(--rail); }
+.openui-root .openui-metric-indicator { font-variant-numeric: tabular-nums; }
+.openui-root .openui-metric-indicator__main-value { font: 700 1.3rem/1.2 var(--font-ui); letter-spacing: -0.02em; }
+.openui-root .openui-icon-tag { border: 2px solid var(--ink); color: var(--ink); }
+.openui-root .openui-icon-tag--neutral { background: var(--card); }
+.openui-root .openui-icon-tag--inverted { background: var(--ink); color: var(--canvas); }
+/* Fact rows and tables: between heavy rules, hairlines between rows, labels in spaced mono capitals. */
+.openui-root .openui-entity-list { border-top: 2px solid var(--ink); border-bottom: 2px solid var(--ink); }
+.openui-root .openui-entity-list__row { padding: 0.65rem 0; }
+.openui-root .openui-entity-list__row--header :is(.openui-entity-list__cell-left, .openui-entity-list__cell-right) { font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+.openui-root .openui-entity-list__cell-right { font-variant-numeric: tabular-nums; }
+.openui-root .openui-table-container { background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); overflow: hidden; }
+.openui-root .openui-table-head { background: var(--peri); border-bottom: 2px solid var(--ink); }
+.openui-root .openui-table-head-label { font: 700 0.72rem/1.4 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); }
+.openui-root .openui-table-row:nth-child(even) { background: transparent; }
+.openui-root .openui-table-cell { font-variant-numeric: tabular-nums; }
+/* Tags: pills in the three colour blocks, in turn. */
+.openui-root .openui-tag { border: 2px solid var(--ink); border-radius: var(--r-pill); font-weight: 600; color: var(--ink); }
+.openui-root .openui-tag-block > :nth-child(3n + 1) .openui-tag, .openui-root .openui-tag-block > .openui-tag:nth-child(3n + 1) { background: var(--mint); }
+.openui-root .openui-tag-block > :nth-child(3n + 2) .openui-tag, .openui-root .openui-tag-block > .openui-tag:nth-child(3n + 2) { background: var(--peri); }
+.openui-root .openui-tag-block > :nth-child(3n) .openui-tag, .openui-root .openui-tag-block > .openui-tag:nth-child(3n) { background: var(--blush); }
+/* Steps and numbered lists: numbers in cobalt circles on an ink thread. */
+.openui-root :is(.openui-step-number-inner, .openui-list-item-indicator) {
+  width: 1.75rem; height: 1.75rem; background: var(--cobalt); color: var(--cobalt-ink); border: 2px solid var(--ink); border-radius: 50%; font: 700 0.8rem/1 var(--font-mono);
+}
+.openui-root .openui-list-item-indicator { scale: 1; margin-top: 0.15rem; }
+.openui-root .openui-list-item-indicator-number { color: inherit; font: inherit; }
+.openui-root .openui-connector-line { width: 2px; background: var(--ink); }
+.openui-root .openui-step-title { color: var(--ink); font-weight: 700; }
+.openui-root .openui-list-item-title { font-weight: 600; }
+/* Callouts: a tinted box with a drawn edge; info peri, success mint, warning blush, error pink, neutral paper. */
+.openui-root :is(.openui-callout, .openui-text-callout) {
+  padding: 0.8rem 1rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm);
+}
+.openui-root :is(.openui-callout-info, .openui-text-callout-info) { background: var(--peri); }
+.openui-root :is(.openui-callout-success, .openui-text-callout-success) { background: var(--mint); }
+.openui-root :is(.openui-callout-warning, .openui-text-callout-warning) { background: var(--blush); }
+.openui-root :is(.openui-callout-danger, .openui-callout-error, .openui-text-callout-danger) { background: var(--mark); }
+.openui-root :is(.openui-callout-danger, .openui-callout-error, .openui-text-callout-danger) :is(.openui-callout-title, .openui-callout-description, .openui-text-callout-content-title, .openui-text-callout-content-description) { color: var(--mark-ink); }
+.openui-root :is(.openui-callout-title, .openui-text-callout-content-title) { color: var(--ink); font-weight: 700; }
+.openui-root :is(.openui-callout-description, .openui-text-callout-content-description) { color: var(--ink); }
+/* Tabs: a row of pills, the open one in ink. */
+.openui-root .openui-tabs-list-container::after { display: none; }
+.openui-root .openui-tabs-clear .openui-tabs-list { gap: 0.5rem; padding: 2px 4px 4px 2px; }
+.openui-root .openui-tabs-indicator { display: none; }
+.openui-root .openui-tabs-clear .openui-tabs-trigger { min-height: 2.5rem; padding: 0 1rem; color: var(--ink); background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-pill); font-weight: 600; }
+.openui-root .openui-tabs-clear .openui-tabs-trigger[data-state="active"] { color: var(--canvas); background: var(--ink); border: 2px solid var(--ink); box-shadow: var(--hard-sm); }
+.openui-root .openui-tabs-clear .openui-tabs-trigger:not([data-state="active"]):hover { border: 2px solid var(--ink); background: var(--rail); }
+/* Buttons: cobalt pills with a hard shadow; secondary on paper; tertiary a quiet link. */
+.openui-root .openui-button-base { min-height: 2.75rem; padding: 0 1.1rem; border: 2px solid var(--ink); border-radius: var(--r-pill); font-weight: 700; color: var(--ink); background: var(--card); box-shadow: var(--hard-sm); }
+.openui-root .openui-button-base-primary { color: var(--cobalt-ink); background: var(--cobalt); }
+.openui-root .openui-button-base-tertiary { border-color: transparent; background: transparent; box-shadow: none; text-decoration: underline; }
+.openui-root .openui-button-base:active:not(:disabled) { transform: translate(2px, 2px); box-shadow: none; }
+/* Follow-ups: tappable chips under a mono label. */
+.openui-root .openui-follow-up-block { flex-flow: row wrap; gap: 0.6rem; }
+.openui-root .openui-follow-up-block__header { flex-basis: 100%; margin: 0; padding: 0; border: 0; font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
+.openui-root .openui-follow-up-item { width: auto; max-width: 100%; min-height: 2.75rem; padding: 0.45rem 1rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: var(--hard-sm); font-weight: 500; transition: background-color 0.15s var(--ease-out), transform 0.15s var(--ease-out); }
+.openui-root .openui-follow-up-item:last-child { border-bottom: 2px solid var(--ink); }
+.openui-root .openui-follow-up-item:hover { background: var(--mark); }
+.openui-root .openui-follow-up-item:hover .openui-follow-up-item-text { color: var(--mark-ink); }
+.openui-root .openui-follow-up-item:active { transform: translate(2px, 2px); box-shadow: none; }
+.openui-root .openui-follow-up-item-icon { display: none; }
+/* Sections, accordions, code and sources. */
+.openui-root :is(.openui-foldable-section-trigger-content-text, .openui-accordion-trigger) { font-weight: 700; color: var(--ink); }
+.openui-root .openui-code-block-wrapper { border: 2px solid var(--ink); border-radius: var(--r-md); overflow: hidden; }
+.openui-root .openui-listed-sources-header { font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
+.openui-root .openui-listed-source-item { background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
+.openui-root .openui-citation { background: var(--peri); color: var(--ink); border: 1.5px solid var(--ink); }
+
 /* OpenUI charts in the app's colours (#240). OpenUI themes charts through its ThemeProvider, which injects a <style> the CSP
    refuses, and genui-lib bundles its own theme context, so every chart falls back to one blue ramp. Each ramp step is mapped
    to a token by its exact value: a bar, a line, a slice and its legend or tooltip swatch all carry the same value, so they
