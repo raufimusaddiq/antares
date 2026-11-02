@@ -131,9 +131,9 @@ export function ShareChat({ chatId }: { chatId: string }) {
 }
 
 /**
- * One answer and the question before it, as a picture to send or save. With `summarize` it opens on a 9:16 picture of a
- * short summary of the answer (#261), and the whole answer is one tap away; when no summary can be written, the whole
- * answer is shown and the reader is told.
+ * One answer and the question before it, as a picture to send or save. It opens on the whole answer; with `summarize` a
+ * tap on Summary asks for a short summary and draws it as a 9:16 picture (#261). When none can be written, the whole
+ * answer stays and the reader is told.
  */
 export function ShareImageDialog({
   question,
@@ -147,7 +147,7 @@ export function ShareImageDialog({
   onClose: () => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
-  const [mode, setMode] = useState<"summary" | "full">(summarize ? "summary" : "full");
+  const [mode, setMode] = useState<"summary" | "full">("full");
   const [summary, setSummary] = useState<string | null>(null);
   const [img, setImg] = useState<{ url: string; file: File } | "failed" | null>(null);
   const [note, setNote] = useState("");
@@ -206,7 +206,7 @@ export function ShareImageDialog({
       <div className="share-image-body">
         {summarize && (
           <div className="share-image-mode" role="group" aria-label="What the picture shows">
-            {(["summary", "full"] as const).map((m) => (
+            {(["full", "summary"] as const).map((m) => (
               <button
                 key={m}
                 type="button"
