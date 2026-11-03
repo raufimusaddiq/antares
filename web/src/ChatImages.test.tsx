@@ -224,6 +224,25 @@ describe("generated media paths (MEDIA-EXT-006)", () => {
     expect(imgs[0].alt).toBe("Generated image 1");
   });
 
+  it("offers one Share image for a reply made of several messages, on the last one with text", () => {
+    const noop = () => {};
+    const a = (seq: number, text: string) => ({ seq, role: "assistant" as const, text });
+    const { container } = render(
+      <Transcript
+        turns={[turn(0, "q?"), a(1, ""), a(2, "checking"), a(3, ""), a(4, "the answer"), a(5, "")]}
+        pending={null}
+        run={null}
+        chatId={ID}
+        onCancel={noop}
+        onRetry={noop}
+        onReconnect={noop}
+        onResend={noop}
+      />,
+    );
+    const shares = container.querySelectorAll('[data-control="image"]');
+    expect(shares).toHaveLength(1);
+    expect(shares[0].closest("article")?.textContent).toContain("the answer");
+  });
 });
 
 const turn = (seq: number, text: string, attachments?: { assetId: string; mediaType: string; available: boolean }[]) => ({ seq, role: "user" as const, text, ...(attachments ? { attachments } : {}) });
