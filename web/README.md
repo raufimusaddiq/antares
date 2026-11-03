@@ -119,6 +119,6 @@ reason).
   `server_test.go`), so the two woff2 files and the preload are allowed and nothing is fetched from another origin.
 - **Bundle guard:** `scripts/stamp.mjs` hashes `src/` and `public/` (and `internal/webui/webui_test.go` mirrors both), so
   editing a font, icon or the OG card without rebuilding fails `go test ./internal/webui`.
-- **Deployment origin:** `index.html` hardcodes `https://antares.investdx.biz.id/` for the canonical link and the
+- **Deployment origin:** `index.html` hardcodes `https://antares.musaddiqr.com/` for the canonical link and the
   Open Graph / Twitter URLs, while the backend takes its origin from `ANTARES_PUBLIC_ORIGIN`. A static host file is fine for
   a single deployment, but an operator running Antares elsewhere must change them (canonical, `og:url`, `og:image`, `twitter:image`); the OG card image itself contains no URL.
