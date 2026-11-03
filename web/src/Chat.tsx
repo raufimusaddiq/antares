@@ -261,6 +261,19 @@ export function Transcript(props: TranscriptProps) {
   const askedText = turns.reduce((q, t) => (t.role === "user" && t.seq < lastAssistant ? t.text : q), "");
   // The picture of an answer carries the question just before it (#250), when that question is loaded.
   const [image, setImage] = useState<{ question: string; answer: string; seq: number; turnRef?: string } | null>(null);
+  // A reply made of several messages (tool steps, then the answer) gets one picture: of its last message with text.
+  const answers = useMemo(() => {
+    const last = new Set<number>();
+    let seq = -1;
+    for (const t of turns) {
+      if (t.role === "user") {
+        if (seq >= 0) last.add(seq);
+        seq = -1;
+      } else if (t.role === "assistant" && t.text.trim()) seq = t.seq;
+    }
+    if (seq >= 0) last.add(seq);
+    return last;
+  }, [turns]);
   const questionOf = useMemo(() => {
     const m = new Map<number, string>();
     let q = "";
@@ -283,12 +296,12 @@ export function Transcript(props: TranscriptProps) {
         {chatId && t.role === "assistant" && (
           <TurnControls
             reuse={t.seq === lastAssistant && onReuse && askedText ? { label: "Ask again", onClick: () => onReuse(askedText) } : undefined}
-            onImage={() => setImage({ question: questionOf.get(t.seq) ?? "", answer: t.text, seq: t.seq, turnRef: t.ref })}
+            onImage={answers.has(t.seq) ? () => setImage({ question: questionOf.get(t.seq) ?? "", answer: t.text, seq: t.seq, turnRef: t.ref }) : undefined}
           />
         )}
       </article>
     ),
-    [focusSeq, chatId, lastUser, lastAssistant, onReuse, askedText, questionOf],
+    [focusSeq, chatId, lastUser, lastAssistant, onReuse, askedText, questionOf, answers],
   );
   const note = loadingMore ? (
     "Loading older messages…"
