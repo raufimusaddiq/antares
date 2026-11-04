@@ -25,6 +25,8 @@ FAKE_HERMES = textwrap.dedent('''
         if st.get("reappear", {}).get(slug, 0) > 0:        # a provision that was already in flight
             st["reappear"][slug] -= 1; st["profiles"].append(slug)
         save()
+    elif args[:2] == ["gateway", "restart"]:
+        st["restarts"] = st.get("restarts", 0) + 1; save()
     elif args[:2] == ["profile", "purge-identity"]:
         slug = args[2]
         if st.get("fail_purge", {}).get(slug, 0) > 0:
@@ -353,6 +355,17 @@ class Partial(Env):
         self.assertEqual(self.get_state()["profiles"], [slug])  # rows are gone; only the manifest still knows the slug
         self.assertEqual(self.main(self.args("cleanup", "--manifest", str(path)))[0], 0)
         self.assertEqual(self.get_state()["profiles"], [])
+
+    def test_gateway_is_restarted_once_when_profiles_were_removed(self):
+        path, m = sf.plan_manifest(self.work)
+        sf.mint(self.db, path, m)
+        slug = "u_gateway00001"
+        conn = sqlite3.connect(self.db)
+        conn.execute("UPDATE users SET tenant_profile=? WHERE id=?", (slug, m["fixtures"][0]["id"]))
+        conn.commit()
+        self.set_state({"profiles": [slug]})
+        self.assertEqual(self.main(self.args("cleanup", "--manifest", str(path)))[0], 0)
+        self.assertEqual(self.get_state()["restarts"], 1)
 
     def test_cleanup_twice_is_a_no_op(self):
         path, m = sf.plan_manifest(self.work)

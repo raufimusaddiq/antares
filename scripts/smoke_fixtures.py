@@ -237,6 +237,12 @@ class Hermes:
             raise CleanupError("hermes profile list output not recognised")
         return names
 
+    def release(self):
+        """Restart the gateway. It keeps a deleted profile's state.db open until it restarts, and after enough of them
+        logs "state.db was replaced underneath the gateway" every few seconds. Best effort: a failure is only reported."""
+        rc, _ = self.run("gateway", "restart")
+        return rc == 0
+
     def remove(self, slug):
         if not SLUG_RE.match(slug):
             raise Refused("refusing a profile name that is not a tenant slug")
@@ -390,6 +396,8 @@ def cleanup(db, manifest_path, hermes, recheck_seconds=30.0, recheck_interval=5.
             profiles = sorted(manifest["profiles"])
             failed = {s for s in profiles if not hermes.remove(s)}
             step("profiles.removed", profiles=len(profiles), failed=len(failed))
+            if profiles:
+                step("gateway.restarted", ok=hermes.release())
             deadline = time.monotonic() + recheck_seconds
             polls = 0
             while True:  # bounded window against a provision that was already in flight
