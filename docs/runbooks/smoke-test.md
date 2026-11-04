@@ -127,7 +127,10 @@ python3 -I scripts/smoke_fixtures.py run --db /path/to/antares.sqlite --workdir 
 
 `--workdir` must be a private directory (the script creates it `0700`). The Hermes CLI is reached with
 `--hermes-cmd` (default `docker exec -u hermes hermes hermes`: the `hermes` user, never root; the same
-`profile list|delete|purge-identity` the provisioner's `/deprovision` runs). The smoke command gets
+`profile list|delete|purge-identity` the provisioner's `/deprovision` runs). After removing profiles it also runs
+`hermes gateway restart` through the same prefix: the gateway keeps a deleted profile's `state.db` open until it
+restarts, and logs "state.db was replaced underneath the gateway" every few seconds once enough have piled up. The
+smoke command gets
 `ANTARES_SMOKE_COOKIE_ADMIN|A|B|PENDING` in its environment only.
 
 **Only exit `0` means "smoke passed and nothing was left behind".** `1` smoke failed or timed out (cleanup was clean),
