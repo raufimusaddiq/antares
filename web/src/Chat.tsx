@@ -116,21 +116,23 @@ export function RunView({ run, onCancel, onRetry, onReconnect }: { run: LiveRun;
         </div>
       )}
       {/* Under the newest content, where a reader following the reply is looking. */}
-      {live && <RunStatus text={runStatus(run)} />}
+      {(live || disconnected) && (
+        <div className="run-bar">
+          {live && <RunStatus text={runStatus(run)} />}
+          <button type="button" className="quiet" onClick={onCancel}>
+            Cancel
+          </button>
+          {disconnected && (
+            <button type="button" className="quiet" onClick={onReconnect}>
+              Reconnect
+            </button>
+          )}
+        </div>
+      )}
       {notice && (
         <p className="notice" role={run.phase === "reconnecting" ? "status" : "alert"}>
           {notice}
         </p>
-      )}
-      {(live || disconnected) && (
-        <button type="button" className="quiet" onClick={onCancel}>
-          Cancel
-        </button>
-      )}
-      {disconnected && (
-        <button type="button" className="quiet" onClick={onReconnect}>
-          Reconnect
-        </button>
       )}
       {(run.phase === "failed" || run.phase === "cancelled") && (
         <button type="button" className="quiet" onClick={onRetry}>
