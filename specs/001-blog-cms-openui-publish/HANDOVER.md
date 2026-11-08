@@ -26,10 +26,34 @@ Rules that apply:
   R4 (does Hermes expose the URLs web search returned) decide whether sourced data can be marked verified.
 - Do not touch production without the owner's explicit approval.
 
-## Page session (frontend, no Hermes needed; mock the API from `contracts/http-api.md`)
+## Page session: built, on branch `feat/blog-pages` (local, commits dae36775 and c48ca43c)
 
-Tasks: T026, T031-T037, T043, T049-T050, T054, T056, T058-T059, T061-T062, T066-T067, T068 (UI), T070, T073.
-Build each page from its frame; where design and code disagree, say so in the PR.
+The pages exist as code in `web/src/blog/`, built from the approved frames against `contracts/http-api.md`. The
+backend does not exist yet, so none of it has run against a real server; it ran only against a mocked API in the
+browser (desktop dark, phone 375 px, no sideways scroll) and in 21 vitest tests.
+
+| File | What it is |
+|------|------------|
+| `types.ts`, `blogApi.ts` | API shapes, strict parsers (https-only sources, unknown state is not a state), one request helper; `409` carries the latest post |
+| `autosave.ts` | compare-and-set autosave, local copy kept until the server confirms, conflict and offline states |
+| `Editor.tsx`, `PostSettings.tsx` | TipTap editor (lazy-loaded), toolbar, image upload, settings sheet with the address rules |
+| `PostList.tsx` | My posts: empty, loading, error, status chips, row actions, delete confirm |
+| `PublishFlow.tsx`, `Sources.tsx` | choose, check (polls `GET .../check`), preview with accept/reject, unverified sources need an acknowledgement, every failure worded as itself |
+| `DocView.tsx`, `ReaderBlock.tsx`, `Public.tsx` | document renderer (no HTML path, https/mailto links only), reader block (all actions ignored; plain-text fallback), public `/b` and `/b/<slug>` |
+| `BlogApp.tsx` | author routes `/blog`, `/blog/<id>`, `/blog/<id>/publish`; wired in `App.tsx`, `main.tsx` (public routes) and the rail button in `Chat.tsx` |
+
+Things the backend session must match (the page code assumes them; change the page if the real shape differs):
+- `GET /api/blog/posts/{id}` returns `{id,title,summary,slug,coverUrl,status,latestVersion,publishedVersion,doc,check,updatedAt}`;
+  a `409` on autosave returns `{error:{code}, latest:<post>}`.
+- A check is `{id,state,reason,notes,notices,blocks}`; `reason` is `error|disconnected|unusable` when failed; `notices` are the
+  server's one-sentence "block removed" lines; each block has `decision`, `needsAck`, `sources[{url,title,retrievedAt,verified}]`.
+- `GET /api/blog/capabilities` returns `{writing,check,webSearch}`; image upload `POST .../assets` takes the raw file body and returns `{assetId,url}`.
+- Public post returns `blocks[{anchor,markup,fallback,sources}]` where `anchor` is the index of the top-level node the block follows.
+
+Still open on the page side: T036 (hide the rail button when the capability probe says unavailable; it is always shown now),
+T037/T051/T064/T069 browser checks, T038 `internal/webui/dist` rebuild (Linux only), T043/T054/T058/T059/T066 tests for
+preview wording, sources drawer, malicious markup refusal, reader interaction and list states, T061 reader library with
+the actions removed (today every action is ignored), T062 polish, T070 Admin suspended note, T073 README gaps.
 
 ## Known environment traps
 

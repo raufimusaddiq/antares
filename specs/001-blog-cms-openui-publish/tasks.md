@@ -81,7 +81,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 - [ ] T023 [P] [US1] Autosave compare-and-set test: stale `baseVersion` returns `409` with the latest; no silent overwrite, in `internal/blog/posts_test.go`
 - [ ] T024 [P] [US1] Suspend-hides/reinstate-restores test using the author's current status in the public query, in `internal/blog/public_suspend_test.go`
 - [ ] T025 [P] [US1] Pending, rejected and suspended users get refused on every authenticated blog route (FR-025), in `internal/blog/access_test.go`
-- [ ] T026 [P] [US1] Web test: editor restores the draft after reload and keeps a local copy until the server confirms, in `web/src/blog/Editor.test.tsx`
+- [x] T026 [P] [US1] Web test: editor restores the draft after reload and keeps a local copy until the server confirms, in `web/src/blog/Editor.test.tsx`
 
 ### Implementation for User Story 1
 
@@ -89,11 +89,11 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 - [ ] T028 [US1] Draft-private image upload and author read in `internal/blog/assets.go` (PNG/JPEG/WebP/GIF only, size limit, server-side content sniff, `nosniff`); public read only for published posts
 - [ ] T029 [US1] Authenticated handlers per `contracts/http-api.md` in `internal/blog/handlers.go`; reject any client-supplied profile, prefix, key, header or session id; wire in `internal/server/`
 - [ ] T030 [US1] Public handlers and metadata injection in `internal/blog/public.go`: strict slug pattern, single join query to ACTIVE author, per-IP rate limit, `ETag`, escaped `<title>`/description/Open Graph and escaped text copy into the HTML shell, no `noindex`; register the five public routes in `internal/server/`
-- [ ] T031 [P] [US1] Editor component with toolbar, autosave and save states per the design in `web/src/blog/Editor.tsx` and `web/src/blog/blogApi.ts`
-- [ ] T032 [P] [US1] Post settings sheet (title, summary, cover, address with conflict error) in `web/src/blog/PostSettings.tsx`
-- [ ] T033 [P] [US1] Read-only document renderer for reader pages in `web/src/blog/DocView.tsx` (no raw HTML path)
-- [ ] T034 [US1] Public pages `web/src/blog/PublicIndex.tsx` and `web/src/blog/PublicPost.tsx` per the design, signed-out routes in `web/src/App.tsx`, light/dark and phone
-- [ ] T035 [US1] "Publish my original", unpublish and published-success UI in `web/src/blog/PublishFlow.tsx` (original path only for now)
+- [x] T031 [P] [US1] Editor component with toolbar, autosave and save states per the design in `web/src/blog/Editor.tsx` and `web/src/blog/blogApi.ts`
+- [x] T032 [P] [US1] Post settings sheet (title, summary, cover, address with conflict error) in `web/src/blog/PostSettings.tsx`
+- [x] T033 [P] [US1] Read-only document renderer for reader pages in `web/src/blog/DocView.tsx` (no raw HTML path)
+- [x] T034 [US1] Public pages `web/src/blog/PublicIndex.tsx` and `web/src/blog/PublicPost.tsx` per the design, signed-out routes in `web/src/App.tsx`, light/dark and phone
+- [x] T035 [US1] "Publish my original", unpublish and published-success UI in `web/src/blog/PublishFlow.tsx` (original path only for now)
 - [ ] T036 [US1] Add Blog entry to the app navigation, hidden when the capability probe says unavailable, in `web/src/App.tsx`
 - [ ] T037 [US1] Real-browser checks `blog-public` and `blog-editor` (390 px no sideways scroll, light/dark) in `scripts/browser-check.mjs`
 - [ ] T038 [US1] Rebuild `internal/webui/dist`, run `go test ./...` and vitest; fix design/code disagreements found
@@ -125,8 +125,8 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 - [ ] T046 [US2] Envelope parser and validator per `contracts/check-envelope.md` in `internal/blog/envelope.go`
 - [ ] T047 [US2] Check runner in `internal/blog/check.go`: create the Hermes run through the author's backend-selected binding with `Instructions`, track run states, persist notes and proposed blocks, cancel, mark out of date; error codes carry no provider text or credential
 - [ ] T048 [US2] Block decision, publish-enriched (snapshot accepted blocks with the pinned version) and check handlers in `internal/blog/handlers.go` per `contracts/http-api.md`
-- [ ] T049 [P] [US2] Publish flow UI: choice, checking with Cancel, Preview with notes and per-block Accept/Reject in `web/src/blog/PublishFlow.tsx` and `web/src/blog/Preview.tsx`
-- [ ] T050 [P] [US2] Failure and out-of-date states, rejected-block notice and unavailable state per the design in `web/src/blog/PublishFlow.tsx`
+- [x] T049 [P] [US2] Publish flow UI: choice, checking with Cancel, Preview with notes and per-block Accept/Reject in `web/src/blog/PublishFlow.tsx` and `web/src/blog/Preview.tsx`
+- [x] T050 [P] [US2] Failure and out-of-date states, rejected-block notice and unavailable state per the design in `web/src/blog/PublishFlow.tsx`
 - [ ] T051 [US2] Browser check `blog-publish` (checking, preview, phone layout) in `scripts/browser-check.mjs`; rebuild `internal/webui/dist`; run all tests
 
 **Checkpoint**: enriched publishing works end to end against the mock; real Hermes confirmed by T014 fixtures.
@@ -148,7 +148,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 ### Implementation for User Story 3
 
 - [ ] T055 [US3] Source validation and verification against run tool events in `internal/blog/sources.go` (falls back to "unverified" if events are not exposed, per research R4); enforce `ack` in the block decision handler
-- [ ] T056 [P] [US3] Sources drawer and acknowledgement UI in `web/src/blog/Sources.tsx`; show sources and retrieved-on date on published data blocks in `web/src/blog/PublicPost.tsx`
+- [x] T056 [P] [US3] Sources drawer and acknowledgement UI in `web/src/blog/Sources.tsx`; show sources and retrieved-on date on published data blocks in `web/src/blog/PublicPost.tsx`
 - [ ] T057 [US3] Re-run behaviour: republish after edits re-checks and drops or re-proposes blocks tied to changed text in `internal/blog/check.go`; test in `internal/blog/check_republish_test.go`
 
 **Checkpoint**: published data is never an unlabelled model claim.
@@ -191,7 +191,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 
 ### Implementation for User Story 5
 
-- [ ] T067 [US5] CMS list UI per the design in `web/src/blog/PostList.tsx` (status chips, row actions, delete confirmation)
+- [x] T067 [US5] CMS list UI per the design in `web/src/blog/PostList.tsx` (status chips, row actions, delete confirmation)
 - [ ] T068 [US5] Show limits (size, images, blocks) to the author before publishing in `web/src/blog/PublishFlow.tsx` and `internal/blog/handlers.go`
 - [ ] T069 [US5] Browser check `blog-list` in `scripts/browser-check.mjs`; rebuild `internal/webui/dist`
 
