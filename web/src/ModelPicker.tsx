@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { describeCode, describePrice, getChatModel, getModels, getModelVisibility, putChatModel, putModelVisibility, type ModelCatalog, type ModelChoice, type ModelEntry } from "./chatApi";
 
+/** This chat's saved model: not read yet, unreadable (the choice shown may not be the saved one), or known (null = the default). */
+type SavedChoice = { kind: "unread" } | { kind: "unreadable" } | { kind: "known"; choice: ModelChoice | null };
+
+/** The catalogue read: at rest, failed (the earlier list stays), or in flight, remembering whether it follows a failure. */
+type ListRead = { kind: "idle" } | { kind: "failed" } | { kind: "loading"; failedBefore: boolean };
+
 /**
  * Model picker for one chat (PRD LLM-001..007, CTX-004, issue #115). The models and their metadata
  * come from the Kenari catalogue; a model whose provider the assistant cannot use is shown but cannot
@@ -10,14 +16,16 @@ import { describeCode, describePrice, getChatModel, getModels, getModelVisibilit
  */
 export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; disabled: boolean; onChanged?: () => void }) {
   const [catalog, setCatalog] = useState<ModelCatalog | null>(null);
-  const [choice, setChoice] = useState<ModelChoice | null | undefined>(undefined); // undefined = not read yet
+  const [saved, setSaved] = useState<SavedChoice>({ kind: "unread" });
+  const choice = saved.kind === "known" ? saved.choice : undefined; // undefined = not read yet, or unreadable
+  const readFailed = saved.kind === "unreadable";
   const [query, setQuery] = useState("");
   const [msg, setMsg] = useState("");
   const [showHidden, setShowHidden] = useState(false);
   // A catalogue read that failed (the list on screen, if any, is the earlier one) and a chat setting that could not be read.
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [readFailed, setReadFailed] = useState(false);
+  const [listRead, setListRead] = useState<ListRead>({ kind: "idle" });
+  const loading = listRead.kind === "loading";
+  const loadFailed = listRead.kind === "failed" || (listRead.kind === "loading" && listRead.failedBefore);
   const [readTick, setReadTick] = useState(0);
   // The open picker floats over the conversation: Escape or a press outside it closes it, like the account menu.
   const box = useRef<HTMLDetailsElement | null>(null);
@@ -63,16 +71,14 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
     gen.current += 1;
     const mine = gen.current;
     want.current = undefined;
-    setChoice(undefined);
-    setReadFailed(false);
+    setSaved({ kind: "unread" });
     setMsg("");
     // The read waits behind this chat's own pending writes, so it reports the choice they leave.
     enqueue(chatId, async () => {
       const r = await getChatModel(chatId);
       if (gen.current !== mine || chat.current !== chatId) return;
       want.current = r.ok ? r.value.choice : undefined;
-      setChoice(want.current);
-      setReadFailed(!r.ok);
+      setSaved(r.ok ? { kind: "known", choice: r.value.choice } : { kind: "unreadable" });
     });
     return () => {
       gen.current += 1; // a read still in flight for the old chat is now stale
@@ -81,11 +87,10 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
 
   const load = (refresh: boolean) => {
     const mine = ++loadSeq.current;
-    setLoading(true);
+    setListRead((was) => ({ kind: "loading", failedBefore: was.kind === "failed" || (was.kind === "loading" && was.failedBefore) }));
     void getModels(refresh).then((r) => {
       if (mine !== loadSeq.current) return; // a newer request owns the answer
-      setLoading(false);
-      setLoadFailed(!r.ok);
+      setListRead(r.ok ? { kind: "idle" } : { kind: "failed" });
       if (r.ok) {
         if (hiddenPending.current === 0) hiddenWant.current = new Set(r.value.providers.flatMap((p) => p.models).filter((m) => m.hidden).map((m) => m.id));
         setCatalog(hiddenWant.current && hiddenPending.current > 0 ? withHidden(r.value, hiddenWant.current) : r.value);
@@ -112,7 +117,7 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
       if (!current()) return; // a newer write for this chat exists, or the chat is not on screen
       if (r.ok) {
         want.current = r.value.choice;
-        setChoice(r.value.choice);
+        setSaved({ kind: "known", choice: r.value.choice });
         setMsg("");
         onChanged?.(); // what the chat can accept (images) follows its model
       } else {
@@ -120,7 +125,7 @@ export function ModelPicker({ chatId, disabled, onChanged }: { chatId: string; d
         const back = await getChatModel(forChat); // the failed change is not the saved one: show what the server holds
         if (current() && back.ok) {
           want.current = back.value.choice;
-          setChoice(back.value.choice);
+          setSaved({ kind: "known", choice: back.value.choice });
         }
       }
     });
