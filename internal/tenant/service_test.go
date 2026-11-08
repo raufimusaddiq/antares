@@ -50,9 +50,9 @@ type fakeHelper struct {
 	toolsets  [][]string // the tool policy each call carried
 }
 
-func (f *fakeHelper) Provision(ctx context.Context, slug string, toolsets []string) (hermes.Credential, error) {
+func (f *fakeHelper) Provision(ctx context.Context, slug string, p hermes.Policy) (hermes.Credential, error) {
 	f.mu.Lock()
-	f.toolsets = append(f.toolsets, toolsets)
+	f.toolsets = append(f.toolsets, p.Toolsets)
 	f.provCalls++
 	n := f.provCalls
 	f.slugs = append(f.slugs, slug)
@@ -61,9 +61,9 @@ func (f *fakeHelper) Provision(ctx context.Context, slug string, toolsets []stri
 	return fn(slug, n)
 }
 
-func (f *fakeHelper) Rotate(ctx context.Context, slug string, toolsets []string) (hermes.Credential, error) {
+func (f *fakeHelper) Rotate(ctx context.Context, slug string, p hermes.Policy) (hermes.Credential, error) {
 	f.mu.Lock()
-	f.toolsets = append(f.toolsets, toolsets)
+	f.toolsets = append(f.toolsets, p.Toolsets)
 	f.rotCalls++
 	fn := f.rotate
 	f.mu.Unlock()

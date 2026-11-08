@@ -43,7 +43,7 @@ type skillEntry struct {
 }
 
 func (s *server) skills(w http.ResponseWriter, r *http.Request) {
-	slug, _, ok := s.readRequest(w, r)
+	slug, _, _, ok := s.readRequest(w, r)
 	if !ok {
 		return
 	}

@@ -55,13 +55,17 @@ const (
 
 // Helper is the host-side provisioner as the pipeline uses it.
 type Helper interface {
-	Provision(ctx context.Context, slug string, toolsets []string) (hermes.Credential, error)
-	Rotate(ctx context.Context, slug string, toolsets []string) (hermes.Credential, error)
+	Provision(ctx context.Context, slug string, p hermes.Policy) (hermes.Credential, error)
+	Rotate(ctx context.Context, slug string, p hermes.Policy) (hermes.Credential, error)
 }
 
 // ToolPolicy reads the admin's tenant toolset policy and its version (store.TenantToolPolicy). nil names mean
 // none is set: the helper and the verifier keep their configured defaults.
 type ToolPolicy func(ctx context.Context) (names []string, version string, err error)
+
+// MediaModels reads the admin's default image and video generation models (store.TenantMediaModels); "" is the
+// plugin's own default. Its version is part of ToolPolicy's, so a change during a run is caught the same way.
+type MediaModels func(ctx context.Context) (image, video string, err error)
 
 // Verifier is the pre-READY check suite.
 type Verifier interface {
@@ -77,7 +81,8 @@ type Options struct {
 	Now         func() time.Time
 	MaxAttempts int
 	BaseBackoff time.Duration
-	ToolPolicy  ToolPolicy // nil: no admin policy, the configured defaults apply
+	ToolPolicy  ToolPolicy  // nil: no admin policy, the configured defaults apply
+	MediaModels MediaModels // nil: no default media models
 }
 
 // Service owns provisioning runs. It is safe for concurrent use; a given user
@@ -91,6 +96,7 @@ type Service struct {
 	max      int
 	base     time.Duration
 	policy   ToolPolicy
+	media    MediaModels
 
 	mu       sync.Mutex
 	inflight map[string]bool
@@ -115,7 +121,7 @@ func New(o Options) (*Service, error) {
 	}
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Service{db: o.DB, box: o.Box, helper: o.Helper, verifier: o.Verifier, now: o.Now,
-		max: o.MaxAttempts, base: o.BaseBackoff, policy: o.ToolPolicy, inflight: map[string]bool{}, ctx: ctx, cancel: cancel}, nil
+		max: o.MaxAttempts, base: o.BaseBackoff, policy: o.ToolPolicy, media: o.MediaModels, inflight: map[string]bool{}, ctx: ctx, cancel: cancel}, nil
 }
 
 // Kick schedules a run for one user and returns immediately. It is idempotent:
@@ -223,7 +229,13 @@ func (s *Service) Process(ctx context.Context, userID string) error {
 	if err != nil {
 		return s.finish(ctx, c, fail("could not read the tenant tool policy", false))
 	}
-	if err := s.obtainCredential(ctx, &c, toolsets); err != nil {
+	p := hermes.Policy{Toolsets: toolsets}
+	if s.media != nil {
+		if p.ImageModel, p.VideoModel, err = s.media(ctx); err != nil {
+			return s.finish(ctx, c, fail("could not read the default media models", false))
+		}
+	}
+	if err := s.obtainCredential(ctx, &c, p); err != nil {
 		return s.finish(ctx, c, err)
 	}
 	// MarkReady refuses the account if the policy changed meanwhile: this run applied the old one. A retry applies
@@ -304,20 +316,20 @@ func (s *Service) finish(ctx context.Context, c store.Claim, err error) error {
 }
 
 // obtainCredential asks the helper for the profile's key and stores it sealed.
-func (s *Service) obtainCredential(ctx context.Context, c *store.Claim, toolsets []string) error {
+func (s *Service) obtainCredential(ctx context.Context, c *store.Claim, p hermes.Policy) error {
 	var cred hermes.Credential
 	var err error
 	if c.BindingID != "" {
 		// Rotate reapplies toolset policy; only an absent profile or key needs provisioning.
-		cred, err = s.helper.Rotate(ctx, c.Profile, toolsets)
+		cred, err = s.helper.Rotate(ctx, c.Profile, p)
 		if errors.Is(err, hermes.ErrNotProvisioned) {
-			cred, err = s.helper.Provision(ctx, c.Profile, toolsets)
+			cred, err = s.helper.Provision(ctx, c.Profile, p)
 		}
 	} else {
-		cred, err = s.helper.Provision(ctx, c.Profile, toolsets)
+		cred, err = s.helper.Provision(ctx, c.Profile, p)
 		if errors.Is(err, hermes.ErrKeyExists) {
 			// A lost provision response left a key we never stored.
-			cred, err = s.helper.Rotate(ctx, c.Profile, toolsets)
+			cred, err = s.helper.Rotate(ctx, c.Profile, p)
 		}
 	}
 	if err != nil {
