@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { BlogApp } from "./BlogApp";
 
@@ -19,5 +19,23 @@ describe("blog author area", () => {
     await waitFor(() => expect(screen.getByText(/not available right now/i)).toBeTruthy());
     expect(screen.queryByText(/new post/i)).toBeNull();
     expect(f).not.toHaveBeenCalled(); // My posts was never asked for
+  });
+});
+
+describe("publishing a new post", () => {
+  it("sees the title the author typed and the server saved, not the empty one the post opened with", async () => {
+    const empty = { id: "p1abcdef", title: "", summary: "", slug: "", coverUrl: "", status: "draft", latestVersion: 1, publishedVersion: 0, doc: { type: "doc", content: [] }, check: null, updatedAt: "" };
+    const saved = { ...empty, title: "Hello", latestVersion: 2 };
+    vi.stubGlobal("fetch", async (_u: string, init?: RequestInit) => new Response(JSON.stringify(init?.method === "PUT" ? saved : empty), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const nav = vi.fn();
+    const caps = { writing: true, check: true, webSearch: false };
+    const { rerender } = render(<BlogApp caps={caps} email="a@example.com" route={{ kind: "edit", id: "p1abcdef" }} onNavigate={nav} onChats={() => {}} />);
+    const title = (await screen.findByLabelText("Title")) as HTMLInputElement;
+    fireEvent.change(title, { target: { value: "Hello" } });
+    fireEvent.click(screen.getByRole("button", { name: /publish/i }));
+    await waitFor(() => expect(nav).toHaveBeenCalledWith("/blog/p1abcdef/publish"));
+    rerender(<BlogApp caps={caps} email="a@example.com" route={{ kind: "publish", id: "p1abcdef" }} onNavigate={nav} onChats={() => {}} />);
+    const go = await screen.findAllByRole("button", { name: /check|publish/i });
+    expect(go.some((b) => !(b as HTMLButtonElement).disabled)).toBe(true);
   });
 });
