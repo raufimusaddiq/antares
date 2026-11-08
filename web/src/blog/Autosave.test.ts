@@ -82,4 +82,14 @@ describe("blog autosave", () => {
     expect(loadLocalCopy(email, "p1")).toEqual({ title: "b" });
     down.s.dispose();
   });
+
+  it("a 409 that names no newer version waits, kept, instead of resending the same change", async () => {
+    const save = vi.fn(async () => ({ ok: false as const, status: 409, code: "ERROR" }));
+    const { s, states } = make(save);
+    s.change({ title: "x" });
+    await vi.advanceTimersByTimeAsync(500);
+    expect(save).toHaveBeenCalledTimes(1);
+    expect(states.at(-1)).toBe("error");
+    expect(loadLocalCopy(email, "p1")).toEqual({ title: "x" });
+  });
 });

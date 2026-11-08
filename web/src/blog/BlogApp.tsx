@@ -1,5 +1,5 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { describeBlogError, getCapabilities, getPost } from "./blogApi";
+import { describeBlogError, getPost } from "./blogApi";
 import { loadLocalCopy } from "./autosave";
 import { PostList } from "./PostList";
 import { PostSettings } from "./PostSettings";
@@ -24,14 +24,8 @@ export function parseBlogPath(p: string): BlogRoute {
 export const editPath = (id: string) => `/blog/${id}`;
 export const publishPath = (id: string) => `/blog/${id}/publish`;
 
-export function BlogApp({ email, route, onNavigate, onChats }: { email: string; route: BlogRoute; onNavigate: (to: string) => void; onChats: () => void }) {
-  const [caps, setCaps] = useState<Capabilities | null>(null);
-  useEffect(() => {
-    const ctl = new AbortController();
-    void getCapabilities(ctl.signal).then((r) => !ctl.signal.aborted && setCaps(r.ok ? r.value : { writing: false, check: false, webSearch: false }));
-    return () => ctl.abort();
-  }, []);
-
+/** `caps` is what the server said about the blog (null until it has answered); the app asks once and passes it down. */
+export function BlogApp({ caps, email, route, onNavigate, onChats }: { caps: Capabilities | null; email: string; route: BlogRoute; onNavigate: (to: string) => void; onChats: () => void }) {
   if (caps === null) return <main className="blog-flow" aria-busy="true"><p>Loading…</p></main>;
   if (!caps.writing)
     return (

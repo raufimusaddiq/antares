@@ -19,7 +19,7 @@ describe("editor", () => {
     localStorage.setItem("antares:drafts-owner", encodeURIComponent("a@example.com"));
     localStorage.setItem(
       `antares:draft:v1:${encodeURIComponent("a@example.com")}:chat:post:p1abcdef`,
-      JSON.stringify({ title: "Typed offline", doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "kept text" }] }] } }),
+      JSON.stringify({ base: 3, title: "Typed offline", doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "kept text" }] }] } }),
     );
     const bodies: unknown[] = [];
     vi.stubGlobal("fetch", async (_u: string, init: RequestInit) => {
@@ -32,6 +32,23 @@ describe("editor", () => {
     await waitFor(() => expect(bodies.length).toBeGreaterThan(0), { timeout: 3000 });
     expect(bodies[0]).toMatchObject({ baseVersion: 3, title: "Typed offline" });
     expect(localStorage.length).toBeGreaterThan(0); // still held: the server has not confirmed it
+  });
+
+  it("never sends a kept copy over a newer server version: it waits for the author's choice", async () => {
+    localStorage.setItem(
+      `antares:draft:v1:${encodeURIComponent("a@example.com")}:chat:post:p1abcdef`,
+      JSON.stringify({ base: 2, title: "Typed on v2" }), // the server is at v3 now
+    );
+    const bodies: unknown[] = [];
+    vi.stubGlobal("fetch", async (_u: string, init: RequestInit) => {
+      bodies.push(init.body);
+      return new Response("{}", { status: 500 });
+    });
+    render(<Editor {...props} />);
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(bodies).toHaveLength(0);
+    expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Typed on v2"); // kept, shown
+    expect(localStorage.length).toBeGreaterThan(0);
   });
 
   it("opens the server's text when this browser holds nothing newer", () => {

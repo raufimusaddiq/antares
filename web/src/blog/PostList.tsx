@@ -134,7 +134,7 @@ function DeleteSheet({ post, onDelete, onKeep }: { post: PostSummary; onDelete: 
         <button type="button" className="btn" onClick={onDelete}>
           Delete post
         </button>
-        <button type="button" className="quiet" onClick={onKeep}>
+        <button type="button" className="quiet" data-autofocus onClick={onKeep}>
           Keep it
         </button>
       </div>

@@ -35,7 +35,20 @@ const key = (id: string) => `post:${id}`;
 export function loadLocalCopy(email: string, id: string): Change | null {
   try {
     const raw = loadDraft(email, key(id));
-    return raw ? (JSON.parse(raw) as Change) : null;
+    if (!raw) return null;
+    const { base: _base, ...change } = JSON.parse(raw) as Change & { base?: number };
+    return change;
+  } catch {
+    return null;
+  }
+}
+
+/** The server version a kept local copy was typed against; null for a copy that does not say (it is then not trusted). */
+export function localCopyBase(email: string, id: string): number | null {
+  try {
+    const raw = loadDraft(email, key(id));
+    const base = raw ? (JSON.parse(raw) as { base?: unknown }).base : undefined;
+    return typeof base === "number" ? base : null;
   } catch {
     return null;
   }
@@ -54,6 +67,7 @@ export class Autosaver {
   private latest: Post | null = null;
   private dead = false;
   private inflight: Promise<void> | null = null;
+  private pendingBase = 0; // the server version the unsent text was typed against
   private readonly save: Save;
 
   constructor(private readonly o: AutosaverOptions) {
@@ -63,11 +77,20 @@ export class Autosaver {
 
   /** Records a change: the local copy now, the server soon. */
   change(c: Change): void {
+    if (!this.pending) this.pendingBase = this.version;
     this.pending = { ...this.pending, ...c };
-    saveDraft(this.o.email, key(this.o.id), JSON.stringify(this.pending));
+    saveDraft(this.o.email, key(this.o.id), JSON.stringify({ ...this.pending, base: this.pendingBase }));
     if (this.state === "conflict") return; // nothing is sent until the author chooses
     this.set("saving");
     this.schedule(this.o.delayMs ?? 800);
+  }
+
+  /** A kept copy that was typed against an older version than the server has now: held as it is, and the author chooses. */
+  hold(c: Change, base: number, latest: Post): void {
+    this.pending = c;
+    this.pendingBase = base;
+    this.latest = latest;
+    this.set("conflict");
   }
 
   /** Sends now (leaving the editor, pressing Publish). True only if the server has everything typed so far. */
@@ -82,6 +105,7 @@ export class Autosaver {
   keepMine(): void {
     if (this.state !== "conflict" || !this.latest) return;
     this.version = this.latest.latestVersion;
+    this.pendingBase = this.version;
     this.latest = null;
     this.set("saving");
     void this.run();
@@ -143,9 +167,11 @@ export class Autosaver {
     }
     const newer = this.pending as Change | null; // typed while this save was in flight
     this.pending = { ...sent, ...newer }; // nothing is lost: what was sent goes back under what is newer
-    if (r.status === 409 && r.latest) {
-      this.latest = r.latest;
-      this.set("conflict");
+    if (r.status === 409) {
+      // The server has a newer version. Without it in the reply there is nothing to choose between, but sending the same
+      // stale change again cannot succeed either: it waits, kept, and the author is told.
+      this.latest = r.latest ?? null;
+      this.set(r.latest ? "conflict" : "error");
       return;
     }
     this.set(r.code === "NETWORK" ? "offline" : "error");

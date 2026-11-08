@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
-import { Autosaver, loadLocalCopy, type SaveState } from "./autosave";
+import { Autosaver, loadLocalCopy, localCopyBase, type SaveState } from "./autosave";
 import { describeBlogError, uploadImage } from "./blogApi";
 import { safeHref } from "./DocView";
 import type { DocNode, Post } from "./types";
@@ -45,9 +45,14 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
   useEffect(() => {
     const s = new Autosaver({ id: post.id, email, version: post.latestVersion, onState: (st, l) => (setSave(st), setLatest(l)), onSaved: onPost });
     saver.current = s;
-    // A local copy newer than the server's is sent at once.
+    // A kept local copy typed against the server's current version is sent at once. One typed against an older version
+    // is never sent over what the server has since: the author chooses.
     const local = loadLocalCopy(email, post.id);
-    if (local) s.change(local);
+    if (local) {
+      const base = localCopyBase(email, post.id);
+      if (base === post.latestVersion) s.change(local);
+      else s.hold(local, base ?? 0, post);
+    }
     const hide = () => document.visibilityState === "hidden" && void s.flush();
     document.addEventListener("visibilitychange", hide);
     const online = () => void s.flush();

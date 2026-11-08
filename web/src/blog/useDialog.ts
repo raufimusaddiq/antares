@@ -1,6 +1,6 @@
 import { useEffect, useRef } from "react";
 
-// A modal sheet's keyboard contract: focus moves in when it opens, Tab stays inside it, Escape closes it, and focus
+// A modal sheet's keyboard contract: focus moves in when it opens (to the element marked data-autofocus, so a destructive sheet starts on the safe choice), Tab stays inside it, Escape closes it, and focus
 // returns to what had it before.
 export function useDialog<T extends HTMLElement>(onClose: () => void) {
   const ref = useRef<T>(null);
@@ -11,7 +11,7 @@ export function useDialog<T extends HTMLElement>(onClose: () => void) {
     if (!el) return;
     const before = document.activeElement as HTMLElement | null;
     const focusable = () => Array.from(el.querySelectorAll<HTMLElement>("button, input, select, textarea, a[href], [tabindex]:not([tabindex='-1'])")).filter((n) => !n.hasAttribute("disabled"));
-    (focusable()[0] ?? el).focus();
+    (el.querySelector<HTMLElement>("[data-autofocus]") ?? focusable()[0] ?? el).focus();
     const onKey = (e: KeyboardEvent) => {
       if (e.key === "Escape") return close.current();
       if (e.key !== "Tab") return;
