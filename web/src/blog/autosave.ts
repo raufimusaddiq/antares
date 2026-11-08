@@ -1,0 +1,142 @@
+// Autosave with compare-and-set. The author's text is kept in this browser (the same store and rules as chat drafts,
+// so sign-out and the one-week limit clear it) until the server confirms it, and a stale save is never forced over
+// a newer version: the author is asked (specs/001-blog-cms-openui-publish/research.md R7).
+
+import { forgetChatDrafts, loadDraft, saveDraft } from "../drafts";
+import { autosave as autosaveCall, type BlogResult } from "./blogApi";
+import type { DocNode, Post } from "./types";
+
+export type SaveState = "saved" | "saving" | "offline" | "conflict" | "error";
+
+export interface Change {
+  title?: string;
+  summary?: string;
+  doc?: DocNode;
+}
+
+type Save = (id: string, base: number, c: Change) => Promise<BlogResult<Post>>;
+
+export interface AutosaverOptions {
+  id: string;
+  email: string;
+  /** latest_version the editor was opened at. */
+  version: number;
+  onState: (s: SaveState, latest: Post | null) => void;
+  /** A save the server accepted: the post as stored. */
+  onSaved?: (p: Post) => void;
+  save?: Save;
+  delayMs?: number;
+  retryMs?: number;
+}
+
+const key = (id: string) => `post:${id}`;
+
+/** What this browser still holds for a post that the server has not confirmed. */
+export function loadLocalCopy(email: string, id: string): Change | null {
+  try {
+    const raw = loadDraft(email, key(id));
+    return raw ? (JSON.parse(raw) as Change) : null;
+  } catch {
+    return null;
+  }
+}
+
+export function forgetLocalCopy(email: string, id: string): void {
+  forgetChatDrafts(email, key(id));
+}
+
+export class Autosaver {
+  state: SaveState = "saved";
+  private version: number;
+  private pending: Change | null = null;
+  private busy = false;
+  private timer: ReturnType<typeof setTimeout> | undefined;
+  private latest: Post | null = null;
+  private dead = false;
+  private readonly save: Save;
+
+  constructor(private readonly o: AutosaverOptions) {
+    this.version = o.version;
+    this.save = o.save ?? autosaveCall;
+  }
+
+  /** Records a change: the local copy now, the server soon. */
+  change(c: Change): void {
+    this.pending = { ...this.pending, ...c };
+    saveDraft(this.o.email, key(this.o.id), JSON.stringify(this.pending));
+    if (this.state === "conflict") return; // nothing is sent until the author chooses
+    this.set("saving");
+    this.schedule(this.o.delayMs ?? 800);
+  }
+
+  /** Sends now (leaving the editor, pressing Publish). */
+  flush(): Promise<void> {
+    clearTimeout(this.timer);
+    return this.run();
+  }
+
+  /** The author keeps their text over the newer server version. */
+  keepMine(): void {
+    if (this.state !== "conflict" || !this.latest) return;
+    this.version = this.latest.latestVersion;
+    this.latest = null;
+    this.set("saving");
+    void this.run();
+  }
+
+  /** The author takes the server's version; the local copy is dropped. */
+  takeTheirs(): Post | null {
+    const p = this.latest;
+    this.pending = null;
+    forgetLocalCopy(this.o.email, this.o.id);
+    this.latest = null;
+    if (p) this.version = p.latestVersion;
+    this.set("saved");
+    return p;
+  }
+
+  dispose(): void {
+    this.dead = true;
+    clearTimeout(this.timer);
+  }
+
+  private schedule(ms: number): void {
+    clearTimeout(this.timer);
+    this.timer = setTimeout(() => void this.run(), ms);
+  }
+
+  private set(s: SaveState): void {
+    this.state = s;
+    if (!this.dead) this.o.onState(s, this.latest);
+  }
+
+  private async run(): Promise<void> {
+    if (this.busy || !this.pending || this.state === "conflict") return;
+    this.busy = true;
+    const sent = this.pending;
+    this.pending = null;
+    const r = await this.save(this.o.id, this.version, sent);
+    this.busy = false;
+    if (this.dead) return;
+    if (r.ok) {
+      this.version = r.value.latestVersion;
+      this.o.onSaved?.(r.value);
+      if (this.pending as Change | null) {
+        this.schedule(0); // typed while this save was in flight
+        return;
+      }
+      forgetLocalCopy(this.o.email, this.o.id); // the server has it now
+      this.set("saved");
+      return;
+    }
+    const newer = this.pending as Change | null; // typed while this save was in flight
+    this.pending = { ...sent, ...newer }; // nothing is lost: what was sent goes back under what is newer
+    if (r.status === 409 && r.latest) {
+      this.latest = r.latest;
+      this.set("conflict");
+      return;
+    }
+    this.set(r.code === "NETWORK" ? "offline" : "error");
+    this.schedule(this.o.retryMs ?? 5000);
+  }
+}

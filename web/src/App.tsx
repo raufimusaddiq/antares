@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { loadSession, signOut, type Session, type SignOutResult } from "./api";
 import { AdminScreens, AdminShell, Forbidden } from "./Admin";
 import { Chat } from "./Chat";
+import { BlogApp, isBlogPath, parseBlogPath } from "./blog/BlogApp";
 import { revokeThisDevice, chatIdFromPath } from "./push";
 import { isAdminPath, parseAdminPath } from "./route";
 import { Screen, documentTitle, type View } from "./Screen";
@@ -111,7 +112,7 @@ export function App() {
     if (link && session.kind === "anonymous") rememberLink(link);
     if (session.kind === "account") {
       if (session.account.state === "ACTIVE" && link) return; // Chat opens it, then rewrites the address
-      if (session.account.state === "ACTIVE" && isAdminPath(window.location.pathname)) return;
+      if (session.account.state === "ACTIVE" && (isAdminPath(window.location.pathname) || isBlogPath(window.location.pathname))) return;
       window.history.replaceState(null, "", SCREEN_PATH[session.account.state]);
       setPath(SCREEN_PATH[session.account.state]);
     }
@@ -133,7 +134,8 @@ export function App() {
         </AdminShell>
       );
     }
-    return <Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onSignOut={onSignOut} signOutError={signOutMessage} />;
+    if (isBlogPath(path)) return <BlogApp email={session.account.email} route={parseBlogPath(path)} onNavigate={navigate} onChats={() => navigate("/")} />;
+    return <Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onBlog={() => navigate("/blog")} onSignOut={onSignOut} signOutError={signOutMessage} />;
   }
   return (
     <Screen

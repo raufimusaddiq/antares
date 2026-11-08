@@ -1,0 +1,207 @@
+// The browser's whole view of the blog backend. It sends cookies and the post's own fields only: never a profile,
+// key, route prefix, header or session id (the server picks those). Every failure is a code or a status, and the
+// server's own message is never displayed.
+
+import { purgeDrafts } from "../drafts";
+import { purgeUserState } from "../pwa";
+import { EMPTY_DOC, type Capabilities, type Check, type CheckBlock, type CheckNote, type Decision, type DocNode, type Post, type PostStatus, type PostSummary, type PublicBlock, type PublicPost, type PublicSummary, type Source } from "./types";
+
+export type BlogResult<T> = { ok: true; value: T } | { ok: false; status: number; code: string; latest?: Post };
+
+const obj = (v: unknown): Record<string, unknown> | null => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
+const str = (v: unknown): string => (typeof v === "string" ? v : "");
+const num = (v: unknown): number => (typeof v === "number" && Number.isFinite(v) ? v : 0);
+const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
+
+const STATUSES: readonly string[] = ["draft", "checking", "ready", "published", "unpublished"];
+const CHECK_STATES: readonly string[] = ["running", "ready", "failed", "cancelled", "timed_out", "out_of_date"];
+
+/** Only an https address without credentials is ever kept: a source or cover with any other scheme is dropped. */
+export const httpsOnly = (u: unknown): string => {
+  if (typeof u !== "string") return "";
+  try {
+    const p = new URL(u);
+    return p.protocol === "https:" && !p.username && !p.password ? p.href : "";
+  } catch {
+    return "";
+  }
+};
+
+export function parseSource(v: unknown): Source | null {
+  const o = obj(v);
+  const url = o ? httpsOnly(o.url) : "";
+  return o && url ? { url, title: str(o.title) || url, retrievedAt: str(o.retrievedAt), verified: o.verified === true } : null;
+}
+
+const sourcesOf = (v: unknown): Source[] => arr(v).map(parseSource).filter((s): s is Source => s !== null);
+
+export function parseDoc(v: unknown): DocNode {
+  const o = obj(v);
+  return o && o.type === "doc" ? (o as unknown as DocNode) : EMPTY_DOC;
+}
+
+export function parseBlock(v: unknown): CheckBlock | null {
+  const o = obj(v);
+  if (!o || !str(o.id)) return null;
+  const d = str(o.decision);
+  return {
+    id: str(o.id),
+    kind: str(o.kind),
+    afterNode: num(o.afterNode),
+    markup: str(o.markup),
+    fallback: str(o.fallback),
+    decision: (d === "accepted" || d === "rejected" ? d : "proposed") as Decision,
+    needsAck: o.needsAck === true,
+    sources: sourcesOf(o.sources),
+  };
+}
+
+const NOTE_KINDS = ["clarity", "fact", "missing-context", "unsourced"];
+
+export function parseCheck(v: unknown): Check | null {
+  const o = obj(v);
+  if (!o || !str(o.id) || !CHECK_STATES.includes(str(o.state))) return null;
+  const r = str(o.reason);
+  return {
+    id: str(o.id),
+    state: str(o.state) as Check["state"],
+    reason: r === "disconnected" || r === "unusable" || r === "error" ? r : "",
+    notes: arr(o.notes)
+      .map((n) => obj(n))
+      .filter((n): n is Record<string, unknown> => n !== null && str(n.text) !== "")
+      .map((n): CheckNote => ({ kind: (NOTE_KINDS.includes(str(n.kind)) ? str(n.kind) : "clarity") as CheckNote["kind"], text: str(n.text), afterNode: num(n.afterNode) })),
+    notices: arr(o.notices).map(str).filter(Boolean),
+    blocks: arr(o.blocks).map(parseBlock).filter((b): b is CheckBlock => b !== null),
+  };
+}
+
+export function parsePost(v: unknown): Post | null {
+  const o = obj(v);
+  if (!o || !str(o.id) || !STATUSES.includes(str(o.status))) return null;
+  return {
+    id: str(o.id),
+    title: str(o.title),
+    summary: str(o.summary),
+    slug: str(o.slug),
+    coverUrl: str(o.coverUrl),
+    status: str(o.status) as PostStatus,
+    latestVersion: num(o.latestVersion),
+    publishedVersion: num(o.publishedVersion),
+    doc: parseDoc(o.doc),
+    check: o.check ? parseCheck(o.check) : null,
+    updatedAt: str(o.updatedAt),
+  };
+}
+
+export function parseSummary(v: unknown): PostSummary | null {
+  const o = obj(v);
+  if (!o || !str(o.id) || !STATUSES.includes(str(o.status))) return null;
+  return { id: str(o.id), title: str(o.title), status: str(o.status) as PostStatus, slug: str(o.slug), updatedAt: str(o.updatedAt), publishedAt: str(o.publishedAt), interactive: o.interactive === true };
+}
+
+export function parseCapabilities(v: unknown): Capabilities | null {
+  const o = obj(v);
+  return o ? { writing: o.writing === true, check: o.check === true, webSearch: o.webSearch === true } : null;
+}
+
+export function parsePublicSummary(v: unknown): PublicSummary | null {
+  const o = obj(v);
+  return o && str(o.slug) ? { slug: str(o.slug), title: str(o.title), summary: str(o.summary), coverUrl: str(o.coverUrl), authorName: str(o.authorName), publishedAt: str(o.publishedAt) } : null;
+}
+
+export function parsePublicPost(v: unknown): PublicPost | null {
+  const o = obj(v);
+  if (!o || !str(o.title)) return null;
+  return {
+    title: str(o.title),
+    summary: str(o.summary),
+    coverUrl: str(o.coverUrl),
+    doc: parseDoc(o.doc),
+    blocks: arr(o.blocks)
+      .map((b) => obj(b))
+      .filter((b): b is Record<string, unknown> => b !== null)
+      .map((b): PublicBlock => ({ anchor: num(b.anchor), markup: str(b.markup), fallback: str(b.fallback), sources: sourcesOf(b.sources) })),
+    authorName: str(o.authorName),
+    publishedAt: str(o.publishedAt),
+  };
+}
+
+async function request<T>(method: string, path: string, parse: (b: unknown) => T | null, body?: unknown, signal?: AbortSignal): Promise<BlogResult<T>> {
+  let res: Response;
+  try {
+    res = await fetch(path, {
+      method,
+      credentials: "same-origin",
+      headers: { Accept: "application/json", ...(body === undefined ? {} : { "Content-Type": "application/json" }) },
+      body: body === undefined ? undefined : JSON.stringify(body),
+      signal,
+    });
+  } catch {
+    return { ok: false, status: 0, code: "NETWORK" };
+  }
+  let json: unknown = null;
+  try {
+    json = await res.json();
+  } catch {
+    // no body, or not JSON: handled below
+  }
+  if (!res.ok) {
+    if (res.status === 401) {
+      purgeUserState();
+      purgeDrafts();
+    }
+    const e = obj(obj(json)?.error);
+    const latest = res.status === 409 ? parsePost(obj(json)?.latest) : null;
+    return { ok: false, status: res.status, code: str(e?.code) || "ERROR", ...(latest ? { latest } : {}) };
+  }
+  const value = parse(json);
+  // A success we cannot read is a failure, never a guessed value.
+  return value === null ? { ok: false, status: res.status, code: "UNREADABLE" } : { ok: true, value };
+}
+
+const enc = encodeURIComponent;
+const nothing = () => true as const;
+const P = "/api/blog/posts";
+const list = <T>(item: (v: unknown) => T | null) => (b: unknown) => (Array.isArray(b) ? b.map(item).filter((x): x is T => x !== null) : null);
+
+export const listPosts = (signal?: AbortSignal) => request("GET", P, list(parseSummary), undefined, signal);
+export const createPost = () => request("POST", P, parsePost, {});
+export const getPost = (id: string, signal?: AbortSignal) => request("GET", `${P}/${enc(id)}`, parsePost, undefined, signal);
+export const autosave = (id: string, baseVersion: number, change: { title?: string; summary?: string; doc?: DocNode }) => request("PUT", `${P}/${enc(id)}`, parsePost, { baseVersion, ...change });
+export const saveSettings = (id: string, s: { slug?: string; summary?: string; coverAssetId?: string }) => request("PATCH", `${P}/${enc(id)}/settings`, parsePost, s);
+export const deletePost = (id: string) => request("DELETE", `${P}/${enc(id)}`, nothing);
+export const duplicatePost = (id: string) => request("POST", `${P}/${enc(id)}/duplicate`, parsePost, {});
+export const startCheck = (id: string) => request("POST", `${P}/${enc(id)}/check`, parseCheck, {});
+export const getCheck = (id: string, signal?: AbortSignal) => request("GET", `${P}/${enc(id)}/check`, parseCheck, undefined, signal);
+export const cancelCheck = (id: string) => request("POST", `${P}/${enc(id)}/check/cancel`, parseCheck, {});
+export const decideBlock = (id: string, blockId: string, decision: "accepted" | "rejected", ack?: true) => request("PUT", `${P}/${enc(id)}/blocks/${enc(blockId)}`, parseBlock, { decision, ...(ack ? { ack } : {}) });
+export const publish = (id: string, mode: "enriched" | "original") => request("POST", `${P}/${enc(id)}/publish`, parsePost, { mode });
+export const unpublish = (id: string) => request("POST", `${P}/${enc(id)}/unpublish`, parsePost, {});
+export const getCapabilities = (signal?: AbortSignal) => request("GET", "/api/blog/capabilities", parseCapabilities, undefined, signal);
+
+export async function uploadImage(id: string, file: File): Promise<BlogResult<{ url: string; assetId: string }>> {
+  let res: Response;
+  try {
+    res = await fetch(`${P}/${enc(id)}/assets`, { method: "POST", credentials: "same-origin", headers: { "Content-Type": file.type, Accept: "application/json" }, body: file });
+  } catch {
+    return { ok: false, status: 0, code: "NETWORK" };
+  }
+  const o = res.ok ? obj(await res.json().catch(() => null)) : null;
+  return o && str(o.assetId) && str(o.url) ? { ok: true, value: { url: str(o.url), assetId: str(o.assetId) } } : { ok: false, status: res.status, code: res.ok ? "UNREADABLE" : "ERROR" };
+}
+
+// Public: no session, nothing but the published post.
+const PUB = "/api/public/blog/posts";
+export const listPublic = (signal?: AbortSignal) => request("GET", PUB, list(parsePublicSummary), undefined, signal);
+export const getPublic = (slug: string, signal?: AbortSignal) => request("GET", `${PUB}/${enc(slug)}`, parsePublicPost, undefined, signal);
+
+/** Words shown for a failed call. The server's own message is never displayed. */
+export function describeBlogError(r: { status: number; code: string }, what = "do that"): string {
+  if (r.code === "NETWORK") return "Could not reach Antares. Check your connection.";
+  if (r.status === 401) return "You are signed out. Sign in again.";
+  if (r.status === 404) return "That post no longer exists.";
+  if (r.status === 409) return "This post changed somewhere else.";
+  if (r.status === 413) return "That is too large.";
+  if (r.status === 429) return "Too many requests. Wait a minute and try again.";
+  return `Could not ${what}. Try again.`;
+}
