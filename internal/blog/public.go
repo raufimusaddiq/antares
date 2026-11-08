@@ -14,7 +14,10 @@ import (
 // authors and nothing else, makes no Hermes call, and says nothing of the author but a display name. Every miss
 // (unknown, draft, unpublished, author suspended) is the same 404.
 
-const publicPageSize = 20
+const (
+	publicPageSize = 20
+	maxPublicPage  = 500
+)
 
 // publicWhere selects exactly the rows a reader may see. approval_status is read in the same statement, so a suspended
 // or rejected author's posts vanish and a reinstated author's return with no other change. The author's workspace state
@@ -57,6 +60,9 @@ func authorName(n sql.NullString) string {
 func (s *Service) PublicList(ctx context.Context, page int) ([]PublicSummary, error) {
 	if page < 1 {
 		page = 1
+	}
+	if page > maxPublicPage { // an unauthenticated caller must not make the database walk a huge offset
+		return []PublicSummary{}, nil
 	}
 	rows, err := s.db.QueryContext(ctx, `SELECT p.slug, v.title, v.summary, p.cover_asset_id, u.display_name, p.published_at
 		FROM posts p JOIN users u ON u.id = p.author_id JOIN post_versions v ON v.post_id = p.id AND v.version = p.published_version

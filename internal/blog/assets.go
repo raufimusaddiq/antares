@@ -110,6 +110,12 @@ func (s *Service) Duplicate(ctx context.Context, author, id string) (Post, error
 	if err != nil {
 		return Post{}, err
 	}
+	done := false
+	defer func() {
+		if !done { // never leave a half-made copy behind
+			_ = s.Delete(context.WithoutCancel(ctx), author, cp.ID)
+		}
+	}()
 	doc := string(src.Doc)
 	// One image at a time: a post can hold 150 MiB of them, and none of that needs to be in memory at once.
 	rows, err := s.db.QueryContext(ctx, `SELECT id FROM post_assets WHERE post_id = ? AND author_id = ?`, id, author)
@@ -131,7 +137,6 @@ func (s *Service) Duplicate(ctx context.Context, author, id string) (Post, error
 		nid := store.NewID()
 		if _, err := s.db.ExecContext(ctx, `INSERT INTO post_assets (id, post_id, author_id, content_type, bytes, created_at)
 			SELECT ?, ?, author_id, content_type, bytes, ? FROM post_assets WHERE id = ? AND post_id = ? AND author_id = ?`, nid, cp.ID, s.stamp(), oid, id, author); err != nil {
-			_ = s.Delete(ctx, author, cp.ID)
 			return Post{}, err
 		}
 		doc = strings.ReplaceAll(doc, assetURL(id, oid), assetURL(cp.ID, nid))
@@ -147,7 +152,9 @@ func (s *Service) Duplicate(ctx context.Context, author, id string) (Post, error
 			return Post{}, err
 		}
 	}
-	return loadPost(ctx, s.db, author, cp.ID)
+	p, err := loadPost(ctx, s.db, author, cp.ID)
+	done = err == nil
+	return p, err
 }
 
 func nil2empty(b []byte) []byte {

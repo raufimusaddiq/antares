@@ -387,3 +387,28 @@ func TestAnOversizeJSONBodyIs413(t *testing.T) {
 		t.Fatalf("oversize body: %d", w.Code)
 	}
 }
+
+func TestRepublishingLeavesOnlyTheLiveVersionPinned(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.publish("Twice", "twice-post", "one")
+	cur := into[Post](t, u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": p.LatestVersion, "title": "Twice 2"}))
+	u.do("POST", "/api/blog/posts/"+p.ID+"/publish", map[string]any{"mode": "original"})
+	var pinned int
+	_ = a.db.QueryRow(`SELECT COUNT(*) FROM post_versions WHERE post_id = ? AND pinned = 1`, p.ID).Scan(&pinned)
+	if pinned != 1 || cur.LatestVersion != p.LatestVersion+1 {
+		t.Fatalf("pinned versions: %d", pinned)
+	}
+}
+
+func TestAHugePublicPageNumberIsNotWalked(t *testing.T) {
+	a := newApp(t)
+	a.active("alice").publish("One", "one-post", "x")
+	w := a.anon("GET", "/api/public/blog/posts?page=1000000000")
+	if w.Code != 200 || strings.TrimSpace(w.Body.String()) != "[]" {
+		t.Fatalf("%d %s", w.Code, w.Body)
+	}
+	if w := a.anon("GET", "/api/public/blog/posts?page=1"); !strings.Contains(w.Body.String(), "one-post") {
+		t.Fatal("the first page must still list")
+	}
+}

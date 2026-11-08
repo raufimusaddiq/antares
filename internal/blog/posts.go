@@ -245,8 +245,10 @@ func (s *Service) Settings(ctx context.Context, author, id string, slug, summary
 	if cover != nil {
 		if *cover != "" {
 			var one int
-			if err := tx.QueryRowContext(ctx, `SELECT 1 FROM post_assets WHERE id = ? AND post_id = ? AND author_id = ?`, *cover, id, author).Scan(&one); err != nil {
+			if err := tx.QueryRowContext(ctx, `SELECT 1 FROM post_assets WHERE id = ? AND post_id = ? AND author_id = ?`, *cover, id, author).Scan(&one); errors.Is(err, sql.ErrNoRows) {
 				return Post{}, ErrInvalid
+			} else if err != nil {
+				return Post{}, err
 			}
 		}
 		coverID = *cover
@@ -293,7 +295,8 @@ func (s *Service) PublishOriginal(ctx context.Context, author, id string) (Post,
 		return Post{}, ErrInvalid
 	}
 	now := s.stamp()
-	if _, err := tx.ExecContext(ctx, `UPDATE post_versions SET pinned = 1 WHERE post_id = ? AND version = ?`, id, cur.LatestVersion); err != nil {
+	// The new head is the version readers see; any earlier published version is an ordinary one again.
+	if _, err := tx.ExecContext(ctx, `UPDATE post_versions SET pinned = (version = ?) WHERE post_id = ?`, cur.LatestVersion, id); err != nil {
 		return Post{}, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE posts SET status = 'published', published_version = latest_version,

@@ -79,24 +79,25 @@ type ChatHandlers interface {
 
 // Auth owns login, logout, sessions and the guards.
 type Auth struct {
-	db        *sql.DB
-	ep        Endpoints
-	clientID  string
-	secret    string
-	origin    string
-	client    *http.Client
-	now       func() time.Time
-	ver       *verifier
-	flows     *flowStore
-	tenants   Tenants
-	chat      ChatHandlers
-	push      ChatHandlers
-	blog      BlogHandlers
-	blogReads func(http.Handler) http.Handler
-	usage     AccountUsage
-	limits    *requestLimits
-	tools     []string // DefaultToolsets
-	catalogue ModelCatalogue
+	db         *sql.DB
+	ep         Endpoints
+	clientID   string
+	secret     string
+	origin     string
+	client     *http.Client
+	now        func() time.Time
+	ver        *verifier
+	flows      *flowStore
+	tenants    Tenants
+	chat       ChatHandlers
+	push       ChatHandlers
+	blog       BlogHandlers
+	blogReads  func(http.Handler) http.Handler
+	blogImages func(http.Handler) http.Handler
+	usage      AccountUsage
+	limits     *requestLimits
+	tools      []string // DefaultToolsets
+	catalogue  ModelCatalogue
 }
 
 func New(o Options) (*Auth, error) {
@@ -119,7 +120,8 @@ func New(o Options) (*Auth, error) {
 	}
 	a := &Auth{limits: newRequestLimits(limits), db: o.DB, ep: o.Endpoints, clientID: o.ClientID, secret: o.ClientSecret,
 		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat, push: o.Push, blog: o.Blog, usage: o.KenariUsage, tools: o.DefaultToolsets, catalogue: o.Catalogue}
-	a.blogReads = a.publicBucket(blogReadsPerMinute)
+	a.blogReads = a.publicBucket(blogReadsPerMinute, "Too many reads; retry later")
+	a.blogImages = a.publicBucket(blogImagesPerMinute, "Too many image reads; retry later")
 	a.ver = &verifier{ep: o.Endpoints, clientID: o.ClientID, client: o.HTTPClient, now: o.Now}
 	return a, nil
 }

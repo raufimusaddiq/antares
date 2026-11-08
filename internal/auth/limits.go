@@ -175,9 +175,12 @@ const publicReadsPerMinute = 60
 // blogReadsPerMinute bounds the public blog reads together (the list, a post, an image).
 const blogReadsPerMinute = 600
 
+// blogImagesPerMinute is the images' own allowance, so a post with many pictures cannot use up the reads for the pages.
+const blogImagesPerMinute = 1200
+
 // publicBucket is one shared per-minute allowance for a group of public routes (the blog's reads): a popular post is
 // read far more often than a shared chat, so the allowance is larger, but one caller cannot drain more than it.
-func (a *Auth) publicBucket(perMinute int) func(http.Handler) http.Handler {
+func (a *Auth) publicBucket(perMinute int, msg string) func(http.Handler) http.Handler {
 	var (
 		mu    sync.Mutex
 		start time.Time
@@ -194,7 +197,7 @@ func (a *Auth) publicBucket(perMinute int) func(http.Handler) http.Handler {
 			over, retry := n > perMinute, int((time.Minute-now.Sub(start))/time.Second)+1
 			mu.Unlock()
 			if over {
-				WriteRateLimited(w, "Too many reads; retry later", retry)
+				WriteRateLimited(w, msg, retry)
 				return
 			}
 			next.ServeHTTP(w, r)
@@ -203,5 +206,5 @@ func (a *Auth) publicBucket(perMinute int) func(http.Handler) http.Handler {
 }
 
 func (a *Auth) publicLimit(next http.Handler) http.Handler {
-	return a.publicBucket(publicReadsPerMinute)(next)
+	return a.publicBucket(publicReadsPerMinute, "Too many reads of shared chats; retry later")(next)
 }

@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/raufimusaddiq/antares/internal/store"
 )
@@ -191,9 +192,12 @@ func (a *Auth) Register(mux *http.ServeMux) {
 			}
 		}
 		ph := a.blog.PublicHandlers()
-		bucket := a.blogReads
 		for _, rt := range PublicBlogRoutes {
 			if h, ok := ph[rt.Method+" "+rt.Path]; ok {
+				bucket := a.blogReads
+				if strings.HasSuffix(rt.Path, "/assets/{assetId}") {
+					bucket = a.blogImages
+				}
 				mux.Handle(rt.Method+" "+rt.Path, bucket(h))
 			}
 		}
