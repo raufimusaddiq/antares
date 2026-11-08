@@ -16,6 +16,8 @@ CREATE TABLE posts (
   updated_at        TEXT NOT NULL
 );
 CREATE INDEX posts_author ON posts (author_id, updated_at DESC);
+-- The public index: newest published first.
+CREATE INDEX posts_public ON posts (published_at DESC) WHERE status = 'published';
 -- A slug names one published post; drafts may share or lack one.
 CREATE UNIQUE INDEX posts_published_slug ON posts (slug) WHERE status = 'published';
 

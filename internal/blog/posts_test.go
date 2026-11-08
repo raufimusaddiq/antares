@@ -6,6 +6,9 @@ import (
 	"image"
 	"image/color"
 	"image/png"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -357,5 +360,30 @@ func TestRemoteImagesAreRefused(t *testing.T) {
 	doc := map[string]any{"type": "doc", "content": []any{map[string]any{"type": "image", "attrs": map[string]any{"src": "https://example.org/a.png"}}}}
 	if w := u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": 1, "doc": doc}); w.Code != 422 {
 		t.Fatalf("a remote image can never render under the page's CSP: %d", w.Code)
+	}
+}
+
+func TestBodylessPostsAcceptChunkedEmptyBodies(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.publish("Chunk", "chunk-post", "x")
+	r := httptest.NewRequest("POST", testOrigin+"/api/blog/posts/"+p.ID+"/unpublish", io.NopCloser(strings.NewReader("")))
+	r.ContentLength = -1 // a streamed body of unknown length, empty
+	r.Header.Set("Origin", testOrigin)
+	r.AddCookie(&http.Cookie{Name: "__Host-antares_session", Value: u.cookie})
+	w := httptest.NewRecorder()
+	a.h.ServeHTTP(w, r)
+	if w.Code != 200 {
+		t.Fatalf("a chunked empty body: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestAnOversizeJSONBodyIs413(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	big := `{"mode":"original","pad":"` + strings.Repeat("x", 5000) + `"}`
+	if w := u.do("POST", "/api/blog/posts/"+p.ID+"/publish", big); w.Code != 413 {
+		t.Fatalf("oversize body: %d", w.Code)
 	}
 }

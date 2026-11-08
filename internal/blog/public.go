@@ -101,7 +101,9 @@ func (s *Service) PublicGet(ctx context.Context, slug string) (PublicPost, error
 	return x, nil
 }
 
-// PublicAsset reads an image of a published post, by the post's address.
+// PublicAsset reads an image of a published post, by the post's address. It does not check that the published version
+// uses the image: one uploaded for a later edit of a live post is readable too (its id is 128 random bits, so it cannot be
+// guessed). When the check stage lands, tie this to the images the published document names.
 func (s *Service) PublicAsset(ctx context.Context, slug, assetID string) (Asset, error) {
 	if !wellFormedSlug(slug) || !assetRE.MatchString(assetID) {
 		return Asset{}, ErrNotFound

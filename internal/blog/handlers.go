@@ -68,28 +68,37 @@ func me(r *http.Request) (string, bool) {
 // decode reads a small JSON body with unknown fields refused: a profile, route prefix, key, header or session id from
 // the browser is a 400, never ignored.
 func decode(w http.ResponseWriter, r *http.Request, limit int64, v any) bool {
+	return decodeBody(w, r, limit, v, false)
+}
+
+// decodeBody is decode; with allowEmpty a request with no body at all (also a chunked one, whose length is unknown) is
+// accepted and leaves v untouched.
+func decodeBody(w http.ResponseWriter, r *http.Request, limit int64, v any, allowEmpty bool) bool {
 	r.Body = http.MaxBytesReader(w, r.Body, limit)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
-	if err := dec.Decode(v); err != nil || dec.Decode(&struct{}{}) != io.EOF {
-		var tooBig *http.MaxBytesError
-		if errors.As(err, &tooBig) {
-			apiError(w, http.StatusRequestEntityTooLarge, "TOO_LARGE", "That is too large", nil)
-			return false
+	err := dec.Decode(v)
+	if err == nil {
+		err = dec.Decode(&struct{}{}) // anything after the value is an error, not ignored
+		if err == io.EOF {
+			return true
 		}
-		invalid(w, "The request body is not valid")
+	} else if err == io.EOF && allowEmpty {
+		return true
+	}
+	var tooBig *http.MaxBytesError
+	if errors.As(err, &tooBig) {
+		apiError(w, http.StatusRequestEntityTooLarge, "TOO_LARGE", "That is too large", nil)
 		return false
 	}
-	return true
+	invalid(w, "The request body is not valid")
+	return false
 }
 
 // emptyBody accepts {} or no body for the POSTs that take none.
 func emptyBody(w http.ResponseWriter, r *http.Request) bool {
-	if r.ContentLength == 0 {
-		return true
-	}
 	var v struct{}
-	return decode(w, r, 1<<10, &v)
+	return decodeBody(w, r, 1<<10, &v, true)
 }
 
 // own wraps a handler that needs the caller and a well-formed post id; a malformed id is the same 404 as a foreign one.

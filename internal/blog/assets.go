@@ -111,33 +111,31 @@ func (s *Service) Duplicate(ctx context.Context, author, id string) (Post, error
 		return Post{}, err
 	}
 	doc := string(src.Doc)
-	rows, err := s.db.QueryContext(ctx, `SELECT id, content_type, bytes FROM post_assets WHERE post_id = ? AND author_id = ?`, id, author)
+	// One image at a time: a post can hold 150 MiB of them, and none of that needs to be in memory at once.
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM post_assets WHERE post_id = ? AND author_id = ?`, id, author)
 	if err != nil {
 		return Post{}, err
 	}
-	type row struct {
-		id, ct string
-		b      []byte
-	}
-	var all []row
+	var ids []string
 	for rows.Next() {
-		var r row
-		if err := rows.Scan(&r.id, &r.ct, &r.b); err != nil {
+		var oid string
+		if err := rows.Scan(&oid); err != nil {
 			rows.Close()
 			return Post{}, err
 		}
-		all = append(all, r)
+		ids = append(ids, oid)
 	}
 	rows.Close()
 	cover := ""
-	for _, r := range all {
+	for _, oid := range ids {
 		nid := store.NewID()
-		if _, err := s.db.ExecContext(ctx, `INSERT INTO post_assets (id, post_id, author_id, content_type, bytes, created_at) VALUES (?,?,?,?,?,?)`, nid, cp.ID, author, r.ct, r.b, s.stamp()); err != nil {
+		if _, err := s.db.ExecContext(ctx, `INSERT INTO post_assets (id, post_id, author_id, content_type, bytes, created_at)
+			SELECT ?, ?, author_id, content_type, bytes, ? FROM post_assets WHERE id = ? AND post_id = ? AND author_id = ?`, nid, cp.ID, s.stamp(), oid, id, author); err != nil {
 			_ = s.Delete(ctx, author, cp.ID)
 			return Post{}, err
 		}
-		doc = strings.ReplaceAll(doc, assetURL(id, r.id), assetURL(cp.ID, nid))
-		if assetURL(id, r.id) == src.CoverURL {
+		doc = strings.ReplaceAll(doc, assetURL(id, oid), assetURL(cp.ID, nid))
+		if assetURL(id, oid) == src.CoverURL {
 			cover = nid
 		}
 	}
