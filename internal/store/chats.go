@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"strings"
 	"time"
 )
@@ -44,6 +45,24 @@ func RunTerminal(s string) bool {
 	}
 	return false
 }
+
+// runSources is the whole run lifecycle in one place: for each status, the statuses a run may move into it from.
+// A terminal status has no way out, so it appears as a source nowhere. MoveRun enforces this table, whatever list
+// its caller passes, and RunSources hands callers the same list.
+//
+//	PENDING -> RUNNING -> DISCONNECTED -> RUNNING ...
+//	any live status -> COMPLETED | FAILED | CANCELLED | TIMED_OUT
+var runSources = map[string][]string{
+	RunRunning:      {RunPending, RunDisconnected},
+	RunDisconnected: {RunRunning},
+	RunCompleted:    {RunPending, RunRunning, RunDisconnected},
+	RunFailed:       {RunPending, RunRunning, RunDisconnected},
+	RunCancelled:    {RunPending, RunRunning, RunDisconnected},
+	RunTimedOut:     {RunPending, RunRunning, RunDisconnected},
+}
+
+// RunSources lists the statuses a run may be moved to status to from. Unknown or unreachable statuses give none.
+func RunSources(to string) []string { return append([]string(nil), runSources[to]...) }
 
 // nonTerminal is the SQL spelling of "not RunTerminal"; keep the two in step.
 const nonTerminal = `('PENDING','RUNNING','DISCONNECTED')`
@@ -338,10 +357,15 @@ func admitTx(ctx context.Context, db *sql.DB, userID, chatID, idemKey string, no
 // MoveRun changes a run's status only while it is still in one of the from
 // states, and returns whether it did. A terminal run is never moved: a
 // cancelled run cannot later become completed, whatever a late upstream event
-// says. hermesRunID and errCode are written only when non-empty.
+// says. A move runs only from the sources runSources allows for to, so a caller's from list can narrow it but never
+// widen it. hermesRunID and errCode are written only when non-empty.
 func MoveRun(ctx context.Context, db *sql.DB, userID, runID string, from []string, to, hermesRunID, errCode string, now time.Time) (bool, error) {
 	if len(from) == 0 {
 		return false, errors.New("store: MoveRun needs at least one source status")
+	}
+	from = legalSources(from, to)
+	if len(from) == 0 {
+		return false, nil
 	}
 	marks := strings.TrimSuffix(strings.Repeat("?,", len(from)), ",")
 	args := []any{to, hermesRunID, errCode, ts(now), runID, userID}
@@ -356,6 +380,17 @@ func MoveRun(ctx context.Context, db *sql.DB, userID, runID string, from []strin
 	}
 	n, err := res.RowsAffected()
 	return n > 0, err
+}
+
+// legalSources keeps the statuses of from that runSources allows a move to to from.
+func legalSources(from []string, to string) []string {
+	var out []string
+	for _, f := range from {
+		if slices.Contains(runSources[to], f) {
+			out = append(out, f)
+		}
+	}
+	return out
 }
 
 // RecoverRuns runs once at start-up, before any request is served, when no
