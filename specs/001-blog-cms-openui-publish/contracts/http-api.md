@@ -31,7 +31,7 @@ query is scoped to the caller as `author_id`. A foreign or missing id returns th
 |--------|------|---------|
 | GET | `/b` | HTML shell, indexable, with injected metadata |
 | GET | `/b/{slug}` | HTML shell with injected title/description/Open Graph and an escaped text copy |
-| GET | `/api/public/blog/posts` | `[{slug, title, summary, coverUrl, authorName, publishedAt}]`, paged |
+| GET | `/api/public/blog/posts` | `[{slug, title, summary, coverUrl, authorName, publishedAt}]`, 20 per page, newest first; `?page=N` (from 1) |
 | GET | `/api/public/blog/posts/{slug}` | `{title, summary, doc, blocks:[{anchor, markup, fallback, sources}], authorName, publishedAt}` |
 | GET | `/api/public/blog/posts/{slug}/assets/{assetId}` | Image of a published post |
 

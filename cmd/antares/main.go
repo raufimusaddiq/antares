@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/raufimusaddiq/antares/internal/auth"
+	"github.com/raufimusaddiq/antares/internal/blog"
 	"github.com/raufimusaddiq/antares/internal/chat"
 	"github.com/raufimusaddiq/antares/internal/config"
 	"github.com/raufimusaddiq/antares/internal/hermes"
@@ -20,6 +21,7 @@ import (
 	"github.com/raufimusaddiq/antares/internal/push"
 	"github.com/raufimusaddiq/antares/internal/redact"
 	"github.com/raufimusaddiq/antares/internal/secrets"
+	"github.com/raufimusaddiq/antares/internal/server"
 	"github.com/raufimusaddiq/antares/internal/store"
 	"github.com/raufimusaddiq/antares/internal/tenant"
 )
@@ -166,6 +168,10 @@ func run() error {
 	}
 	defer chats.Close() // after the server drains (serve returns first), before db.Close
 
+	blogs, err := blog.New(blog.Options{DB: db})
+	if err != nil {
+		return err
+	}
 	// No WriteTimeout: SSE run streams outlive any fixed write deadline.
 	identity, err := auth.New(auth.Options{
 		DB:           db,
@@ -176,6 +182,7 @@ func run() error {
 		Tenants:      tenants,
 		Chat:         chats,
 		Push:         pusher,
+		Blog:         blogs,
 		KenariUsage:  kenari.NewAccount(kenari.DefaultAccountBase, cfg.KenariAPIKey, nil),
 		Limits:       &cfg.Limits,
 		// Admin → Assistant tools shows this while no policy is saved.
@@ -186,8 +193,11 @@ func run() error {
 		return err
 	}
 	srv := &http.Server{
-		Addr:              cfg.Addr,
-		Handler:           newServer(ready, cfg.StaticDir).WithAuth(identity).Routes(),
+		Addr: cfg.Addr,
+		Handler: newServer(ready, cfg.StaticDir).WithAuth(identity).WithBlog(func(ctx context.Context, slug string) (server.PageMeta, bool) {
+			p, ok := blogs.Meta(ctx, slug)
+			return server.PageMeta{Title: p.Title, Description: p.Description, Image: p.Image}, ok
+		}).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,
