@@ -425,7 +425,7 @@ func (s *Service) finish(l *liveRun, to, code, output string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(s.base), 10*time.Second)
 	defer cancel()
 	if to != "" {
-		if _, err := store.MoveRun(ctx, s.db, l.userID, l.runID, []string{store.RunPending, store.RunRunning, store.RunDisconnected}, to, "", code, s.now()); err != nil {
+		if _, err := store.MoveRun(ctx, s.db, l.userID, l.runID, store.RunSources(to), to, "", code, s.now()); err != nil {
 			log.Printf("chat: run %s: could not record %s: %v", l.runID, to, err)
 		}
 	}
@@ -486,7 +486,7 @@ func terminalPayload(run store.Run, output string) map[string]any {
 func (s *Service) disconnect(l *liveRun, userID, runID string) {
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(s.base), 10*time.Second)
 	defer cancel()
-	_, _ = store.MoveRun(ctx, s.db, userID, runID, []string{store.RunRunning}, store.RunDisconnected, "", "", s.now())
+	_, _ = store.MoveRun(ctx, s.db, userID, runID, store.RunSources(store.RunDisconnected), store.RunDisconnected, "", "", s.now())
 	if run, err := store.GetRun(ctx, s.db, userID, runID); err == nil {
 		logRunState(run)
 	}
@@ -525,7 +525,7 @@ func (s *Service) Cancel(ctx context.Context, userID, runID string) (run store.R
 	if store.RunTerminal(run.Status) {
 		return run, false, nil
 	}
-	moved, err := store.MoveRun(ctx, s.db, userID, runID, []string{store.RunPending, store.RunRunning, store.RunDisconnected}, store.RunCancelled, "", "", s.now())
+	moved, err := store.MoveRun(ctx, s.db, userID, runID, store.RunSources(store.RunCancelled), store.RunCancelled, "", "", s.now())
 	if err != nil {
 		return store.Run{}, false, err
 	}
