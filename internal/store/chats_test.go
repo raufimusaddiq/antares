@@ -4,6 +4,8 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -115,7 +117,10 @@ func TestOneActiveRunPerChatAndIdempotentReplay(t *testing.T) {
 		t.Errorf("key reuse across chats: %v", err)
 	}
 	// DISCONNECTED still occupies the chat; a terminal run frees it.
-	if ok, _ := MoveRun(ctx, db, u.a, r1.ID, []string{RunPending}, RunDisconnected, "", "", t0); !ok {
+	if ok, _ := MoveRun(ctx, db, u.a, r1.ID, []string{RunPending}, RunRunning, "", "", t0); !ok {
+		t.Fatal("could not start")
+	}
+	if ok, _ := MoveRun(ctx, db, u.a, r1.ID, []string{RunRunning}, RunDisconnected, "", "", t0); !ok {
 		t.Fatal("could not disconnect")
 	}
 	if _, _, err := AdmitRun(ctx, db, u.a, u.chatA.ID, "idem-key-3", t0); !errors.Is(err, ErrRunActive) {
@@ -362,5 +367,49 @@ func TestAdmissionGateIsAtomicWithTheInsert(t *testing.T) {
 	// A replay of an admitted key is answered before the gate.
 	if r, created, err := AdmitRunGated(ctx, db, u.a, second.ID, "idem-gate-2", t0, 0, gate); err != nil || created || r.ChatID != second.ID {
 		t.Fatalf("replay at the limit: %v %v", created, err)
+	}
+}
+
+// The lifecycle table is the only authority: a caller's from list cannot widen it, and the SQL spelling of "live"
+// matches it.
+func TestRunTransitionsFollowTheTable(t *testing.T) {
+	d, u := setupTwo(t)
+	ctx := context.Background()
+	all := []string{RunPending, RunRunning, RunDisconnected, RunCompleted, RunFailed, RunCancelled, RunTimedOut}
+	for _, to := range all {
+		for _, from := range all {
+			run, _, err := AdmitRun(ctx, d.DB, u.a, u.chatA.ID, "idem-table-"+from+"-"+to, t0)
+			if err != nil {
+				t.Fatal(err)
+			}
+			// Put the run in from by its legal path, then try the move with a from list that names every status.
+			path := map[string][]string{
+				RunPending: nil, RunRunning: {RunRunning}, RunDisconnected: {RunRunning, RunDisconnected},
+				RunCompleted: {RunCompleted}, RunFailed: {RunFailed}, RunCancelled: {RunCancelled}, RunTimedOut: {RunTimedOut},
+			}[from]
+			for _, step := range path {
+				if ok, err := MoveRun(ctx, d.DB, u.a, run.ID, RunSources(step), step, "", "", t0); !ok || err != nil {
+					t.Fatalf("setup %s: %v %v", from, ok, err)
+				}
+			}
+			moved, _ := MoveRun(ctx, d.DB, u.a, run.ID, all, to, "", "", t0)
+			if want := slices.Contains(RunSources(to), from); moved != want {
+				t.Errorf("%s -> %s: moved=%v, table says %v", from, to, moved, want)
+			}
+			MoveRun(ctx, d.DB, u.a, run.ID, RunSources(RunCancelled), RunCancelled, "", "", t0) // frees the chat for the next pair
+		}
+	}
+	for _, s := range all {
+		live := !RunTerminal(s)
+		if got := strings.Contains(nonTerminal, "'"+s+"'"); got != live {
+			t.Errorf("%s: nonTerminal SQL says %v, RunTerminal says %v", s, got, !live)
+		}
+		if RunTerminal(s) {
+			for _, to := range all {
+				if slices.Contains(RunSources(to), s) {
+					t.Errorf("terminal %s is a source of %s", s, to)
+				}
+			}
+		}
 	}
 }
