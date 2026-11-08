@@ -20,7 +20,8 @@ CREATE INDEX posts_author ON posts (author_id, updated_at DESC);
 CREATE UNIQUE INDEX posts_published_slug ON posts (slug) WHERE status = 'published';
 
 -- A version is the title, summary and document as saved. Autosave moves the head version forward in place; a pinned
--- version (published, later also checked) is never rewritten: the next save starts a new one.
+-- version (published, later also checked) keeps its title and body: the next save starts a new one. Only the summary,
+-- a setting, is also written to the pinned row when the author changes it.
 CREATE TABLE post_versions (
   post_id    TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
   version    INTEGER NOT NULL,

@@ -38,7 +38,6 @@ var (
 
 	blocks    = map[string]bool{"paragraph": true, "heading": true, "bulletList": true, "orderedList": true, "blockquote": true, "codeBlock": true, "horizontalRule": true, "image": true}
 	inlines   = map[string]bool{"text": true, "hardBreak": true}
-	imageSrc  = regexp.MustCompile(`^/api/blog/posts/[A-Za-z0-9_-]{6,64}/assets/[A-Za-z0-9_-]{6,64}$`)
 	marksOnly = map[string]bool{"bold": true, "italic": true, "code": true, "link": true}
 )
 
@@ -58,7 +57,7 @@ func allowedChild(parent, child string) bool {
 }
 
 // CleanDoc validates raw and returns it rebuilt from the allowed parts only.
-func CleanDoc(raw []byte) ([]byte, error) {
+func CleanDoc(raw []byte, postID string) ([]byte, error) {
 	if len(raw) == 0 || len(raw) > maxDocBytes {
 		return nil, errDoc
 	}
@@ -67,7 +66,7 @@ func CleanDoc(raw []byte) ([]byte, error) {
 		return nil, errDoc
 	}
 	n := 0
-	out, err := cleanNode(root, "", 0, &n)
+	out, err := cleanNode(root, "", 0, &n, regexp.MustCompile(`^/api/blog/posts/`+regexp.QuoteMeta(postID)+`/assets/[A-Za-z0-9_-]{6,64}$`))
 	if err != nil {
 		return nil, err
 	}
@@ -78,7 +77,7 @@ func CleanDoc(raw []byte) ([]byte, error) {
 	return b, nil
 }
 
-func cleanNode(in node, parent string, depth int, count *int) (node, error) {
+func cleanNode(in node, parent string, depth int, count *int, ownImage *regexp.Regexp) (node, error) {
 	*count++
 	if depth > maxDepth || *count > maxNodes {
 		return node{}, errDoc
@@ -111,7 +110,7 @@ func cleanNode(in node, parent string, depth int, count *int) (node, error) {
 			return node{}, errDoc
 		}
 		src, _ := in.Attrs["src"].(string)
-		if !imageSrc.MatchString(src) && !httpsURL(src) {
+		if !ownImage.MatchString(src) && !httpsURL(src) {
 			return node{}, errDoc
 		}
 		alt, _ := in.Attrs["alt"].(string)
@@ -140,7 +139,7 @@ func cleanNode(in node, parent string, depth int, count *int) (node, error) {
 		}
 	}
 	for _, c := range in.Content {
-		cc, err := cleanNode(c, in.Type, depth+1, count)
+		cc, err := cleanNode(c, in.Type, depth+1, count, ownImage)
 		if err != nil {
 			return node{}, err
 		}

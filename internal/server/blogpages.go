@@ -3,8 +3,10 @@ package server
 import (
 	"bytes"
 	"context"
+	"errors"
 	"html"
 	"io/fs"
+	"log"
 	"net/http"
 	"regexp"
 	"strings"
@@ -17,8 +19,12 @@ import (
 // PageMeta is the metadata of one published post (or of the blog index).
 type PageMeta struct{ Title, Description, Image string }
 
-// PostMeta looks up a published post's metadata by address; false for anything a reader may not see.
-type PostMeta func(ctx context.Context, slug string) (PageMeta, bool)
+// ErrNoPage is the answer for anything a reader may not see (unknown, unpublished, hidden): a 404. Any other error from
+// a PostMeta is a failure of ours and is answered as one, never as "no such post".
+var ErrNoPage = errors.New("server: no such page")
+
+// PostMeta looks up a published post's metadata by address.
+type PostMeta func(ctx context.Context, slug string) (PageMeta, error)
 
 // Limit wraps a handler in a request allowance.
 type Limit func(http.Handler) http.Handler
@@ -39,9 +45,8 @@ var (
 	reOGDesc   = regexp.MustCompile(`(<meta (?:property="og:description"|name="twitter:description") content=")[^"]*(")`)
 	reOGURL    = regexp.MustCompile(`(<meta property="og:url" content=")[^"]*(")`)
 	reCanon    = regexp.MustCompile(`(<link rel="canonical" href=")([^"]*)(")`)
-	reCanon3   = regexp.MustCompile(`(<link rel="canonical" href=")[^"]*(")`)
 	reOGImage  = regexp.MustCompile(`(<meta (?:property="og:image"|name="twitter:image") content=")[^"]*(")`)
-	reSlugPath = regexp.MustCompile(`^/b/([a-z0-9-]{3,80})/?$`)
+	reSlugPath = regexp.MustCompile(`^/b/([a-z0-9-]{3,80})$`)
 )
 
 func (s *Server) blogShell(w http.ResponseWriter, r *http.Request) {
@@ -56,12 +61,22 @@ func (s *Server) blogShell(w http.ResponseWriter, r *http.Request) {
 	case r.URL.Path == "/b" || r.URL.Path == "/b/":
 		meta = PageMeta{Title: "Blog · Antares", Description: "Posts written on Antares."}
 	default:
-		m := reSlugPath.FindStringSubmatch(r.URL.Path)
-		var ok bool
-		if m != nil {
-			meta, ok = s.post(r.Context(), m[1])
+		if strings.HasSuffix(r.URL.Path, "/") { // one address per post, one canonical
+			http.Redirect(w, r, strings.TrimRight(r.URL.Path, "/"), http.StatusMovedPermanently)
+			return
 		}
-		if !ok { // the same answer for every post a reader may not see
+		m := reSlugPath.FindStringSubmatch(r.URL.Path)
+		var err error = ErrNoPage
+		if m != nil {
+			meta, err = s.post(r.Context(), m[1])
+		}
+		if err != nil && !errors.Is(err, ErrNoPage) {
+			log.Printf("blog page: %v", err)
+			w.Header().Set("Cache-Control", "no-store")
+			http.Error(w, "Something went wrong", http.StatusInternalServerError)
+			return
+		}
+		if err != nil { // the same answer for every post a reader may not see
 			status = http.StatusNotFound
 			w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 		}
@@ -80,13 +95,11 @@ func (s *Server) blogShell(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// withMeta writes the page's title, description, address and cover into the shell, and a text copy for readers
-// without scripts. The shell's noindex is removed: a published post is meant to be found.
-// setAttr puts value between the two captured halves of every match. The value is inserted as it is: a "$1" in a
+// setAttr puts value between the first and the last captured group of every match. The value is inserted as it is: a "$1" in a
 // title must stay "$1" and must never be read as a reference to a captured group.
 func setAttr(re *regexp.Regexp, src []byte, value string) []byte {
 	return re.ReplaceAllFunc(src, func(m []byte) []byte {
-		g := re.FindSubmatch(m)
+		g := re.FindSubmatch(m) // the middle group, if any, is the old value being replaced
 		out := append([]byte{}, g[1]...)
 		out = append(out, value...)
 		return append(out, g[len(g)-1]...)
@@ -107,7 +120,7 @@ func withMeta(shell []byte, path string, m PageMeta) []byte {
 	if c := reCanon.FindSubmatch(out); c != nil {
 		origin := strings.TrimRight(string(c[2]), "/")
 		url := esc(origin + path)
-		out = setAttr(reCanon3, out, url)
+		out = setAttr(reCanon, out, url)
 		out = setAttr(reOGURL, out, url)
 		if strings.HasPrefix(m.Image, "/") {
 			out = setAttr(reOGImage, out, esc(origin+m.Image))

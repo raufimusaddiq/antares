@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"log"
 	"net"
 	"net/http"
@@ -194,9 +195,12 @@ func run() error {
 	}
 	srv := &http.Server{
 		Addr: cfg.Addr,
-		Handler: newServer(ready, cfg.StaticDir).WithAuth(identity).WithBlog(func(ctx context.Context, slug string) (server.PageMeta, bool) {
-			p, ok := blogs.Meta(ctx, slug)
-			return server.PageMeta{Title: p.Title, Description: p.Description, Image: p.Image}, ok
+		Handler: newServer(ready, cfg.StaticDir).WithAuth(identity).WithBlog(func(ctx context.Context, slug string) (server.PageMeta, error) {
+			p, err := blogs.Meta(ctx, slug)
+			if errors.Is(err, blog.ErrNotFound) {
+				err = server.ErrNoPage
+			}
+			return server.PageMeta{Title: p.Title, Description: p.Description, Image: p.Image}, err
 		}, identity.BlogReadLimit()).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,

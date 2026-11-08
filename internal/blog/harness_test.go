@@ -7,6 +7,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -58,9 +59,12 @@ func newApp(t testing.TB) *app {
 		t.Fatal(err)
 	}
 	h := server.New(func(context.Context) error { return nil }, "").WithAssets(webui.FS()).WithAuth(au).
-		WithBlog(func(ctx context.Context, slug string) (server.PageMeta, bool) {
-			m, ok := svc.Meta(ctx, slug)
-			return server.PageMeta{Title: m.Title, Description: m.Description, Image: m.Image}, ok
+		WithBlog(func(ctx context.Context, slug string) (server.PageMeta, error) {
+			m, err := svc.Meta(ctx, slug)
+			if errors.Is(err, ErrNotFound) {
+				err = server.ErrNoPage
+			}
+			return server.PageMeta{Title: m.Title, Description: m.Description, Image: m.Image}, err
 		}, au.BlogReadLimit()).Routes()
 	return &app{t: t, db: db, svc: svc, h: h}
 }

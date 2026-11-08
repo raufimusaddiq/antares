@@ -174,7 +174,7 @@ func (s *Service) Handlers() map[string]http.Handler {
 			}
 			c := Change{Title: b.Title, Summary: b.Summary}
 			if len(b.Doc) > 0 {
-				clean, err := CleanDoc(b.Doc)
+				clean, err := CleanDoc(b.Doc, id)
 				if err != nil {
 					apiError(w, http.StatusUnprocessableEntity, "INVALID_DOCUMENT", "The document has something that is not allowed", nil)
 					return

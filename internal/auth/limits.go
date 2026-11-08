@@ -56,9 +56,15 @@ var draftWrites = map[string]bool{
 // blogUpload is an image upload to a post; it draws from the same per-minute allowance as a chat upload.
 const blogUpload = "POST /api/blog/posts/{id}/assets"
 
+// blogAssetRead is the author reading an image back; it shares the asset-read allowance.
+const blogAssetRead = "GET /api/blog/posts/{id}/assets/{assetId}"
+
 func (a *Auth) limit(route string, next http.Handler) http.Handler {
-	if route == blogUpload {
+	switch route {
+	case blogUpload:
 		route = "POST /api/assets"
+	case blogAssetRead:
+		route = assetRead
 	}
 	switch route {
 	case "POST /api/chats/{chatId}/messages", "POST /api/assets", "GET /api/runs/{runId}/events", artifactDownload, artifactPreview, assetRead, mediaRead, historyRead:
@@ -197,24 +203,5 @@ func (a *Auth) publicBucket(perMinute int) func(http.Handler) http.Handler {
 }
 
 func (a *Auth) publicLimit(next http.Handler) http.Handler {
-	var (
-		mu    sync.Mutex
-		start time.Time
-		n     int
-	)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		now := a.now()
-		mu.Lock()
-		if now.Sub(start) >= time.Minute {
-			start, n = now, 0
-		}
-		n++
-		over, retry := n > publicReadsPerMinute, int((time.Minute-now.Sub(start))/time.Second)+1
-		mu.Unlock()
-		if over {
-			WriteRateLimited(w, "Too many reads of shared chats; retry later", retry)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+	return a.publicBucket(publicReadsPerMinute)(next)
 }

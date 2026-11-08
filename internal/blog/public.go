@@ -118,20 +118,24 @@ func (s *Service) PublicAsset(ctx context.Context, slug, assetID string) (Asset,
 type PageMeta struct{ Title, Description, Image string }
 
 // Meta returns the metadata for a published post, or false for anything a reader may not see.
-func (s *Service) Meta(ctx context.Context, slug string) (PageMeta, bool) {
+// ErrNotFound for anything a reader may not see; any other error is ours (a failing database) and is not a 404.
+func (s *Service) Meta(ctx context.Context, slug string) (PageMeta, error) {
 	if !wellFormedSlug(slug) {
-		return PageMeta{}, false
+		return PageMeta{}, ErrNotFound
 	}
 	var m PageMeta
 	var cover string
 	err := s.db.QueryRowContext(ctx, `SELECT v.title, v.summary, p.cover_asset_id
 		FROM posts p JOIN users u ON u.id = p.author_id JOIN post_versions v ON v.post_id = p.id AND v.version = p.published_version
 		WHERE p.slug = ? AND `+publicWhere, slug).Scan(&m.Title, &m.Description, &cover)
+	if errors.Is(err, sql.ErrNoRows) {
+		return PageMeta{}, ErrNotFound
+	}
 	if err != nil {
-		return PageMeta{}, false
+		return PageMeta{}, err
 	}
 	m.Image = publicAssetURL(slug, cover)
-	return m, true
+	return m, nil
 }
 
 // PublicHandlers are the routes that answer without a session, keyed as in auth.PublicBlogRoutes.

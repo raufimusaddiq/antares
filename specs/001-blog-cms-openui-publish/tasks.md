@@ -57,7 +57,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 
 ## Phase 3: Foundational (blocks all stories)
 
-- [X] T015 Write `internal/store/migrations/0026_blog.sql`: tables `posts`, `post_versions`, `post_checks`, `post_blocks`, `block_sources`, `post_assets` exactly as in `data-model.md` (status values `draft`/`checking`/`ready`/`published`/`unpublished`; slug unique among published posts; cascade deletes; `author_id` on every user-facing table; `https`-only source urls enforced in code)
+- [X] T015 (posts, post_versions and post_assets; `post_checks`, `post_blocks` and `block_sources` come with Phase 5) Write `internal/store/migrations/0026_blog.sql`: tables `posts`, `post_versions`, `post_checks`, `post_blocks`, `block_sources`, `post_assets` exactly as in `data-model.md` (status values `draft`/`checking`/`ready`/`published`/`unpublished`; slug unique among published posts; cascade deletes; `author_id` on every user-facing table; `https`-only source urls enforced in code)
 - [X] T016 [P] Document node/mark allowlist and JSON schema validator in `internal/blog/doc.go` (paragraph, heading 2-4, bold, italic, link, bullet/ordered list, blockquote, code, code block, image, divider; size and depth limits); table-driven test in `internal/blog/doc_test.go` rejecting script, raw HTML, unknown nodes and `javascript:` links
 - [X] T017 [P] Slug rules in `internal/blog/slug.go`: lowercase `a-z0-9-`, 3-80 chars, reserved words refused; test in `internal/blog/slug_test.go`
 - [X] T018 Blog test harness `internal/blog/harness_test.go`: two ACTIVE users A and B, mock Hermes, in-memory store (one shared harness, no per-file copies)

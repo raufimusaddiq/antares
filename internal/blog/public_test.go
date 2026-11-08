@@ -181,3 +181,25 @@ func TestPublicPagesAndReadsDrawFromOneAllowance(t *testing.T) {
 }
 
 const blogReadsForTest = 600
+
+func TestAPageLookupFailureIsNotA404(t *testing.T) {
+	a := newApp(t)
+	a.active("alice").publish("Fine", "fine-post", "x")
+	if w := a.anon("GET", "/b/fine-post"); w.Code != 200 {
+		t.Fatal(w.Code)
+	}
+	a.db.Exec(`ALTER TABLE post_versions RENAME TO post_versions_gone`)
+	w := a.anon("GET", "/b/fine-post")
+	if w.Code != 500 || w.Header().Get("X-Robots-Tag") != "" {
+		t.Fatalf("a failing database must not look like a missing post (and must not deindex it): %d %v", w.Code, w.Header())
+	}
+}
+
+func TestATrailingSlashRedirectsToTheCanonicalAddress(t *testing.T) {
+	a := newApp(t)
+	a.active("alice").publish("Slash", "slash-post", "x")
+	w := a.anon("GET", "/b/slash-post/")
+	if w.Code != 301 || w.Header().Get("Location") != "/b/slash-post" {
+		t.Fatalf("%d %v", w.Code, w.Header())
+	}
+}
