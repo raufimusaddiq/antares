@@ -19,6 +19,8 @@ export interface Tool {
   state: ToolState;
   summary: string;
   durationMs: number | null;
+  /** What the tool was asked (a query, a command, a path), redacted by the server. Empty when it did not say. */
+  detail: string;
 }
 
 /** At most this many tool rows are kept; older finished ones are folded into counts so a noisy stream stays bounded. */
@@ -50,7 +52,7 @@ export type RunEvent =
   | { type: "run.started" }
   | { type: "run.resumed" }
   | { type: "assistant.delta"; text: string }
-  | { type: "tool.started"; id: string; label: string }
+  | { type: "tool.started"; id: string; label: string; detail: string }
   | { type: "tool.completed"; id: string; summary: string; failed: boolean; durationMs: number | null }
   | { type: "run.thinking" }
   | { type: "run.completed"; output: string; status: string }
@@ -100,7 +102,7 @@ export function parseEvent(name: string, data: string): RunEvent | null {
     case "assistant.delta":
       return typeof d.text === "string" ? { type: "assistant.delta", text: d.text } : null;
     case "tool.started":
-      return { type: "tool.started", id: s("toolCallId"), label: s("label") };
+      return { type: "tool.started", id: s("toolCallId"), label: s("label"), detail: s("detail") };
     case "tool.completed": {
       const ms = typeof d.durationMs === "number" && Number.isFinite(d.durationMs) && d.durationMs >= 0 ? d.durationMs : null;
       return { type: "tool.completed", id: s("toolCallId"), summary: s("summary"), failed: d.failed === true, durationMs: ms };
@@ -135,7 +137,7 @@ export function reduce(state: LiveRun, ev: RunEvent): LiveRun {
       return { ...state, thinking: true };
     case "tool.started": {
       // A start with no id can never be matched to its end: it is untracked from the first moment.
-      const row: Tool = { id: ev.id, label: ev.label, state: ev.id === "" ? "untracked" : "running", summary: "", durationMs: null };
+      const row: Tool = { id: ev.id, label: ev.label, detail: ev.detail, state: ev.id === "" ? "untracked" : "running", summary: "", durationMs: null };
       // A second start for an id still running: which end belongs to which can no longer be told, so the earlier
       // row is untracked rather than silently replaced. Finished rows keep their outcome.
       const tools = state.tools.map((t): Tool => (ev.id !== "" && t.id === ev.id && t.state === "running" ? { ...t, state: "untracked" } : t));
@@ -146,7 +148,7 @@ export function reduce(state: LiveRun, ev: RunEvent): LiveRun {
       const end: Pick<Tool, "summary" | "durationMs"> = { summary: ev.summary, durationMs: ev.durationMs };
       if (i < 0) {
         // An end with nothing to tie it to: shown, but as untracked, never as a finished call.
-        return bound({ ...state, tools: [...state.tools, { id: ev.id, label: "", state: "untracked", ...end }] });
+        return bound({ ...state, tools: [...state.tools, { id: ev.id, label: "", detail: "", state: "untracked", ...end }] });
       }
       const tools = state.tools.slice();
       tools[i] = { ...tools[i], state: ev.failed ? "failed" : "done", ...end };

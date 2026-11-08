@@ -2,7 +2,8 @@
 import { describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach } from "vitest";
-import { RunView } from "./Chat";
+import { RunView, Transcript } from "./Chat";
+import { parseHistory } from "./chatApi";
 import { MAX_TOOL_ROWS, describeFolded, describeTool, newRun, parseEvent, reduce, type LiveRun, type RunEvent } from "./runState";
 
 afterEach(cleanup);
@@ -102,6 +103,27 @@ describe("the activity group", () => {
     expect(group.open).toBe(true);
     expect(group.querySelector("summary")!.textContent).toBe("Activity: 1 tool call");
     expect(screen.getByText(/Web search: running/)).toBeTruthy();
+  });
+
+  it("names what a tool was asked, and says nothing about a duration Hermes never timed", () => {
+    const s = play([ev("tool.started", { toolCallId: "a", label: "web_search", detail: "best ramen" }), ended("a", { durationMs: null })]);
+    render(<RunView run={s} onCancel={noop} onRetry={noop} onReconnect={noop} />);
+    expect(screen.getByText(/web_search/).closest("li")!.textContent).toBe("web_search “best ramen”: done");
+  });
+
+  it("keeps a finished reply's tool activity when the chat is read back from history", () => {
+    const page = parseHistory({
+      messages: [
+        { seq: 0, role: "user", text: "find it" },
+        { seq: 1, role: "assistant", text: "here it is", tools: [{ name: "web_search", detail: "best ramen" }, { name: "read_file" }, { detail: "no name" }] },
+      ],
+    })!;
+    const { container } = render(<Transcript turns={page.turns} pending={null} run={null} onCancel={noop} onRetry={noop} onReconnect={noop} onResend={noop} />);
+    const group = container.querySelector("details.activity") as HTMLDetailsElement;
+    expect(group.open).toBe(false);
+    expect(group.querySelector("summary")!.textContent).toBe("Activity: 2 tool calls");
+    expect([...group.querySelectorAll("li")].map((li) => li.textContent)).toEqual(["web_search “best ramen”", "read_file"]);
+    expect(container.querySelectorAll("details.activity")).toHaveLength(1);
   });
 
   // The owner saw only "Working…" through long runs: the line now names the step the stream reported.

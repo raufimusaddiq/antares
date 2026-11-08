@@ -35,6 +35,7 @@ import {
   offers,
   type SearchResult,
   type Turn,
+  type ToolNote,
 } from "./chatApi";
 import { ModelPicker } from "./ModelPicker";
 import { mergeNewest, prependOlder, reachOf } from "./history";
@@ -167,8 +168,29 @@ function Activity({ run, live }: { run: LiveRun; live: boolean }) {
         )}
         {run.tools.map((t, i) => (
           <li key={`${t.id}-${i}`} data-tool={t.state}>
-            {t.label || "Tool"}: {describeTool(t, run.phase)}
+            {t.label || "Tool"}
+            {t.detail && <span className="plain"> “{t.detail}”</span>}: {describeTool(t, run.phase)}
             {t.summary && <span className="plain"> {t.summary}</span>}
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+/** The tools of a reply read back from history: the names and what they were asked, folded. */
+function HistoryActivity({ tools }: { tools: ToolNote[] }) {
+  const n = tools.length;
+  return (
+    <details className="activity">
+      <summary>
+        Activity: {n} tool {n === 1 ? "call" : "calls"}
+      </summary>
+      <ul className="tools" aria-label="Tool activity">
+        {tools.map((t, i) => (
+          <li key={i}>
+            {t.name}
+            {t.detail && <span className="plain"> “{t.detail}”</span>}
           </li>
         ))}
       </ul>
@@ -295,6 +317,7 @@ export function Transcript(props: TranscriptProps) {
     (t: Turn) => (
       <article className={`turn ${t.role}`} data-found={t.seq === focusSeq ? "true" : undefined} aria-current={t.seq === focusSeq ? "location" : undefined}>
         <h2 className="who">{t.role === "user" ? "You" : "Assistant"}</h2>
+        {t.role === "assistant" && t.tools && <HistoryActivity tools={t.tools} />}
         {t.role === "user" ? <Markdown text={t.text} /> : t.role === "assistant" ? <AssistantBody text={t.text} streaming={false} /> : <MessageBody text={t.text} streaming={false} />}
         {t.role === "user" && t.attachments && <SentImages refs={t.attachments} />}
         {t.role === "assistant" && chatId && t.ref && <Artifacts chatId={chatId} seq={t.seq} turnRef={t.ref} text={t.text} />}
