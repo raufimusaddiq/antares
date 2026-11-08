@@ -85,6 +85,8 @@ describe("splitMedia", () => {
   it("keeps punctuation after a tag in the text, not in the id", () => {
     expect(splitMedia("Here: MEDIA:image-AbC_1. Done")).toEqual({ text: "Here: . Done", ids: ["image-AbC_1"] });
     expect(splitMedia("(MEDIA:audio-x9)")).toEqual({ text: "()", ids: ["audio-x9"] });
+    // Written inside an OpenUI string, as the assistant does: the quote and bracket stay, so the program still parses.
+    expect(splitMedia('p = TextContent("MEDIA:image-AbC_1")')).toEqual({ text: 'p = TextContent("")', ids: ["image-AbC_1"] });
   });
   it("takes an unclosed quoted tag to the end of its line", () => {
     expect(splitMedia('a MEDIA:"/x/private file.png\nnext').text).toBe("a \nnext");

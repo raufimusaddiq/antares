@@ -27,7 +27,14 @@ var openUIPrompt string
 
 // openUIInstruction is the versioned Visualize instruction (#153, LLM-008): the reply is an openui-lang program the
 // web app renders with that same library. Change the library, regenerate the prompt and bump the version tag together.
-var openUIInstruction = "[antares-openui v2] Visualize is on for this chat.\n\n" + openUIPrompt
+var openUIInstruction = "[antares-openui v3] Visualize is on for this chat.\n\n" + openUIPrompt + "\n\n" + openUIMedia
+
+// openUIMedia keeps the "never fabricate image URLs" rule in the library prompt from withholding a file the assistant
+// really made: a generated image, voice reply or video is delivered by writing its MEDIA:<path> (the path the tool
+// returned) inside a TextContent string. Antares replaces it with the file, and never shows the path.
+const openUIMedia = "Delivering generated media: when a tool generated an image, voice reply or video, always put its file in the reply " +
+	"as MEDIA:<the exact path the tool returned> inside a TextContent string, for example TextContent(\"MEDIA:/path/from/the/tool.png\"). " +
+	"That path is a real file, not a fabricated URL: never leave it out because of the rule about image URLs."
 
 // runInstructions are a run's per-run instructions: the chat's Visualize instruction, then the user's preferences.
 func runInstructions(personality string, visualize bool) string {
