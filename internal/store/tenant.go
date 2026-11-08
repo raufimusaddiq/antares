@@ -616,6 +616,23 @@ func MarkReady(ctx context.Context, db *sql.DB, c Claim, now time.Time) error {
 	return tx.Commit()
 }
 
+// ReleaseStale hands back a run that finished against a tool policy that has since changed: the account stays
+// CONFIGURING and is due at once, with its attempt count untouched, so the next sweep applies the current policy.
+// It is no failure and costs no retry. ErrSuperseded leaves the account unchanged if it is no longer CONFIGURING
+// under this run.
+func ReleaseStale(ctx context.Context, db *sql.DB, c Claim) error {
+	res, err := db.ExecContext(ctx, `UPDATE users SET tenant_next_attempt_at = NULL
+		WHERE id = ? AND approval_status = 'APPROVED' AND tenant_status = 'CONFIGURING' AND tenant_profile = ?`,
+		c.UserID, c.Profile)
+	if err != nil {
+		return err
+	}
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return ErrSuperseded
+	}
+	return nil
+}
+
 // MarkFailed records a failed run with its fixed-vocabulary detail, the new
 // attempt total and next attempt time (zero stops retries and audits attention).
 // ErrSuperseded leaves the account unchanged if it is no longer CONFIGURING

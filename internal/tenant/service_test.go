@@ -1065,10 +1065,9 @@ func TestTenantToolPolicyReachesTheHelperAndVerifierAndRequeuesReadyAccounts(t *
 	if err := r.svc.Process(ctx, u); err != nil {
 		t.Fatal(err)
 	}
-	if got := r.view(u); got.TenantStatus == "READY" || !strings.Contains(got.TenantDetail, "tool policy changed") {
-		t.Fatalf("a run on the old policy unlocked the account: %+v", got)
+	if got := r.view(u); got.TenantStatus != "CONFIGURING" || got.TenantAttempts != 0 || got.TenantDetail != "" {
+		t.Fatalf("a run on the old policy must leave the account queued, not failed or ready: %+v", got)
 	}
-	r.clk.Add(time.Minute)
 	if err := r.svc.Process(ctx, u); err != nil {
 		t.Fatal(err)
 	}
