@@ -152,15 +152,23 @@ Hermes' own tools generate the media; Antares only shows it.
   is a small Hermes image backend that asks for `b64_json` on the profile's own endpoint (`OPENAI_BASE_URL`/`OPENAI_API_KEY`,
   which every tenant profile already has) and saves the image to the profile's cache like any backend. Default model
   `agnes-image-2-5-flash:free`; set `image_gen.kenari-image.model` in a profile to change it.
+- **Videos.** `deploy/hermes-plugins/kenari-video` is the matching video backend for Kenari's asynchronous API
+  (`POST /v1/videos/generations`, poll `GET /v1/videos/{id}` until `done`, download `/content`; docs at
+  https://kenari.id/docs/videos). It reads the model's published durations and resolutions and picks the nearest allowed
+  ones, saves the clip to the profile's `cache/generated/videos/`, and refunds are Kenari's (`failed` and `expired` jobs).
+  Default model `veo-3.1-lite`; set in Admin → Assistant media ([`media-models.md`](media-models.md)) or
+  `video_gen.kenari-video.model`. Video generation is billed per second; the Video generation tool must be switched on
+  in Admin → Assistant tools.
 - **Install** (once per Hermes data volume, and after changing the plugin): copy it to `/opt/data/antares-plugins/`:
 
       docker exec -u 0 hermes mkdir -p /opt/data/antares-plugins   # first: docker cp into a missing dir renames instead
       docker cp deploy/hermes-plugins/kenari-image hermes:/opt/data/antares-plugins/
+      docker cp deploy/hermes-plugins/kenari-video hermes:/opt/data/antares-plugins/
       docker exec -u 0 hermes chown -R hermes:hermes /opt/data/antares-plugins
       docker exec hermes test -f /opt/data/antares-plugins/kenari-image/plugin.yaml   # the policy step looks here
 
   The provisioner's policy step (every provision and rotate) copies it into the profile's `plugins/`, sets
-  `plugins.enabled: [kenari-image]` (replaced, not merged: a tenant profile is provisioner-owned) and then
+  `plugins.enabled: [kenari-image, kenari-video]` (whichever are installed; replaced, not merged: a tenant profile is provisioner-owned) and then
   `image_gen.provider: kenari-image`, and then always asks the running gateway to rediscover that profile's plugins
   (`gateway.control_socket.reload_gateway_plugins`, under a second). The reload matters: the shared gateway discovers a
   profile's plugins once, when the profile appears (at `profile create`, before the plugin is copied in), and a config

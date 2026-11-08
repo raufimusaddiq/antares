@@ -316,3 +316,45 @@ export function parseToolPolicy(v: unknown): ToolPolicy | null {
 
 export const getToolPolicy = (signal?: AbortSignal) => call("GET", "/api/admin/tool-policy", parseToolPolicy, undefined, signal);
 export const setToolPolicy = (allowed: string[]) => call("PUT", "/api/admin/tool-policy", parseToolPolicy, { allowed });
+
+export interface MediaOption {
+  id: string;
+  name: string;
+  free: boolean;
+}
+/** current is "" while the plugin's own default applies. */
+export interface MediaChoice {
+  current: string;
+  default: string;
+  options: MediaOption[];
+}
+/** catalogue is "unavailable" when Kenari could not be read: the option lists are then empty. */
+export interface MediaModels {
+  image: MediaChoice;
+  video: MediaChoice;
+  catalogue: "ok" | "unavailable";
+  reverifying: number | null;
+}
+
+function parseChoice(v: unknown): MediaChoice | null {
+  const o = obj(v);
+  if (!o || !Array.isArray(o.options) || !str(o.default)) return null;
+  const options: MediaOption[] = [];
+  for (const m of o.options) {
+    const mo = obj(m);
+    if (!mo || !str(mo.id)) return null;
+    options.push({ id: str(mo.id), name: str(mo.name) || str(mo.id), free: mo.free === true });
+  }
+  return { current: str(o.current), default: str(o.default), options };
+}
+
+export function parseMediaModels(v: unknown): MediaModels | null {
+  const o = obj(v);
+  const image = parseChoice(o?.image);
+  const video = parseChoice(o?.video);
+  if (!o || !image || !video) return null;
+  return { image, video, catalogue: o.catalogue === "ok" ? "ok" : "unavailable", reverifying: num(o.reverifying) };
+}
+
+export const getMediaModels = (signal?: AbortSignal) => call("GET", "/api/admin/media-models", parseMediaModels, undefined, signal);
+export const setMediaModels = (image: string, video: string) => call("PUT", "/api/admin/media-models", parseMediaModels, { image, video });

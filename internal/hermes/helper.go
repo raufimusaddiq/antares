@@ -120,29 +120,47 @@ func NewHelper(baseURL, token string, client *http.Client) (*Helper, error) {
 	return &Helper{base: &url.URL{Scheme: u.Scheme, Host: u.Host}, token: token, client: &c}, nil
 }
 
+// Policy is what the helper applies to a profile besides its key: the admin's tenant toolsets (nil leaves the helper's own
+// default) and the default image and video generation models ("" leaves the plugin's own).
+type Policy struct {
+	Toolsets   []string
+	ImageModel string
+	VideoModel string
+}
+
+var mediaModelID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$`)
+
+// ValidMediaModel reports whether s can name a generation model: empty (the default) or a plain id.
+func ValidMediaModel(s string) bool { return s == "" || mediaModelID.MatchString(s) }
+
 // Provision creates the profile (if absent), applies the tenant toolset policy and returns its key once. On the
 // helper's 409 (a profile that already has a key) it returns ErrKeyExists; use Rotate to obtain a fresh one.
 // toolsets is the admin's tenant policy (OfferedToolsets); nil leaves the helper's own default.
-func (h *Helper) Provision(ctx context.Context, slug string, toolsets []string) (Credential, error) {
-	return h.issue(ctx, "/provision", slug, toolsets)
+func (h *Helper) Provision(ctx context.Context, slug string, p Policy) (Credential, error) {
+	return h.issue(ctx, "/provision", slug, p)
 }
 
 // Rotate reapplies the toolset policy, replaces the profile's key and returns the new one once.
-func (h *Helper) Rotate(ctx context.Context, slug string, toolsets []string) (Credential, error) {
-	return h.issue(ctx, "/rotate", slug, toolsets)
+func (h *Helper) Rotate(ctx context.Context, slug string, p Policy) (Credential, error) {
+	return h.issue(ctx, "/rotate", slug, p)
 }
 
-func (h *Helper) issue(ctx context.Context, path, slug string, toolsets []string) (Credential, error) {
+func (h *Helper) issue(ctx context.Context, path, slug string, p Policy) (Credential, error) {
 	if !ValidSlug(slug) {
 		return Credential{}, permanent("invalid profile name")
 	}
-	if toolsets != nil && ValidateOfferedToolsets(toolsets) != nil {
+	if p.Toolsets != nil && ValidateOfferedToolsets(p.Toolsets) != nil {
 		return Credential{}, permanent("invalid tenant tool policy")
 	}
+	if !ValidMediaModel(p.ImageModel) || !ValidMediaModel(p.VideoModel) {
+		return Credential{}, permanent("invalid media model")
+	}
 	req := struct {
-		Slug     string   `json:"slug"`
-		Toolsets []string `json:"toolsets,omitempty"`
-	}{slug, toolsets}
+		Slug       string   `json:"slug"`
+		Toolsets   []string `json:"toolsets,omitempty"`
+		ImageModel string   `json:"imageModel,omitempty"`
+		VideoModel string   `json:"videoModel,omitempty"`
+	}{slug, p.Toolsets, p.ImageModel, p.VideoModel}
 	body, _ := json.Marshal(req)
 	hr, err := http.NewRequestWithContext(ctx, http.MethodPost, h.base.String()+path, bytes.NewReader(body))
 	if err != nil {

@@ -10,7 +10,7 @@ import (
 
 // The policy script itself, run by sh with a fake hermes on PATH that records its arguments: the toolset policy is
 // always written; with the shared plugin installed it is also copied into the profile and selected.
-func runPolicy(t *testing.T, withPlugin bool) (calls []string, profiles string) {
+func runPolicy(t *testing.T, plugins []string, image, video string) (calls []string, profiles string) {
 	t.Helper()
 	dir := t.TempDir()
 	bin, shared := filepath.Join(dir, "bin"), filepath.Join(dir, "antares-plugins")
@@ -31,15 +31,15 @@ func runPolicy(t *testing.T, withPlugin bool) (calls []string, profiles string) 
 	if err := os.WriteFile(filepath.Join(bin, "python3"), []byte(pyFake), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if withPlugin {
-		if err := os.MkdirAll(filepath.Join(shared, "kenari-image"), 0o755); err != nil {
+	for _, p := range plugins {
+		if err := os.MkdirAll(filepath.Join(shared, p), 0o755); err != nil {
 			t.Fatal(err)
 		}
-		if err := os.WriteFile(filepath.Join(shared, "kenari-image", "plugin.yaml"), []byte("name: kenari-image\n"), 0o644); err != nil {
+		if err := os.WriteFile(filepath.Join(shared, p, "plugin.yaml"), []byte("name: "+p+"\n"), 0o644); err != nil {
 			t.Fatal(err)
 		}
 	}
-	cmd := exec.Command("sh", "-c", policyScript, "sh", "u_abcdefgh", `["terminal"]`, shared, profiles, "/root-of-hermes", reloadScript, "web memory clarify")
+	cmd := exec.Command("sh", "-c", policyScript, "sh", "u_abcdefgh", `["terminal"]`, shared, profiles, "/root-of-hermes", reloadScript, "web memory clarify", image, video)
 	cmd.Env = append(os.Environ(), "PATH="+bin+":"+os.Getenv("PATH"))
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("policy script: %v %s", err, out)
@@ -49,12 +49,13 @@ func runPolicy(t *testing.T, withPlugin bool) (calls []string, profiles string) 
 }
 
 func TestPolicyScriptInstallsAndSelectsTheImagePlugin(t *testing.T) {
-	calls, profiles := runPolicy(t, true)
+	calls, profiles := runPolicy(t, []string{"kenari-image"}, "gpt-image-2", "")
 	want := []string{
 		`-p u_abcdefgh config set agent.disabled_toolsets ["terminal"]`,
 		`-p u_abcdefgh tools enable web memory clarify --platform api_server`,
 		`-p u_abcdefgh config set plugins.enabled ["kenari-image"]`,
 		`-p u_abcdefgh config set image_gen.provider kenari-image`,
+		`-p u_abcdefgh config set image_gen.kenari-image.model gpt-image-2`,
 		"reload /root-of-hermes " + profiles + "/u_abcdefgh",
 	}
 	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
@@ -68,11 +69,41 @@ func TestPolicyScriptInstallsAndSelectsTheImagePlugin(t *testing.T) {
 // Without the plugin only the toolsets are written: the disabled list, and the allowed ones enabled for api_server
 // (Hermes' default API toolset leaves clarify, tts, stt, video, video_gen and x_search out).
 func TestPolicyScriptWithoutThePluginWritesOnlyTheToolsets(t *testing.T) {
-	calls, profiles := runPolicy(t, false)
+	calls, profiles := runPolicy(t, nil, "", "")
 	if len(calls) != 2 || !strings.Contains(calls[0], "agent.disabled_toolsets") || calls[1] != "-p u_abcdefgh tools enable web memory clarify --platform api_server" {
 		t.Fatalf("hermes calls: %v", calls)
 	}
 	if _, err := os.Stat(filepath.Join(profiles, "u_abcdefgh", "plugins")); !os.IsNotExist(err) {
 		t.Fatalf("a plugins dir was made without a plugin: %v", err)
+	}
+}
+
+// With both plugins installed the profile gets both enabled and selected, with the admin's models; an empty model is
+// written too, so a cleared choice resets the profile to the plugin's own default.
+func TestPolicyScriptSelectsTheVideoPluginAndBothModels(t *testing.T) {
+	calls, profiles := runPolicy(t, []string{"kenari-image", "kenari-video"}, "", "veo-3.1-lite")
+	want := []string{
+		`-p u_abcdefgh config set agent.disabled_toolsets ["terminal"]`,
+		`-p u_abcdefgh tools enable web memory clarify --platform api_server`,
+		`-p u_abcdefgh config set plugins.enabled ["kenari-image","kenari-video"]`,
+		`-p u_abcdefgh config set image_gen.provider kenari-image`,
+		`-p u_abcdefgh config set image_gen.kenari-image.model `,
+		`-p u_abcdefgh config set video_gen.provider kenari-video`,
+		`-p u_abcdefgh config set video_gen.kenari-video.model veo-3.1-lite`,
+		"reload /root-of-hermes " + profiles + "/u_abcdefgh",
+	}
+	if strings.Join(calls, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("hermes calls:\n%s", strings.Join(calls, "\n"))
+	}
+	if _, err := os.Stat(filepath.Join(profiles, "u_abcdefgh", "plugins", "kenari-video", "plugin.yaml")); err != nil {
+		t.Fatalf("video plugin not copied into the profile: %v", err)
+	}
+}
+
+func TestMediaModelIDs(t *testing.T) {
+	for id, ok := range map[string]bool{"": true, "gpt-image-2": true, "agnes-image-2-5-flash:free": true, "veo-3.1-lite": true, "a/b_c": true, "-x": false, "x y": false, "x;rm": false, "$(x)": false, strings.Repeat("a", 101): false} {
+		if validMediaModel(id) != ok {
+			t.Errorf("validMediaModel(%q) = %v, want %v", id, !ok, ok)
+		}
 	}
 }

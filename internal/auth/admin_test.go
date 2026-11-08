@@ -627,10 +627,10 @@ func TestApprovingAUserProvisionsEndToEndAndNothingSecretReachesAnyResponse(t *t
 
 type helperFunc func(slug string) (hermes.Credential, error)
 
-func (f helperFunc) Provision(_ context.Context, s string, _ []string) (hermes.Credential, error) {
+func (f helperFunc) Provision(_ context.Context, s string, _ hermes.Policy) (hermes.Credential, error) {
 	return f(s)
 }
-func (f helperFunc) Rotate(_ context.Context, s string, _ []string) (hermes.Credential, error) {
+func (f helperFunc) Rotate(_ context.Context, s string, _ hermes.Policy) (hermes.Credential, error) {
 	return f(s)
 }
 
