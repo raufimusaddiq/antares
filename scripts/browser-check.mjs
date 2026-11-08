@@ -170,6 +170,7 @@ function api(req, res, url) {
     return send(200, { days: 7, since: "2026-10-23", currency: "IDR", priceDate: "2026-10-23", total: t(37, 1267791, 34914), byModel: [{ model: "minimax-m3-1-flash", ...t(37, 1267791, 34914) }], byChat: [{ chatId: PLAIN, title: "Kemampuan yang Bisa Dibantu", deleted: false, ...t(5, 340000, 6743) }, { chatId: RICH, title: "Saran Game untuk Weekend", deleted: false, ...t(1, 38000, 1047) }, { chatId: "", title: "", deleted: true, ...t(29, 830000, 21168), unreported: 9 }], byDay: Array.from({ length: 7 }, (_, i) => ({ day: `2026-10-${23 + i}`, ...t(i * 2, 40000 * i * i, 1000 * i) })) });
   }
   if (url.pathname === "/api/me/templates") return send(200, { templates: [] });
+  if (url.pathname === "/api/blog/capabilities") return send(200, { writing: true, check: false, webSearch: false });
   if (/^\/api\/(me\/new-chat-draft|chats\/[0-9a-f]{32}\/draft)$/.test(url.pathname)) {
     if (req.method === "DELETE") { res.writeHead(204); return void res.end(); }
     return send(200, { body: "", revision: 0 });
