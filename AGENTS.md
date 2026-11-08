@@ -19,6 +19,23 @@ point.
 2. `docs/runbooks/sprint-delivery.md` — the delivery sequence.
 3. `docs/runbooks/security-invariants.md` — the rules that must never be broken.
 4. `docs/runbooks/deployment.md` — how this is deployed, and what you may not touch.
+5. `docs/design/README.md` — the design file, which is the source of truth for how Antares looks and flows.
+
+## Design comes first
+
+[`docs/design/antares.figcraft`](docs/design/antares.figcraft) is the design source of truth. It began as a
+one-time capture of the web UI; nothing regenerates it from code, and the generator is gone. From here a
+change to how Antares looks or flows **starts in the design file** (open it in FigCraft), then is built in
+code.
+
+- The code and the design stay in step. A UI change lands with the matching design change, and a design
+  change with the code that builds it. A screen, state or flow the code has and the design lacks is a gap
+  to close, not a reason to skip the design.
+- Build from the design, not from memory of the old UI: read the frame, its variables (`Antares`
+  collection, Light and Dark) and its text and effect styles, then match them in `web/src/styles.css`.
+- Where the design and the code disagree, say so in the PR and fix the side that is wrong. Do not edit
+  the design to hide a bug, and do not weaken a security rule because a frame shows otherwise.
+- The security rules below, and every rule in this file, apply to design work as they do to code.
 
 ## The one gate that blocks everything
 
