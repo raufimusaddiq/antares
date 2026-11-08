@@ -261,3 +261,12 @@ func TestCapabilitiesAreHonest(t *testing.T) {
 		t.Fatalf("until the Hermes check exists it is not offered: %v", c)
 	}
 }
+
+func TestUnpublishingADraftIsRefused(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	if w := u.do("POST", "/api/blog/posts/"+p.ID+"/unpublish", nil); w.Code != 409 {
+		t.Fatalf("unpublish a draft: %d", w.Code)
+	}
+}

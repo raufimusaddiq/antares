@@ -83,17 +83,19 @@ func (s *Service) PublicGet(ctx context.Context, slug string) (PublicPost, error
 		return PublicPost{}, ErrNotFound
 	}
 	var x PublicPost
-	var cover, doc string
+	var cover, doc, postID string
 	var name sql.NullString
-	err := s.db.QueryRowContext(ctx, `SELECT v.title, v.summary, p.cover_asset_id, v.doc, u.display_name, p.published_at
+	err := s.db.QueryRowContext(ctx, `SELECT v.title, v.summary, p.cover_asset_id, v.doc, u.display_name, p.published_at, p.id
 		FROM posts p JOIN users u ON u.id = p.author_id JOIN post_versions v ON v.post_id = p.id AND v.version = p.published_version
-		WHERE p.slug = ? AND `+publicWhere, slug).Scan(&x.Title, &x.Summary, &cover, &doc, &name, &x.PublishedAt)
+		WHERE p.slug = ? AND `+publicWhere, slug).Scan(&x.Title, &x.Summary, &cover, &doc, &name, &x.PublishedAt, &postID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PublicPost{}, ErrNotFound
 	}
 	if err != nil {
 		return PublicPost{}, err
 	}
+	// The stored images point at the author's route (and carry the internal post id); readers get their own address.
+	doc = strings.ReplaceAll(doc, "/api/blog/posts/"+postID+"/assets/", "/api/public/blog/posts/"+slug+"/assets/")
 	x.CoverURL, x.AuthorName, x.Doc, x.Blocks = publicAssetURL(slug, cover), authorName(name), json.RawMessage(doc), []any{}
 	return x, nil
 }

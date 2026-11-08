@@ -32,11 +32,12 @@ type Auth interface {
 }
 
 type Server struct {
-	ready  Checker
-	assets fs.FS
-	auth   Auth
-	gz     gzipCache
-	post   PostMeta // the blog's pages (/b, /b/{slug}); nil leaves them to the plain app shell
+	ready     Checker
+	assets    fs.FS
+	auth      Auth
+	gz        gzipCache
+	post      PostMeta // the blog's pages (/b, /b/{slug}); nil leaves them to the plain app shell
+	postLimit Limit
 }
 
 // New serves the bundle from staticDir (a development override). Production
@@ -277,7 +278,11 @@ func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if s.post != nil && (r.URL.Path == "/b" || strings.HasPrefix(r.URL.Path, "/b/")) {
-		s.blogShell(w, r)
+		var h http.Handler = http.HandlerFunc(s.blogShell)
+		if s.postLimit != nil {
+			h = s.postLimit(h)
+		}
+		h.ServeHTTP(w, r)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/s/") { // a shared chat (#250): readable by link, never listed by a search engine

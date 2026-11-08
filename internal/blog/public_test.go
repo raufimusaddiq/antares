@@ -100,6 +100,7 @@ func TestBlogPagesCarryTheirOwnMetadata(t *testing.T) {
 	a := newApp(t)
 	u := a.active("alice")
 	u.publish(`Tom & "Jerry" <b>`, "tom-and-jerry", "text")
+	u.publish("Costs $1M, $$ and ${2} $(x)", "dollars-post", "text")
 	w := a.anon("GET", "/b/tom-and-jerry")
 	if w.Code != 200 {
 		t.Fatal(w.Code)
@@ -119,6 +120,13 @@ func TestBlogPagesCarryTheirOwnMetadata(t *testing.T) {
 	if !strings.Contains(w.Header().Get("Content-Security-Policy"), "script-src 'self'") || strings.Contains(w.Header().Get("Content-Security-Policy"), "unsafe") {
 		t.Errorf("CSP: %q", w.Header().Get("Content-Security-Policy"))
 	}
+	// "$" in a title must stay as typed: it is not a reference to anything.
+	d := a.anon("GET", "/b/dollars-post").Body.String()
+	for _, want := range []string{"<title>Costs $1M, $$ and ${2} $(x)</title>", `content="About Costs $1M, $$ and ${2} $(x)"`} {
+		if !strings.Contains(d, want) {
+			t.Errorf("missing %s in %s", want, d[:min(len(d), 900)])
+		}
+	}
 	idx := a.anon("GET", "/b")
 	if idx.Code != 200 || strings.Contains(idx.Body.String(), `content="noindex"`) {
 		t.Errorf("/b: %d", idx.Code)
@@ -128,3 +136,48 @@ func TestBlogPagesCarryTheirOwnMetadata(t *testing.T) {
 		t.Errorf("unknown post page: %d", miss.Code)
 	}
 }
+
+func TestPublicPostsCarryNoInternalIdsAndImagesUseThePublicRoute(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	asset := into[struct{ AssetID, URL string }](t, u.do("POST", "/api/blog/posts/"+p.ID+"/assets", pngBytes()))
+	doc := map[string]any{"type": "doc", "content": []any{map[string]any{"type": "image", "attrs": map[string]any{"src": asset.URL, "alt": "x"}}}}
+	u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": 1, "title": "Pic", "doc": doc})
+	u.do("PATCH", "/api/blog/posts/"+p.ID+"/settings", map[string]any{"slug": "pic-post"})
+	u.do("POST", "/api/blog/posts/"+p.ID+"/publish", map[string]any{"mode": "original"})
+	r := a.anon("GET", "/api/public/blog/posts/pic-post")
+	if strings.Contains(r.Body.String(), p.ID) || !strings.Contains(r.Body.String(), "/api/public/blog/posts/pic-post/assets/"+asset.AssetID) {
+		t.Fatalf("public doc: %s", r.Body)
+	}
+	var got struct {
+		Doc struct {
+			Content []struct{ Attrs struct{ Src string } }
+		}
+	}
+	_ = json.Unmarshal(r.Body.Bytes(), &got)
+	if w := a.anon("GET", got.Doc.Content[0].Attrs.Src); w.Code != 200 {
+		t.Fatalf("the image address in the public doc does not load: %d", w.Code)
+	}
+}
+
+func TestPublicPagesAndReadsDrawFromOneAllowance(t *testing.T) {
+	a := newApp(t)
+	a.active("alice").publish("Busy", "busy-post", "x")
+	limited := false
+	for i := 0; i < blogReadsForTest+50; i++ {
+		path := "/b/busy-post"
+		if i%2 == 0 {
+			path = "/api/public/blog/posts/busy-post"
+		}
+		if a.anon("GET", path).Code == 429 {
+			limited = true
+			break
+		}
+	}
+	if !limited {
+		t.Fatal("pages and API reads together were never limited")
+	}
+}
+
+const blogReadsForTest = 600

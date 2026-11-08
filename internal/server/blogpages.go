@@ -20,9 +20,14 @@ type PageMeta struct{ Title, Description, Image string }
 // PostMeta looks up a published post's metadata by address; false for anything a reader may not see.
 type PostMeta func(ctx context.Context, slug string) (PageMeta, bool)
 
-// WithBlog serves /b and /b/{slug} from the shell with metadata written in.
-func (s *Server) WithBlog(m PostMeta) *Server {
+// Limit wraps a handler in a request allowance.
+type Limit func(http.Handler) http.Handler
+
+// WithBlog serves /b and /b/{slug} from the shell with metadata written in. Each page costs a database read for a caller
+// with no session, so limit (the same allowance as the public JSON reads) bounds them; nil means unlimited.
+func (s *Server) WithBlog(m PostMeta, limit Limit) *Server {
 	s.post = m
+	s.postLimit = limit
 	return s
 }
 
@@ -34,6 +39,7 @@ var (
 	reOGDesc   = regexp.MustCompile(`(<meta (?:property="og:description"|name="twitter:description") content=")[^"]*(")`)
 	reOGURL    = regexp.MustCompile(`(<meta property="og:url" content=")[^"]*(")`)
 	reCanon    = regexp.MustCompile(`(<link rel="canonical" href=")([^"]*)(")`)
+	reCanon3   = regexp.MustCompile(`(<link rel="canonical" href=")[^"]*(")`)
 	reOGImage  = regexp.MustCompile(`(<meta (?:property="og:image"|name="twitter:image") content=")[^"]*(")`)
 	reSlugPath = regexp.MustCompile(`^/b/([a-z0-9-]{3,80})/?$`)
 )
@@ -76,22 +82,35 @@ func (s *Server) blogShell(w http.ResponseWriter, r *http.Request) {
 
 // withMeta writes the page's title, description, address and cover into the shell, and a text copy for readers
 // without scripts. The shell's noindex is removed: a published post is meant to be found.
+// setAttr puts value between the two captured halves of every match. The value is inserted as it is: a "$1" in a
+// title must stay "$1" and must never be read as a reference to a captured group.
+func setAttr(re *regexp.Regexp, src []byte, value string) []byte {
+	return re.ReplaceAllFunc(src, func(m []byte) []byte {
+		g := re.FindSubmatch(m)
+		out := append([]byte{}, g[1]...)
+		out = append(out, value...)
+		return append(out, g[len(g)-1]...)
+	})
+}
+
+// withMeta writes the page's title, description, address and cover into the shell, and a text copy for readers
+// without scripts. The shell's noindex is removed: a published post is meant to be found.
 func withMeta(shell []byte, path string, m PageMeta) []byte {
 	esc := html.EscapeString
 	title := esc(m.Title)
 	desc := esc(m.Description)
 	out := reRobots.ReplaceAll(shell, nil)
-	out = reTitle.ReplaceAll(out, []byte("<title>"+title+"</title>"))
-	out = reDesc.ReplaceAll(out, []byte("${1}"+desc+"${2}"))
-	out = reOGTitle.ReplaceAll(out, []byte("${1}"+title+"${2}"))
-	out = reOGDesc.ReplaceAll(out, []byte("${1}"+desc+"${2}"))
+	out = reTitle.ReplaceAllLiteral(out, []byte("<title>"+title+"</title>"))
+	out = setAttr(reDesc, out, desc)
+	out = setAttr(reOGTitle, out, title)
+	out = setAttr(reOGDesc, out, desc)
 	if c := reCanon.FindSubmatch(out); c != nil {
 		origin := strings.TrimRight(string(c[2]), "/")
 		url := esc(origin + path)
-		out = reCanon.ReplaceAll(out, []byte("${1}"+url+"${3}"))
-		out = reOGURL.ReplaceAll(out, []byte("${1}"+url+"${2}"))
+		out = setAttr(reCanon3, out, url)
+		out = setAttr(reOGURL, out, url)
 		if strings.HasPrefix(m.Image, "/") {
-			out = reOGImage.ReplaceAll(out, []byte("${1}"+esc(origin+m.Image)+"${2}"))
+			out = setAttr(reOGImage, out, esc(origin+m.Image))
 		}
 	}
 	copyText := "<noscript><article><h1>" + title + "</h1>"

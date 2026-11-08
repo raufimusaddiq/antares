@@ -12,11 +12,12 @@ import (
 )
 
 var (
-	ErrNotFound  = errors.New("blog: no such post") // missing and foreign are the same
-	ErrConflict  = errors.New("blog: the post changed")
-	ErrInvalid   = errors.New("blog: invalid")
-	ErrSlugTaken = errors.New("blog: that address is used by another published post")
-	ErrTooMany   = errors.New("blog: too many")
+	ErrNotFound     = errors.New("blog: no such post") // missing and foreign are the same
+	ErrConflict     = errors.New("blog: the post changed")
+	ErrInvalid      = errors.New("blog: invalid")
+	ErrSlugTaken    = errors.New("blog: that address is used by another published post")
+	ErrTooMany      = errors.New("blog: too many")
+	ErrNotPublished = errors.New("blog: the post is not published")
 )
 
 const (
@@ -317,6 +318,7 @@ func (s *Service) Unpublish(ctx context.Context, author, id string) (Post, error
 		if _, err := loadPost(ctx, s.db, author, id); err != nil {
 			return Post{}, err
 		}
+		return Post{}, ErrNotPublished
 	}
 	return loadPost(ctx, s.db, author, id)
 }

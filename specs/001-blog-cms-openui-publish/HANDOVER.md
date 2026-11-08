@@ -81,7 +81,7 @@ Behaviours worth knowing:
 - A published version is never rewritten: the next autosave starts a new one; readers see the pinned one until republish.
 - `GET /api/blog/capabilities` reports `check` and `webSearch` false until the Hermes check exists; `publish` with
   `mode: enriched` answers 501 CAPABILITY_UNAVAILABLE.
-- The public reads share one allowance of 600 a minute (not per caller); the page text copy in `/b/{slug}` is the title
+- The public JSON reads and the HTML pages (`/b`, `/b/{slug}`) share one allowance of 600 a minute (not per caller); the page text copy in `/b/{slug}` is the title
   and summary, not the whole body.
 
 Not done: everything that needs Hermes (T014, Phase 5 onward), T037 browser checks `blog-public` / `blog-editor`,

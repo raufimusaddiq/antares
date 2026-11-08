@@ -92,6 +92,7 @@ type Auth struct {
 	chat      ChatHandlers
 	push      ChatHandlers
 	blog      BlogHandlers
+	blogReads func(http.Handler) http.Handler
 	usage     AccountUsage
 	limits    *requestLimits
 	tools     []string // DefaultToolsets
@@ -118,6 +119,7 @@ func New(o Options) (*Auth, error) {
 	}
 	a := &Auth{limits: newRequestLimits(limits), db: o.DB, ep: o.Endpoints, clientID: o.ClientID, secret: o.ClientSecret,
 		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat, push: o.Push, blog: o.Blog, usage: o.KenariUsage, tools: o.DefaultToolsets, catalogue: o.Catalogue}
+	a.blogReads = a.publicBucket(blogReadsPerMinute)
 	a.ver = &verifier{ep: o.Endpoints, clientID: o.ClientID, client: o.HTTPClient, now: o.Now}
 	return a, nil
 }

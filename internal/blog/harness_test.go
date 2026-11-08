@@ -61,7 +61,7 @@ func newApp(t testing.TB) *app {
 		WithBlog(func(ctx context.Context, slug string) (server.PageMeta, bool) {
 			m, ok := svc.Meta(ctx, slug)
 			return server.PageMeta{Title: m.Title, Description: m.Description, Image: m.Image}, ok
-		}).Routes()
+		}, au.BlogReadLimit()).Routes()
 	return &app{t: t, db: db, svc: svc, h: h}
 }
 

@@ -119,6 +119,8 @@ func reply(w http.ResponseWriter, p Post, err error) {
 		apiError(w, http.StatusConflict, "SLUG_TAKEN", "That address is used by another published post", nil)
 	case errors.Is(err, ErrInvalid):
 		apiError(w, http.StatusUnprocessableEntity, "INVALID_REQUEST", "That cannot be saved or published as it is", nil)
+	case errors.Is(err, ErrNotPublished):
+		apiError(w, http.StatusConflict, "NOT_PUBLISHED", "That post is not published", nil)
 	case errors.Is(err, ErrTooMany):
 		apiError(w, http.StatusUnprocessableEntity, "LIMIT_REACHED", "A limit was reached", nil)
 	default:

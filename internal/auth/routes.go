@@ -129,6 +129,10 @@ var PublicBlogRoutes = []Route{
 	{"GET", "/api/public/blog/posts/{slug}/assets/{assetId}"},
 }
 
+// BlogReadLimit is the one allowance the public blog reads share: the JSON routes and the HTML pages draw from it
+// together, so the page a reader opens is no cheaper to hammer than the API behind it.
+func (a *Auth) BlogReadLimit() func(http.Handler) http.Handler { return a.blogReads }
+
 // BlogHandlers is what the blog package supplies: handlers keyed "METHOD /path" for BlogRoutes and PublicBlogRoutes.
 type BlogHandlers interface {
 	Handlers() map[string]http.Handler
@@ -187,7 +191,7 @@ func (a *Auth) Register(mux *http.ServeMux) {
 			}
 		}
 		ph := a.blog.PublicHandlers()
-		bucket := a.publicBucket(blogReadsPerMinute)
+		bucket := a.blogReads
 		for _, rt := range PublicBlogRoutes {
 			if h, ok := ph[rt.Method+" "+rt.Path]; ok {
 				mux.Handle(rt.Method+" "+rt.Path, bucket(h))

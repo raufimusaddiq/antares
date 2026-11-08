@@ -197,7 +197,7 @@ func run() error {
 		Handler: newServer(ready, cfg.StaticDir).WithAuth(identity).WithBlog(func(ctx context.Context, slug string) (server.PageMeta, bool) {
 			p, ok := blogs.Meta(ctx, slug)
 			return server.PageMeta{Title: p.Title, Description: p.Description, Image: p.Image}, ok
-		}).Routes(),
+		}, identity.BlogReadLimit()).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
 		IdleTimeout:       120 * time.Second,
