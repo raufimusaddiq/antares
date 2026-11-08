@@ -39,3 +39,22 @@ describe("publishing a new post", () => {
     expect(go.some((b) => !(b as HTMLButtonElement).disabled)).toBe(true);
   });
 });
+
+describe("back to editing after a publish attempt", () => {
+  it("reopens on the text the server confirmed, not the text the post was first fetched with", async () => {
+    const first = { id: "p1abcdef", title: "T", summary: "", slug: "", coverUrl: "", status: "draft", latestVersion: 1, publishedVersion: 0, doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "OLD" }] }] }, check: null, updatedAt: "" };
+    const saved = { ...first, latestVersion: 2, doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "NEW" }] }] } };
+    vi.stubGlobal("fetch", async (_u: string, init?: RequestInit) => new Response(JSON.stringify(init?.method === "PUT" ? saved : first), { status: 200, headers: { "Content-Type": "application/json" } }));
+    const caps = { writing: true, check: true, webSearch: false };
+    const nav = vi.fn();
+    const { rerender } = render(<BlogApp caps={caps} email="a@example.com" route={{ kind: "edit", id: "p1abcdef" }} onNavigate={nav} onChats={() => {}} />);
+    fireEvent.change(await screen.findByLabelText("Title"), { target: { value: "T2" } });
+    fireEvent.click(screen.getByRole("button", { name: /publish/i }));
+    await waitFor(() => expect(nav).toHaveBeenCalledWith("/blog/p1abcdef/publish"));
+    rerender(<BlogApp caps={caps} email="a@example.com" route={{ kind: "publish", id: "p1abcdef" }} onNavigate={nav} onChats={() => {}} />);
+    await screen.findAllByRole("button", { name: /check|publish/i });
+    rerender(<BlogApp caps={caps} email="a@example.com" route={{ kind: "edit", id: "p1abcdef" }} onNavigate={nav} onChats={() => {}} />);
+    await waitFor(() => expect(document.body.textContent).toContain("NEW"));
+    expect(document.body.textContent).not.toContain("OLD");
+  });
+});

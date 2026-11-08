@@ -107,7 +107,7 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
     if (!check) return;
     const r = await decideBlock(post.id, b.id, d, d === "accepted" && b.needsAck ? true : undefined);
     if (!r.ok) return setError(describeBlogError(r, "save that choice"));
-    setCheck({ ...check, blocks: check.blocks.map((x) => (x.id === b.id ? r.value : x)) });
+    setCheck((c) => (c ? { ...c, blocks: c.blocks.map((x) => (x.id === b.id ? r.value : x)) } : c)); // decisions can overlap
   };
 
   if (phase.k === "published")

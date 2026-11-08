@@ -1271,7 +1271,6 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 
 .blog-prose { min-height: 50vh; padding: 1rem 0; font-size: 1.1rem; line-height: 1.65; outline: none; overflow-wrap: anywhere; }
 .blog-prose:focus-visible { outline: 3px solid var(--focus, var(--cobalt)); outline-offset: 4px; }
-.blog-prose p.is-editor-empty:first-child::before { color: var(--ink-2); content: "Start writing…"; float: left; height: 0; pointer-events: none; }
 .blog-prose h2 { font-size: 1.8rem; } .blog-prose h3 { font-size: 1.4rem; } .blog-prose h4 { font-size: 1.15rem; }
 .blog-prose blockquote, .blog-doc blockquote { margin: 1rem 0; padding-left: 1rem; border-left: 4px solid var(--mark); color: var(--ink-2); }
 .blog-prose pre, .blog-doc pre { padding: 0.75rem; overflow-x: auto; background: var(--code, var(--rail)); border-radius: var(--r-sm); }

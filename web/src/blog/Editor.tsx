@@ -87,6 +87,7 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
     const url = window.prompt("Link address (https://…)", prev ?? "https://");
     if (url === null) return;
     if (url === "") editor?.chain().focus().unsetLink().run();
+    // safeHref alone accepts "example.com" (it resolves against a base); a stored link must carry its own scheme.
     else if (/^(https?:\/\/|mailto:)/i.test(url.trim()) && safeHref(url.trim())) editor?.chain().focus().setLink({ href: url.trim() }).run();
     else setNote("A link must start with https://, http:// or mailto:.");
   };

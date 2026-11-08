@@ -78,7 +78,7 @@ function PostScreen({ id, email, publishing, caps, onNavigate }: { id: string; e
       <Editor
         post={post}
         email={email}
-        onPost={(p) => setPost((cur) => (typeof cur === "object" ? { ...cur, title: p.title, summary: p.summary, slug: p.slug, coverUrl: p.coverUrl, check: p.check, latestVersion: p.latestVersion, status: p.status, updatedAt: p.updatedAt } : p))}
+        onPost={(p) => setPost((cur) => (typeof cur === "object" ? { ...cur, title: p.title, summary: p.summary, slug: p.slug, coverUrl: p.coverUrl, doc: p.doc, check: p.check, latestVersion: p.latestVersion, status: p.status, updatedAt: p.updatedAt } : p))}
         onSettings={() => setSettings(true)}
         onPublish={(f) => {
           flush.current = f;

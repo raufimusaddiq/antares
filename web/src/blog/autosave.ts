@@ -96,8 +96,13 @@ export class Autosaver {
   /** Sends now (leaving the editor, pressing Publish). True only if the server has everything typed so far. */
   async flush(): Promise<boolean> {
     clearTimeout(this.timer);
-    while (this.inflight) await this.inflight;
-    await this.run();
+    for (;;) {
+      while (this.inflight) await this.inflight;
+      if (!this.pending) break;
+      await this.run();
+      if (this.state === "offline" || this.state === "error" || this.state === "conflict") break; // it will not get further now
+      clearTimeout(this.timer); // text typed while that save ran goes out in this loop
+    }
     return this.pending === null && this.state === "saved";
   }
 
@@ -157,13 +162,12 @@ export class Autosaver {
     if (r.ok) {
       this.version = r.value.latestVersion;
       this.o.onSaved?.(r.value);
-      if (this.pending as Change | null) {
-        // Typed while this save was in flight: it now sits on top of the version this reply made.
+      const typed = this.pending as Change | null; // typed while this save was in flight
+      if (typed) {
+        // It now sits on top of the version this reply made.
         this.pendingBase = this.version;
-        saveDraft(this.o.email, key(this.o.id), JSON.stringify({ ...(this.pending as unknown as Change), base: this.pendingBase }));
-      }
-      if (this.pending as Change | null) {
-        this.schedule(0); // typed while this save was in flight
+        saveDraft(this.o.email, key(this.o.id), JSON.stringify({ ...typed, base: this.pendingBase }));
+        this.schedule(0);
         return;
       }
       forgetLocalCopy(this.o.email, this.o.id); // the server has it now

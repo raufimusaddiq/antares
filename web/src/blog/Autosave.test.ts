@@ -104,4 +104,17 @@ describe("blog autosave", () => {
     expect(JSON.parse(localStorage.getItem(`antares:draft:v1:${encodeURIComponent(email)}:chat:post:p1`) ?? "{}").base).toBe(4);
     s.dispose();
   });
+
+  it("flush waits for text typed during a save and reports saved only when all of it is", async () => {
+    let n = 0;
+    const { s } = make(async () => {
+      n++;
+      if (n === 1) s.change({ title: "ab" }); // typed while the first save is in flight
+      return { ok: true, value: post(1 + n) };
+    });
+    s.change({ title: "a" });
+    expect(await s.flush()).toBe(true);
+    expect(n).toBe(2);
+    s.dispose();
+  });
 });
