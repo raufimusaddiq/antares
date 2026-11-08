@@ -270,3 +270,58 @@ func TestUnpublishingADraftIsRefused(t *testing.T) {
 		t.Fatalf("unpublish a draft: %d", w.Code)
 	}
 }
+
+func TestAnAuthorsImagesAreCappedInTotal(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	// Fill the account's allowance directly, then one more upload must be refused.
+	if _, err := a.db.Exec(`INSERT INTO post_assets (id, post_id, author_id, content_type, bytes, created_at) VALUES ('fill', ?, ?, 'image/png', zeroblob(?), 'x')`, p.ID, u.id, maxAssetBytesPerAuthor-10); err != nil {
+		t.Fatal(err)
+	}
+	if w := u.do("POST", "/api/blog/posts/"+p.ID+"/assets", pngBytes()); w.Code != 422 {
+		t.Fatalf("upload over the account total: %d", w.Code)
+	}
+	// Duplicating a post with images counts too.
+	if w := u.do("POST", "/api/blog/posts/"+p.ID+"/duplicate", nil); w.Code != 422 {
+		t.Fatalf("duplicate over the account total: %d", w.Code)
+	}
+}
+
+func TestDuplicateOfALongTitleStillSaves(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	long := strings.Repeat("é", maxTitle)
+	if w := u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": 1, "title": long}); w.Code != 200 {
+		t.Fatal(w.Body.String())
+	}
+	d := into[Post](t, u.do("POST", "/api/blog/posts/"+p.ID+"/duplicate", nil))
+	if w := u.do("PUT", "/api/blog/posts/"+d.ID, map[string]any{"baseVersion": d.LatestVersion, "title": d.Title}); w.Code != 200 {
+		t.Fatalf("the copy's own title does not save: %d (%d runes)", w.Code, len([]rune(d.Title)))
+	}
+}
+
+func TestUploadsAndAutosavesAreRateLimited(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	limited := 0
+	for i := 0; i < 15; i++ {
+		if u.do("POST", "/api/blog/posts/"+p.ID+"/assets", pngBytes()).Code == 429 {
+			limited++
+		}
+	}
+	if limited == 0 {
+		t.Error("15 uploads in a minute were never limited")
+	}
+	saves := 0
+	for i := 0; i < 400 && saves == 0; i++ {
+		if u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": 0, "title": "x"}).Code == 429 {
+			saves++
+		}
+	}
+	if saves == 0 {
+		t.Error("400 saves in a minute were never limited")
+	}
+}

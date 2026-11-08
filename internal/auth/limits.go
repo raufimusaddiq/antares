@@ -47,9 +47,19 @@ var draftWrites = map[string]bool{
 	"PUT /api/chats/{chatId}/draft": true, "DELETE /api/chats/{chatId}/draft": true,
 	"PUT /api/me/new-chat-draft": true, "DELETE /api/me/new-chat-draft": true,
 	"POST /api/me/templates": true, "PUT /api/me/templates/{templateId}": true, "DELETE /api/me/templates/{templateId}": true,
+	// The blog's writes (an autosave is one every second or so while typing).
+	"POST /api/blog/posts": true, "PUT /api/blog/posts/{id}": true, "PATCH /api/blog/posts/{id}/settings": true,
+	"DELETE /api/blog/posts/{id}": true, "POST /api/blog/posts/{id}/publish": true, "POST /api/blog/posts/{id}/unpublish": true,
+	"POST /api/blog/posts/{id}/duplicate": true,
 }
 
+// blogUpload is an image upload to a post; it draws from the same per-minute allowance as a chat upload.
+const blogUpload = "POST /api/blog/posts/{id}/assets"
+
 func (a *Auth) limit(route string, next http.Handler) http.Handler {
+	if route == blogUpload {
+		route = "POST /api/assets"
+	}
 	switch route {
 	case "POST /api/chats/{chatId}/messages", "POST /api/assets", "GET /api/runs/{runId}/events", artifactDownload, artifactPreview, assetRead, mediaRead, historyRead:
 	default:

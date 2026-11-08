@@ -13,7 +13,18 @@ import (
 const (
 	maxAssetBytes    = 5 << 20
 	maxAssetsPerPost = 30
+	// maxAssetBytesPerAuthor bounds everything one account may keep as post images, across all its posts.
+	maxAssetBytesPerAuthor = 200 << 20
 )
+
+// assetBytes is what the author's posts already hold in images.
+func assetBytes(ctx context.Context, q interface {
+	QueryRowContext(context.Context, string, ...any) *sql.Row
+}, author string) (int64, error) {
+	var n int64
+	err := q.QueryRowContext(ctx, `SELECT COALESCE(SUM(LENGTH(bytes)), 0) FROM post_assets WHERE author_id = ?`, author).Scan(&n)
+	return n, err
+}
 
 // The only image types a post may carry. The type is read from the bytes, never from what the browser said.
 var imageTypes = map[string]bool{"image/png": true, "image/jpeg": true, "image/webp": true, "image/gif": true}
@@ -42,6 +53,13 @@ func (s *Service) AddAsset(ctx context.Context, author, postID string, data []by
 		return "", err
 	}
 	if n >= maxAssetsPerPost {
+		return "", ErrTooMany
+	}
+	used, err := assetBytes(ctx, tx, author)
+	if err != nil {
+		return "", err
+	}
+	if used+int64(len(data)) > maxAssetBytesPerAuthor {
 		return "", ErrTooMany
 	}
 	id := store.NewID()
@@ -76,7 +94,17 @@ func (s *Service) Duplicate(ctx context.Context, author, id string) (Post, error
 	}
 	title := src.Title
 	if title != "" {
+		if r := []rune(title); len(r) > maxTitle-7 {
+			title = string(r[:maxTitle-7])
+		}
 		title += " (copy)"
+	}
+	var copyBytes int64
+	_ = s.db.QueryRowContext(ctx, `SELECT COALESCE(SUM(LENGTH(bytes)), 0) FROM post_assets WHERE post_id = ? AND author_id = ?`, id, author).Scan(&copyBytes)
+	if used, err := assetBytes(ctx, s.db, author); err != nil {
+		return Post{}, err
+	} else if used+copyBytes > maxAssetBytesPerAuthor {
+		return Post{}, ErrTooMany
 	}
 	cp, err := s.insertPost(ctx, author, title, src.Summary, nil2empty(src.Doc))
 	if err != nil {

@@ -187,7 +187,7 @@ func (a *Auth) Register(mux *http.ServeMux) {
 		bh := a.blog.Handlers()
 		for _, rt := range BlogRoutes {
 			if h, ok := bh[rt.Method+" "+rt.Path]; ok {
-				mux.Handle(rt.Method+" "+rt.Path, a.Active(a.csrf(rt.Method, h)))
+				mux.Handle(rt.Method+" "+rt.Path, a.Active(a.csrf(rt.Method, a.limit(rt.Method+" "+rt.Path, h))))
 			}
 		}
 		ph := a.blog.PublicHandlers()

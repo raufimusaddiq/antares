@@ -65,7 +65,8 @@ type Post struct {
 	UpdatedAt        string          `json:"updatedAt"`
 }
 
-// Summary is one row of the author's list.
+// Summary is one row of the author's list. Interactive is for posts that carry AI-added blocks; none can exist until the
+// Hermes check does, so it is false for now.
 type Summary struct {
 	ID          string `json:"id"`
 	Title       string `json:"title"`

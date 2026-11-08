@@ -58,7 +58,7 @@ start, or after a pause, so history stays small. Compare-and-set on `version` (R
 ### post_assets
 | Field | Notes |
 |-------|-------|
-| id, post_id, author_id, content_type, bytes (or file ref), created_at | private until the post is published |
+| id, post_id, author_id, content_type, bytes (or file ref), created_at | private until the post is published; at most 30 per post and 200 MiB per author, 5 MiB each |
 
 ## Relationships and rules
 

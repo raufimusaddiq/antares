@@ -37,7 +37,7 @@ query is scoped to the caller as `author_id`. A foreign or missing id returns th
 
 Public handler rules: `GET` only; slug matched against a strict pattern before any query; one query, joined to
 author `status = ACTIVE`; no author id, email, profile, chat or run identity in any field; no Hermes call;
-per-IP rate limit; `X-Content-Type-Options: nosniff`; CSP stays as strict as the app shell (no new script or
+one shared per-minute allowance (600) for the public JSON reads and the HTML pages together; per-caller limiting is not done (the server cannot yet tell callers apart behind its proxies); `X-Content-Type-Options: nosniff`; CSP stays as strict as the app shell (no new script or
 frame sources); unknown, unpublished and hidden posts all return the same `404`.
 
 ## Route inventory test
