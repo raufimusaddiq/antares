@@ -744,6 +744,7 @@ input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="s
   .bar-actions .notify-panel { position: static; width: auto; }
   /* Strip: New chat, Search and the conversation chips on one scrolling line; an open search takes the strip. */
   .side { display: flex; align-items: center; gap: 0.4rem; overflow: hidden; padding: 0 0.25rem 0.35rem; border-bottom: 1px solid var(--hair); }
+  .side > .rail-blog { display: none; } /* a phone reaches the blog from the Menu, where the strip has no room for it */
   .side > button, .side button.item, .search-toggle { flex: none; width: auto; min-height: 2.75rem; margin: 0; padding: 0 0.6rem; border: 6px solid transparent; background-clip: padding-box; border-radius: var(--r-pill); }
   .side > button { background-color: var(--cobalt); color: var(--cobalt-ink); box-shadow: inset 0 0 0 2px var(--ink); }
   .side > button[data-icon]::before { width: 1.15rem; height: 1.15rem; margin-right: 0.3rem; }

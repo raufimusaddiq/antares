@@ -1422,6 +1422,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, init
             <button type="button" className="quiet" data-icon="settings" onClick={() => { setMenuOpen(false); setSettings("general"); }}>
               Settings
             </button>
+            {onBlog && (
+              <button type="button" className="quiet" data-icon="edit" onClick={() => { setMenuOpen(false); onBlog(); }}>
+                Blog posts
+              </button>
+            )}
             {canAdmin && onAdmin && (
               <button type="button" className="quiet" data-icon="shield" onClick={onAdmin}>
                 Admin
@@ -1440,7 +1445,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, init
           New chat
         </button>
         {onBlog && (
-          <button type="button" className="quiet" data-icon="edit" onClick={onBlog}>
+          <button type="button" className="quiet rail-blog" data-icon="edit" onClick={onBlog}>
             Blog posts
           </button>
         )}
