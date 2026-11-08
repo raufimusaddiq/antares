@@ -59,7 +59,8 @@ func mediaTagParts(tag string) (path, tail string) {
 	if m[3] == "" {
 		return m[1] + m[2], ""
 	}
-	path = strings.TrimRight(m[3], ".,;:!?)]}>")
+	// A tag inside a quoted string or a call (TextContent("MEDIA:/a/b.png")) ends in the closing quote and bracket.
+	path = strings.TrimRight(m[3], ".,;:!?)]}>\"'")
 	return path, m[3][len(path):]
 }
 
