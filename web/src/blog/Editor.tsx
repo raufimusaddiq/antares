@@ -87,8 +87,8 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
     const url = window.prompt("Link address (https://…)", prev ?? "https://");
     if (url === null) return;
     if (url === "") editor?.chain().focus().unsetLink().run();
-    else if (safeHref(url) && !url.startsWith("javascript:")) editor?.chain().focus().setLink({ href: url }).run();
-    else setNote("That address cannot be used as a link.");
+    else if (/^(https?:\/\/|mailto:)/i.test(url.trim()) && safeHref(url.trim())) editor?.chain().focus().setLink({ href: url.trim() }).run();
+    else setNote("A link must start with https://, http:// or mailto:.");
   };
 
   const b = (label: string, on: () => void, active?: boolean) => (

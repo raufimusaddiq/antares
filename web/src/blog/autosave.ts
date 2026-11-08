@@ -158,6 +158,11 @@ export class Autosaver {
       this.version = r.value.latestVersion;
       this.o.onSaved?.(r.value);
       if (this.pending as Change | null) {
+        // Typed while this save was in flight: it now sits on top of the version this reply made.
+        this.pendingBase = this.version;
+        saveDraft(this.o.email, key(this.o.id), JSON.stringify({ ...(this.pending as Change), base: this.pendingBase }));
+      }
+      if (this.pending as Change | null) {
         this.schedule(0); // typed while this save was in flight
         return;
       }

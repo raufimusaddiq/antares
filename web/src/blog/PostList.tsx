@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPost, deletePost, describeBlogError, duplicatePost, listPosts, unpublish } from "./blogApi";
 import type { BlogResult } from "./blogApi";
 import { useDialog } from "./useDialog";
@@ -21,16 +21,21 @@ export function PostList({ onOpen, onChats }: { onOpen: (id: string) => void; on
   const [confirm, setConfirm] = useState<PostSummary | null>(null);
   const [note, setNote] = useState("");
 
+  const inflight = useRef<AbortController | null>(null);
   const refresh = useCallback(() => {
+    inflight.current?.abort();
     const ctl = new AbortController();
+    inflight.current = ctl;
     setLoad({ k: "loading" });
     void listPosts(ctl.signal).then((r) => {
       if (ctl.signal.aborted) return;
       setLoad(r.ok ? { k: "ok", posts: r.value } : { k: "error", why: describeBlogError(r, "load your posts") });
     });
-    return () => ctl.abort();
   }, []);
-  useEffect(() => refresh(), [refresh]);
+  useEffect(() => {
+    refresh();
+    return () => inflight.current?.abort();
+  }, [refresh]);
 
   const act = async (p: Promise<BlogResult<unknown>>, what: string) => {
     setNote("");

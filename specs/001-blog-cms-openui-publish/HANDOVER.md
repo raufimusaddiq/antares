@@ -65,3 +65,5 @@ the actions removed (today every action is ignored), T062 polish, T070 Admin sus
 
 Phone/Tablet/Landscape menus have no Blog entry; My posts and the Editor use a simplified rail; preview shows
 the first two blocks only; interactions are drawn as static states. See `docs/design/README.md`.
+
+- The public index (`listPublic`) asks for the first page only: the contract does not yet name a page parameter, so there is no "more" control until the backend defines one.

@@ -92,4 +92,16 @@ describe("blog autosave", () => {
     expect(states.at(-1)).toBe("error");
     expect(loadLocalCopy(email, "p1")).toEqual({ title: "x" });
   });
+
+  it("text typed while a save is in flight is recorded against the version that save produced", async () => {
+    let release: (r: BlogResult<Post>) => void = () => {};
+    const { s } = make(() => new Promise((res) => (release = res)));
+    s.change({ title: "a" });
+    await vi.advanceTimersByTimeAsync(20); // in flight
+    s.change({ title: "ab" });
+    release({ ok: true, value: post(4) });
+    await vi.advanceTimersByTimeAsync(1);
+    expect(JSON.parse(localStorage.getItem(`antares:draft:v1:${encodeURIComponent(email)}:chat:post:p1`) ?? "{}").base).toBe(4);
+    s.dispose();
+  });
 });
