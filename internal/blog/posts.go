@@ -63,6 +63,7 @@ type Post struct {
 	Doc              json.RawMessage `json:"doc"`
 	Check            any             `json:"check"`
 	UpdatedAt        string          `json:"updatedAt"`
+	coverID          string          // the stored cover image id; the browser gets CoverURL
 }
 
 // Summary is one row of the author's list. Interactive is for posts that carry AI-added blocks; none can exist until the
@@ -100,7 +101,7 @@ func loadPost(ctx context.Context, q interface {
 	if err != nil {
 		return Post{}, err
 	}
-	p.CoverURL = assetURL(p.ID, cover)
+	p.CoverURL, p.coverID = assetURL(p.ID, cover), cover
 	p.Doc = json.RawMessage(doc)
 	return p, nil
 }
@@ -240,8 +241,7 @@ func (s *Service) Settings(ctx context.Context, author, id string, slug, summary
 	if summary != nil {
 		cur.Summary = strings.TrimSpace(*summary)
 	}
-	coverID := ""
-	_ = tx.QueryRowContext(ctx, `SELECT cover_asset_id FROM posts WHERE id = ? AND author_id = ?`, id, author).Scan(&coverID)
+	coverID := cur.coverID
 	if cover != nil {
 		if *cover != "" {
 			var one int
@@ -311,17 +311,31 @@ func (s *Service) PublishOriginal(ctx context.Context, author, id string) (Post,
 }
 
 func (s *Service) Unpublish(ctx context.Context, author, id string) (Post, error) {
-	res, err := s.db.ExecContext(ctx, `UPDATE posts SET status = 'unpublished', published_version = 0, updated_at = ? WHERE id = ? AND author_id = ? AND status = 'published'`, s.stamp(), id, author)
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Post{}, err
+	}
+	defer tx.Rollback()
+	// The version that was live is an ordinary version again, so editing it does not leave a frozen copy behind.
+	if _, err := tx.ExecContext(ctx, `UPDATE post_versions SET pinned = 0 WHERE post_id = (SELECT id FROM posts WHERE id = ? AND author_id = ? AND status = 'published')
+		AND version = (SELECT published_version FROM posts WHERE id = ?)`, id, author, id); err != nil {
+		return Post{}, err
+	}
+	res, err := tx.ExecContext(ctx, `UPDATE posts SET status = 'unpublished', published_version = 0, updated_at = ? WHERE id = ? AND author_id = ? AND status = 'published'`, s.stamp(), id, author)
 	if err != nil {
 		return Post{}, err
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
-		if _, err := loadPost(ctx, s.db, author, id); err != nil {
+		if _, err := loadPost(ctx, tx, author, id); err != nil {
 			return Post{}, err
 		}
 		return Post{}, ErrNotPublished
 	}
-	return loadPost(ctx, s.db, author, id)
+	p, err := loadPost(ctx, tx, author, id)
+	if err != nil {
+		return Post{}, err
+	}
+	return p, tx.Commit()
 }
 
 // Delete removes the post with its versions and images and frees its address.

@@ -110,12 +110,12 @@ func cleanNode(in node, parent string, depth int, count *int, ownImage *regexp.R
 			return node{}, errDoc
 		}
 		src, _ := in.Attrs["src"].(string)
-		if !ownImage.MatchString(src) && !httpsURL(src) {
+		if !ownImage.MatchString(src) { // the page allows images from this site only (img-src 'self'), so a remote one could never show
 			return node{}, errDoc
 		}
 		alt, _ := in.Attrs["alt"].(string)
-		if len(alt) > 500 {
-			alt = alt[:500]
+		if r := []rune(alt); len(r) > 500 {
+			alt = string(r[:500])
 		}
 		out.Attrs = map[string]any{"src": src, "alt": alt}
 		return out, nil
@@ -179,15 +179,6 @@ func absoluteLink(s string) bool {
 		return u.Opaque != "" || u.Path != ""
 	}
 	return false
-}
-
-// httpsURL: an https address with a host and no login in it.
-func httpsURL(s string) bool {
-	if len(s) > 2048 {
-		return false
-	}
-	u, err := url.Parse(s)
-	return err == nil && u.Scheme == "https" && u.Host != "" && u.User == nil
 }
 
 // emptyDoc is a new post's body.

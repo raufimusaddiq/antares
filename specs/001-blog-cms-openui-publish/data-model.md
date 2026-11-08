@@ -66,7 +66,7 @@ start, or after a pause, so history stays small. Compare-and-set on `version` (R
 - Publishing pins `published_version` and snapshots the **accepted** blocks with that version; later checks do
   not alter what readers see until the author republishes (FR-018).
 - Editing the head version while a check is `running` or `ready` moves that check to `out_of_date` (FR-013).
-- Public read = post `status = published` AND `published_version` set AND author `status = ACTIVE`.
+- Public read = post `status = published` AND `published_version` set AND author approved (suspended and rejected authors are hidden; their assistant workspace state is not consulted).
   Nothing else is selectable by the public handlers.
 - Deleting a post deletes versions, checks, blocks, sources and assets (cascade) and frees the slug.
 - A removed or revoked author's published posts are not served (suspend hides; revoke follows the same query).

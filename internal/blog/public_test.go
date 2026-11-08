@@ -203,3 +203,15 @@ func TestATrailingSlashRedirectsToTheCanonicalAddress(t *testing.T) {
 		t.Fatalf("%d %v", w.Code, w.Header())
 	}
 }
+
+func TestAnApprovedAuthorStaysReadableWhileTheirWorkspaceIsReverified(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	u.publish("Stays up", "stays-up", "x")
+	for _, st := range []string{"CONFIGURING", "FAILED"} {
+		a.db.Exec(`UPDATE users SET tenant_status = ? WHERE id = ?`, st, u.id)
+		if w := a.anon("GET", "/api/public/blog/posts/stays-up"); w.Code != 200 {
+			t.Errorf("workspace %s took a published post offline: %d", st, w.Code)
+		}
+	}
+}

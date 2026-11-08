@@ -325,3 +325,37 @@ func TestUploadsAndAutosavesAreRateLimited(t *testing.T) {
 		t.Error("400 saves in a minute were never limited")
 	}
 }
+
+func TestSettingsKeepTheCoverAndUnpublishLeavesNoFrozenVersion(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	asset := into[struct{ AssetID string }](t, u.do("POST", "/api/blog/posts/"+p.ID+"/assets", pngBytes()))
+	u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": 1, "title": "Cover"})
+	u.do("PATCH", "/api/blog/posts/"+p.ID+"/settings", map[string]any{"slug": "cover-post", "coverAssetId": asset.AssetID})
+	got := into[Post](t, u.do("PATCH", "/api/blog/posts/"+p.ID+"/settings", map[string]any{"summary": "only the summary changes"}))
+	if got.CoverURL == "" {
+		t.Fatal("a settings save that did not mention the cover cleared it")
+	}
+	pub := into[Post](t, u.do("POST", "/api/blog/posts/"+p.ID+"/publish", map[string]any{"mode": "original"}))
+	u.do("POST", "/api/blog/posts/"+p.ID+"/unpublish", nil)
+	var n int
+	for i := 0; i < 3; i++ {
+		cur := into[Post](t, u.do("GET", "/api/blog/posts/"+p.ID, nil))
+		u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": cur.LatestVersion, "title": "edit"})
+	}
+	_ = a.db.QueryRow(`SELECT COUNT(*) FROM post_versions WHERE post_id = ?`, p.ID).Scan(&n)
+	if n != 1 {
+		t.Fatalf("after unpublishing, edits should reuse one version row, found %d (published at v%d)", n, pub.PublishedVersion)
+	}
+}
+
+func TestRemoteImagesAreRefused(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	doc := map[string]any{"type": "doc", "content": []any{map[string]any{"type": "image", "attrs": map[string]any{"src": "https://example.org/a.png"}}}}
+	if w := u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": 1, "doc": doc}); w.Code != 422 {
+		t.Fatalf("a remote image can never render under the page's CSP: %d", w.Code)
+	}
+}

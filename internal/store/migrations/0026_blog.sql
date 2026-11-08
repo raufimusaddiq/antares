@@ -42,3 +42,4 @@ CREATE TABLE post_assets (
   created_at   TEXT NOT NULL
 );
 CREATE INDEX post_assets_post ON post_assets (post_id);
+CREATE INDEX post_assets_author ON post_assets (author_id); -- the per-author total

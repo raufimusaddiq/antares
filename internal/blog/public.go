@@ -17,7 +17,8 @@ import (
 const publicPageSize = 20
 
 // publicWhere selects exactly the rows a reader may see. approval_status is read in the same statement, so a suspended
-// author's posts vanish and a reinstated author's return with no other change.
+// or rejected author's posts vanish and a reinstated author's return with no other change. The author's workspace state
+// (tenant status) is deliberately not part of it: re-verifying an assistant profile must not take writing offline.
 const publicWhere = `p.status = 'published' AND p.published_version > 0 AND u.approval_status = 'APPROVED'`
 
 type PublicSummary struct {
@@ -117,7 +118,7 @@ func (s *Service) PublicAsset(ctx context.Context, slug, assetID string) (Asset,
 // PageMeta is what the HTML shell of a published post carries for search engines and link previews.
 type PageMeta struct{ Title, Description, Image string }
 
-// Meta returns the metadata for a published post, or false for anything a reader may not see.
+// Meta returns the metadata for a published post.
 // ErrNotFound for anything a reader may not see; any other error is ours (a failing database) and is not a 404.
 func (s *Service) Meta(ctx context.Context, slug string) (PageMeta, error) {
 	if !wellFormedSlug(slug) {
@@ -148,6 +149,7 @@ func (s *Service) PublicHandlers() map[string]http.Handler {
 				fail(w, "public list", err)
 				return
 			}
+			w.Header().Set("Cache-Control", "public, max-age=60")
 			writeJSON(w, http.StatusOK, l)
 		}),
 		"GET /api/public/blog/posts/{slug}": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
