@@ -91,6 +91,12 @@ function runReducer(state: LiveRun | null, a: Action): LiveRun | null {
   }
 }
 
+/** The read of the next older page of a conversation. */
+type OlderPage = { kind: "idle" } | { kind: "loading" } | { kind: "failed"; message: string };
+
+/** What the assistant supports, as read from the server: not yet answered, answered, or unreadable. */
+type InventoryRead = { kind: "checking" } | { kind: "ready"; inventory: Inventory } | { kind: "failed" };
+
 interface Pending {
   input: string;
   key: string;
@@ -644,8 +650,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   const [turns, setTurns] = useState<Turn[]>([]);
   const [turnsError, setTurnsError] = useState("");
   const [cursor, setCursor] = useState(""); // where the next older page starts; "" = start of the conversation
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [olderError, setOlderError] = useState("");
+  const [older, setOlder] = useState<OlderPage>({ kind: "idle" }); // the read of the next older page: one state, not two flags
+  const loadingOlder = older.kind === "loading";
+  const olderError = older.kind === "failed" ? older.message : "";
   const [chatsCursor, setChatsCursor] = useState("");
   const [loadingChats, setLoadingChats] = useState(false);
   const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null); // the phone's home for the open chat's actions
@@ -779,20 +786,20 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     const key = `${chatId}|${at}`;
     if (olderInflight.current === key || olderInflight.current !== "") return;
     olderInflight.current = key;
-    setLoadingOlder(true);
-    setOlderError("");
+    setOlder({ kind: "loading" });
     const r = await getMessages(chatId, at);
     if (olderInflight.current === key) olderInflight.current = "";
     if (currentRef.current !== chatId) return;
-    setLoadingOlder(false);
     if (!r.ok) {
       if (r.code === "HISTORY_CHANGED") {
         // The transcript no longer lines up with what is on screen: start again from the newest page.
+        setOlder({ kind: "idle" });
         setBanner(describeCode(r.code) + " It has been reloaded.");
         void loadTurns(chatId, "replace");
-      } else setOlderError(describeCode(r.code));
+      } else setOlder({ kind: "failed", message: describeCode(r.code) });
       return;
     }
+    setOlder({ kind: "idle" });
     setTurns((held) => prependOlder(held, r.value.turns));
     setCursor(r.value.nextCursor);
   }, [loadTurns]);
@@ -910,8 +917,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
       currentRef.current = c.id;
       setTurns([]);
       setCursor("");
-      setLoadingOlder(false);
-      setOlderError("");
+      setOlder({ kind: "idle" });
       olderInflight.current = "";
       setTurnsError("");
       setPending(null);
@@ -1051,8 +1057,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
       currentRef.current = c.id;
       setTurns([]);
       setCursor("");
-      setLoadingOlder(false);
-      setOlderError("");
+      setOlder({ kind: "idle" });
       olderInflight.current = "";
       setTurnsError("");
       setPending(null);
@@ -1149,8 +1154,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
   // or unreadable discovery offers nothing.
   // An unreadable discovery is not "unsupported": it says so and can be asked again, so one transient
   // failure does not take the picker away for the rest of the session.
-  const [inventory, setInventory] = useState<Inventory | null>(null);
-  const [inventoryFailed, setInventoryFailed] = useState(false);
+  const [read, setRead] = useState<InventoryRead>({ kind: "checking" });
+  const inventory = read.kind === "ready" ? read.inventory : null;
+  const inventoryFailed = read.kind === "failed";
   const [inventoryTick, setInventoryTick] = useState(0);
   // Deleting a conversation removes the assistant's session too, so it is offered only when the assistant says it can.
   const deleteBlocked = offers(inventory, "chat_delete")
@@ -1185,8 +1191,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     currentRef.current = null;
     setTurns([]);
     setCursor("");
-    setLoadingOlder(false);
-    setOlderError("");
+    setOlder({ kind: "idle" });
     olderInflight.current = "";
     setTurnsError("");
     setPending(null);
@@ -1249,8 +1254,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
     const ctl = new AbortController();
     void getCapabilities(ctl.signal).then((r) => {
       if (ctl.signal.aborted) return;
-      setInventory(r.ok ? r.value : null);
-      setInventoryFailed(!r.ok);
+      // A failed re-read keeps saying it failed while it is asked again: only an answer replaces it.
+      setRead(r.ok ? { kind: "ready", inventory: r.value } : { kind: "failed" });
     });
     return () => ctl.abort();
   }, [inventoryTick]);
