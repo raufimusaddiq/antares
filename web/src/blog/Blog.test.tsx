@@ -124,3 +124,12 @@ describe("publish flow", () => {
     expect(parseCheck({ id: "c", state: "ready", blocks: [{ id: "b", decision: "maybe" }] })!.blocks[0].decision).toBe("proposed");
   });
 });
+
+describe("images in a published post", () => {
+  it("are fetched from the public route, not the author-only one", async () => {
+    const { publicImageUrl } = await import("./Public");
+    const f = publicImageUrl("my-post");
+    expect(f("/api/blog/posts/p1abcdef/assets/a1b2c3")).toBe("/api/public/blog/posts/my-post/assets/a1b2c3");
+    expect(f("https://example.org/x.png")).toBe("https://example.org/x.png");
+  });
+});

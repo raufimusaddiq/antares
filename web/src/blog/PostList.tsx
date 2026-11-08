@@ -44,8 +44,11 @@ export function PostList({ onOpen, onChats }: { onOpen: (id: string) => void; on
     setNote(describeBlogError(r, what));
   };
 
+  const creating = useRef(false);
   const create = async () => {
-    const r = await createPost();
+    if (creating.current) return; // a double click makes one draft
+    creating.current = true;
+    const r = await createPost().finally(() => (creating.current = false));
     if (r.ok) onOpen(r.value.id);
     else setNote(describeBlogError(r, "start a new post"));
   };

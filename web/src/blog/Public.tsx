@@ -77,6 +77,14 @@ export function PublicIndex() {
   );
 }
 
+/** An image the author uploaded is stored as the author-only address; a reader gets the published post's own copy. */
+export function publicImageUrl(slug: string): (src: string) => string {
+  return (src) => {
+    const m = /^\/api\/blog\/posts\/[A-Za-z0-9_-]+\/assets\/([A-Za-z0-9_-]+)$/.exec(src);
+    return m ? `/api/public/blog/posts/${encodeURIComponent(slug)}/assets/${m[1]}` : src;
+  };
+}
+
 export function PublicPostPage({ slug }: { slug: string }) {
   const [p, setP] = useState<PublicPost | "loading" | "gone" | "error">("loading");
   useEffect(() => {
@@ -114,7 +122,7 @@ export function PublicPostPage({ slug }: { slug: string }) {
             {p.blocks.length > 0 && <span className="chip chip-info">Interactive</span>}
           </p>
           {mediaUrl(p.coverUrl) && <img className="blog-cover" src={mediaUrl(p.coverUrl)} alt="" />}
-          <DocView doc={p.doc} blocks={p.blocks} />
+          <DocView doc={p.doc} blocks={p.blocks} imageUrl={publicImageUrl(slug)} />
         </article>
       )}
     </Frame>

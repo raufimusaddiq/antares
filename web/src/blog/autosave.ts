@@ -156,8 +156,14 @@ export class Autosaver {
     if (!sent) return;
     this.busy = true;
     this.pending = null;
-    const r = await this.save(this.o.id, this.version, sent);
-    this.busy = false;
+    let r: BlogResult<Post>;
+    try {
+      r = await this.save(this.o.id, this.version, sent);
+    } catch {
+      r = { ok: false, status: 0, code: "NETWORK" }; // a save that throws is a save that did not happen
+    } finally {
+      this.busy = false;
+    }
     if (this.dead) return;
     if (r.ok) {
       this.version = r.value.latestVersion;

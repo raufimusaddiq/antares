@@ -76,7 +76,7 @@ directly.
 
 ## 10. Routes that answer without a session: a shared chat, and published blog posts
 
-`GET /api/shared/{token}` (#250) and the public blog reads (`GET /api/public/blog/posts` and `/{slug}`, the blog spec's
+`GET /api/shared/{token}` (#250) and the public blog reads (`GET /api/public/blog/posts`, `/{slug}` and `/{slug}/assets/{assetId}`, the blog spec's
 Contract: published posts only, never a draft) are the only routes that need no sign-in, and `auth.PublicRoutes` is
 the only place another may be added. It reads a copy of a chat that its owner chose to share, never Hermes. The token is 256 random
 bits kept only as a hash; the answer is the title, the date and the turns' role and text, with no account, chat or
