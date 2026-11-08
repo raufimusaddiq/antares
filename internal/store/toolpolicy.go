@@ -17,8 +17,8 @@ func TenantToolPolicy(ctx context.Context, db *sql.DB) ([]string, string, error)
 func toolPolicy(ctx context.Context, q interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }) ([]string, string, error) {
-	var raw, at string
-	err := q.QueryRowContext(ctx, `SELECT toolsets, updated_at FROM tenant_tool_policy WHERE id = 1`).Scan(&raw, &at)
+	var raw, at, image, video string
+	err := q.QueryRowContext(ctx, `SELECT toolsets, updated_at, image_model, video_model FROM tenant_tool_policy WHERE id = 1`).Scan(&raw, &at, &image, &video)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, "", nil
 	}
@@ -29,7 +29,42 @@ func toolPolicy(ctx context.Context, q interface {
 	if err := json.Unmarshal([]byte(raw), &names); err != nil {
 		return nil, "", errors.New("store: tenant tool policy is not a JSON list")
 	}
-	return names, at + "|" + raw, nil
+	return names, at + "|" + raw + "|" + image + "|" + video, nil
+}
+
+// TenantMediaModels returns the admin's default image and video generation models; "" is the plugin's own default.
+func TenantMediaModels(ctx context.Context, db *sql.DB) (image, video string, err error) {
+	err = db.QueryRowContext(ctx, `SELECT image_model, video_model FROM tenant_tool_policy WHERE id = 1`).Scan(&image, &video)
+	if errors.Is(err, sql.ErrNoRows) {
+		return "", "", nil
+	}
+	return image, video, err
+}
+
+// SetTenantMediaModels stores the default image and video models (validated by the caller) and puts every ready or
+// failed account back through verification, which reapplies them to each profile. It returns those accounts.
+func SetTenantMediaModels(ctx context.Context, db *sql.DB, actor, image, video, reqID string, now time.Time) ([]string, error) {
+	tx, err := db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+	if err := requireAdmin(ctx, tx, actor); err != nil {
+		return nil, err
+	}
+	if _, err := tx.ExecContext(ctx, `INSERT INTO tenant_tool_policy (id, toolsets, updated_by, updated_at, image_model, video_model) VALUES (1,'null',?,?,?,?)
+		ON CONFLICT (id) DO UPDATE SET image_model = excluded.image_model, video_model = excluded.video_model,
+		updated_by = excluded.updated_by, updated_at = excluded.updated_at`, actor, ts(now), image, video); err != nil {
+		return nil, err
+	}
+	if err := audit(ctx, tx, actor, "media_models.set", "global", "ok", reqID, now); err != nil {
+		return nil, err
+	}
+	ids, err := requeueTenants(ctx, tx, actor, reqID, now)
+	if err != nil {
+		return nil, err
+	}
+	return ids, tx.Commit()
 }
 
 // SetTenantToolPolicy stores the policy (names already validated by the caller) and, in the same transaction,
@@ -57,6 +92,19 @@ func SetTenantToolPolicy(ctx context.Context, db *sql.DB, actor string, names []
 	if err := audit(ctx, tx, actor, "tool_policy.set", "global", "ok", reqID, now); err != nil {
 		return nil, err
 	}
+	ids, err := requeueTenants(ctx, tx, actor, reqID, now)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return ids, nil
+}
+
+// requeueTenants puts every approved account with a ready or failed binding back through verification, the same as an
+// admin's tenant-verify: each run reapplies the policy to the profile and verifies it.
+func requeueTenants(ctx context.Context, tx *sql.Tx, actor, reqID string, now time.Time) ([]string, error) {
 	rows, err := tx.QueryContext(ctx, `SELECT u.id FROM users u JOIN tenant_bindings b ON b.user_id = u.id
 		WHERE u.approval_status = 'APPROVED' AND u.tenant_status IN ('READY','FAILED') ORDER BY u.id`)
 	if err != nil {
@@ -86,9 +134,6 @@ func SetTenantToolPolicy(ctx context.Context, db *sql.DB, actor string, names []
 		if err := audit(ctx, tx, actor, "admin."+RequeueVerify, id, "ok", reqID, now); err != nil {
 			return nil, err
 		}
-	}
-	if err := tx.Commit(); err != nil {
-		return nil, err
 	}
 	return ids, nil
 }

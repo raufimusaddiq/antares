@@ -93,7 +93,8 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		// The shared plan quota every active account sees: each window's share used and reset time, no amounts.
 		"/api/quota": true,
 		// Admin → Assistant tools: the tenant toolset policy, read and replaced as a list of toolset names.
-		"/api/admin/tool-policy": true,
+		"/api/admin/tool-policy":  true,
+		"/api/admin/media-models": true,
 		// #59 adds the opt-in notification routes, listed one by one: the VAPID public key,
 		// device (un)registration (/api/push/subscriptions/{id} is the revoke), and the
 		// per-account mode. None of them returns or accepts conversation content.

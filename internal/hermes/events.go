@@ -2,6 +2,7 @@ package hermes
 
 import (
 	"encoding/json"
+	"github.com/raufimusaddiq/antares/internal/redact"
 	"strings"
 )
 
@@ -83,13 +84,15 @@ func Normalize(ev Event) Normalized {
 			return Normalized{Kind: KindDelta, Text: clip(t, maxDelta)}
 		}
 	case "tool.started", "tool_call.started", "hermes.tool.started":
-		return Normalized{Kind: KindToolStarted, ToolID: toolID(d), Label: clip(firstString(d, "label", "name", "tool"), maxLabel)}
+		return Normalized{Kind: KindToolStarted, ToolID: toolID(d), Label: clip(firstString(d, "label", "name", "tool"), maxLabel),
+			Detail: clip(redact.Clean(firstString(d, "preview")), maxLabel)}
 	case "tool.completed", "tool_call.completed", "hermes.tool.completed":
 		// Hermes sends {tool, duration (seconds), error (bool), preview (redacted, bounded)}
 		// (gateway/platforms/api_server_runs.py _FIXED_EVENT_FIELDS, _tool_completed_preview).
 		n := Normalized{Kind: KindToolCompleted, ToolID: toolID(d), Summary: clip(firstString(d, "summary", "preview", "result", "output"), maxSummary)}
 		n.Failed, _ = d["error"].(bool)
-		if sec, ok := d["duration"].(float64); ok && sec >= 0 && sec < 1e7 {
+		// Hermes reports 0 when it did not time the call (its tool callback passes no duration), so 0 is "unknown".
+		if sec, ok := d["duration"].(float64); ok && sec > 0 && sec < 1e7 {
 			ms := int64(sec * 1000)
 			n.DurationMs = &ms
 		}

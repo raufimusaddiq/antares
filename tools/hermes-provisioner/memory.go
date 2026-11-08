@@ -72,7 +72,7 @@ sys.stdout.write(json.dumps(out))
 const memoryCmd = `cd /opt/hermes && exec "$1" -c "$2" "$3" "$4" "$5"`
 
 func (s *server) memory(w http.ResponseWriter, r *http.Request) {
-	slug, _, ok := s.readRequest(w, r)
+	slug, _, _, ok := s.readRequest(w, r)
 	if !ok {
 		return
 	}

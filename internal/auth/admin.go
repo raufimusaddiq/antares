@@ -107,6 +107,8 @@ func (a *Auth) registerAdmin(mux *http.ServeMux) {
 	mux.Handle("PUT /api/admin/model-policy", a.adminRoute(true, a.adminSetModelPolicy))
 	mux.Handle("GET /api/admin/tool-policy", a.adminRoute(false, a.adminToolPolicy))
 	mux.Handle("PUT /api/admin/tool-policy", a.adminRoute(true, a.adminSetToolPolicy))
+	mux.Handle("GET /api/admin/media-models", a.adminRoute(false, a.adminMediaModels))
+	mux.Handle("PUT /api/admin/media-models", a.adminRoute(true, a.adminSetMediaModels))
 	mux.Handle("GET /api/admin/kenari-usage", a.adminRoute(false, a.adminKenariUsage))
 	mux.Handle("GET /api/admin/metrics", a.adminRoute(false, a.adminMetrics))
 }
