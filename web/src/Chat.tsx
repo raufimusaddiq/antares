@@ -665,7 +665,7 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
 
 // ---- the app --------------------------------------------------------------------
 
-export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatId = null, signOutError = "" }: { email: string; onSignOut: (everywhere?: boolean) => void; canAdmin?: boolean; onAdmin?: () => void; initialChatId?: string | null; signOutError?: string }) {
+export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, initialChatId = null, signOutError = "" }: { email: string; onSignOut: (everywhere?: boolean) => void; canAdmin?: boolean; onAdmin?: () => void; onBlog?: () => void; initialChatId?: string | null; signOutError?: string }) {
   const quota = useSharedQuota(); // the plan quota every account shares (QuotaBar.tsx)
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [listState, setListState] = useState<"loading" | "ready" | "error">("loading");
@@ -1422,6 +1422,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
             <button type="button" className="quiet" data-icon="settings" onClick={() => { setMenuOpen(false); setSettings("general"); }}>
               Settings
             </button>
+            {onBlog && (
+              <button type="button" className="quiet" data-icon="edit" onClick={() => { setMenuOpen(false); onBlog(); }}>
+                Blog posts
+              </button>
+            )}
             {canAdmin && onAdmin && (
               <button type="button" className="quiet" data-icon="shield" onClick={onAdmin}>
                 Admin
@@ -1439,6 +1444,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, initialChatI
         <button type="button" data-icon="plus" onClick={() => void startChat()}>
           New chat
         </button>
+        {onBlog && (
+          <button type="button" className="quiet rail-blog" data-icon="edit" onClick={onBlog}>
+            Blog posts
+          </button>
+        )}
         <SearchPanel key={searchEpoch} current={current} onOpen={(r) => void openResult(r)} />
         {listState === "loading" && <p className="label">Loading…</p>}
         {listState === "ready" && chats.length === 0 && <p className="label">No conversations yet.</p>}

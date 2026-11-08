@@ -94,9 +94,9 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 - [x] T033 [P] [US1] Read-only document renderer for reader pages in `web/src/blog/DocView.tsx` (no raw HTML path)
 - [x] T034 [US1] Public pages `web/src/blog/PublicIndex.tsx` and `web/src/blog/PublicPost.tsx` per the design, signed-out routes in `web/src/App.tsx`, light/dark and phone
 - [x] T035 [US1] "Publish my original", unpublish and published-success UI in `web/src/blog/PublishFlow.tsx` (original path only for now)
-- [ ] T036 [US1] Add Blog entry to the app navigation, hidden when the capability probe says unavailable, in `web/src/App.tsx`
+- [X] T036 [US1] Add Blog entry to the app navigation, hidden when the capability probe says unavailable, in `web/src/App.tsx`
 - [ ] T037 [US1] Real-browser checks `blog-public` and `blog-editor` (390 px no sideways scroll, light/dark) in `scripts/browser-check.mjs`
-- [ ] T038 [US1] Rebuild `internal/webui/dist`, run `go test ./...` and vitest; fix design/code disagreements found
+- [X] T038 [US1] Rebuild `internal/webui/dist`, run `go test ./...` and vitest; fix design/code disagreements found
 
 **Checkpoint**: a complete Medium-style writing and publishing tool. MVP.
 

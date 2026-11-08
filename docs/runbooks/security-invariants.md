@@ -74,10 +74,11 @@ Generative UI markup from the model is rendered through a registered component a
 route back through the secured Go API. Model output is never executed, and never reaches a DOM sink
 directly.
 
-## 10. One route answers without a session: a shared chat
+## 10. Routes that answer without a session: a shared chat, and published blog posts
 
-`GET /api/shared/{token}` (#250) is the only route that needs no sign-in, and `auth.PublicRoutes` is the only place
-another may be added. It reads a copy of a chat that its owner chose to share, never Hermes. The token is 256 random
+`GET /api/shared/{token}` (#250) and the public blog reads (`GET /api/public/blog/posts`, `/{slug}` and `/{slug}/assets/{assetId}`, the blog spec's
+Contract: published posts only, never a draft) are the only routes that need no sign-in, and `auth.PublicRoutes` is
+the only place another may be added. It reads a copy of a chat that its owner chose to share, never Hermes. The token is 256 random
 bits kept only as a hash; the answer is the title, the date and the turns' role and text, with no account, chat or
 profile identity and no media. A link dies when the owner stops or replaces it, deletes the chat, or is no longer
 approved, and a dead link answers exactly like one that never existed.

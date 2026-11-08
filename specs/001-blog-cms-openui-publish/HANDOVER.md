@@ -30,7 +30,7 @@ Rules that apply:
 
 The pages exist as code in `web/src/blog/`, built from the approved frames against `contracts/http-api.md`. The
 backend does not exist yet, so none of it has run against a real server; it ran only against a mocked API in the
-browser (desktop dark, phone 375 px, no sideways scroll) and in 21 vitest tests.
+browser (desktop dark, phone 375 px, no sideways scroll) and in vitest tests (see the PR for the count).
 
 | File | What it is |
 |------|------------|
@@ -50,7 +50,7 @@ Things the backend session must match (the page code assumes them; change the pa
 - `GET /api/blog/capabilities` returns `{writing,check,webSearch}`; image upload `POST .../assets` takes the raw file body and returns `{assetId,url}`.
 - Public post returns `blocks[{anchor,markup,fallback,sources}]` where `anchor` is the index of the top-level node the block follows.
 
-Still open on the page side: T036 (hide the rail button when the capability probe says unavailable; it is always shown now),
+Still open on the page side: no cover-image control in Post settings (`saveSettings` accepts `coverAssetId`, nothing sends it), and the publish preview lists the proposed blocks without showing the post itself (original vs enriched, design-pages.md);
 T037/T051/T064/T069 browser checks, T038 `internal/webui/dist` rebuild (Linux only), T043/T054/T058/T059/T066 tests for
 preview wording, sources drawer, malicious markup refusal, reader interaction and list states, T061 reader library with
 the actions removed (today every action is ignored), T062 polish, T070 Admin suspended note, T073 README gaps.
@@ -65,3 +65,5 @@ the actions removed (today every action is ignored), T062 polish, T070 Admin sus
 
 Phone/Tablet/Landscape menus have no Blog entry; My posts and the Editor use a simplified rail; preview shows
 the first two blocks only; interactions are drawn as static states. See `docs/design/README.md`.
+
+- The public index (`listPublic`) asks for the first page only: the contract does not yet name a page parameter, so there is no "more" control until the backend defines one.

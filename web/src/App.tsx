@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import { loadSession, signOut, type Session, type SignOutResult } from "./api";
 import { AdminScreens, AdminShell, Forbidden } from "./Admin";
 import { Chat } from "./Chat";
+import { BlogApp, isBlogPath, parseBlogPath } from "./blog/BlogApp";
+import { getCapabilities } from "./blog/blogApi";
+import type { Capabilities } from "./blog/types";
 import { revokeThisDevice, chatIdFromPath } from "./push";
 import { isAdminPath, parseAdminPath } from "./route";
 import { Screen, documentTitle, type View } from "./Screen";
@@ -68,6 +71,15 @@ export function App() {
   // undefined = not resolved yet: Chat mounts only once it is, so it opens with the link.
   const [deepLink, setDeepLink] = useState<string | null | undefined>(() => chatIdFromPath(window.location.pathname) ?? undefined);
   const active = session.kind === "account" && session.account.state === "ACTIVE";
+  // "Blog posts" is offered only when the server says writing is available; until it answers, it is not shown.
+  const [blogCaps, setBlogCaps] = useState<Capabilities | null>(null);
+  const blogWriting = blogCaps?.writing === true;
+  useEffect(() => {
+    if (!active) return setBlogCaps(null);
+    const ctl = new AbortController();
+    void getCapabilities(ctl.signal).then((r) => !ctl.signal.aborted && setBlogCaps(r.ok ? r.value : { writing: false, check: false, webSearch: false }));
+    return () => ctl.abort();
+  }, [active]);
   useEffect(() => {
     if (active && deepLink === undefined) setDeepLink(takeLink()); // reads and clears the sign-in round trip's key
   }, [active, deepLink]);
@@ -111,7 +123,7 @@ export function App() {
     if (link && session.kind === "anonymous") rememberLink(link);
     if (session.kind === "account") {
       if (session.account.state === "ACTIVE" && link) return; // Chat opens it, then rewrites the address
-      if (session.account.state === "ACTIVE" && isAdminPath(window.location.pathname)) return;
+      if (session.account.state === "ACTIVE" && (isAdminPath(window.location.pathname) || isBlogPath(window.location.pathname))) return;
       window.history.replaceState(null, "", SCREEN_PATH[session.account.state]);
       setPath(SCREEN_PATH[session.account.state]);
     }
@@ -133,7 +145,8 @@ export function App() {
         </AdminShell>
       );
     }
-    return <Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onSignOut={onSignOut} signOutError={signOutMessage} />;
+    if (isBlogPath(path)) return <BlogApp caps={blogCaps} email={session.account.email} route={parseBlogPath(path)} onNavigate={navigate} onChats={() => navigate("/")} />;
+    return <Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onBlog={blogWriting ? () => navigate("/blog") : undefined} onSignOut={onSignOut} signOutError={signOutMessage} />;
   }
   return (
     <Screen
