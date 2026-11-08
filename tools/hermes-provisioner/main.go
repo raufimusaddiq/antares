@@ -13,6 +13,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -85,36 +86,49 @@ func (s *server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, code, body)
 }
 
-// readRequest decodes {"slug":..., "toolsets":[...]} strictly and validates it. Any other field (profile, key,
+// readRequest decodes {"slug":..., "toolsets":[...], "imageModel":..., "videoModel":...} strictly and validates it. Any other field (profile, key,
 // header...) is rejected. toolsets is optional: Antares sends the admin's tenant policy (one of offeredToolsets);
 // without it the operator's PROVISIONER_ALLOWED_TOOLSETS applies. It returns the profile's disabled list.
-func (s *server) readRequest(w http.ResponseWriter, r *http.Request) (string, []string, bool) {
+func (s *server) readRequest(w http.ResponseWriter, r *http.Request) (string, []string, mediaModels, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, 1024)
 	dec := json.NewDecoder(r.Body)
 	dec.DisallowUnknownFields()
 	var req struct {
-		Slug     string   `json:"slug"`
-		Toolsets []string `json:"toolsets"`
+		Slug       string   `json:"slug"`
+		Toolsets   []string `json:"toolsets"`
+		ImageModel string   `json:"imageModel"`
+		VideoModel string   `json:"videoModel"`
 	}
 	if err := dec.Decode(&req); err != nil {
 		writeErr(w, http.StatusBadRequest, "invalid request body")
-		return "", nil, false
+		return "", nil, mediaModels{}, false
 	}
 	if err := validateSlug(req.Slug); err != nil {
 		writeErr(w, http.StatusBadRequest, err.Error())
-		return "", nil, false
+		return "", nil, mediaModels{}, false
 	}
 	disabled := s.disabled
 	if req.Toolsets != nil {
 		d, err := requestPolicy(req.Toolsets)
 		if err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
-			return "", nil, false
+			return "", nil, mediaModels{}, false
 		}
 		disabled = d
 	}
-	return req.Slug, disabled, true
+	if !validMediaModel(req.ImageModel) || !validMediaModel(req.VideoModel) {
+		writeErr(w, http.StatusBadRequest, "invalid media model")
+		return "", nil, mediaModels{}, false
+	}
+	return req.Slug, disabled, mediaModels{req.ImageModel, req.VideoModel}, true
 }
+
+// mediaModels are the default image and video generation models Antares sends; "" is the plugin's own default.
+type mediaModels struct{ image, video string }
+
+var mediaModelID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/-]{0,99}$`)
+
+func validMediaModel(s string) bool { return s == "" || mediaModelID.MatchString(s) }
 
 func newKey() (string, error) {
 	b := make([]byte, 32)
@@ -125,7 +139,7 @@ func newKey() (string, error) {
 }
 
 func (s *server) provision(w http.ResponseWriter, r *http.Request) {
-	slug, disabled, ok := s.readRequest(w, r)
+	slug, disabled, media, ok := s.readRequest(w, r)
 	if !ok {
 		return
 	}
@@ -148,7 +162,7 @@ func (s *server) provision(w http.ResponseWriter, r *http.Request) {
 	}
 	// Applied on every provision, existing profile or not, before any key is
 	// issued: a profile that cannot be locked down never gets a key.
-	if err := s.h.applyPolicy(ctx, slug, disabled); err != nil {
+	if err := s.h.applyPolicy(ctx, slug, disabled, media); err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -173,7 +187,7 @@ func (s *server) provision(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) rotate(w http.ResponseWriter, r *http.Request) {
-	slug, disabled, ok := s.readRequest(w, r)
+	slug, disabled, media, ok := s.readRequest(w, r)
 	if !ok {
 		return
 	}
@@ -189,7 +203,7 @@ func (s *server) rotate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	// Reapplied so provision and rotate leave a profile in the same state.
-	if err := s.h.applyPolicy(ctx, slug, disabled); err != nil {
+	if err := s.h.applyPolicy(ctx, slug, disabled, media); err != nil {
 		writeErr(w, http.StatusBadGateway, err.Error())
 		return
 	}
@@ -212,7 +226,7 @@ func (s *server) rotate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *server) deprovision(w http.ResponseWriter, r *http.Request) {
-	slug, _, ok := s.readRequest(w, r) // a toolsets field is validated, then has nothing to apply to
+	slug, _, _, ok := s.readRequest(w, r) // a toolsets field is validated, then has nothing to apply to
 	if !ok {
 		return
 	}

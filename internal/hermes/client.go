@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/raufimusaddiq/antares/internal/redact"
 	"io"
 	"net"
 	"net/http"
@@ -54,6 +55,9 @@ const (
 	maxMessagesPerPage = 200
 	maxTranscriptReads = 2 // concurrent full-transcript reads, so memory stays bounded
 	maxMessageText     = 200 << 10
+	maxToolName        = 80
+	maxToolDetail      = 200
+	maxToolsPerReply   = 100
 	maxSessionKeyLen   = 128
 	maxIdempotencyLen  = 128
 	callTimeout        = 30 * time.Second
@@ -730,8 +734,17 @@ type Message struct {
 	Ref string `json:"ref,omitempty"`
 	// Images counts the image parts of a user turn (Hermes renders each as "[image]" in the
 	// history read). Attachments are the owner's assets matched to them by the chat layer.
+	Tools       []ToolCall   `json:"tools,omitempty"`
 	Images      int          `json:"images,omitempty"`
 	Attachments []Attachment `json:"attachments,omitempty"`
+}
+
+// ToolCall is one tool the assistant called while writing a reply, as the session transcript records it: the name and a
+// short, redacted preview of what it was asked (a query, a command, a path). The transcript holds no timing or outcome
+// the history read can trust, so neither is shown.
+type ToolCall struct {
+	Name   string `json:"name"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // Attachment is one image the user sent with a turn. Available is false once the staged
@@ -804,6 +817,15 @@ func (c *Client) Transcript(ctx context.Context, b Binding, sessionID string) ([
 	}
 	raw = nil
 	var msgs []Message
+	// The tools called in one reply (since the last user turn) are shown once, on its last assistant message with text.
+	var reply []ToolCall
+	last := -1
+	flush := func() {
+		if len(reply) > 0 && last >= 0 {
+			msgs[last].Tools = append([]ToolCall(nil), reply...)
+		}
+		reply, last = reply[:0], -1
+	}
 	for _, item := range list {
 		var m struct {
 			ID        any    `json:"id"`
@@ -811,9 +833,23 @@ func (c *Client) Transcript(ctx context.Context, b Binding, sessionID string) ([
 			Content   any    `json:"content"`
 			CreatedAt any    `json:"created_at"`
 			Timestamp any    `json:"timestamp"`
+			ToolCalls []struct {
+				Function struct {
+					Name      string `json:"name"`
+					Arguments any    `json:"arguments"`
+				} `json:"function"`
+			} `json:"tool_calls"`
 		}
 		if json.Unmarshal(item, &m) != nil || (m.Role != "user" && m.Role != "assistant") {
 			continue
+		}
+		if m.Role == "user" {
+			flush()
+		}
+		for _, tc := range m.ToolCalls {
+			if name := clip(tc.Function.Name, maxToolName); name != "" && len(reply) < maxToolsPerReply {
+				reply = append(reply, ToolCall{Name: name, Detail: toolDetail(tc.Function.Arguments)})
+			}
 		}
 		if len(msgs) >= maxTranscriptMsgs {
 			return nil, ErrHistoryTooLarge
@@ -829,8 +865,30 @@ func (c *Client) Transcript(ctx context.Context, b Binding, sessionID string) ([
 			}
 		}
 		msgs = append(msgs, out)
+		if m.Role == "assistant" && (out.Text != "" || last < 0) {
+			last = len(msgs) - 1
+		}
 	}
+	flush()
 	return msgs, nil
+}
+
+// toolDetail is a short, redacted preview of a tool call's arguments: the first of the usual "what was asked" fields.
+func toolDetail(args any) string {
+	if s, ok := args.(string); ok {
+		var m map[string]any
+		if json.Unmarshal([]byte(s), &m) != nil {
+			return ""
+		}
+		args = m
+	}
+	m, _ := args.(map[string]any)
+	for _, k := range []string{"query", "q", "command", "url", "path", "file_path", "pattern", "text", "prompt"} {
+		if v, ok := m[k].(string); ok && v != "" {
+			return clip(redact.Clean(v), maxToolDetail)
+		}
+	}
+	return ""
 }
 
 // contentText takes a plain string, or the text parts of a content array.

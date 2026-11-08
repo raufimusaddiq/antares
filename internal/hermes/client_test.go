@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/raufimusaddiq/antares/internal/redact"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -280,6 +281,30 @@ func TestMessagesKeepsOnlyUserAndAssistantTextAndTheNewest(t *testing.T) {
 	}
 }
 
+func TestTranscriptKeepsTheToolsOfAReplyOnItsLastTextMessage(t *testing.T) {
+	body := `{"messages":[
+	  {"id":"m1","role":"user","content":"find it"},
+	  {"id":"m2","role":"assistant","content":"","tool_calls":[{"id":"c1","function":{"name":"web_search","arguments":"{\"query\":\"best ramen\"}"}}]},
+	  {"id":"m3","role":"tool","content":"results","tool_call_id":"c1","tool_name":"web_search"},
+	  {"id":"m4","role":"assistant","content":"checking","tool_calls":[{"id":"c2","function":{"name":"read_file","arguments":{"path":"/a/b.txt","api_key":"sk-abcdefghijklmnopqrstuvwxyz"}}}]},
+	  {"id":"m5","role":"assistant","content":"here it is"},
+	  {"id":"m6","role":"user","content":"thanks"},
+	  {"id":"m7","role":"assistant","content":"welcome"}]}`
+	c, _ := newTestClient(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { fmt.Fprint(w, body) }), ClientOptions{})
+	msgs, _, err := c.Messages(context.Background(), bind(), "sess_1", 50)
+	if err != nil || len(msgs) != 6 {
+		t.Fatalf("%+v %v", msgs, err)
+	}
+	if got := msgs[3].Tools; len(got) != 2 || got[0] != (ToolCall{Name: "web_search", Detail: "best ramen"}) || got[1] != (ToolCall{Name: "read_file", Detail: "/a/b.txt"}) {
+		t.Errorf("tools on the last text message of the reply: %+v", got)
+	}
+	for _, i := range []int{1, 2, 5} {
+		if msgs[i].Tools != nil {
+			t.Errorf("message %d carries tools %+v", i, msgs[i].Tools)
+		}
+	}
+}
+
 func TestNormalize(t *testing.T) {
 	ev := func(name, data string) Event { return Event{Name: name, Data: []byte(data)} }
 	cases := []struct {
@@ -294,6 +319,11 @@ func TestNormalize(t *testing.T) {
 		{ev("tool.completed", `{"tool":"web_search","duration":1.234,"error":true,"preview":"timeout","tool_call_id":"t2"}`),
 			Normalized{Kind: KindToolCompleted, ToolID: "t2", Summary: "timeout", Failed: true, DurationMs: ptr(int64(1234))}},
 		{ev("tool.completed", `{"tool_call_id":"t3","duration":"soon","error":"yes"}`), Normalized{Kind: KindToolCompleted, ToolID: "t3"}},
+		// Hermes sends 0 when it did not time the call: unknown, not "0 ms".
+		{ev("tool.completed", `{"tool_call_id":"t4","duration":0,"error":false}`), Normalized{Kind: KindToolCompleted, ToolID: "t4"}},
+		// A start carries what the tool was asked, redacted.
+		{ev("tool.started", `{"tool":"web_search","tool_call_id":"t5","preview":"cheap flights sk-abcdefghijklmnopqrstuvwxyz"}`),
+			Normalized{Kind: KindToolStarted, ToolID: "t5", Label: "web_search", Detail: "cheap flights sk-" + redact.Marker}},
 		// Thinking is a stage; the reasoning text itself never survives.
 		{ev("reasoning.available", `{"text":"private chain of thought"}`), Normalized{Kind: KindThinking}},
 		{ev("approval.required", `{}`), Normalized{Kind: KindApproval}},

@@ -4,12 +4,14 @@ import {
   decide,
   describeAdminCode,
   getKenariUsage,
+  getMediaModels,
   getToolPolicy,
   getUser,
   isForbidden,
   listAudit,
   listUsers,
   requeue,
+  setMediaModels,
   setToolPolicy,
   type AdminResult,
   type AdminUser,
@@ -19,6 +21,8 @@ import {
   type KenariUsageView,
   type UsageSection,
   type Requeue,
+  type MediaChoice,
+  type MediaModels,
   type ToolPolicy,
   loadAllAudit,
 } from "./adminApi";
@@ -667,6 +671,7 @@ function detailOf(id: string, inv: Inventory): string {
 export function CapabilitiesScreen() {
   const [state, reload] = useLoad((s) => getCapabilities(s), "capabilities");
   const [tools, reloadTools] = useLoad((s) => getToolPolicy(s), "tool-policy");
+  const [media, reloadMedia] = useLoad((s) => getMediaModels(s), "media-models");
   return (
     <>
       {tools.kind === "loading" ? (
@@ -677,6 +682,13 @@ export function CapabilitiesScreen() {
         <Problem message={tools.message} onRetry={reloadTools} />
       ) : (
         <AssistantTools policy={tools.value} onSave={setToolPolicy} />
+      )}
+      {media.kind === "loading" ? (
+        <Loading what="Assistant media" />
+      ) : media.kind === "forbidden" ? null : media.kind === "error" ? (
+        <Problem message={media.message} onRetry={reloadMedia} />
+      ) : (
+        <AssistantMedia models={media.value} onSave={setMediaModels} />
       )}
       {state.kind === "loading" ? (
         <Loading what="Assistant capabilities" />
@@ -769,6 +781,86 @@ export function AssistantTools({ policy, onSave }: { policy: ToolPolicy; onSave:
           ))}
         </ul>
       </details>
+    </section>
+  );
+}
+
+/**
+ * Admin → Assistant media: the default model every account's assistant uses to make images and videos. The choices are
+ * the models Kenari serves for each; "default" leaves the assistant's own pick. Saving re-checks every account.
+ */
+export function AssistantMedia({ models, onSave }: { models: MediaModels; onSave: (image: string, video: string) => Promise<AdminResult<MediaModels>> }) {
+  const [saved, setSaved] = useState(models);
+  const [image, setImage] = useState(models.image.current);
+  const [video, setVideo] = useState(models.video.current);
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState("");
+  const [error, setError] = useState("");
+  const changed = image !== saved.image.current || video !== saved.video.current;
+  const save = async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError("");
+    const r = await onSave(image, video);
+    setBusy(false);
+    if (!r.ok) {
+      setError(describeAdminCode(r.code, r.status));
+      return;
+    }
+    setSaved(r.value);
+    setImage(r.value.image.current);
+    setVideo(r.value.video.current);
+    const n = r.value.reverifying ?? 0;
+    setStatus(`Saved. ${n === 1 ? "1 account is" : `${n} accounts are`} being re-checked; each one's chat pauses for about a minute while it is.`);
+  };
+  const field = (label: string, id: string, c: MediaChoice, value: string, set: (v: string) => void) => {
+    // A saved model Kenari no longer lists stays selectable, so the screen never shows a choice it is not making.
+    const known = c.options.some((o) => o.id === value);
+    return (
+      <p>
+        <label htmlFor={id}>{label}</label>{" "}
+        <select id={id} value={value} disabled={busy} onChange={(e) => { set(e.target.value); setStatus(""); }}>
+          <option value="">Default ({c.default})</option>
+          {value !== "" && !known && <option value={value}>{value} (not in Kenari's list now)</option>}
+          {c.options.map((o) => (
+            <option key={o.id} value={o.id}>
+              {o.name}
+              {o.free ? " (free)" : ""}
+            </option>
+          ))}
+        </select>
+      </p>
+    );
+  };
+  return (
+    <section aria-labelledby="media-h">
+      <h1 id="media-h">Assistant media</h1>
+      <p className="label">
+        The model every account's assistant uses to make images and videos, from Kenari. Videos are billed by the second. Video needs the Video
+        generation tool switched on above.
+      </p>
+      {saved.catalogue === "unavailable" && (
+        <p className="notice" role="status">
+          Kenari's model list could not be read just now, so no new model can be chosen. You can still go back to the default.
+        </p>
+      )}
+      <form onSubmit={save} aria-label="Assistant media">
+        {field("Image model", "media-image", saved.image, image, setImage)}
+        {field("Video model", "media-video", saved.video, video, setVideo)}
+        {error && (
+          <p className="notice" role="alert">
+            {error}
+          </p>
+        )}
+        <p className="tool-actions">
+          <button type="submit" disabled={busy || !changed}>
+            {busy ? "Saving…" : "Save media models"}
+          </button>
+          <span role="status" className="label">
+            {changed ? "Not saved yet." : status}
+          </span>
+        </p>
+      </form>
     </section>
   );
 }

@@ -31,6 +31,13 @@ export interface Turn {
   ref?: string;
   /** Images the user sent with this turn (owner assets; available is false once deleted). */
   attachments?: AttachmentRef[];
+  /** The tools the assistant called while writing this reply, on its last message with text. No timing or outcome: history holds neither. */
+  tools?: ToolNote[];
+}
+
+export interface ToolNote {
+  name: string;
+  detail: string;
 }
 
 export type ApiResult<T> = { ok: true; value: T } | { ok: false; code: string; status: number };
@@ -205,6 +212,16 @@ function parseAttachments(v: unknown): AttachmentRef[] {
   return out;
 }
 
+function parseTools(v: unknown): ToolNote[] {
+  if (!Array.isArray(v)) return [];
+  const out: ToolNote[] = [];
+  for (const t of v) {
+    const o = obj(t);
+    if (o && str(o.name) !== "") out.push({ name: str(o.name), detail: str(o.detail) });
+  }
+  return out;
+}
+
 export function parseHistory(v: unknown): HistoryPage | null {
   const o = obj(v);
   if (!o || !Array.isArray(o.messages)) return null;
@@ -217,7 +234,8 @@ export function parseHistory(v: unknown): HistoryPage | null {
     const attachments = parseAttachments(mo.attachments);
     // The history read renders each image as "[image]"; when the images are shown as thumbnails the markers go.
     const text = attachments.length > 0 ? stripImageMarkers(str(mo.text), attachments.length) : str(mo.text);
-    turns.push({ seq: mo.seq, role: mo.role, text, ref: str(mo.ref) || undefined, ...(attachments.length > 0 ? { attachments } : {}) });
+    const tools = parseTools(mo.tools);
+    turns.push({ seq: mo.seq, role: mo.role, text, ref: str(mo.ref) || undefined, ...(attachments.length > 0 ? { attachments } : {}), ...(tools.length > 0 ? { tools } : {}) });
   }
   for (let i = 1; i < turns.length; i++) if (turns[i].seq <= turns[i - 1].seq) return null;
   return { turns, nextCursor: str(o.nextCursor), total: typeof o.total === "number" ? o.total : turns.length };

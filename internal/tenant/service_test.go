@@ -50,9 +50,9 @@ type fakeHelper struct {
 	toolsets  [][]string // the tool policy each call carried
 }
 
-func (f *fakeHelper) Provision(ctx context.Context, slug string, toolsets []string) (hermes.Credential, error) {
+func (f *fakeHelper) Provision(ctx context.Context, slug string, p hermes.Policy) (hermes.Credential, error) {
 	f.mu.Lock()
-	f.toolsets = append(f.toolsets, toolsets)
+	f.toolsets = append(f.toolsets, p.Toolsets)
 	f.provCalls++
 	n := f.provCalls
 	f.slugs = append(f.slugs, slug)
@@ -61,9 +61,9 @@ func (f *fakeHelper) Provision(ctx context.Context, slug string, toolsets []stri
 	return fn(slug, n)
 }
 
-func (f *fakeHelper) Rotate(ctx context.Context, slug string, toolsets []string) (hermes.Credential, error) {
+func (f *fakeHelper) Rotate(ctx context.Context, slug string, p hermes.Policy) (hermes.Credential, error) {
 	f.mu.Lock()
-	f.toolsets = append(f.toolsets, toolsets)
+	f.toolsets = append(f.toolsets, p.Toolsets)
 	f.rotCalls++
 	fn := f.rotate
 	f.mu.Unlock()
@@ -1065,10 +1065,9 @@ func TestTenantToolPolicyReachesTheHelperAndVerifierAndRequeuesReadyAccounts(t *
 	if err := r.svc.Process(ctx, u); err != nil {
 		t.Fatal(err)
 	}
-	if got := r.view(u); got.TenantStatus == "READY" || !strings.Contains(got.TenantDetail, "tool policy changed") {
-		t.Fatalf("a run on the old policy unlocked the account: %+v", got)
+	if got := r.view(u); got.TenantStatus != "CONFIGURING" || got.TenantAttempts != 0 || got.TenantDetail != "" {
+		t.Fatalf("a run on the old policy must leave the account queued, not failed or ready: %+v", got)
 	}
-	r.clk.Add(time.Minute)
 	if err := r.svc.Process(ctx, u); err != nil {
 		t.Fatal(err)
 	}

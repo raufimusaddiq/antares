@@ -58,6 +58,8 @@ type Options struct {
 	// DefaultToolsets is the tenant toolset policy while an admin has set none (ANTARES_TENANT_ALLOWED_TOOLSETS),
 	// shown in Admin → Assistant tools.
 	DefaultToolsets []string
+	// Catalogue is Kenari's model list, the source of the admin's image and video model choices; nil lists none.
+	Catalogue ModelCatalogue
 }
 
 // AccountUsage is the provider account reader the admin route calls.
@@ -75,21 +77,22 @@ type ChatHandlers interface {
 
 // Auth owns login, logout, sessions and the guards.
 type Auth struct {
-	db       *sql.DB
-	ep       Endpoints
-	clientID string
-	secret   string
-	origin   string
-	client   *http.Client
-	now      func() time.Time
-	ver      *verifier
-	flows    *flowStore
-	tenants  Tenants
-	chat     ChatHandlers
-	push     ChatHandlers
-	usage    AccountUsage
-	limits   *requestLimits
-	tools    []string // DefaultToolsets
+	db        *sql.DB
+	ep        Endpoints
+	clientID  string
+	secret    string
+	origin    string
+	client    *http.Client
+	now       func() time.Time
+	ver       *verifier
+	flows     *flowStore
+	tenants   Tenants
+	chat      ChatHandlers
+	push      ChatHandlers
+	usage     AccountUsage
+	limits    *requestLimits
+	tools     []string // DefaultToolsets
+	catalogue ModelCatalogue
 }
 
 func New(o Options) (*Auth, error) {
@@ -111,7 +114,7 @@ func New(o Options) (*Auth, error) {
 		return nil, errors.New("request limits must be positive integers")
 	}
 	a := &Auth{limits: newRequestLimits(limits), db: o.DB, ep: o.Endpoints, clientID: o.ClientID, secret: o.ClientSecret,
-		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat, push: o.Push, usage: o.KenariUsage, tools: o.DefaultToolsets}
+		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat, push: o.Push, usage: o.KenariUsage, tools: o.DefaultToolsets, catalogue: o.Catalogue}
 	a.ver = &verifier{ep: o.Endpoints, clientID: o.ClientID, client: o.HTTPClient, now: o.Now}
 	return a, nil
 }

@@ -178,6 +178,7 @@ func (h hermes) create(ctx context.Context, slug string) error {
 // One docker exec: two config writes about 6 s each and a reload under a second, measured on the deployed host, within
 // callTimeout. Slug, list, directories and the reload script arrive as arguments ($1-$6), never in the script.
 // plugins.enabled is replaced, not merged: a tenant profile is provisioner-owned and holds no other plugin.
+// $8 and $9 are the default image and video models ("" leaves the plugin's own default, and clears an earlier choice).
 // $7 is the allowed toolsets, space separated (names from knownToolsets only, so unquoted word splitting is safe):
 // Hermes' default toolset for API chats leaves several of them out (clarify, tts, stt, video, video_gen, x_search),
 // so allowing a toolset must also enable it for the api_server platform, as "hermes tools enable" does.
@@ -185,11 +186,26 @@ func (h hermes) create(ctx context.Context, slug string) error {
 const policyScript = `set -e
 hermes -p "$1" config set ` + toolsetsConfigKey + ` "$2"
 hermes -p "$1" tools enable $7 --platform api_server >/dev/null
+enabled=""
+for p in kenari-image kenari-video; do
+  if [ -d "$3/$p" ]; then
+    mkdir -p "$4/$1/plugins/$p"
+    cp -r "$3/$p/." "$4/$1/plugins/$p/"
+    enabled="${enabled:+$enabled,}\"$p\""
+  fi
+done
+if [ -n "$enabled" ]; then
+  hermes -p "$1" config set plugins.enabled "[$enabled]"
+fi
 if [ -d "$3/kenari-image" ]; then
-  mkdir -p "$4/$1/plugins/kenari-image"
-  cp -r "$3/kenari-image/." "$4/$1/plugins/kenari-image/"
-  hermes -p "$1" config set plugins.enabled '["kenari-image"]'
   hermes -p "$1" config set image_gen.provider kenari-image
+  hermes -p "$1" config set image_gen.kenari-image.model "$8"
+fi
+if [ -d "$3/kenari-video" ]; then
+  hermes -p "$1" config set video_gen.provider kenari-video
+  hermes -p "$1" config set video_gen.kenari-video.model "$9"
+fi
+if [ -n "$enabled" ]; then
   timeout 25 python3 -c "$6" "$5" "$4/$1" || echo "no gateway answered (reload failed or timed out)"
 fi`
 
@@ -211,8 +227,8 @@ var hermesRoot = path.Dir(profilesDir)
 const sharedPlugins = "/opt/data/antares-plugins"
 
 // applyPolicy runs policyScript for one profile.
-func (h hermes) applyPolicy(ctx context.Context, slug string, disabled []string) error {
-	stdout, stderr, err := h.r.Run(ctx, "", "sh", "-c", policyScript, "sh", slug, toolsetsValue(disabled), sharedPlugins, profilesDir, hermesRoot, reloadScript, strings.Join(allowedFrom(disabled), " "))
+func (h hermes) applyPolicy(ctx context.Context, slug string, disabled []string, m mediaModels) error {
+	stdout, stderr, err := h.r.Run(ctx, "", "sh", "-c", policyScript, "sh", slug, toolsetsValue(disabled), sharedPlugins, profilesDir, hermesRoot, reloadScript, strings.Join(allowedFrom(disabled), " "), m.image, m.video)
 	if err != nil {
 		return fmt.Errorf("%w: applying the profile policy: %s", errUpstream, brief(stderr))
 	}

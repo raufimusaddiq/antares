@@ -1,0 +1,8 @@
+name: kenari-video
+version: 1.0.0
+description: "Video generation through the profile's Kenari endpoint (POST /v1/videos/generations, then poll). Saves the finished clip to $HERMES_HOME/cache/generated/videos/."
+author: Antares
+kind: backend
+requires_env:
+  - OPENAI_API_KEY
+  - OPENAI_BASE_URL

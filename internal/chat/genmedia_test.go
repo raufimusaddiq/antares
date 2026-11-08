@@ -42,6 +42,10 @@ func TestMediaTagsAreSealedAndNeverCarryThePath(t *testing.T) {
 	a := newApp(t)
 	alice := a.user("alice")
 	path := "/opt/data/profiles/" + alice.profile + "/cache/generated/images/a.png"
+	// A tag the assistant wrote inside an OpenUI string keeps the closing quote and bracket as text, not as part of the file.
+	if in := a.svc.sealMediaTags(alice.id, `t = TextContent("MEDIA:`+path+`")`); !regexp.MustCompile(`^t = TextContent\("MEDIA:image-[A-Za-z0-9_-]+"\)$`).MatchString(in) {
+		t.Errorf("a tag inside an OpenUI string: %q", in)
+	}
 	out := a.svc.sealMediaTags(alice.id, "Here.\nMEDIA:"+path+". And MEDIA:/opt/data/profiles/x/notes.txt done")
 	if strings.Contains(out, "/opt/data") || strings.Contains(out, alice.profile) || strings.Contains(out, "notes.txt") {
 		t.Fatalf("a path survived: %q", out)

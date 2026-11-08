@@ -111,7 +111,8 @@ func run() error {
 		return err
 	}
 	tenants, err := tenant.New(tenant.Options{DB: db, Box: box, Helper: helper, Verifier: verifier,
-		ToolPolicy: func(ctx context.Context) ([]string, string, error) { return store.TenantToolPolicy(ctx, db) }})
+		ToolPolicy:  func(ctx context.Context) ([]string, string, error) { return store.TenantToolPolicy(ctx, db) },
+		MediaModels: func(ctx context.Context) (string, string, error) { return store.TenantMediaModels(ctx, db) }})
 	if err != nil {
 		return err
 	}
@@ -179,6 +180,7 @@ func run() error {
 		Limits:       &cfg.Limits,
 		// Admin → Assistant tools shows this while no policy is saved.
 		DefaultToolsets: cfg.TenantToolsets,
+		Catalogue:       kenari.New(kenari.DefaultURL, nil),
 	})
 	if err != nil {
 		return err

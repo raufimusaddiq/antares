@@ -308,7 +308,7 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 					l.emit("assistant.delta", map[string]string{"text": text}, false)
 				}
 			case hermes.KindToolStarted:
-				l.emit("tool.started", map[string]string{"toolCallId": n.ToolID, "label": n.Label}, false)
+				l.emit("tool.started", map[string]string{"toolCallId": n.ToolID, "label": n.Label, "detail": n.Detail}, false)
 			case hermes.KindToolCompleted:
 				l.emit("tool.completed", map[string]any{"toolCallId": n.ToolID, "summary": n.Summary, "failed": n.Failed, "durationMs": n.DurationMs}, false)
 			case hermes.KindThinking:
