@@ -1,11 +1,13 @@
 import { useState } from "react";
 import { describeBlogError, saveSettings } from "./blogApi";
+import { useDialog } from "./useDialog";
 import type { Post } from "./types";
 
 /** The same pattern the server enforces (3-80, a-z 0-9 and hyphens). The server decides; this only saves a round trip. */
 export const SLUG = /^[a-z0-9](?:[a-z0-9-]{1,78})[a-z0-9]$/;
 
 export function PostSettings({ post, onSaved, onClose }: { post: Post; onSaved: (p: Post) => void; onClose: () => void }) {
+  const ref = useDialog<HTMLDivElement>(onClose);
   const [slug, setSlug] = useState(post.slug);
   const [summary, setSummary] = useState(post.summary);
   const [error, setError] = useState("");
@@ -22,7 +24,7 @@ export function PostSettings({ post, onSaved, onClose }: { post: Post; onSaved: 
   };
 
   return (
-    <div className="blog-sheet" role="dialog" aria-modal="true" aria-label="Post settings">
+    <div ref={ref} className="blog-sheet" role="dialog" aria-modal="true" aria-label="Post settings" tabIndex={-1}>
       <h2>Post settings</h2>
       <label>
         Address

@@ -3,6 +3,7 @@ import { loadSession, signOut, type Session, type SignOutResult } from "./api";
 import { AdminScreens, AdminShell, Forbidden } from "./Admin";
 import { Chat } from "./Chat";
 import { BlogApp, isBlogPath, parseBlogPath } from "./blog/BlogApp";
+import { getCapabilities } from "./blog/blogApi";
 import { revokeThisDevice, chatIdFromPath } from "./push";
 import { isAdminPath, parseAdminPath } from "./route";
 import { Screen, documentTitle, type View } from "./Screen";
@@ -69,6 +70,14 @@ export function App() {
   // undefined = not resolved yet: Chat mounts only once it is, so it opens with the link.
   const [deepLink, setDeepLink] = useState<string | null | undefined>(() => chatIdFromPath(window.location.pathname) ?? undefined);
   const active = session.kind === "account" && session.account.state === "ACTIVE";
+  // "Blog posts" is offered only when the server says writing is available; until it answers, it is not shown.
+  const [blogWriting, setBlogWriting] = useState(false);
+  useEffect(() => {
+    if (!active) return setBlogWriting(false);
+    const ctl = new AbortController();
+    void getCapabilities(ctl.signal).then((r) => !ctl.signal.aborted && setBlogWriting(r.ok && r.value.writing));
+    return () => ctl.abort();
+  }, [active]);
   useEffect(() => {
     if (active && deepLink === undefined) setDeepLink(takeLink()); // reads and clears the sign-in round trip's key
   }, [active, deepLink]);
@@ -135,7 +144,7 @@ export function App() {
       );
     }
     if (isBlogPath(path)) return <BlogApp email={session.account.email} route={parseBlogPath(path)} onNavigate={navigate} onChats={() => navigate("/")} />;
-    return <Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onBlog={() => navigate("/blog")} onSignOut={onSignOut} signOutError={signOutMessage} />;
+    return <Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onBlog={blogWriting ? () => navigate("/blog") : undefined} onSignOut={onSignOut} signOutError={signOutMessage} />;
   }
   return (
     <Screen

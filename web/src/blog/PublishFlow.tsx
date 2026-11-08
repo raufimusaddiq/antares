@@ -10,6 +10,7 @@ const ReaderBlock = lazy(() => import("./ReaderBlock"));
 // specs/001-blog-cms-openui-publish/contracts/check-envelope.md (Failure mapping).
 
 const POLL_MS = 2000;
+const UNSAVED = "Your latest changes are not saved yet, so the check would read an older version. Go back to editing and wait for “Saved”.";
 
 export function failureWords(c: Check): string {
   switch (c.state) {
@@ -29,7 +30,7 @@ type Phase = { k: "choose" } | { k: "starting" } | { k: "checking" } | { k: "pre
 export interface PublishFlowProps {
   post: Post;
   caps: Capabilities | null;
-  flush: () => Promise<void>;
+  flush: () => Promise<boolean>;
   onPost: (p: Post) => void;
   onBackToEditing: () => void;
   onMyPosts: () => void;
@@ -52,12 +53,18 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
   useEffect(() => {
     if (phase.k !== "checking") return;
     const ctl = new AbortController();
+    let waiting = false; // one request at a time
+    let halted = false; // a refusal from the server ends the polling; the author reloads to look again
     const t = setInterval(() => {
+      if (waiting || halted) return;
+      waiting = true;
       void getCheck(post.id, ctl.signal).then((r) => {
+        waiting = false;
         if (ctl.signal.aborted) return;
         if (r.ok) apply(r.value);
         else if (r.status !== 0) {
-          setError(describeBlogError(r, "read the check"));
+          halted = true;
+          setError(describeBlogError(r, "read the check") + " Reload the page to look again.");
         }
       });
     }, POLL_MS);
@@ -70,7 +77,10 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
   const begin = async () => {
     setError("");
     setPhase({ k: "starting" });
-    await flush(); // the check reads the saved version
+    if (!(await flush())) { // the check reads the saved version
+      setPhase({ k: "choose" });
+      return setError(UNSAVED);
+    }
     const r = await startCheck(post.id);
     if (r.ok) return apply(r.value);
     setPhase({ k: "choose" });
@@ -80,7 +90,10 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
   const go = async (mode: "enriched" | "original") => {
     setBusy(true);
     setError("");
-    if (mode === "original") await flush();
+    if (mode === "original" && !(await flush())) {
+      setBusy(false);
+      return setError(UNSAVED);
+    }
     const r = await publish(post.id, mode);
     setBusy(false);
     if (r.ok) {

@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { describeBlogError, getCapabilities, getPost } from "./blogApi";
+import { loadLocalCopy } from "./autosave";
 import { PostList } from "./PostList";
 import { PostSettings } from "./PostSettings";
 import { PublishFlow } from "./PublishFlow";
@@ -31,6 +32,15 @@ export function BlogApp({ email, route, onNavigate, onChats }: { email: string; 
     return () => ctl.abort();
   }, []);
 
+  if (caps === null) return <main className="blog-flow" aria-busy="true"><p>Loading…</p></main>;
+  if (!caps.writing)
+    return (
+      <main className="blog-flow" role="status">
+        <h1>Blog posts</h1>
+        <p>Writing blog posts is not available right now.</p>
+        <button type="button" className="btn" onClick={onChats}>Back to chats</button>
+      </main>
+    );
   if (route.kind === "list") return <PostList onOpen={(id) => onNavigate(editPath(id))} onChats={onChats} />;
   return <PostScreen key={route.id} id={route.id} email={email} publishing={route.kind === "publish"} caps={caps} onNavigate={onNavigate} />;
 }
@@ -38,7 +48,8 @@ export function BlogApp({ email, route, onNavigate, onChats }: { email: string; 
 function PostScreen({ id, email, publishing, caps, onNavigate }: { id: string; email: string; publishing: boolean; caps: Capabilities | null; onNavigate: (to: string) => void }) {
   const [post, setPost] = useState<Post | "loading" | string>("loading");
   const [settings, setSettings] = useState(false);
-  const flush = useRef<() => Promise<void>>(() => Promise.resolve());
+  // Without an open editor, "saved" means this browser holds nothing the server has not confirmed.
+  const flush = useRef<() => Promise<boolean>>(() => Promise.resolve(loadLocalCopy(email, id) === null));
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -77,7 +88,7 @@ function PostScreen({ id, email, publishing, caps, onNavigate }: { id: string; e
         onSettings={() => setSettings(true)}
         onPublish={(f) => {
           flush.current = f;
-          void f().then(() => onNavigate(publishPath(id)));
+          void f().then((saved) => saved && onNavigate(publishPath(id))); // a failed save stays in the editor, where its state shows
         }}
         onBack={() => onNavigate("/blog")}
       />

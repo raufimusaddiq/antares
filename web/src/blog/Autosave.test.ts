@@ -67,4 +67,19 @@ describe("blog autosave", () => {
     await vi.advanceTimersByTimeAsync(100);
     expect(states.at(-1)).toBe("saved");
   });
+
+  it("flush says whether the server has everything: a failed save is not a saved one", async () => {
+    const ok = make(async () => ({ ok: true, value: post(2) }));
+    ok.s.change({ title: "a" });
+    expect(await ok.s.flush()).toBe(true);
+
+    const down = make(async () => ({ ok: false, status: 0, code: "NETWORK" }));
+    down.s.change({ title: "b" });
+    const f = down.s.flush();
+    await vi.advanceTimersByTimeAsync(1);
+    expect(await f).toBe(false);
+    expect(down.states.at(-1)).toBe("offline");
+    expect(loadLocalCopy(email, "p1")).toEqual({ title: "b" });
+    down.s.dispose();
+  });
 });

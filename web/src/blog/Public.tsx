@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { getPublic, listPublic } from "./blogApi";
-import { DocView, safeHref } from "./DocView";
+import { getPublic, listPublic, mediaUrl } from "./blogApi";
+import { DocView } from "./DocView";
 import type { PublicPost, PublicSummary } from "./types";
 
 // The signed-out blog (the Blog public frames). No session is loaded and nothing of the app mounts: the server
@@ -62,7 +62,7 @@ export function PublicIndex() {
             {s.map((p) => (
               <li key={p.slug} className="blog-card">
                 <a href={`/b/${p.slug}`}>
-                  {p.coverUrl && <img src={p.coverUrl} alt="" loading="lazy" />}
+                  {mediaUrl(p.coverUrl) && <img src={mediaUrl(p.coverUrl)} alt="" loading="lazy" />}
                   <span className="label">{day(p.publishedAt)}</span>
                   <h2>{p.title}</h2>
                   <p>{p.summary}</p>
@@ -113,7 +113,7 @@ export function PublicPostPage({ slug }: { slug: string }) {
             <span className="label"> · {day(p.publishedAt)}</span>
             {p.blocks.length > 0 && <span className="chip chip-info">Interactive</span>}
           </p>
-          {safeHref(p.coverUrl) && <img className="blog-cover" src={p.coverUrl} alt="" />}
+          {mediaUrl(p.coverUrl) && <img className="blog-cover" src={mediaUrl(p.coverUrl)} alt="" />}
           <DocView doc={p.doc} blocks={p.blocks} />
         </article>
       )}

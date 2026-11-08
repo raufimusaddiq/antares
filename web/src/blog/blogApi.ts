@@ -16,7 +16,15 @@ const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 const STATUSES: readonly string[] = ["draft", "checking", "ready", "published", "unpublished"];
 const CHECK_STATES: readonly string[] = ["running", "ready", "failed", "cancelled", "timed_out", "out_of_date"];
 
-/** Only an https address without credentials is ever kept: a source or cover with any other scheme is dropped. */
+/** An image address is this site's own path, a local blob, or https without a login in it; anything else is dropped. */
+export const mediaUrl = (u: unknown): string => {
+  if (typeof u !== "string") return "";
+  if (u.startsWith("/") && !u.startsWith("//") && !u.includes("\\")) return u;
+  if (u.startsWith("blob:")) return u;
+  return httpsOnly(u);
+};
+
+/** Only an https address without a login in it is ever kept: a source or cover with any other scheme is dropped. */
 export const httpsOnly = (u: unknown): string => {
   if (typeof u !== "string") return "";
   try {

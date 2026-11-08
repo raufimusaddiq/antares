@@ -2,7 +2,7 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { isBlogPath, parseBlogPath } from "./BlogApp";
-import { httpsOnly, parseCheck, parsePublicPost } from "./blogApi";
+import { httpsOnly, mediaUrl, parseCheck, parsePublicPost } from "./blogApi";
 import { DocView, safeHref } from "./DocView";
 import { publicBlogRoute } from "./Public";
 import { PublishFlow, failureWords } from "./PublishFlow";
@@ -11,6 +11,15 @@ import { EMPTY_DOC, type Check, type Post } from "./types";
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+});
+
+describe("image addresses", () => {
+  it("keeps this site's own paths, blobs and https; drops every other scheme", () => {
+    expect(mediaUrl("/api/blog/posts/p1/assets/a.png")).toBe("/api/blog/posts/p1/assets/a.png");
+    expect(mediaUrl("blob:https://x/1")).toBe("blob:https://x/1");
+    expect(mediaUrl("https://example.org/a.png")).not.toBe("");
+    for (const bad of ["//evil.example/a.png", "http://example.org/a.png", "javascript:alert(1)", "data:image/svg+xml,x", "/\\evil", 5, undefined]) expect(mediaUrl(bad)).toBe("");
+  });
 });
 
 describe("what a reader can be shown", () => {
@@ -73,7 +82,7 @@ describe("addresses", () => {
 const check = (over: Partial<Check>): Check => ({ id: "c1", state: "ready", reason: "", notes: [], notices: [], blocks: [], ...over });
 const post = (c: Check | null): Post => ({ id: "p1", title: "Title", summary: "", slug: "title", coverUrl: "", status: "draft", latestVersion: 1, publishedVersion: 0, doc: EMPTY_DOC, check: c, updatedAt: "" });
 const flow = (c: Check | null, caps = { writing: true, check: true, webSearch: true }) =>
-  render(<PublishFlow post={post(c)} caps={caps} flush={async () => {}} onPost={() => {}} onBackToEditing={() => {}} onMyPosts={() => {}} />);
+  render(<PublishFlow post={post(c)} caps={caps} flush={async () => true} onPost={() => {}} onBackToEditing={() => {}} onMyPosts={() => {}} />);
 
 describe("publish flow", () => {
   it("every way a check can stop is shown as itself, never as completed", () => {

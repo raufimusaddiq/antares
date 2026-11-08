@@ -53,6 +53,7 @@ export class Autosaver {
   private timer: ReturnType<typeof setTimeout> | undefined;
   private latest: Post | null = null;
   private dead = false;
+  private inflight: Promise<void> | null = null;
   private readonly save: Save;
 
   constructor(private readonly o: AutosaverOptions) {
@@ -69,10 +70,12 @@ export class Autosaver {
     this.schedule(this.o.delayMs ?? 800);
   }
 
-  /** Sends now (leaving the editor, pressing Publish). */
-  flush(): Promise<void> {
+  /** Sends now (leaving the editor, pressing Publish). True only if the server has everything typed so far. */
+  async flush(): Promise<boolean> {
     clearTimeout(this.timer);
-    return this.run();
+    while (this.inflight) await this.inflight;
+    await this.run();
+    return this.pending === null && this.state === "saved";
   }
 
   /** The author keeps their text over the newer server version. */
@@ -110,10 +113,19 @@ export class Autosaver {
     if (!this.dead) this.o.onState(s, this.latest);
   }
 
-  private async run(): Promise<void> {
-    if (this.busy || !this.pending || this.state === "conflict") return;
-    this.busy = true;
+  private run(): Promise<void> {
+    if (this.busy || !this.pending || this.state === "conflict") return Promise.resolve();
+    const p: Promise<void> = this.send().finally(() => {
+      if (this.inflight === p) this.inflight = null;
+    });
+    this.inflight = p;
+    return p;
+  }
+
+  private async send(): Promise<void> {
     const sent = this.pending;
+    if (!sent) return;
+    this.busy = true;
     this.pending = null;
     const r = await this.save(this.o.id, this.version, sent);
     this.busy = false;

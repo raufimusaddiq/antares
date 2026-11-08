@@ -1,4 +1,5 @@
 import { Fragment, lazy, Suspense, type ReactNode } from "react";
+import { mediaUrl } from "./blogApi";
 import type { DocNode, PublicBlock, Source } from "./types";
 
 // Draws a stored document for readers and for the preview. There is no HTML path in this file: every node is a React
@@ -69,7 +70,7 @@ function node(n: DocNode, k: string, imageUrl?: (src: string) => string): ReactN
       return <br key={k} />;
     case "image": {
       const src = typeof n.attrs?.src === "string" ? n.attrs.src : "";
-      const url = imageUrl ? imageUrl(src) : src;
+      const url = mediaUrl(imageUrl ? imageUrl(src) : src);
       return url ? <img key={k} src={url} alt={typeof n.attrs?.alt === "string" ? n.attrs.alt : ""} loading="lazy" /> : null;
     }
     default:

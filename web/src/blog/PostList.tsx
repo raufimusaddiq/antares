@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { createPost, deletePost, describeBlogError, duplicatePost, listPosts, unpublish } from "./blogApi";
 import type { BlogResult } from "./blogApi";
+import { useDialog } from "./useDialog";
 import type { PostStatus, PostSummary } from "./types";
 
 export const STATUS_WORDS: Record<PostStatus, string> = {
@@ -107,29 +108,36 @@ export function PostList({ onOpen, onChats }: { onOpen: (id: string) => void; on
         </ul>
       )}
       {confirm && (
-        <div className="blog-sheet" role="alertdialog" aria-modal="true" aria-label="Delete post">
-          <h2>Delete “{confirm.title || "Untitled"}”?</h2>
-          <p>
-            {confirm.status === "published" ? "It is public now and will stop being readable. " : ""}This removes the post, its versions and its images. It cannot be undone.
-          </p>
-          <div className="blog-actions">
-            <button
-              type="button"
-              className="btn"
-              onClick={() => {
-                const p = confirm;
-                setConfirm(null);
-                void act(deletePost(p.id), "delete the post");
-              }}
-            >
-              Delete post
-            </button>
-            <button type="button" className="quiet" onClick={() => setConfirm(null)}>
-              Keep it
-            </button>
-          </div>
-        </div>
+        <DeleteSheet
+          post={confirm}
+          onDelete={() => {
+            const p = confirm;
+            setConfirm(null);
+            void act(deletePost(p.id), "delete the post");
+          }}
+          onKeep={() => setConfirm(null)}
+        />
       )}
     </main>
+  );
+}
+
+function DeleteSheet({ post, onDelete, onKeep }: { post: PostSummary; onDelete: () => void; onKeep: () => void }) {
+  const ref = useDialog<HTMLDivElement>(onKeep);
+  return (
+    <div ref={ref} className="blog-sheet" role="alertdialog" aria-modal="true" aria-label="Delete post" tabIndex={-1}>
+      <h2>Delete “{post.title || "Untitled"}”?</h2>
+      <p>
+        {post.status === "published" ? "It is public now and will stop being readable. " : ""}This removes the post, its versions and its images. It cannot be undone.
+      </p>
+      <div className="blog-actions">
+        <button type="button" className="btn" onClick={onDelete}>
+          Delete post
+        </button>
+        <button type="button" className="quiet" onClick={onKeep}>
+          Keep it
+        </button>
+      </div>
+    </div>
   );
 }
