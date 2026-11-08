@@ -278,7 +278,11 @@ func (s *Service) finish(ctx context.Context, c store.Claim, err error) error {
 		case errors.Is(werr, store.ErrSuperseded):
 			return nil // suspended or rejected meanwhile: nothing may unlock
 		case errors.Is(werr, store.ErrPolicyChanged):
-			err = fail("the tenant tool policy changed during setup", false) // recorded as a retryable failure below
+			// The save came while this run was in flight: not a failure, just run again on the new policy.
+			if rerr := store.ReleaseStale(wctx, s.db, c); rerr != nil && !errors.Is(rerr, store.ErrSuperseded) {
+				return rerr
+			}
+			return nil
 		default:
 			return werr
 		}
