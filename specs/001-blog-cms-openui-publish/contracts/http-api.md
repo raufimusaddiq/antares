@@ -31,13 +31,13 @@ query is scoped to the caller as `author_id`. A foreign or missing id returns th
 |--------|------|---------|
 | GET | `/b` | HTML shell, indexable, with injected metadata |
 | GET | `/b/{slug}` | HTML shell with injected title/description/Open Graph and an escaped text copy |
-| GET | `/api/public/blog/posts` | `[{slug, title, summary, coverUrl, authorName, publishedAt}]`, paged |
+| GET | `/api/public/blog/posts` | `[{slug, title, summary, coverUrl, authorName, publishedAt}]`, 20 per page, newest first; `?page=N` (from 1) |
 | GET | `/api/public/blog/posts/{slug}` | `{title, summary, doc, blocks:[{anchor, markup, fallback, sources}], authorName, publishedAt}` |
 | GET | `/api/public/blog/posts/{slug}/assets/{assetId}` | Image of a published post |
 
 Public handler rules: `GET` only; slug matched against a strict pattern before any query; one query, joined to
-author `status = ACTIVE`; no author id, email, profile, chat or run identity in any field; no Hermes call;
-per-IP rate limit; `X-Content-Type-Options: nosniff`; CSP stays as strict as the app shell (no new script or
+the author approved (`approval_status = APPROVED`: suspended and rejected authors are hidden; their assistant workspace state is not consulted); no author id, email, profile, chat or run identity in any field; no Hermes call;
+one shared per-minute allowance (600) for the public JSON reads and the HTML pages together; per-caller limiting is not done (the server cannot yet tell callers apart behind its proxies); `X-Content-Type-Options: nosniff`; CSP stays as strict as the app shell (no new script or
 frame sources); unknown, unpublished and hidden posts all return the same `404`.
 
 ## Route inventory test

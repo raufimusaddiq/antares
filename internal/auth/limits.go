@@ -47,9 +47,25 @@ var draftWrites = map[string]bool{
 	"PUT /api/chats/{chatId}/draft": true, "DELETE /api/chats/{chatId}/draft": true,
 	"PUT /api/me/new-chat-draft": true, "DELETE /api/me/new-chat-draft": true,
 	"POST /api/me/templates": true, "PUT /api/me/templates/{templateId}": true, "DELETE /api/me/templates/{templateId}": true,
+	// The blog's writes (an autosave is one every second or so while typing).
+	"POST /api/blog/posts": true, "PUT /api/blog/posts/{id}": true, "PATCH /api/blog/posts/{id}/settings": true,
+	"DELETE /api/blog/posts/{id}": true, "POST /api/blog/posts/{id}/publish": true, "POST /api/blog/posts/{id}/unpublish": true,
+	"POST /api/blog/posts/{id}/duplicate": true,
 }
 
+// blogUpload is an image upload to a post; it draws from the same per-minute allowance as a chat upload.
+const blogUpload = "POST /api/blog/posts/{id}/assets"
+
+// blogAssetRead is the author reading an image back; it shares the asset-read allowance.
+const blogAssetRead = "GET /api/blog/posts/{id}/assets/{assetId}"
+
 func (a *Auth) limit(route string, next http.Handler) http.Handler {
+	switch route {
+	case blogUpload:
+		route = "POST /api/assets"
+	case blogAssetRead:
+		route = assetRead
+	}
 	switch route {
 	case "POST /api/chats/{chatId}/messages", "POST /api/assets", "GET /api/runs/{runId}/events", artifactDownload, artifactPreview, assetRead, mediaRead, historyRead:
 	default:
@@ -156,25 +172,39 @@ func WriteRateLimited(w http.ResponseWriter, message string, retry int) {
 // flood costs the flooder a 429 rather than the server its database and bandwidth.
 const publicReadsPerMinute = 60
 
-func (a *Auth) publicLimit(next http.Handler) http.Handler {
+// blogReadsPerMinute bounds the public blog reads together (the list, a post, an image).
+const blogReadsPerMinute = 600
+
+// blogImagesPerMinute is the images' own allowance, so a post with many pictures cannot use up the reads for the pages.
+const blogImagesPerMinute = 1200
+
+// publicBucket is one shared per-minute allowance for a group of public routes (the blog's reads): a popular post is
+// read far more often than a shared chat, so the allowance is larger, but one caller cannot drain more than it.
+func (a *Auth) publicBucket(perMinute int, msg string) func(http.Handler) http.Handler {
 	var (
 		mu    sync.Mutex
 		start time.Time
 		n     int
 	)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		now := a.now()
-		mu.Lock()
-		if now.Sub(start) >= time.Minute {
-			start, n = now, 0
-		}
-		n++
-		over, retry := n > publicReadsPerMinute, int((time.Minute-now.Sub(start))/time.Second)+1
-		mu.Unlock()
-		if over {
-			WriteRateLimited(w, "Too many reads of shared chats; retry later", retry)
-			return
-		}
-		next.ServeHTTP(w, r)
-	})
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			now := a.now()
+			mu.Lock()
+			if now.Sub(start) >= time.Minute {
+				start, n = now, 0
+			}
+			n++
+			over, retry := n > perMinute, int((time.Minute-now.Sub(start))/time.Second)+1
+			mu.Unlock()
+			if over {
+				WriteRateLimited(w, msg, retry)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+func (a *Auth) publicLimit(next http.Handler) http.Handler {
+	return a.publicBucket(publicReadsPerMinute, "Too many reads of shared chats; retry later")(next)
 }

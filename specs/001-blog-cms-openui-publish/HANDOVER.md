@@ -67,3 +67,22 @@ Phone/Tablet/Landscape menus have no Blog entry; My posts and the Editor use a s
 the first two blocks only; interactions are drawn as static states. See `docs/design/README.md`.
 
 - The public index (`listPublic`) asks for the first page only: the contract does not yet name a page parameter, so there is no "more" control until the backend defines one.
+
+## Backend: plain posts (feat/blog-backend)
+
+Done: migration `0026_blog.sql`, `internal/blog` (document allowlist that rebuilds what it keeps, slug rules, posts with
+compare-and-set autosave and pinned versions, images, duplicate, publish original, unpublish, delete, the public reads
+and the page metadata the server writes into `/b` and `/b/{slug}`), routes in `auth.BlogRoutes` / `auth.PublicBlogRoutes`,
+and the kept tests (ownership, public surface, suspend, access, route inventory).
+
+Behaviours worth knowing:
+- Title and body are versioned; the summary, address and cover are settings and take effect at once, also on the
+  published version (a settings save does not start a new version, so an open editor never hits a conflict from it).
+- A published version is never rewritten: the next autosave starts a new one; readers see the pinned one until republish.
+- `GET /api/blog/capabilities` reports `check` and `webSearch` false until the Hermes check exists; `publish` with
+  `mode: enriched` answers 501 CAPABILITY_UNAVAILABLE.
+- The public JSON reads and the HTML pages (`/b`, `/b/{slug}`) share one allowance of 600 a minute (not per caller); the page text copy in `/b/{slug}` is the title
+  and summary, not the whole body.
+
+Not done: everything that needs Hermes (T014, Phase 5 onward), T037 browser checks `blog-public` / `blog-editor`,
+T072-T075.

@@ -57,12 +57,12 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 
 ## Phase 3: Foundational (blocks all stories)
 
-- [ ] T015 Write `internal/store/migrations/0025_blog.sql`: tables `posts`, `post_versions`, `post_checks`, `post_blocks`, `block_sources`, `post_assets` exactly as in `data-model.md` (status values `draft`/`checking`/`ready`/`published`/`unpublished`; slug unique among published posts; cascade deletes; `author_id` on every user-facing table; `https`-only source urls enforced in code)
-- [ ] T016 [P] Document node/mark allowlist and JSON schema validator in `internal/blog/doc.go` (paragraph, heading 2-4, bold, italic, link, bullet/ordered list, blockquote, code, code block, image, divider; size and depth limits); table-driven test in `internal/blog/doc_test.go` rejecting script, raw HTML, unknown nodes and `javascript:` links
-- [ ] T017 [P] Slug rules in `internal/blog/slug.go`: lowercase `a-z0-9-`, 3-80 chars, reserved words refused; test in `internal/blog/slug_test.go`
-- [ ] T018 Blog test harness `internal/blog/harness_test.go`: two ACTIVE users A and B, mock Hermes, in-memory store (one shared harness, no per-file copies)
-- [ ] T019 Capability probe `GET /api/blog/capabilities` in `internal/blog/capabilities.go`, reusing `internal/chat/capabilities.go`; wire route in `internal/server/`; test that unconfigured run or web search reports unavailable (FR-029)
-- [ ] T020 Route inventory test in `internal/server/routes_public_test.go` listing every route served without a session; fails on any addition outside the existing set plus the five public blog routes (Complexity Tracking)
+- [X] T015 (posts, post_versions and post_assets; `post_checks`, `post_blocks` and `block_sources` come with Phase 5) Write `internal/store/migrations/0026_blog.sql`: tables `posts`, `post_versions`, `post_checks`, `post_blocks`, `block_sources`, `post_assets` exactly as in `data-model.md` (status values `draft`/`checking`/`ready`/`published`/`unpublished`; slug unique among published posts; cascade deletes; `author_id` on every user-facing table; `https`-only source urls enforced in code)
+- [X] T016 [P] Document node/mark allowlist and JSON schema validator in `internal/blog/doc.go` (paragraph, heading 2-4, bold, italic, link, bullet/ordered list, blockquote, code, code block, image, divider; size and depth limits); table-driven test in `internal/blog/doc_test.go` rejecting script, raw HTML, unknown nodes and `javascript:` links
+- [X] T017 [P] Slug rules in `internal/blog/slug.go`: lowercase `a-z0-9-`, 3-80 chars, reserved words refused; test in `internal/blog/slug_test.go`
+- [X] T018 Blog test harness `internal/blog/harness_test.go`: two ACTIVE users A and B, mock Hermes, in-memory store (one shared harness, no per-file copies)
+- [X] T019 Capability probe `GET /api/blog/capabilities` in `internal/blog/capabilities.go`, reusing `internal/chat/capabilities.go`; wire route in `internal/server/`; test that unconfigured run or web search reports unavailable (FR-029)
+- [X] T020 Route inventory test in `internal/blog/routes_public_test.go` (it needs the blog and identity layers together) listing every route served without a session; fails on any addition outside the existing set plus the five public blog routes (Complexity Tracking)
 
 **Checkpoint**: schema, validators and harness exist; stories can start.
 
@@ -76,19 +76,19 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 
 ### Tests for User Story 1 (write first, must fail)
 
-- [ ] T021 [P] [US1] Two-user ownership test: B cannot read, edit, publish, delete or fetch assets of A's post; all return the same `404` as a missing id, in `internal/blog/posts_ownership_test.go` (kept security test)
-- [ ] T022 [P] [US1] Public surface test: only published posts of ACTIVE authors; unpublished, draft, suspended-author and unknown slugs return identical `404`; response contains no author id, email, profile or chat identity, in `internal/blog/public_test.go`
-- [ ] T023 [P] [US1] Autosave compare-and-set test: stale `baseVersion` returns `409` with the latest; no silent overwrite, in `internal/blog/posts_test.go`
-- [ ] T024 [P] [US1] Suspend-hides/reinstate-restores test using the author's current status in the public query, in `internal/blog/public_suspend_test.go`
-- [ ] T025 [P] [US1] Pending, rejected and suspended users get refused on every authenticated blog route (FR-025), in `internal/blog/access_test.go`
+- [X] T021 [P] [US1] Two-user ownership test: B cannot read, edit, publish, delete or fetch assets of A's post; all return the same `404` as a missing id, in `internal/blog/posts_ownership_test.go` (kept security test)
+- [X] T022 [P] [US1] Public surface test: only published posts of ACTIVE authors; unpublished, draft, suspended-author and unknown slugs return identical `404`; response contains no author id, email, profile or chat identity, in `internal/blog/public_test.go`
+- [X] T023 [P] [US1] Autosave compare-and-set test: stale `baseVersion` returns `409` with the latest; no silent overwrite, in `internal/blog/posts_test.go`
+- [X] T024 [P] [US1] Suspend-hides/reinstate-restores test using the author's current status in the public query, in `internal/blog/public_test.go`
+- [X] T025 [P] [US1] Pending, rejected and suspended users get refused on every authenticated blog route (FR-025), in `internal/blog/access_test.go`
 - [x] T026 [P] [US1] Web test: editor restores the draft after reload and keeps a local copy until the server confirms, in `web/src/blog/Editor.test.tsx`
 
 ### Implementation for User Story 1
 
-- [ ] T027 [US1] Posts store in `internal/blog/posts.go`: create, get, list, autosave (compare-and-set on `latest_version`), settings, publish original (pin `published_version`), unpublish, delete, duplicate; every statement filters by `author_id`
-- [ ] T028 [US1] Draft-private image upload and author read in `internal/blog/assets.go` (PNG/JPEG/WebP/GIF only, size limit, server-side content sniff, `nosniff`); public read only for published posts
-- [ ] T029 [US1] Authenticated handlers per `contracts/http-api.md` in `internal/blog/handlers.go`; reject any client-supplied profile, prefix, key, header or session id; wire in `internal/server/`
-- [ ] T030 [US1] Public handlers and metadata injection in `internal/blog/public.go`: strict slug pattern, single join query to ACTIVE author, per-IP rate limit, `ETag`, escaped `<title>`/description/Open Graph and escaped text copy into the HTML shell, no `noindex`; register the five public routes in `internal/server/`
+- [X] T027 [US1] Posts store in `internal/blog/posts.go`: create, get, list, autosave (compare-and-set on `latest_version`), settings, publish original (pin `published_version`), unpublish, delete, duplicate; every statement filters by `author_id`
+- [X] T028 [US1] Draft-private image upload and author read in `internal/blog/assets.go` (PNG/JPEG/WebP/GIF only, size limit, server-side content sniff, `nosniff`); public read only for published posts
+- [X] T029 [US1] Authenticated handlers per `contracts/http-api.md` in `internal/blog/handlers.go`; reject any client-supplied profile, prefix, key, header or session id; wire in `internal/server/`
+- [X] T030 [US1] Public handlers and metadata injection in `internal/blog/public.go`: strict slug pattern, single join query to ACTIVE author, per-IP rate limit, `Cache-Control`, escaped `<title>`/description/Open Graph and escaped text copy into the HTML shell, no `noindex`; register the five public routes in `internal/server/`
 - [x] T031 [P] [US1] Editor component with toolbar, autosave and save states per the design in `web/src/blog/Editor.tsx` and `web/src/blog/blogApi.ts`
 - [x] T032 [P] [US1] Post settings sheet (title, summary, cover, address with conflict error) in `web/src/blog/PostSettings.tsx`
 - [x] T033 [P] [US1] Read-only document renderer for reader pages in `web/src/blog/DocView.tsx` (no raw HTML path)

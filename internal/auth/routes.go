@@ -2,6 +2,7 @@ package auth
 
 import (
 	"net/http"
+	"strings"
 
 	"github.com/raufimusaddiq/antares/internal/store"
 )
@@ -102,6 +103,43 @@ var PushRoutes = []Route{
 	{"PUT", "/api/me/notifications"},
 }
 
+// BlogRoutes are the author's blog routes (specs/001-blog-cms-openui-publish/contracts/http-api.md): the same Active
+// guard and same-origin check as the others, and each handler acts on the caller's own posts only. A route whose handler
+// the blog does not provide is not mounted at all.
+var BlogRoutes = []Route{
+	{"GET", "/api/blog/capabilities"},
+	{"GET", "/api/blog/posts"},
+	{"POST", "/api/blog/posts"},
+	{"GET", "/api/blog/posts/{id}"},
+	{"PUT", "/api/blog/posts/{id}"},
+	{"PATCH", "/api/blog/posts/{id}/settings"},
+	{"DELETE", "/api/blog/posts/{id}"},
+	{"POST", "/api/blog/posts/{id}/publish"},
+	{"POST", "/api/blog/posts/{id}/unpublish"},
+	{"POST", "/api/blog/posts/{id}/duplicate"},
+	{"POST", "/api/blog/posts/{id}/assets"},
+	{"GET", "/api/blog/posts/{id}/assets/{assetId}"},
+}
+
+// PublicBlogRoutes are the other routes that answer without a session: the read of posts their authors published (and
+// the HTML pages /b and /b/{slug}, which the server serves from the app shell). They serve published posts of approved
+// authors only. Nothing else may be added without the same review.
+var PublicBlogRoutes = []Route{
+	{"GET", "/api/public/blog/posts"},
+	{"GET", "/api/public/blog/posts/{slug}"},
+	{"GET", "/api/public/blog/posts/{slug}/assets/{assetId}"},
+}
+
+// BlogReadLimit is the one allowance the public blog reads share: the JSON routes and the HTML pages draw from it
+// together, so the page a reader opens is no cheaper to hammer than the API behind it.
+func (a *Auth) BlogReadLimit() func(http.Handler) http.Handler { return a.blogReads }
+
+// BlogHandlers is what the blog package supplies: handlers keyed "METHOD /path" for BlogRoutes and PublicBlogRoutes.
+type BlogHandlers interface {
+	Handlers() map[string]http.Handler
+	PublicHandlers() map[string]http.Handler
+}
+
 // PublicRoutes answer without a session (#250): the read of a chat its owner shared by link. Nothing else may be
 // added here without the same review: each one is reachable by anyone on the internet.
 var PublicRoutes = []Route{
@@ -143,6 +181,24 @@ func (a *Auth) Register(mux *http.ServeMux) {
 		for _, rt := range PublicRoutes {
 			if h, ok := ph[rt.Method+" "+rt.Path]; ok {
 				mux.Handle(rt.Method+" "+rt.Path, a.publicLimit(h))
+			}
+		}
+	}
+	if a.blog != nil {
+		bh := a.blog.Handlers()
+		for _, rt := range BlogRoutes {
+			if h, ok := bh[rt.Method+" "+rt.Path]; ok {
+				mux.Handle(rt.Method+" "+rt.Path, a.Active(a.csrf(rt.Method, a.limit(rt.Method+" "+rt.Path, h))))
+			}
+		}
+		ph := a.blog.PublicHandlers()
+		for _, rt := range PublicBlogRoutes {
+			if h, ok := ph[rt.Method+" "+rt.Path]; ok {
+				bucket := a.blogReads
+				if strings.HasSuffix(rt.Path, "/assets/{assetId}") {
+					bucket = a.blogImages
+				}
+				mux.Handle(rt.Method+" "+rt.Path, bucket(h))
 			}
 		}
 	}

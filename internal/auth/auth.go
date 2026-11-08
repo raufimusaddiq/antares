@@ -52,6 +52,8 @@ type Options struct {
 	Limits *Limits // nil uses DefaultLimits
 	// Push supplies the notification routes (PushRoutes). Without it they are not mounted.
 	Push ChatHandlers
+	// Blog supplies the blog routes (BlogRoutes, PublicBlogRoutes). Without it they are not mounted.
+	Blog BlogHandlers
 	// KenariUsage reads the shared provider account's usage. It is mounted on the admin tree only
 	// (GET /api/admin/kenari-usage); nil leaves the route answering "not configured".
 	KenariUsage AccountUsage
@@ -77,22 +79,25 @@ type ChatHandlers interface {
 
 // Auth owns login, logout, sessions and the guards.
 type Auth struct {
-	db        *sql.DB
-	ep        Endpoints
-	clientID  string
-	secret    string
-	origin    string
-	client    *http.Client
-	now       func() time.Time
-	ver       *verifier
-	flows     *flowStore
-	tenants   Tenants
-	chat      ChatHandlers
-	push      ChatHandlers
-	usage     AccountUsage
-	limits    *requestLimits
-	tools     []string // DefaultToolsets
-	catalogue ModelCatalogue
+	db         *sql.DB
+	ep         Endpoints
+	clientID   string
+	secret     string
+	origin     string
+	client     *http.Client
+	now        func() time.Time
+	ver        *verifier
+	flows      *flowStore
+	tenants    Tenants
+	chat       ChatHandlers
+	push       ChatHandlers
+	blog       BlogHandlers
+	blogReads  func(http.Handler) http.Handler
+	blogImages func(http.Handler) http.Handler
+	usage      AccountUsage
+	limits     *requestLimits
+	tools      []string // DefaultToolsets
+	catalogue  ModelCatalogue
 }
 
 func New(o Options) (*Auth, error) {
@@ -114,7 +119,9 @@ func New(o Options) (*Auth, error) {
 		return nil, errors.New("request limits must be positive integers")
 	}
 	a := &Auth{limits: newRequestLimits(limits), db: o.DB, ep: o.Endpoints, clientID: o.ClientID, secret: o.ClientSecret,
-		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat, push: o.Push, usage: o.KenariUsage, tools: o.DefaultToolsets, catalogue: o.Catalogue}
+		origin: strings.TrimRight(o.PublicOrigin, "/"), client: o.HTTPClient, now: o.Now, flows: newFlowStore(), tenants: o.Tenants, chat: o.Chat, push: o.Push, blog: o.Blog, usage: o.KenariUsage, tools: o.DefaultToolsets, catalogue: o.Catalogue}
+	a.blogReads = a.publicBucket(blogReadsPerMinute, "Too many reads; retry later")
+	a.blogImages = a.publicBucket(blogImagesPerMinute, "Too many image reads; retry later")
 	a.ver = &verifier{ep: o.Endpoints, clientID: o.ClientID, client: o.HTTPClient, now: o.Now}
 	return a, nil
 }

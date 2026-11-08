@@ -32,10 +32,12 @@ type Auth interface {
 }
 
 type Server struct {
-	ready  Checker
-	assets fs.FS
-	auth   Auth
-	gz     gzipCache
+	ready     Checker
+	assets    fs.FS
+	auth      Auth
+	gz        gzipCache
+	post      PostMeta // the blog's pages (/b, /b/{slug}); nil leaves them to the plain app shell
+	postLimit Limit
 }
 
 // New serves the bundle from staticDir (a development override). Production
@@ -275,6 +277,14 @@ func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 		http.NotFound(w, r) // no bundle: say so, never substitute another page
 		return
 	}
+	if s.post != nil && (r.URL.Path == "/b" || strings.HasPrefix(r.URL.Path, "/b/")) {
+		var h http.Handler = http.HandlerFunc(s.blogShell)
+		if s.postLimit != nil {
+			h = s.postLimit(h)
+		}
+		h.ServeHTTP(w, r)
+		return
+	}
 	if strings.HasPrefix(r.URL.Path, "/s/") { // a shared chat (#250): readable by link, never listed by a search engine
 		w.Header().Set("X-Robots-Tag", "noindex, nofollow")
 	}
@@ -287,6 +297,12 @@ func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 // 'unsafe-inline': any other inline style is still refused. web/src/openui/csp.test.ts
 // fails if the pinned library's text stops matching this value.
 const openUIStyleHash = "'sha256-vai9tBS1dbqDlLt2vYYQwJl16j1hMfOCO5KhCK8LRBg='"
+
+// shellHeaders are the headers both shells carry: only our own bundle is allowed, and framing is refused.
+func shellHeaders(h http.Header) {
+	h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' "+openUIStyleHash+"; connect-src 'self'; img-src 'self' blob:; media-src blob:; font-src 'self'; frame-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+	h.Set("Referrer-Policy", "no-referrer")
+}
 
 func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, name string) {
 	f, err := s.assets.Open(name)
@@ -304,9 +320,7 @@ func (s *Server) serveFile(w http.ResponseWriter, r *http.Request, name string) 
 	h := w.Header()
 	h.Set("X-Content-Type-Options", "nosniff")
 	if name == "index.html" || name == "offline.html" {
-		// Both shells allow only our own bundle and refuse framing.
-		h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' "+openUIStyleHash+"; connect-src 'self'; img-src 'self' blob:; media-src blob:; font-src 'self'; frame-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
-		h.Set("Referrer-Policy", "no-referrer")
+		shellHeaders(h)
 		if name == "index.html" {
 			h.Set("Cache-Control", "no-store")
 		} else {
