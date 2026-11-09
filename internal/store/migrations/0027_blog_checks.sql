@@ -26,6 +26,8 @@ CREATE TABLE post_checks (
 -- A post has at most one running check.
 CREATE UNIQUE INDEX post_checks_running ON post_checks (post_id) WHERE state = 'running';
 CREATE INDEX post_checks_post ON post_checks (post_id, started_at DESC);
+-- The author's spending windows read their checks by time.
+CREATE INDEX post_checks_author_time ON post_checks (author_id, started_at);
 CREATE INDEX post_checks_author_running ON post_checks (author_id) WHERE state = 'running';
 
 CREATE TABLE post_blocks (

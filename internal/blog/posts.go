@@ -391,6 +391,32 @@ func (s *Service) Delete(ctx context.Context, author, id string) error {
 	} else if err != nil {
 		return err
 	}
+	// A deleted post must not reset the author's spending: what its checks cost moves to the same per-day archive a deleted
+	// chat's runs go to (store.UserModelUsage reads it), and a check still running is cancelled first (its cost is not yet known).
+	var running int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM post_checks WHERE post_id = ? AND author_id = ? AND state = 'running'`, id, author).Scan(&running); err != nil {
+		return err
+	}
+	if running > 0 {
+		return ErrCheckRunning
+	}
+	for _, q := range []string{
+		`INSERT INTO deleted_run_usage (user_id, day, model, runs, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+			SELECT author_id, substr(started_at, 1, 10), COALESCE(usage_model, ''), COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
+			COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_write_tokens),0) FROM post_checks
+			WHERE post_id = ? AND author_id = ? AND input_tokens IS NOT NULL GROUP BY author_id, substr(started_at, 1, 10), COALESCE(usage_model, '')
+			ON CONFLICT(user_id, day, model) DO UPDATE SET runs = runs + excluded.runs, input_tokens = input_tokens + excluded.input_tokens,
+			output_tokens = output_tokens + excluded.output_tokens, cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
+			cache_write_tokens = cache_write_tokens + excluded.cache_write_tokens`,
+		`INSERT INTO deleted_unreported_runs (user_id, day, runs)
+			SELECT author_id, substr(started_at, 1, 10), COUNT(*) FROM post_checks
+			WHERE post_id = ? AND author_id = ? AND input_tokens IS NULL AND state != 'running' GROUP BY author_id, substr(started_at, 1, 10)
+			ON CONFLICT(user_id, day) DO UPDATE SET runs = runs + excluded.runs`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, id, author); err != nil {
+			return err
+		}
+	}
 	for _, q := range []string{
 		`DELETE FROM published_block_sources WHERE post_id = ?`, `DELETE FROM published_blocks WHERE post_id = ?`,
 		`DELETE FROM block_sources WHERE block_id IN (SELECT id FROM post_blocks WHERE post_id = ?)`,

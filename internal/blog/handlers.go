@@ -230,6 +230,8 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"DELETE /api/blog/posts/{id}": own(func(w http.ResponseWriter, r *http.Request, uid, id string) {
 			if err := s.Delete(r.Context(), uid, id); errors.Is(err, ErrNotFound) {
 				notFound(w)
+			} else if errors.Is(err, ErrCheckRunning) {
+				apiError(w, http.StatusConflict, "CHECK_RUNNING", "Cancel the running check before deleting this post", nil)
 			} else if err != nil {
 				fail(w, "delete", err)
 			} else {

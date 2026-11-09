@@ -777,3 +777,94 @@ func TestACheckRecordsWhichInstructionProducedIt(t *testing.T) {
 		t.Fatalf("prompt version %q", v)
 	}
 }
+
+// A deleted post must not reset the author's spending window.
+func TestDeletingAPostKeepsWhatItsChecksCost(t *testing.T) {
+	fh := newFake()
+	fh.output = goodReply
+	fh.usage = map[string]any{"input_tokens": 700, "output_tokens": 50, "total_tokens": 750}
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("Cost")
+	u.startCheck(post)
+	u.waitCheck(post.ID, "ready")
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var n int
+		a.db.QueryRow(`SELECT COUNT(*) FROM post_checks WHERE input_tokens IS NOT NULL`).Scan(&n)
+		if n == 1 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	before, _ := store.UserModelUsage(context.Background(), a.db, u.id, time.Now().Add(-time.Hour))
+	if w := u.do("DELETE", "/api/blog/posts/"+post.ID, nil); w.Code != 200 {
+		t.Fatal(w.Body)
+	}
+	after, err := store.UserModelUsage(context.Background(), a.db, u.id, time.Now().Add(-time.Hour))
+	if err != nil || len(before) != 1 || len(after) != 1 || after[0].Input != before[0].Input || after[0].Runs != 1 {
+		t.Fatalf("spending before %+v after deleting the post %+v (%v)", before, after, err)
+	}
+}
+
+func TestAPostWithARunningCheckCannotBeDeleted(t *testing.T) {
+	fh := newFake()
+	hold := make(chan struct{})
+	fh.script = func(ctx context.Context, emit func(string, map[string]any) error) error {
+		select {
+		case <-hold:
+		case <-ctx.Done():
+		}
+		return ctx.Err()
+	}
+	a := newAppWithHermes(t, fh)
+	t.Cleanup(func() { close(hold) })
+	u := a.active("alice")
+	post := u.draftToCheck("Busy")
+	u.startCheck(post)
+	if w := u.do("DELETE", "/api/blog/posts/"+post.ID, nil); w.Code != 409 || !strings.Contains(w.Body.String(), "CHECK_RUNNING") {
+		t.Fatalf("deleting under a running check: %d %s", w.Code, w.Body)
+	}
+}
+
+// Checks must not leave a frozen version row behind each: a check that ends without a result unfreezes the draft, and an edit
+// after a finished check drops the old version.
+func TestChecksDoNotAccumulateVersionRows(t *testing.T) {
+	versions := func(a *app, id string) int {
+		var n int
+		a.db.QueryRow(`SELECT COUNT(*) FROM post_versions WHERE post_id = ?`, id).Scan(&n)
+		return n
+	}
+	fh := newFake()
+	fh.output = "not an envelope"
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("Versions")
+	base := versions(a, post.ID)
+	for i := 0; i < 3; i++ {
+		u.startCheck(post)
+		u.waitCheck(post.ID, "failed")
+		cur := u.post(post.ID)
+		w := u.do("PUT", "/api/blog/posts/"+post.ID, map[string]any{"baseVersion": cur.LatestVersion, "title": "Versions " + string(rune('a'+i))})
+		if w.Code != 200 {
+			t.Fatal(w.Body)
+		}
+		post = into[Post](t, w)
+	}
+	if n := versions(a, post.ID); n != base {
+		t.Fatalf("%d version rows after three failed checks and three edits, started with %d", n, base)
+	}
+	fh.mu.Lock()
+	fh.output = goodReply
+	fh.mu.Unlock()
+	for i := 0; i < 3; i++ {
+		u.startCheck(post)
+		u.waitCheck(post.ID, "ready")
+		cur := u.post(post.ID)
+		w := u.do("PUT", "/api/blog/posts/"+post.ID, map[string]any{"baseVersion": cur.LatestVersion, "title": "Ready " + string(rune('a'+i))})
+		post = into[Post](t, w)
+	}
+	if n := versions(a, post.ID); n > base+1 {
+		t.Fatalf("%d version rows after three finished checks and three edits", n)
+	}
+}

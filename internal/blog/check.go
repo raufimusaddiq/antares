@@ -276,10 +276,14 @@ func readCheck(ctx context.Context, q querier, query string, args ...any) (*Chec
 
 // GetCheck is the post's latest check.
 func (s *Service) GetCheck(ctx context.Context, author, postID string) (*CheckView, error) {
-	if _, err := loadPost(ctx, s.db, author, postID); err != nil {
+	p, err := loadPost(ctx, s.db, author, postID) // already carries the latest check
+	if err != nil {
 		return nil, err
 	}
-	return latestCheck(ctx, s.db, author, postID)
+	if p.Check == nil {
+		return nil, ErrNoCheck
+	}
+	return p.Check, nil
 }
 
 // ---- starting ----
@@ -611,11 +615,23 @@ func (s *Service) finishCheck(ctx context.Context, id, author, postID string, ou
 		_, err = tx.ExecContext(ctx, `UPDATE posts SET status = 'ready' WHERE id = ? AND author_id = ? AND status = 'checking'`, postID, author)
 	} else {
 		_, err = tx.ExecContext(ctx, `UPDATE posts SET status = (SELECT prev_status FROM post_checks WHERE id = ?) WHERE id = ? AND author_id = ? AND status = 'checking'`, id, postID, author)
+		if err == nil {
+			err = unpinUnused(ctx, tx, postID)
+		}
 	}
 	if err != nil {
 		return err
 	}
 	return tx.Commit()
+}
+
+// unpinUnused lets the head version be edited in place again once no check that reads it is left (a failed, cancelled or timed
+// out check does not need it frozen) and it is not the published one.
+func unpinUnused(ctx context.Context, tx *sql.Tx, postID string) error {
+	_, err := tx.ExecContext(ctx, `UPDATE post_versions SET pinned = 0 WHERE post_id = ? AND version = (SELECT latest_version FROM posts WHERE id = ?)
+		AND version != (SELECT published_version FROM posts WHERE id = ?)
+		AND NOT EXISTS (SELECT 1 FROM post_checks c WHERE c.post_id = ? AND c.version = post_versions.version AND c.state IN ('running','ready'))`, postID, postID, postID, postID)
+	return err
 }
 
 // outOfDate is called inside a save: a check of an older version, running or finished, no longer describes the draft.
@@ -626,6 +642,12 @@ func outOfDate(ctx context.Context, tx *sql.Tx, author, postID, now string) erro
 		return err
 	}
 	if n, _ := res.RowsAffected(); n > 0 {
+		// The versions the edit left behind are ordinary history again: only the published one is kept, so a check does not
+		// leave a frozen row per run.
+		if _, err = tx.ExecContext(ctx, `DELETE FROM post_versions WHERE post_id = ? AND version < (SELECT latest_version FROM posts WHERE id = ?)
+			AND version != (SELECT published_version FROM posts WHERE id = ?)`, postID, postID, postID); err != nil {
+			return err
+		}
 		_, err = tx.ExecContext(ctx, `UPDATE posts SET status = COALESCE((SELECT prev_status FROM post_checks WHERE post_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 1), 'draft')
 			WHERE id = ? AND author_id = ? AND status IN ('checking','ready')`, postID, postID, author)
 	}
@@ -654,6 +676,9 @@ func (s *Service) CancelCheck(ctx context.Context, author, postID string) (*Chec
 		return nil, err
 	}
 	if _, err := tx.ExecContext(ctx, `UPDATE posts SET status = (SELECT prev_status FROM post_checks WHERE id = ?) WHERE id = ? AND author_id = ? AND status = 'checking'`, id, postID, author); err != nil {
+		return nil, err
+	}
+	if err := unpinUnused(ctx, tx, postID); err != nil {
 		return nil, err
 	}
 	view, err := readCheck(ctx, tx, `SELECT id, state, reason, notes, notices FROM post_checks WHERE id = ?`, id)
