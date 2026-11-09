@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Editor from "./Editor";
 import { EMPTY_DOC, type Post } from "./types";
@@ -56,4 +56,33 @@ describe("editor", () => {
     expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Server title");
     expect(screen.getByRole("status").textContent).toBe("Saved");
   });
+
+  it("marks an empty post as empty on the first paint, so its placeholder is not a frame late", () => {
+    const { container } = render(<Editor {...props} />);
+    expect(container.querySelector('.blog-body[data-empty="true"]')).not.toBeNull();
+  });
+
+  it("does not mark a post with text as empty", () => {
+    const withText = { ...post, doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Words" }] }] } };
+    const { container } = render(<Editor {...props} post={withText} />);
+    expect(container.querySelector(".blog-body")).not.toBeNull();
+    expect(container.querySelector('.blog-body[data-empty="true"]')).toBeNull();
+  });
+
+  it("gives the empty body's hint to assistive technology, and keeps the attribute through re-renders", async () => {
+    const { container } = render(<Editor {...props} />);
+    const body = () => container.querySelector("[contenteditable=true]");
+    await waitFor(() => expect(body()).not.toBeNull());
+    expect(body()?.getAttribute("aria-describedby")).toBe("blog-body-hint");
+    expect(container.querySelector("#blog-body-hint")?.textContent).toBe("Tell your story…");
+    // A re-render (typing a title) must not drop it: the editor re-applies its options on every render.
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "A title" } });
+    expect(body()?.getAttribute("aria-describedby")).toBe("blog-body-hint");
+    cleanup();
+    const withText = { ...post, doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Words" }] }] } };
+    const r2 = render(<Editor {...props} post={withText} />);
+    await waitFor(() => expect(r2.container.querySelector("[contenteditable=true]")).not.toBeNull());
+    expect(r2.container.querySelector("#blog-body-hint")?.textContent).toBe(""); // nothing to announce once there is text
+  });
+
 });

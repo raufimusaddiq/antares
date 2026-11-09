@@ -27,11 +27,26 @@ export interface EditorProps {
   onBack: () => void;
 }
 
+/** True for a document with nothing in it: no nodes, or only paragraphs with no content. */
+function docIsEmpty(doc: DocNode | undefined): boolean {
+  // The same meaning as the editor's own isEmpty: text blocks (paragraph, heading, …) holding nothing, or only empty text.
+  const empty = (n: DocNode): boolean => {
+    if (n.type === "text") return !n.text;
+    if (n.type === "image" || n.type === "horizontalRule" || n.type === "hardBreak") return false;
+    return (n.content ?? []).every(empty);
+  };
+  return (doc?.content ?? []).every(empty);
+}
+
+const BODY_HINT = "Tell your story…";
+
 export default function Editor({ post, email, onPost, onSettings, onPublish, onBack }: EditorProps) {
   const [save, setSave] = useState<SaveState>("saved");
   const [latest, setLatest] = useState<Post | null>(null);
   const [title, setTitle] = useState(() => loadLocalCopy(email, post.id)?.title ?? post.title);
   const [note, setNote] = useState("");
+  // Seeded from the text the editor opens with (the saved one or a kept local copy), so an empty post shows its placeholder on the first paint.
+  const [empty, setEmpty] = useState(() => docIsEmpty(loadLocalCopy(email, post.id)?.doc ?? post.doc));
   const saver = useRef<Autosaver | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -39,9 +54,19 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
     injectCSS: false, // see the rules at the end of styles.css: the CSP refuses an injected <style>
     extensions: [StarterKit.configure({ heading: { levels: [2, 3, 4] }, link: { openOnClick: false, autolink: false, protocols: ["https", "http", "mailto"] } }), Image],
     content: (loadLocalCopy(email, post.id)?.doc ?? post.doc) as object,
-    editorProps: { attributes: { "aria-label": "Post body", class: "blog-prose" } },
-    onUpdate: ({ editor: e }) => saver.current?.change({ doc: e.getJSON() as DocNode }),
+    // The hint element is always there and only its text changes, so the attribute never has to be set or removed (the editor
+    // re-applies these options on every render).
+    editorProps: { attributes: { "aria-label": "Post body", "aria-describedby": "blog-body-hint", class: "blog-prose" } },
+    onUpdate: ({ editor: e }) => {
+      setEmpty(e.isEmpty);
+      saver.current?.change({ doc: e.getJSON() as DocNode });
+    },
   });
+
+  useEffect(() => {
+    if (editor) setEmpty(editor.isEmpty);
+  }, [editor]);
+
 
   useEffect(() => {
     const s = new Autosaver({ id: post.id, email, version: post.latestVersion, onState: (st, l) => (setSave(st), setLatest(l)), onSaved: onPost });
@@ -169,7 +194,13 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
           {note}
         </p>
       )}
-      <EditorContent editor={editor} />
+      {/* An empty body is a blank box: say where to type. A placeholder drawn by CSS, so no editor extension is needed. */}
+      <div className="blog-body" data-empty={empty ? "true" : undefined}>
+        <span id="blog-body-hint" className="blog-sr">
+          {empty ? BODY_HINT : ""}
+        </span>
+        <EditorContent editor={editor} />
+      </div>
     </main>
   );
 }
