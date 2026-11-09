@@ -62,9 +62,20 @@ My posts as built differs from its frames in two ways, on purpose. Phone rows al
 opening a post is one control and not two tab stops). The rail's account line shows the email and has no Menu button: Settings and Sign
 out stay in the chat's account menu, one click away through Chats.
 
-Blog gaps: the preview shows the first two blocks only (metrics, comparison); chart, accordion and fallback blocks are
-drawn on the public post. Sort/hover/expand interactions are shown as static states. The Admin frame is a single card,
-not a full Admin screen. Block-level accept/reject wiring is limited to Reject on the first block. The Phone, Tablet and Landscape menus have no Blog entry yet, and My posts and the Editor use a simplified rail (brand, New post, Chats, Blog posts) instead of the full chat rail; build the real rail in code and add the phone entry with the matching design change.
+Blog: where the frames and the code still differ (kept honest; each is a gap to close in the design or the code):
+- The preview frames draw two blocks and only Reject on the first one is wired as a prototype interaction; the code handles any
+  number of blocks, each with Accept and Reject.
+- The public post's closing "Sources" card (a list of every source) is in the frames and not built.
+- Publish / published and the failure steps (failed, timed out, cancelled, disconnected, out of date, unusable reply) keep their own
+  plain headers in code below a "Back to editing" bar; the frames draw them inside the editor's top bar (My posts, Saved, Settings,
+  Publish).
+- The Editor frames have a top bar and no rail, as built. The phone Menu has a "Blog posts" row in code; the Phone, Tablet and
+  Landscape frames do not show it yet.
+- Sort, hover and expand interactions in blocks are static states in the frames; the reader opens accordions and switches tabs (tested),
+  and sorting and hover are not yet proven (T059).
+- The AI-added marker sits above a block in code; the frames put it beside the block's title, which needs it injected into the
+  OpenUI card (T062).
+- The Admin frame is a single card, not a full Admin screen.
 
 Known gaps: only states the mock backend could show were captured (no live Hermes). Text is placed per rendered line, so
 it does not reflow when edited. Not yet drawn: most Notifications and Jobs states, Memory and Skills states, model

@@ -103,7 +103,7 @@ export function PreviewScreen({ post, check, acks, onAck, busy, ready, error, on
                 <ReaderBlock markup={b.markup} fallback={b.fallback} />
               </Suspense>
               <SourcesLine sources={b.sources} />
-              {b.needsAck && <AckGate count={b.sources.filter((s) => !s.verified).length} acked={acks[b.id] === true || b.decision === "accepted"} onAck={(v) => onAck(b.id, v)} />}
+              {b.needsAck && <AckGate count={b.sources.filter((s) => !s.verified).length} acked={acks[b.id] === true || b.decision === "accepted"} locked={b.decision === "accepted"} onAck={(v) => onAck(b.id, v)} />}
             </article>
           ))}
         </section>

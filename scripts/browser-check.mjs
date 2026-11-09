@@ -660,10 +660,11 @@ async function blogPages(browser, which, onlyViews) {
             stacked: visible(e) && visible(n) && e.bottom <= n.top + 1,
             blocks: document.querySelectorAll(".blog-enriched .blog-block").length,
             allDisabled: all?.disabled, drawerSources: document.querySelectorAll(".blog-drawer li").length,
+            innerW: innerWidth,
           };
         });
-        // The screen is a fixed layer that scrolls on its own, so the document's width cannot see it overflow: look at the elements.
-        const innerW = await page.evaluate(() => innerWidth);
+        // Nothing in the screen may run past the edge, and the browser must not have widened its layout to fit something that would not narrow.
+        const innerW = r.innerW;
         if (innerW !== w) editorProblems.push(`the layout viewport is ${innerW}px on a ${w}px screen: something in the page cannot get narrower`);
         const past = await page.evaluate(() => [...document.querySelectorAll(".blog-review *")].filter((e) => { const r = e.getBoundingClientRect(); return !e.closest("pre") && r.width > 0 && (r.right > innerWidth + 1 || r.left < -1); }).slice(0, 5).map((e) => `${e.tagName}.${e.className} ${Math.round(e.getBoundingClientRect().left)}..${Math.round(e.getBoundingClientRect().right)} of ${innerWidth}`));
         if (past.length) editorProblems.push(`the review screen runs past the edge of the screen: ${JSON.stringify(past)}`);

@@ -34,9 +34,10 @@ export function SourceDrawer({ sources }: { sources: Source[] }) {
 
 /**
  * What stands between the author and accepting a block whose sources were not checked (FR-017): how many, what that means, and
- * the tick. The block cannot be accepted until the tick is made; the server refuses it without.
+ * the tick. The block cannot be accepted until the tick is made; the server refuses it without. Once a block is accepted the tick
+ * is a record, not a control (`locked`): reject it to start over.
  */
-export function AckGate({ count, acked, onAck }: { count: number; acked: boolean; onAck: (v: boolean) => void }) {
+export function AckGate({ count, acked, locked = false, onAck }: { count: number; acked: boolean; locked?: boolean; onAck: (v: boolean) => void }) {
   return (
     <div className="blog-gate">
       <span className="chip chip-warn">
@@ -44,7 +45,7 @@ export function AckGate({ count, acked, onAck }: { count: number; acked: boolean
       </span>
       <p>Antares has not checked these sources. To accept this block, confirm you have checked them yourself.</p>
       <label className="blog-ack">
-        <input type="checkbox" checked={acked} onChange={(e) => onAck(e.target.checked)} /> I have checked these sources myself
+        <input type="checkbox" checked={acked} disabled={locked} onChange={(e) => onAck(e.target.checked)} /> I have checked these sources myself
       </label>
     </div>
   );
