@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|shots|phone-shots)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-editor|shots|phone-shots)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -38,6 +38,20 @@ const TURNS = 500;
 const PAGE = 50;
 const PLAIN = "a".repeat(32);
 const RICH = "b".repeat(32);
+
+const BLOG_ID = "e".repeat(32);
+const text = (t, marks) => ({ type: "text", text: t, ...(marks ? { marks } : {}) });
+const BLOG_DOC = {
+  type: "doc",
+  content: [
+    { type: "heading", attrs: { level: 2 }, content: [text("A heading that is long enough to wrap onto a second line on a phone")] },
+    { type: "paragraph", content: [text("Words ".repeat(40)), text("https://example.org/a/very/long/path/" + "x".repeat(140), [{ type: "link", attrs: { href: "https://example.org/x" } }])] },
+    { type: "bulletList", content: [1, 2].map((n) => ({ type: "listItem", content: [{ type: "paragraph", content: [text("Item " + n + " with some words")] }] })) },
+    { type: "blockquote", content: [{ type: "paragraph", content: [text("A quotation. ".repeat(12))] }] },
+    { type: "codeBlock", content: [text("const long = " + "y".repeat(220))] },
+  ],
+};
+const blogPost = () => ({ id: BLOG_ID, title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", slug: "first-post", coverUrl: "", status: "draft", latestVersion: 3, publishedVersion: 0, doc: BLOG_DOC, check: null, updatedAt: "2026-11-09T01:00:00Z" });
 
 const TABLE = 'root = Card([hdr, txt, tbl, chart, btns])\nhdr = CardHeader("Compare", "Three plans side by side")\ntxt = TextContent("**A** is cheapest; **C** has the most storage.")\ntbl = Table([Col("Plan", ["A", "B", "C"]), Col("Cost ($)", [1, 2, 3])])\nchart = BarChart(["A", "B", "C"], [Series("Cost", [1, 2, 3])])\nbtns = Buttons([Button("Tell me more", @ToAssistant("Tell me more about plan A"))])';
 const HOSTILE = 'root = Card([btn])\nbtn = Buttons([Button("go", @OpenUrl("javascript:alert(1)"))])';
@@ -74,6 +88,15 @@ function api(req, res, url) {
   };
   state.log.push(`${req.method} ${url.pathname}${url.search}`);
   if (url.pathname === "/api/me") return send(200, { email: state.email, displayName: "Reader", requestedAt: "", state: "ACTIVE", ...(state.admin ? { canAdmin: true } : {}) });
+  // The blog (specs/001-blog-cms-openui-publish): the same shapes the Go server documents, with text that tries to push a
+  // phone sideways (a long unbroken address, a long code line).
+  if (url.pathname === "/api/blog/capabilities") return send(200, { writing: true, check: false, webSearch: false });
+  if (url.pathname === "/api/blog/posts" && req.method === "GET")
+    return send(200, [BLOG_ID, "c".repeat(32), "d".repeat(32)].map((id, i) => ({ id, title: ["A long title that has to wrap on a phone without pushing the page sideways", "", "Second post"][i], status: ["published", "draft", "unpublished"][i], slug: i === 0 ? "first-post" : "", updatedAt: "2026-11-09T01:00:00Z", publishedAt: i === 0 ? "2026-11-08T01:00:00Z" : "", interactive: false })));
+  if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "GET") return send(200, blogPost());
+  if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "PUT") return send(200, { ...blogPost(), latestVersion: 4 });
+  if (url.pathname === "/api/public/blog/posts") return send(200, [{ slug: "first-post", title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary with " + "words ".repeat(30), coverUrl: "", authorName: "A Writer With A Rather Long Display Name", publishedAt: "2026-11-08T01:00:00Z" }]);
+  if (url.pathname === "/api/public/blog/posts/first-post") return send(200, { title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", coverUrl: "", doc: BLOG_DOC, blocks: [], authorName: "A Writer", publishedAt: "2026-11-08T01:00:00Z" });
   // The shared plan quota every account sees in the chat (GET /api/quota): shares and reset times, no amounts.
   if (url.pathname === "/api/quota")
     return send(200, { state: "OK", plan: "Studio", windows: [{ key: "week", usedFrac: 0.365, resetsAt: "2026-11-03T05:08:00Z" }, { key: "month", usedFrac: 0.92, resetsAt: "2026-11-19T05:08:00Z" }] });
@@ -498,6 +521,31 @@ async function startingCard(browser) {
   }
 }
 
+// The blog pages on a phone and a wide screen, light and dark: reading a post and the index signed out, and the author's list
+// and editor. Each page must stay inside the viewport (no sideways scroll), raise no console error or CSP violation and
+// make no off-origin request, and show its main content.
+async function blogPages(browser, which) {
+  const views = which === "blog-public"
+    ? [["index", "/b", "h1, h2"], ["post", "/b/first-post", "article h1, main h1"]]
+    : [["list", "/blog", "main"], ["editor", `/blog/${BLOG_ID}`, "[contenteditable=true]"]];
+  for (const [label, w, h, scheme] of [["phone", 390, 844, "light"], ["phone", 390, 844, "dark"], ["narrow", 320, 640, "light"], ["desktop", 1280, 800, "dark"]]) {
+    for (const [name, route, want] of views) {
+      const { ctx, page, consoleErrors, external } = await openPage(browser, { viewport: { width: w, height: h }, colorScheme: scheme, ...(label !== "desktop" ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) });
+      await page.goto(base + route);
+      let shown = true;
+      try { await page.waitForSelector(want, { timeout: 8000 }); } catch { shown = false; }
+      await page.waitForTimeout(300);
+      const m = await page.evaluate(() => ({ overflowX: document.documentElement.scrollWidth - innerWidth, bodyOverflow: document.body.scrollWidth - innerWidth }));
+      await page.screenshot({ path: path.join(outDir, `${which}-${name}-${label}-${scheme}.png`), fullPage: true });
+      const csp = await page.evaluate(() => window.__csp.length);
+      check(`${which} ${name}, ${label} ${w}px ${scheme}: content shown, no sideways scroll, no console error, CSP violation or off-origin request`,
+        shown && m.overflowX <= 0 && m.bodyOverflow <= 0 && consoleErrors.length === 0 && csp === 0 && external.length === 0,
+        JSON.stringify({ shown, ...m, csp, consoleErrors: consoleErrors.slice(0, 2), external: external.slice(0, 2) }));
+      await ctx.close();
+    }
+  }
+}
+
 // Polls a condition in the page with page.evaluate (waitForFunction compiles a string, which the page's CSP refuses).
 async function until(page, fn, ms = 8000) {
   const end = Date.now() + ms;
@@ -761,6 +809,8 @@ try {
   if (!only || only === "mobile-layout" || only === "desktop-layout") await modelPicker(browser);
   if (!only || only === "starting-card") await startingCard(browser);
   if (!only || only === "images") await images(browser);
+  if (!only || only === "blog-public") await blogPages(browser, "blog-public");
+  if (!only || only === "blog-editor") await blogPages(browser, "blog-editor");
   if (!only || only === "mobile-layout" || only === "mobile-budget") await mobileBudget(browser);
   if (!only || only === "mobile-layout") await adminPhone(browser);
   if (only === "shots") await shots(browser);

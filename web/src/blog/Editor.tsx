@@ -36,6 +36,7 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
   const fileInput = useRef<HTMLInputElement>(null);
 
   const editor = useEditor({
+    injectCSS: false, // see the rules at the end of styles.css: the CSP refuses an injected <style>
     extensions: [StarterKit.configure({ heading: { levels: [2, 3, 4] }, link: { openOnClick: false, autolink: false, protocols: ["https", "http", "mailto"] } }), Image],
     content: (loadLocalCopy(email, post.id)?.doc ?? post.doc) as object,
     editorProps: { attributes: { "aria-label": "Post body", class: "blog-prose" } },
