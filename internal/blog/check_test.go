@@ -428,6 +428,9 @@ func TestACheckNeedsSomethingToCheckAndTheAssistant(t *testing.T) {
 
 func TestCapabilitiesAreOnlyWhatTheAssistantConfirms(t *testing.T) {
 	get := func(a *app, u *person) map[string]bool {
+		a.svc.capMu.Lock()
+		a.svc.capCache = nil // each step asks the assistant afresh
+		a.svc.capMu.Unlock()
 		return into[map[string]bool](t, u.do("GET", "/api/blog/capabilities", nil))
 	}
 	fh := newFake()
@@ -500,5 +503,99 @@ func TestASourceCanNeverBeStoredAsVerified(t *testing.T) {
 	a.db.Exec(`INSERT INTO post_blocks (id, check_id, post_id, author_id, position, anchor, kind, markup, fallback, needs_ack) VALUES ('b1','c1',?,?,0,0,'table','m','f',1)`, p.ID, u.id)
 	if _, err := a.db.Exec(`INSERT INTO block_sources (block_id, position, url, title, retrieved_at, verified) VALUES ('b1', 0, 'https://example.org/', 't', '2026-11-08', 1)`); err == nil {
 		t.Fatal("the database accepted a verified source: nothing can verify one yet (research R4)")
+	}
+}
+
+func TestCapabilitiesAreNotAskedOfHermesOnEveryPageLoad(t *testing.T) {
+	fh := newFake()
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	for i := 0; i < 5; i++ {
+		u.do("GET", "/api/blog/capabilities", nil)
+	}
+	fh.mu.Lock()
+	n := fh.discovers
+	fh.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("Hermes was asked %d times for 5 page loads", n)
+	}
+}
+
+// A graceful stop is not the author cancelling: the row stays running, and the next start says what happened to it.
+func TestShuttingDownLeavesARunningCheckToBeRecoveredNotCancelled(t *testing.T) {
+	fh := newFake()
+	fh.script = func(ctx context.Context, emit func(string, map[string]any) error) error {
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("Restart me")
+	u.startCheck(post)
+	a.svc.Close()
+	var state string
+	if err := a.db.QueryRow(`SELECT state FROM post_checks WHERE post_id = ?`, post.ID).Scan(&state); err != nil || state != "running" {
+		t.Fatalf("after a shutdown the check is %q (%v), it must still be running so a restart can recover it", state, err)
+	}
+	if _, err := New(Options{DB: a.db}); err != nil {
+		t.Fatal(err)
+	}
+	got := u.post(post.ID)
+	if got.Check == nil || got.Check.State != "failed" || got.Check.Reason != "disconnected" || got.Status != "draft" {
+		t.Fatalf("after the restart: %q %+v", got.Status, got.Check)
+	}
+}
+
+func TestOnlyTheLatestChecksBlocksCanBeDecidedOn(t *testing.T) {
+	fh := newFake()
+	fh.output = goodReply
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("Twice")
+	u.startCheck(post)
+	first := u.waitCheck(post.ID, "ready")
+	u.startCheck(post) // a second check of the same version
+	second := u.waitCheck(post.ID, "ready")
+	if first.ID == second.ID {
+		t.Fatal("expected a second check")
+	}
+	w := u.do("PUT", "/api/blog/posts/"+post.ID+"/blocks/"+first.Blocks[0].ID, map[string]any{"decision": "accepted", "ack": true})
+	if w.Code != 409 {
+		t.Fatalf("deciding on the older check's block: %d %s", w.Code, w.Body)
+	}
+	var decision string
+	a.db.QueryRow(`SELECT decision FROM post_blocks WHERE id = ?`, first.Blocks[0].ID).Scan(&decision)
+	if decision != "proposed" {
+		t.Fatalf("the refused decision was stored anyway: %q", decision)
+	}
+	if w := u.do("PUT", "/api/blog/posts/"+post.ID+"/blocks/"+second.Blocks[0].ID, map[string]any{"decision": "accepted", "ack": true}); w.Code != 200 {
+		t.Fatalf("deciding on the latest check's block: %d", w.Code)
+	}
+}
+
+func TestEditingStopsTheWorkerOfTheCheckItMadeStale(t *testing.T) {
+	fh := newFake()
+	started := make(chan struct{})
+	fh.script = func(ctx context.Context, emit func(string, map[string]any) error) error {
+		close(started)
+		<-ctx.Done()
+		return ctx.Err()
+	}
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("Stale")
+	u.startCheck(post)
+	<-started
+	cur := u.post(post.ID)
+	u.do("PUT", "/api/blog/posts/"+post.ID, map[string]any{"baseVersion": cur.LatestVersion, "title": "Edited"})
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		if _, _, _, stopped := fh.snapshot(); len(stopped) == 1 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("the upstream run of the stale check was not stopped")
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

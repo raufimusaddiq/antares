@@ -12,12 +12,13 @@ import (
 // fakeHermes is the part of Hermes a check talks to, scripted: what each run emits, and what fails. It records every call
 // with the binding it was made under, so a test can prove whose assistant did the work.
 type fakeHermes struct {
-	mu       sync.Mutex
-	sessions int
-	runs     []hermes.RunRequest
-	bindings []hermes.Binding
-	stopped  []string
-	nextRun  int
+	mu        sync.Mutex
+	sessions  int
+	runs      []hermes.RunRequest
+	bindings  []hermes.Binding
+	stopped   []string
+	nextRun   int
+	discovers int
 
 	// script is what a run's event stream does. nil: finish at once with output.
 	script func(ctx context.Context, emit func(name string, data map[string]any) error) error
@@ -97,6 +98,7 @@ func (f *fakeHermes) Discover(ctx context.Context, b hermes.Binding) (hermes.Inv
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.note(b)
+	f.discovers++
 	if f.discoverErr != nil {
 		return hermes.Inventory{}, f.discoverErr
 	}

@@ -71,9 +71,14 @@ type BlockView struct {
 	Sources   []Source `json:"sources"`
 }
 
+type liveCheck struct {
+	postID string
+	cancel context.CancelFunc
+}
+
 type checkRuntime struct {
 	mu     sync.Mutex
-	cancel map[string]context.CancelFunc
+	cancel map[string]liveCheck
 	wg     sync.WaitGroup
 	base   context.Context
 	stop   context.CancelFunc
@@ -81,7 +86,7 @@ type checkRuntime struct {
 
 func (s *Service) initChecks() {
 	ctx, cancel := context.WithCancel(context.Background())
-	s.rt = &checkRuntime{cancel: map[string]context.CancelFunc{}, base: ctx, stop: cancel}
+	s.rt = &checkRuntime{cancel: map[string]liveCheck{}, base: ctx, stop: cancel}
 	// A check that was running when the last process stopped has no worker now. It is not finished and not replayed.
 	now := s.stamp()
 	_, err := s.db.Exec(`UPDATE posts SET status = (SELECT prev_status FROM post_checks c WHERE c.post_id = posts.id AND c.state = 'running')
@@ -123,24 +128,79 @@ func (s *Service) binding(ctx context.Context, author string) (hermes.Binding, e
 
 // Capabilities says what this author may do right now. Checking needs the assistant to be able to search the web, and it is
 // reported available only when the assistant confirms that under the author's own binding: nothing is assumed.
+//
+// The probe is a call to Hermes, and the page asks on every load, so the answer is kept per author for a short while (longer
+// when it says yes than when it says no, so a recovering assistant is noticed soon).
 func (s *Service) Capabilities(ctx context.Context, author string) (writing, check, webSearch bool) {
-	writing = true
+	now := s.now()
+	s.capMu.Lock()
+	e, ok := s.capCache[author]
+	s.capMu.Unlock()
+	if ok && now.Before(e.until) {
+		return true, e.web, e.web
+	}
+	web := s.probeWebSearch(ctx, author)
+	ttl := 10 * time.Second
+	if web {
+		ttl = 45 * time.Second
+	}
+	s.capMu.Lock()
+	if s.capCache == nil {
+		s.capCache = map[string]capEntry{}
+	}
+	if len(s.capCache) > 5000 {
+		s.capCache = map[string]capEntry{}
+	}
+	s.capCache[author] = capEntry{web: web, until: now.Add(ttl)}
+	s.capMu.Unlock()
+	return true, web, web
+}
+
+type capEntry struct {
+	web   bool
+	until time.Time
+}
+
+func (s *Service) probeWebSearch(ctx context.Context, author string) bool {
 	b, err := s.binding(ctx, author)
 	if err != nil {
-		return
+		return false
 	}
 	ctx, cancel := context.WithTimeout(ctx, 8*time.Second)
 	defer cancel()
 	inv, err := s.hx.Discover(ctx, b)
 	if err != nil {
-		return
+		return false
 	}
 	for _, t := range inv.Toolsets {
 		if t.Name == "web" && t.Status == hermes.StatusAvailable {
-			webSearch = true
+			return true
 		}
 	}
-	return writing, webSearch, webSearch
+	return false
+}
+
+// stopStale ends the workers of a post's checks that an edit made out of date: their answer would be dropped anyway.
+func (s *Service) stopStale(ctx context.Context, postID string) {
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM post_checks WHERE post_id = ? AND state = 'out_of_date' AND hermes_run != ''`, postID)
+	if err != nil {
+		return
+	}
+	var ids []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			ids = append(ids, id)
+		}
+	}
+	rows.Close()
+	s.rt.mu.Lock()
+	defer s.rt.mu.Unlock()
+	for _, id := range ids {
+		if l, ok := s.rt.cancel[id]; ok {
+			l.cancel()
+		}
+	}
 }
 
 // ---- reading ----
@@ -251,6 +311,9 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 	}
 	if _, err := tx.ExecContext(ctx, `INSERT INTO post_checks (id, post_id, author_id, version, state, prev_status, started_at) VALUES (?,?,?,?, 'running', ?, ?)`,
 		id, postID, author, cur.LatestVersion, cur.Status, now); err != nil {
+		if isUnique(err) { // another start won the race for this post
+			return nil, ErrCheckRunning
+		}
 		return nil, err
 	}
 	if cur.Status == "draft" || cur.Status == "unpublished" {
@@ -268,7 +331,7 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 	s.rt.wg.Add(1)
 	wctx, cancel := context.WithTimeout(s.rt.base, checkTimeout)
 	s.rt.mu.Lock()
-	s.rt.cancel[id] = cancel
+	s.rt.cancel[id] = liveCheck{postID: postID, cancel: cancel}
 	s.rt.mu.Unlock()
 	go func() {
 		defer s.rt.wg.Done()
@@ -349,10 +412,16 @@ var (
 type outcome struct {
 	state, reason string
 	result        *Result
+	// skip: the service is shutting down. Nothing is recorded: the row stays running and the next start marks it failed
+	// (disconnected), which is the truth: it was not finished and the author did not cancel it.
+	skip bool
 }
 
 func (s *Service) runCheck(ctx context.Context, id, author, postID, input string, topNodes int, b hermes.Binding) {
 	out := s.driveRun(ctx, id, input, topNodes, b)
+	if out.skip {
+		return
+	}
 	if err := s.finishCheck(context.WithoutCancel(ctx), id, author, postID, out); err != nil {
 		log.Printf("blog: finish check: %v", err)
 	}
@@ -368,6 +437,9 @@ func (s *Service) driveRun(ctx context.Context, id, input string, topNodes int, 
 	// ctx is cancelled for two reasons: the author cancelled (the row already says so, the answer is ignored) or the time ran out.
 	ended := func(runID string) outcome {
 		stop(runID)
+		if s.rt.base.Err() != nil {
+			return outcome{skip: true}
+		}
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			return outcome{state: "timed_out"}
 		}
@@ -544,10 +616,10 @@ func (s *Service) CancelCheck(ctx context.Context, author, postID string) (*Chec
 		return nil, err
 	}
 	s.rt.mu.Lock()
-	cancel := s.rt.cancel[id]
+	live, ok := s.rt.cancel[id]
 	s.rt.mu.Unlock()
-	if cancel != nil {
-		cancel() // the worker stops the upstream run
+	if ok {
+		live.cancel() // the worker stops the upstream run
 	}
 	return view, nil
 }
@@ -566,10 +638,10 @@ func (s *Service) DecideBlock(ctx context.Context, author, postID, blockID, deci
 	if err != nil {
 		return nil, err
 	}
-	var state string
+	var state, checkID string
 	var version, needsAck int
-	err = tx.QueryRowContext(ctx, `SELECT c.state, c.version, b.needs_ack FROM post_blocks b JOIN post_checks c ON c.id = b.check_id
-		WHERE b.id = ? AND b.post_id = ? AND b.author_id = ? AND c.author_id = ?`, blockID, postID, author, author).Scan(&state, &version, &needsAck)
+	err = tx.QueryRowContext(ctx, `SELECT c.id, c.state, c.version, b.needs_ack FROM post_blocks b JOIN post_checks c ON c.id = b.check_id
+		WHERE b.id = ? AND b.post_id = ? AND b.author_id = ? AND c.author_id = ?`, blockID, postID, author, author).Scan(&checkID, &state, &version, &needsAck)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -577,6 +649,14 @@ func (s *Service) DecideBlock(ctx context.Context, author, postID, blockID, deci
 		return nil, err
 	}
 	if state != "ready" || version != cur.LatestVersion {
+		return nil, ErrStale
+	}
+	// Only the post's latest check can be decided on: what the author sees, and what is published, is that one.
+	var latestID string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM post_checks WHERE post_id = ? AND author_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 1`, postID, author).Scan(&latestID); err != nil {
+		return nil, err
+	}
+	if latestID != checkID {
 		return nil, ErrStale
 	}
 	if decision == "accepted" && needsAck == 1 && !ack {

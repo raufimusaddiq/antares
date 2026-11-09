@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/raufimusaddiq/antares/internal/secrets"
@@ -34,6 +35,9 @@ type Service struct {
 	hx  Runner       // nil: checking is not offered
 	box *secrets.Box // opens the author's own credential for a check
 	rt  *checkRuntime
+
+	capMu    sync.Mutex
+	capCache map[string]capEntry
 }
 
 // Options configure New. Hermes and Box together turn the AI check on; without both it is reported unavailable.
@@ -238,7 +242,11 @@ func (s *Service) Autosave(ctx context.Context, author, id string, base int, c C
 	if err != nil {
 		return Post{}, err
 	}
-	return p, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return Post{}, err
+	}
+	s.stopStale(ctx, id) // a check of the version just replaced has nothing left to say
+	return p, nil
 }
 
 // Settings changes the address, summary and cover. A slug may be set on a draft; only a published post's slug must be
