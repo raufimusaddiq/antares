@@ -50,6 +50,10 @@ var (
 )
 
 func (s *Server) blogShell(w http.ResponseWriter, r *http.Request) {
+	if strings.HasSuffix(r.URL.Path, "/") { // one address per page, one canonical: the index as much as a post
+		http.Redirect(w, r, strings.TrimRight(r.URL.Path, "/"), http.StatusMovedPermanently)
+		return
+	}
 	raw, err := fs.ReadFile(s.assets, "index.html")
 	if err != nil {
 		http.NotFound(w, r)
@@ -58,13 +62,9 @@ func (s *Server) blogShell(w http.ResponseWriter, r *http.Request) {
 	var meta PageMeta
 	status := http.StatusOK
 	switch {
-	case r.URL.Path == "/b" || r.URL.Path == "/b/":
+	case r.URL.Path == "/b":
 		meta = PageMeta{Title: "Blog · Antares", Description: "Posts written on Antares."}
 	default:
-		if strings.HasSuffix(r.URL.Path, "/") { // one address per post, one canonical
-			http.Redirect(w, r, strings.TrimRight(r.URL.Path, "/"), http.StatusMovedPermanently)
-			return
-		}
 		m := reSlugPath.FindStringSubmatch(r.URL.Path)
 		var err error = ErrNoPage
 		if m != nil {
