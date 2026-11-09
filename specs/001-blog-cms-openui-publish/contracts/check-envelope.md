@@ -1,7 +1,8 @@
 # Contract: check reply from Hermes
 
-What the blog prompt asks Hermes to return, and what Antares accepts. **Shape to be confirmed against a
-recorded fixture from the deployed Hermes before Stage 2** (research R3/R4). Anything not matching is
+What the blog prompt asks Hermes to return, and what Antares accepts. **The run and its events are recorded
+(`internal/hermes/testdata/blog_check_*`, research R3/R4); the envelope below is what the blog prompt asks for and is
+still validated server-side, never trusted.** Anything not matching is
 dropped, never repaired by guessing.
 
 ```json
@@ -32,7 +33,8 @@ dropped, never repaired by guessing.
 4. A block whose markup shows data (table, chart, metric) MUST have at least one source; otherwise it is
    dropped and an `unsourced` note is added (FR-016).
 5. Sources: `https` only, no credentials in the URL, no private/loopback host, `retrievedAt` is a date.
-   `verified` is set only if the URL appears in the run's observed search results (R4).
+   `verified` is never set today: the run's events do not expose what a search returned (R4), so every source is
+   unverified and its block needs the author's acknowledgement.
 6. `notes` and `fallback` are plain text; they are escaped on display, never interpreted.
 7. The envelope can never modify the author's document, the slug, the title, or any account data.
 
