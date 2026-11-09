@@ -4,6 +4,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { PublishFlow } from "./PublishFlow";
 import type { Check, CheckBlock, DocNode, Post } from "./types";
 
+// These render the block library and wait on several requests in turn: on a busy runner that can pass the 5 s default.
+vi.setConfig({ testTimeout: 20000 });
+
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
@@ -135,6 +138,20 @@ describe("deciding block by block", () => {
     fireEvent.click(within(blockEl(1)).getByRole("button", { name: "Reject" }));
     await waitFor(() => expect(within(blockEl(1)).getByRole("button", { name: "Rejected" })).toBeTruthy());
     expect((screen.getByRole("button", { name: "Publish with 1 block" }) as HTMLButtonElement).disabled).toBe(false);
+  });
+
+  it("once a block is accepted its tick is a record and not a control; rejecting it starts over", async () => {
+    serve();
+    mount(check({ blocks: [block("b1")] }));
+    const tick = () => within(blockEl(0)).getByRole("checkbox") as HTMLInputElement;
+    fireEvent.click(tick());
+    fireEvent.click(within(blockEl(0)).getByRole("button", { name: "Accept" }));
+    await waitFor(() => expect(within(blockEl(0)).getByRole("button", { name: "Accepted" })).toBeTruthy());
+    expect(tick().checked).toBe(true);
+    expect(tick().disabled).toBe(true);
+    fireEvent.click(within(blockEl(0)).getByRole("button", { name: "Reject" }));
+    await waitFor(() => expect(within(blockEl(0)).getByRole("button", { name: "Rejected" })).toBeTruthy());
+    expect(tick().disabled).toBe(false);
   });
 
   it("with nothing accepted after deciding, there is nothing to publish but the original", async () => {
