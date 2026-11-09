@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
+	"github.com/raufimusaddiq/antares/internal/secrets"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -28,14 +30,24 @@ const (
 
 // Service is the blog's store and handlers.
 type Service struct {
-	db  *sql.DB
-	now func() time.Time
+	db    *sql.DB
+	now   func() time.Time
+	hx    Runner       // nil: checking is not offered
+	box   *secrets.Box // opens the author's own credential for a check
+	spend Spend        // the account's spending rule; nil: none
+	rt    *checkRuntime
+
+	capMu    sync.Mutex
+	capCache map[string]capEntry
 }
 
-// Options configure New.
+// Options configure New. Hermes and Box together turn the AI check on; without both it is reported unavailable.
 type Options struct {
-	DB  *sql.DB
-	Now func() time.Time
+	DB     *sql.DB
+	Now    func() time.Time
+	Hermes Runner
+	Box    *secrets.Box
+	Spend  Spend // checks are refused while the author is over their daily hard limit; nil applies none
 }
 
 func New(o Options) (*Service, error) {
@@ -45,7 +57,9 @@ func New(o Options) (*Service, error) {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	return &Service{db: o.DB, now: o.Now}, nil
+	s := &Service{db: o.DB, now: o.Now, hx: o.Hermes, box: o.Box, spend: o.Spend}
+	s.initChecks()
+	return s, nil
 }
 
 func (s *Service) stamp() string { return s.now().UTC().Format("2006-01-02T15:04:05.000000000Z") }
@@ -61,7 +75,7 @@ type Post struct {
 	LatestVersion    int             `json:"latestVersion"`
 	PublishedVersion int             `json:"publishedVersion"`
 	Doc              json.RawMessage `json:"doc"`
-	Check            any             `json:"check"`
+	Check            *CheckView      `json:"check"`
 	UpdatedAt        string          `json:"updatedAt"`
 	coverID          string          // the stored cover image id; the browser gets CoverURL
 }
@@ -88,9 +102,12 @@ func assetURL(postID, assetID string) string {
 const postCols = `p.id, p.title, p.summary, p.slug, p.cover_asset_id, p.status, p.latest_version, p.published_version, p.updated_at, v.doc`
 
 // loadPost reads the author's own post at its head version. author_id is in the statement itself.
-func loadPost(ctx context.Context, q interface {
+type querier interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
-}, author, id string) (Post, error) {
+	QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+}
+
+func loadPost(ctx context.Context, q querier, author, id string) (Post, error) {
 	var p Post
 	var cover, doc string
 	err := q.QueryRowContext(ctx, `SELECT `+postCols+` FROM posts p JOIN post_versions v ON v.post_id = p.id AND v.version = p.latest_version
@@ -103,6 +120,11 @@ func loadPost(ctx context.Context, q interface {
 	}
 	p.CoverURL, p.coverID = assetURL(p.ID, cover), cover
 	p.Doc = json.RawMessage(doc)
+	if c, err := latestCheck(ctx, q, author, p.ID); err == nil {
+		p.Check = c
+	} else if !errors.Is(err, ErrNoCheck) {
+		return Post{}, err
+	}
 	return p, nil
 }
 
@@ -111,7 +133,9 @@ func (s *Service) Get(ctx context.Context, author, id string) (Post, error) {
 }
 
 func (s *Service) List(ctx context.Context, author string) ([]Summary, error) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id, title, status, slug, updated_at, published_at FROM posts WHERE author_id = ? ORDER BY updated_at DESC LIMIT ?`, author, maxPosts)
+	rows, err := s.db.QueryContext(ctx, `SELECT id, title, status, slug, updated_at, published_at,
+		EXISTS (SELECT 1 FROM published_blocks b WHERE b.post_id = posts.id AND b.version = posts.published_version)
+		FROM posts WHERE author_id = ? ORDER BY updated_at DESC LIMIT ?`, author, maxPosts)
 	if err != nil {
 		return nil, err
 	}
@@ -119,7 +143,7 @@ func (s *Service) List(ctx context.Context, author string) ([]Summary, error) {
 	out := []Summary{}
 	for rows.Next() {
 		var x Summary
-		if err := rows.Scan(&x.ID, &x.Title, &x.Status, &x.Slug, &x.UpdatedAt, &x.PublishedAt); err != nil {
+		if err := rows.Scan(&x.ID, &x.Title, &x.Status, &x.Slug, &x.UpdatedAt, &x.PublishedAt, &x.Interactive); err != nil {
 			return nil, err
 		}
 		out = append(out, x)
@@ -213,11 +237,18 @@ func (s *Service) Autosave(ctx context.Context, author, id string, base int, c C
 	if _, err := tx.ExecContext(ctx, `UPDATE posts SET title = ?, summary = ?, latest_version = ?, updated_at = ? WHERE id = ? AND author_id = ?`, title, summary, next, now, id, author); err != nil {
 		return Post{}, err
 	}
+	if err := outOfDate(ctx, tx, author, id, now); err != nil {
+		return Post{}, err
+	}
 	p, err := loadPost(ctx, tx, author, id)
 	if err != nil {
 		return Post{}, err
 	}
-	return p, tx.Commit()
+	if err := tx.Commit(); err != nil {
+		return Post{}, err
+	}
+	s.stopStale(ctx, id) // a check of the version just replaced has nothing left to say
+	return p, nil
 }
 
 // Settings changes the address, summary and cover. A slug may be set on a draft; only a published post's slug must be
@@ -299,6 +330,12 @@ func (s *Service) PublishOriginal(ctx context.Context, author, id string) (Post,
 	if _, err := tx.ExecContext(ctx, `UPDATE post_versions SET pinned = (version = ?) WHERE post_id = ?`, cur.LatestVersion, id); err != nil {
 		return Post{}, err
 	}
+	// The original is published as written: no block of an earlier publication stays attached to it.
+	for _, q := range []string{`DELETE FROM published_block_sources WHERE post_id = ?`, `DELETE FROM published_blocks WHERE post_id = ?`} {
+		if _, err := tx.ExecContext(ctx, q, id); err != nil {
+			return Post{}, err
+		}
+	}
 	if _, err := tx.ExecContext(ctx, `UPDATE posts SET status = 'published', published_version = latest_version,
 		published_at = CASE WHEN published_at = '' THEN ? ELSE published_at END, updated_at = ? WHERE id = ? AND author_id = ?`, now, now, id, author); err != nil {
 		if isUnique(err) {
@@ -354,7 +391,37 @@ func (s *Service) Delete(ctx context.Context, author, id string) error {
 	} else if err != nil {
 		return err
 	}
-	for _, q := range []string{`DELETE FROM post_assets WHERE post_id = ?`, `DELETE FROM post_versions WHERE post_id = ?`} {
+	// A deleted post must not reset the author's spending: what its checks cost moves to the same per-day archive a deleted
+	// chat's runs go to (store.UserModelUsage reads it), and a check still running is cancelled first (its cost is not yet known).
+	var running int
+	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM post_checks WHERE post_id = ? AND author_id = ? AND state = 'running'`, id, author).Scan(&running); err != nil {
+		return err
+	}
+	if running > 0 {
+		return ErrCheckRunning
+	}
+	for _, q := range []string{
+		`INSERT INTO deleted_run_usage (user_id, day, model, runs, input_tokens, output_tokens, cache_read_tokens, cache_write_tokens)
+			SELECT author_id, substr(started_at, 1, 10), COALESCE(usage_model, ''), COUNT(*), COALESCE(SUM(input_tokens),0), COALESCE(SUM(output_tokens),0),
+			COALESCE(SUM(cache_read_tokens),0), COALESCE(SUM(cache_write_tokens),0) FROM post_checks
+			WHERE post_id = ? AND author_id = ? AND input_tokens IS NOT NULL GROUP BY author_id, substr(started_at, 1, 10), COALESCE(usage_model, '')
+			ON CONFLICT(user_id, day, model) DO UPDATE SET runs = runs + excluded.runs, input_tokens = input_tokens + excluded.input_tokens,
+			output_tokens = output_tokens + excluded.output_tokens, cache_read_tokens = cache_read_tokens + excluded.cache_read_tokens,
+			cache_write_tokens = cache_write_tokens + excluded.cache_write_tokens`,
+		`INSERT INTO deleted_unreported_runs (user_id, day, runs)
+			SELECT author_id, substr(started_at, 1, 10), COUNT(*) FROM post_checks
+			WHERE post_id = ? AND author_id = ? AND input_tokens IS NULL AND state != 'running' GROUP BY author_id, substr(started_at, 1, 10)
+			ON CONFLICT(user_id, day) DO UPDATE SET runs = runs + excluded.runs`,
+	} {
+		if _, err := tx.ExecContext(ctx, q, id, author); err != nil {
+			return err
+		}
+	}
+	for _, q := range []string{
+		`DELETE FROM published_block_sources WHERE post_id = ?`, `DELETE FROM published_blocks WHERE post_id = ?`,
+		`DELETE FROM block_sources WHERE block_id IN (SELECT id FROM post_blocks WHERE post_id = ?)`,
+		`DELETE FROM post_blocks WHERE post_id = ?`, `DELETE FROM post_checks WHERE post_id = ?`,
+		`DELETE FROM post_assets WHERE post_id = ?`, `DELETE FROM post_versions WHERE post_id = ?`} {
 		if _, err := tx.ExecContext(ctx, q, id); err != nil {
 			return err
 		}

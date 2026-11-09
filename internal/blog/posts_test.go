@@ -78,8 +78,8 @@ func TestPublishNeedsTitleAndAddressAndKeepsThePublishedVersion(t *testing.T) {
 	if w := u.do("POST", "/api/blog/posts/"+p.ID+"/publish", map[string]any{"mode": "original"}); w.Code != 422 {
 		t.Fatalf("publishing an untitled post: %d", w.Code)
 	}
-	if w := u.do("POST", "/api/blog/posts/"+p.ID+"/publish", map[string]any{"mode": "enriched"}); w.Code != 501 {
-		t.Fatalf("enriched before the check exists: %d", w.Code)
+	if w := u.do("POST", "/api/blog/posts/"+p.ID+"/publish", map[string]any{"mode": "enriched"}); w.Code != 422 {
+		t.Fatalf("enriched with no title or address: %d", w.Code)
 	}
 	if w := u.do("POST", "/api/blog/posts/"+p.ID+"/publish", map[string]any{"mode": "x"}); w.Code != 400 {
 		t.Fatalf("unknown mode: %d", w.Code)

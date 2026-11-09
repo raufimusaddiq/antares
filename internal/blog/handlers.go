@@ -128,6 +128,22 @@ func reply(w http.ResponseWriter, p Post, err error) {
 		apiError(w, http.StatusConflict, "SLUG_TAKEN", "That address is used by another published post", nil)
 	case errors.Is(err, ErrInvalid):
 		apiError(w, http.StatusUnprocessableEntity, "INVALID_REQUEST", "That cannot be saved or published as it is", nil)
+	case errors.Is(err, ErrBudget):
+		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "You have reached the daily spending limit you set; raise or remove it to continue", nil)
+	case errors.Is(err, ErrCheckRunning):
+		apiError(w, http.StatusConflict, "CHECK_RUNNING", "A check is already running for this post", nil)
+	case errors.Is(err, ErrUnavailable):
+		apiError(w, http.StatusServiceUnavailable, "CAPABILITY_UNAVAILABLE", "Checking is not available right now", nil)
+	case errors.Is(err, ErrStale):
+		apiError(w, http.StatusConflict, "CHECK_OUT_OF_DATE", "The draft changed after the check", nil)
+	case errors.Is(err, ErrSuperseded):
+		apiError(w, http.StatusConflict, "CHECK_SUPERSEDED", "A newer check exists: decide on that one", nil)
+	case errors.Is(err, ErrNeedsAck):
+		apiError(w, http.StatusUnprocessableEntity, "ACK_REQUIRED", "This block's sources were not checked: accept it knowingly", nil)
+	case errors.Is(err, ErrNoReadyCheck):
+		apiError(w, http.StatusConflict, "CHECK_REQUIRED", "Run the check on this version first, or publish the original", nil)
+	case errors.Is(err, ErrNoCheck):
+		notFound(w)
 	case errors.Is(err, ErrNotPublished):
 		apiError(w, http.StatusConflict, "NOT_PUBLISHED", "That post is not published", nil)
 	case errors.Is(err, ErrTooMany):
@@ -142,9 +158,11 @@ func reply(w http.ResponseWriter, p Post, err error) {
 func (s *Service) Handlers() map[string]http.Handler {
 	return map[string]http.Handler{
 		"GET /api/blog/capabilities": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			// Writing and publishing need nothing outside Antares. Checking and web search arrive with the Hermes
-			// check; until then they are not offered.
-			writeJSON(w, http.StatusOK, map[string]bool{"writing": true, "check": false, "webSearch": false})
+			// Writing and publishing need nothing outside Antares. Checking needs the assistant to confirm, under this
+			// author's own binding, that it can search the web: nothing is assumed.
+			uid, _ := me(r)
+			writing, check, web := s.Capabilities(r.Context(), uid)
+			writeJSON(w, http.StatusOK, map[string]bool{"writing": writing, "check": check, "webSearch": web})
 		}),
 		"GET /api/blog/posts": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			uid, _ := me(r)
@@ -212,6 +230,8 @@ func (s *Service) Handlers() map[string]http.Handler {
 		"DELETE /api/blog/posts/{id}": own(func(w http.ResponseWriter, r *http.Request, uid, id string) {
 			if err := s.Delete(r.Context(), uid, id); errors.Is(err, ErrNotFound) {
 				notFound(w)
+			} else if errors.Is(err, ErrCheckRunning) {
+				apiError(w, http.StatusConflict, "CHECK_RUNNING", "Cancel the running check before deleting this post", nil)
 			} else if err != nil {
 				fail(w, "delete", err)
 			} else {
@@ -230,10 +250,61 @@ func (s *Service) Handlers() map[string]http.Handler {
 				p, err := s.PublishOriginal(r.Context(), uid, id)
 				reply(w, p, err)
 			case "enriched":
-				apiError(w, http.StatusNotImplemented, "CAPABILITY_UNAVAILABLE", "Checking is not available yet", nil)
+				p, err := s.PublishEnriched(r.Context(), uid, id)
+				reply(w, p, err)
 			default:
 				invalid(w, "mode must be original or enriched")
 			}
+		}),
+		"POST /api/blog/posts/{id}/check": own(func(w http.ResponseWriter, r *http.Request, uid, id string) {
+			if !emptyBody(w, r) {
+				return
+			}
+			c, err := s.StartCheck(r.Context(), uid, id)
+			if err != nil {
+				reply(w, Post{}, err)
+				return
+			}
+			writeJSON(w, http.StatusAccepted, c)
+		}),
+		"GET /api/blog/posts/{id}/check": own(func(w http.ResponseWriter, r *http.Request, uid, id string) {
+			c, err := s.GetCheck(r.Context(), uid, id)
+			if err != nil {
+				reply(w, Post{}, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, c)
+		}),
+		"POST /api/blog/posts/{id}/check/cancel": own(func(w http.ResponseWriter, r *http.Request, uid, id string) {
+			if !emptyBody(w, r) {
+				return
+			}
+			c, err := s.CancelCheck(r.Context(), uid, id)
+			if err != nil {
+				reply(w, Post{}, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, c)
+		}),
+		"PUT /api/blog/posts/{id}/blocks/{blockId}": own(func(w http.ResponseWriter, r *http.Request, uid, id string) {
+			bid := r.PathValue("blockId")
+			if !idRE.MatchString(bid) {
+				notFound(w)
+				return
+			}
+			var b struct {
+				Decision string `json:"decision"`
+				Ack      bool   `json:"ack"`
+			}
+			if !decode(w, r, 1<<10, &b) {
+				return
+			}
+			v, err := s.DecideBlock(r.Context(), uid, id, bid, b.Decision, b.Ack)
+			if err != nil {
+				reply(w, Post{}, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, v)
 		}),
 		"POST /api/blog/posts/{id}/unpublish": own(func(w http.ResponseWriter, r *http.Request, uid, id string) {
 			if !emptyBody(w, r) {

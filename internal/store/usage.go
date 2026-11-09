@@ -195,7 +195,12 @@ func UserModelUsage(ctx context.Context, db Querier, userID string, since time.T
 		UNION ALL
 		SELECT model, SUM(runs), SUM(input_tokens), SUM(output_tokens), SUM(cache_read_tokens), SUM(cache_write_tokens)
 		FROM deleted_run_usage WHERE user_id = ? AND day >= ? GROUP BY model
-	) GROUP BY model ORDER BY model`, userID, ts(since), userID, since.UTC().Format("2006-01-02"))
+		UNION ALL
+		-- A blog post's AI check is a run the author's assistant did for them: it spends like one.
+		SELECT COALESCE(usage_model,''), COUNT(*), SUM(input_tokens), SUM(output_tokens),
+			SUM(COALESCE(cache_read_tokens,0)), SUM(COALESCE(cache_write_tokens,0)) FROM post_checks
+		WHERE author_id = ? AND input_tokens IS NOT NULL AND started_at >= ? GROUP BY usage_model
+	) GROUP BY model ORDER BY model`, userID, ts(since), userID, since.UTC().Format("2006-01-02"), userID, ts(since))
 	if err != nil {
 		return nil, err
 	}

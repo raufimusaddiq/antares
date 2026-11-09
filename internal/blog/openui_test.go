@@ -1,7 +1,9 @@
 package blog
 
 import (
+	_ "embed"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"testing"
@@ -133,5 +135,42 @@ func TestTheRecordedChatReplyIsNotAPublishedBlock(t *testing.T) {
 	}
 	if _, err := ValidateMarkup(string(raw), nil); err == nil {
 		t.Error("a chat reply with follow-up buttons was accepted as a published block")
+	}
+}
+
+//go:embed blog_prompt.txt
+var embeddedPrompt string
+
+// The instruction promises the assistant exactly the components the validator will accept: the two lists must not drift.
+func TestThePromptNamesTheReaderComponentsAndNothingElse(t *testing.T) {
+	listed := map[string]bool{}
+	for _, line := range strings.Split(embeddedPrompt, "\n") {
+		if i := strings.Index(line, "("); i > 0 && regexp.MustCompile(`^[A-Z][A-Za-z]+$`).MatchString(line[:i]) {
+			listed[line[:i]] = true
+		}
+	}
+	for c := range readerComponents {
+		if !listed[c] {
+			t.Errorf("the prompt does not describe %s, which a published block may use", c)
+		}
+	}
+	for c := range listed {
+		if !readerComponents[c] {
+			t.Errorf("the prompt offers %s, which the validator refuses", c)
+		}
+	}
+	// The example in the prompt must itself be a block the validator accepts.
+	var ex []string
+	in := false
+	for _, line := range strings.Split(embeddedPrompt, "\n") {
+		if strings.HasPrefix(line, "root = Card(") {
+			in = true
+		}
+		if in {
+			ex = append(ex, line)
+		}
+	}
+	if _, err := ValidateMarkup(strings.Join(ex, "\n"), []string{"https://example.org/report"}); err != nil {
+		t.Errorf("the prompt's own example is refused: %v", err)
 	}
 }

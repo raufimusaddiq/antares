@@ -1,0 +1,82 @@
+-- The AI check of a blog post (specs/001-blog-cms-openui-publish/data-model.md): one run of the author's own assistant over
+-- a pinned version of the draft, the notes and proposed blocks it returned, and the blocks the author accepted at publish.
+-- Every table a request reaches directly carries the author and every authenticated query filters on it; block_sources and
+-- published_blocks (and its sources) are reached only through a post_blocks or posts row that does.
+CREATE TABLE post_checks (
+  id             TEXT PRIMARY KEY,
+  post_id        TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  author_id      TEXT NOT NULL REFERENCES users(id),
+  version        INTEGER NOT NULL,
+  state          TEXT NOT NULL CHECK (state IN ('running','ready','failed','cancelled','timed_out','out_of_date')),
+  reason         TEXT NOT NULL DEFAULT '' CHECK (reason IN ('','error','disconnected','unusable')),
+  prev_status    TEXT NOT NULL,
+  hermes_session TEXT NOT NULL DEFAULT '',
+  hermes_run     TEXT NOT NULL DEFAULT '',
+  prompt_version TEXT NOT NULL DEFAULT '',
+  -- What the run reported spending, so the author's spending limits count it like a chat reply's (store.UserModelUsage).
+  usage_model        TEXT,
+  input_tokens       INTEGER,
+  output_tokens      INTEGER,
+  cache_read_tokens  INTEGER,
+  cache_write_tokens INTEGER,
+  notes          TEXT NOT NULL DEFAULT '[]',
+  notices        TEXT NOT NULL DEFAULT '[]',
+  started_at     TEXT NOT NULL,
+  finished_at    TEXT NOT NULL DEFAULT ''
+);
+-- A post has at most one running check.
+CREATE UNIQUE INDEX post_checks_running ON post_checks (post_id) WHERE state = 'running';
+CREATE INDEX post_checks_post ON post_checks (post_id, started_at DESC);
+-- The author's spending windows read their checks by time.
+CREATE INDEX post_checks_author_time ON post_checks (author_id, started_at);
+CREATE INDEX post_checks_author_running ON post_checks (author_id) WHERE state = 'running';
+
+CREATE TABLE post_blocks (
+  id         TEXT PRIMARY KEY,
+  check_id   TEXT NOT NULL REFERENCES post_checks(id) ON DELETE CASCADE,
+  post_id    TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  author_id  TEXT NOT NULL REFERENCES users(id),
+  position   INTEGER NOT NULL,
+  anchor     INTEGER NOT NULL,
+  kind       TEXT NOT NULL,
+  markup     TEXT NOT NULL,
+  fallback   TEXT NOT NULL,
+  decision   TEXT NOT NULL DEFAULT 'proposed' CHECK (decision IN ('proposed','accepted','rejected')),
+  needs_ack  INTEGER NOT NULL CHECK (needs_ack IN (0,1))
+);
+CREATE INDEX post_blocks_check ON post_blocks (check_id, position);
+
+-- verified is always 0: the run's events do not expose what a search returned (research R4), so nothing can be checked
+-- against them. The constraint is the guard; a migration that relaxes it is the change that makes a source verifiable.
+CREATE TABLE block_sources (
+  block_id     TEXT NOT NULL REFERENCES post_blocks(id) ON DELETE CASCADE,
+  position     INTEGER NOT NULL,
+  url          TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  retrieved_at TEXT NOT NULL,
+  verified     INTEGER NOT NULL DEFAULT 0 CHECK (verified = 0),
+  PRIMARY KEY (block_id, position)
+);
+
+-- What readers see: the blocks the author accepted, copied when a version is published. Later checks do not change it.
+CREATE TABLE published_blocks (
+  post_id  TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,
+  version  INTEGER NOT NULL,
+  position INTEGER NOT NULL,
+  anchor   INTEGER NOT NULL,
+  kind     TEXT NOT NULL,
+  markup   TEXT NOT NULL,
+  fallback TEXT NOT NULL,
+  PRIMARY KEY (post_id, version, position)
+);
+CREATE TABLE published_block_sources (
+  post_id      TEXT NOT NULL,
+  version      INTEGER NOT NULL,
+  block        INTEGER NOT NULL,
+  position     INTEGER NOT NULL,
+  url          TEXT NOT NULL,
+  title        TEXT NOT NULL,
+  retrieved_at TEXT NOT NULL,
+  PRIMARY KEY (post_id, version, block, position),
+  FOREIGN KEY (post_id, version, block) REFERENCES published_blocks (post_id, version, position) ON DELETE CASCADE
+);

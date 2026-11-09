@@ -38,9 +38,47 @@ type PublicPost struct {
 	Summary     string          `json:"summary"`
 	CoverURL    string          `json:"coverUrl"`
 	Doc         json.RawMessage `json:"doc"`
-	Blocks      []any           `json:"blocks"`
+	Blocks      []PublicBlock   `json:"blocks"`
 	AuthorName  string          `json:"authorName"`
 	PublishedAt string          `json:"publishedAt"`
+}
+
+// PublicBlock is an accepted block (its sources carry verified: always false today, so a client can say they were not checked) as readers get it: where it goes, its markup, its plain-text version and its sources.
+type PublicBlock struct {
+	Anchor   int      `json:"anchor"`
+	Markup   string   `json:"markup"`
+	Fallback string   `json:"fallback"`
+	Sources  []Source `json:"sources"`
+}
+
+// publicBlocks are the blocks published with the post's published version (none for a post published as written).
+func (s *Service) publicBlocks(ctx context.Context, postID string) ([]PublicBlock, error) {
+	out := []PublicBlock{}
+	rows, err := s.db.QueryContext(ctx, `SELECT b.position, b.anchor, b.markup, b.fallback, s.url, s.title, s.retrieved_at
+		FROM published_blocks b JOIN posts p ON p.id = b.post_id AND p.published_version = b.version
+		LEFT JOIN published_block_sources s ON s.post_id = b.post_id AND s.version = b.version AND s.block = b.position
+		WHERE b.post_id = ? ORDER BY b.position, s.position`, postID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	last := -1
+	for rows.Next() {
+		var pos int
+		var b PublicBlock
+		var url, title, at sql.NullString
+		if err := rows.Scan(&pos, &b.Anchor, &b.Markup, &b.Fallback, &url, &title, &at); err != nil {
+			return nil, err
+		}
+		if pos != last {
+			b.Sources = []Source{}
+			out, last = append(out, b), pos
+		}
+		if url.Valid {
+			out[len(out)-1].Sources = append(out[len(out)-1].Sources, Source{URL: url.String, Title: title.String, RetrievedAt: at.String})
+		}
+	}
+	return out, rows.Err()
 }
 
 func publicAssetURL(slug, assetID string) string {
@@ -103,7 +141,11 @@ func (s *Service) PublicGet(ctx context.Context, slug string) (PublicPost, error
 	}
 	// The stored images point at the author's route (and carry the internal post id); readers get their own address.
 	doc = strings.ReplaceAll(doc, "/api/blog/posts/"+postID+"/assets/", "/api/public/blog/posts/"+slug+"/assets/")
-	x.CoverURL, x.AuthorName, x.Doc, x.Blocks = publicAssetURL(slug, cover), authorName(name), json.RawMessage(doc), []any{}
+	blocks, err := s.publicBlocks(ctx, postID)
+	if err != nil {
+		return PublicPost{}, err
+	}
+	x.CoverURL, x.AuthorName, x.Doc, x.Blocks = publicAssetURL(slug, cover), authorName(name), json.RawMessage(doc), blocks
 	return x, nil
 }
 

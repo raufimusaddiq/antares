@@ -102,6 +102,13 @@ func (s *Service) spending(ctx context.Context, q store.Querier, uid string) (sp
 	return v, nil
 }
 
+// HardLimitReached reports whether the user's spend today is at or over their daily hard limit. The blog's AI check asks it
+// before starting a run, so a check is refused under the same rule as a message.
+func (s *Service) HardLimitReached(ctx context.Context, uid string) (bool, error) {
+	v, err := s.spending(ctx, s.db, uid)
+	return v.HardReached, err
+}
+
 // errSpendLimit is the hard-limit gate's refusal, decided inside the admission transaction.
 var errSpendLimit = errors.New("chat: daily hard spending limit reached")
 
