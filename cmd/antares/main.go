@@ -169,7 +169,7 @@ func run() error {
 	}
 	defer chats.Close() // after the server drains (serve returns first), before db.Close
 
-	blogs, err := blog.New(blog.Options{DB: db, Hermes: hermesClient, Box: box})
+	blogs, err := blog.New(blog.Options{DB: db, Hermes: hermesClient, Box: box, Spend: chats})
 	if err != nil {
 		return err
 	}

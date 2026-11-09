@@ -27,10 +27,12 @@ var checkPrompt string
 const (
 	checkTimeout     = 6 * time.Minute
 	maxChecksPerUser = 2
+	maxChecksPerDay  = 30
 	maxCheckInput    = 120 << 10
 )
 
 var (
+	ErrBudget       = errors.New("blog: the daily spending limit is reached")
 	ErrNoCheck      = errors.New("blog: no check")
 	ErrCheckRunning = errors.New("blog: a check is already running")
 	ErrUnavailable  = errors.New("blog: checking is not available")
@@ -48,6 +50,19 @@ type Runner interface {
 	GetRun(ctx context.Context, b hermes.Binding, runID string) (hermes.RunStatus, error)
 	StopRun(ctx context.Context, b hermes.Binding, runID string) error
 	Discover(ctx context.Context, b hermes.Binding) (hermes.Inventory, error)
+	DeleteSession(ctx context.Context, b hermes.Binding, sessionID string) error
+}
+
+// Spend is the account's spending rule, which a check is subject to like any run.
+type Spend interface {
+	HardLimitReached(ctx context.Context, userID string) (bool, error)
+}
+
+// checkPromptVersion is the first line of the instruction ("blog-check v1"), kept with every check so a result can be
+// traced to the instruction that produced it.
+func checkPromptVersion() string {
+	line, _, _ := strings.Cut(checkPrompt, "\n")
+	return strings.TrimSpace(line)
 }
 
 // CheckView is a check as the author sees it.
@@ -72,14 +87,9 @@ type BlockView struct {
 	Sources   []Source `json:"sources"`
 }
 
-type liveCheck struct {
-	postID string
-	cancel context.CancelFunc
-}
-
 type checkRuntime struct {
 	mu     sync.Mutex
-	cancel map[string]liveCheck
+	cancel map[string]context.CancelFunc
 	wg     sync.WaitGroup
 	base   context.Context
 	stop   context.CancelFunc
@@ -87,7 +97,7 @@ type checkRuntime struct {
 
 func (s *Service) initChecks() {
 	ctx, cancel := context.WithCancel(context.Background())
-	s.rt = &checkRuntime{cancel: map[string]liveCheck{}, base: ctx, stop: cancel}
+	s.rt = &checkRuntime{cancel: map[string]context.CancelFunc{}, base: ctx, stop: cancel}
 	// A check that was running when the last process stopped has no worker now. It is not finished and not replayed.
 	now := s.stamp()
 	_, err := s.db.Exec(`UPDATE posts SET status = (SELECT prev_status FROM post_checks c WHERE c.post_id = posts.id AND c.state = 'running')
@@ -183,7 +193,7 @@ func (s *Service) probeWebSearch(ctx context.Context, author string) bool {
 
 // stopStale ends the workers of a post's checks that an edit made out of date: their answer would be dropped anyway.
 func (s *Service) stopStale(ctx context.Context, postID string) {
-	rows, err := s.db.QueryContext(ctx, `SELECT id FROM post_checks WHERE post_id = ? AND state = 'out_of_date' AND hermes_run != ''`, postID)
+	rows, err := s.db.QueryContext(ctx, `SELECT id FROM post_checks WHERE post_id = ? AND state = 'out_of_date'`, postID)
 	if err != nil {
 		return
 	}
@@ -198,8 +208,8 @@ func (s *Service) stopStale(ctx context.Context, postID string) {
 	s.rt.mu.Lock()
 	defer s.rt.mu.Unlock()
 	for _, id := range ids {
-		if l, ok := s.rt.cancel[id]; ok {
-			l.cancel()
+		if cancel, ok := s.rt.cancel[id]; ok {
+			cancel()
 		}
 	}
 }
@@ -280,6 +290,16 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 	if err != nil {
 		return nil, err
 	}
+	// A check spends like a run, so it is refused under the same daily hard limit as a message.
+	if s.spend != nil {
+		reached, err := s.spend.HardLimitReached(ctx, author)
+		if err != nil {
+			return nil, err
+		}
+		if reached {
+			return nil, ErrBudget
+		}
+	}
 	// The same answer the page was given: if the assistant cannot be confirmed to search the web, no check is started.
 	if _, check, _ := s.Capabilities(ctx, author); !check {
 		return nil, ErrUnavailable
@@ -309,9 +329,11 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 		return nil, err
 	}
 	// One statement counts and inserts, so two starts cannot both pass the per-author cap.
-	ins, err := tx.ExecContext(ctx, `INSERT INTO post_checks (id, post_id, author_id, version, state, prev_status, started_at)
-		SELECT ?, ?, ?, ?, 'running', ?, ? WHERE (SELECT COUNT(*) FROM post_checks WHERE author_id = ? AND state = 'running') < ?`,
-		id, postID, author, cur.LatestVersion, cur.Status, now, author, maxChecksPerUser)
+	since := s.now().UTC().Add(-24 * time.Hour).Format("2006-01-02T15:04:05.000000000Z")
+	ins, err := tx.ExecContext(ctx, `INSERT INTO post_checks (id, post_id, author_id, version, state, prev_status, started_at, prompt_version)
+		SELECT ?, ?, ?, ?, 'running', ?, ?, ? WHERE (SELECT COUNT(*) FROM post_checks WHERE author_id = ? AND state = 'running') < ?
+		AND (SELECT COUNT(*) FROM post_checks WHERE author_id = ? AND started_at >= ?) < ?`,
+		id, postID, author, cur.LatestVersion, cur.Status, now, checkPromptVersion(), author, maxChecksPerUser, author, since, maxChecksPerDay)
 	if err != nil {
 		if isUnique(err) { // another start won the race for this post
 			return nil, ErrCheckRunning
@@ -336,7 +358,7 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 	s.rt.wg.Add(1)
 	wctx, cancel := context.WithTimeout(s.rt.base, checkTimeout)
 	s.rt.mu.Lock()
-	s.rt.cancel[id] = liveCheck{postID: postID, cancel: cancel}
+	s.rt.cancel[id] = cancel
 	s.rt.mu.Unlock()
 	go func() {
 		defer s.rt.wg.Done()
@@ -420,19 +442,39 @@ type outcome struct {
 	// skip: the service is shutting down. Nothing is recorded: the row stays running and the next start marks it failed
 	// (disconnected), which is the truth: it was not finished and the author did not cancel it.
 	skip bool
+	// sessionID is the Hermes session made for the check, deleted when the check is over; usage is what the run reported.
+	sessionID string
+	usage     *hermes.Usage
 }
 
 func (s *Service) runCheck(ctx context.Context, id, author, postID, input string, topNodes int, b hermes.Binding) {
 	out := s.driveRun(ctx, id, input, topNodes, b)
+	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
+	defer cancel()
+	if out.sessionID != "" { // the session is single-use: it must not pile up in the author's workspace
+		defer func() {
+			if err := s.hx.DeleteSession(bg, b, out.sessionID); err != nil && !errors.Is(err, hermes.ErrSessionGone) {
+				log.Printf("blog: delete check session: %v", err)
+			}
+		}()
+	}
+	if out.usage != nil { // spent whether or not the author still wanted the answer
+		u := out.usage
+		_, _ = s.db.ExecContext(bg, `UPDATE post_checks SET usage_model = NULLIF(?, ''), input_tokens = ?, output_tokens = ?, cache_read_tokens = ?, cache_write_tokens = ?
+			WHERE id = ? AND author_id = ? AND input_tokens IS NULL`, u.Model, u.Input, u.Output, u.CacheRead, u.CacheWrite, id, author)
+	}
 	if out.skip {
 		return
 	}
-	if err := s.finishCheck(context.WithoutCancel(ctx), id, author, postID, out); err != nil {
+	if err := s.finishCheck(bg, id, author, postID, out); err != nil {
 		log.Printf("blog: finish check: %v", err)
 	}
 }
 
-func (s *Service) driveRun(ctx context.Context, id, input string, topNodes int, b hermes.Binding) outcome {
+func (s *Service) driveRun(ctx context.Context, id, input string, topNodes int, b hermes.Binding) (out outcome) {
+	var sid string
+	var usage *hermes.Usage
+	defer func() { out.sessionID, out.usage = sid, usage }()
 	failed := func(reason string) outcome { return outcome{state: "failed", reason: reason} }
 	stop := func(runID string) {
 		if runID != "" {
@@ -503,6 +545,7 @@ func (s *Service) driveRun(ctx context.Context, id, input string, topNodes int, 
 		}
 		terminal = &hermes.Normalized{Kind: hermes.KindTerminal, State: st.State, Output: st.Output, Intr: st.Interrupted}
 	}
+	usage = terminal.Usage
 	switch terminal.State {
 	case hermes.StateCompleted:
 	case hermes.StateCancelled:
@@ -621,10 +664,10 @@ func (s *Service) CancelCheck(ctx context.Context, author, postID string) (*Chec
 		return nil, err
 	}
 	s.rt.mu.Lock()
-	live, ok := s.rt.cancel[id]
+	cancel, ok := s.rt.cancel[id]
 	s.rt.mu.Unlock()
 	if ok {
-		live.cancel() // the worker stops the upstream run
+		cancel() // the worker stops the upstream run
 	}
 	return view, nil
 }

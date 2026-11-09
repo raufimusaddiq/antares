@@ -3,6 +3,7 @@ package blog
 import (
 	"context"
 	"encoding/json"
+	"github.com/raufimusaddiq/antares/internal/store"
 	"strings"
 	"testing"
 	"time"
@@ -670,5 +671,109 @@ func TestACheckIsNotStartedWhenTheAssistantCannotBeConfirmed(t *testing.T) {
 	}
 	if _, runs, _, _ := fh.snapshot(); len(runs) != 0 {
 		t.Fatal("a run was sent")
+	}
+}
+
+// A check is a run that spends: the same hard limit refuses it, what it spent is counted with the author's other spending, and
+// the single-use Hermes session is deleted whatever the outcome.
+func TestACheckIsSubjectToTheSpendingLimitAndIsCountedInIt(t *testing.T) {
+	fh := newFake()
+	fh.output = goodReply
+	fh.usage = map[string]any{"input_tokens": 1200, "output_tokens": 300, "total_tokens": 1500}
+	spend := &spendFake{}
+	a := newAppWith(t, fh, spend)
+	u := a.active("alice")
+	post := u.draftToCheck("Spend")
+
+	spend.reached = true
+	w := u.do("POST", "/api/blog/posts/"+post.ID+"/check", nil)
+	if w.Code != 403 || !strings.Contains(w.Body.String(), "BUDGET_REACHED") {
+		t.Fatalf("over the daily hard limit: %d %s", w.Code, w.Body)
+	}
+	if _, runs, _, _ := fh.snapshot(); len(runs) != 0 {
+		t.Fatal("a run was sent past the limit")
+	}
+
+	spend.reached = false
+	u.startCheck(post)
+	u.waitCheck(post.ID, "ready")
+	deadline := time.Now().Add(3 * time.Second)
+	var in, out int64
+	for {
+		a.db.QueryRow(`SELECT COALESCE(input_tokens,0), COALESCE(output_tokens,0) FROM post_checks WHERE post_id = ?`, post.ID).Scan(&in, &out)
+		if in != 0 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	if in != 1200 || out != 300 {
+		t.Fatalf("recorded tokens %d/%d", in, out)
+	}
+	usage, err := store.UserModelUsage(context.Background(), a.db, u.id, time.Now().Add(-time.Hour))
+	if err != nil || len(usage) != 1 || usage[0].Model != "gpt-test" || usage[0].Runs != 1 || usage[0].Input != 1200 {
+		t.Fatalf("the author's usage does not include the check: %+v %v", usage, err)
+	}
+}
+
+func TestTheChecksHermesSessionIsDeletedWhateverHappens(t *testing.T) {
+	for name, setup := range map[string]func(f *fakeHermes){
+		"ready":  func(f *fakeHermes) { f.output = goodReply },
+		"failed": func(f *fakeHermes) { f.output = "not an envelope" },
+		"error": func(f *fakeHermes) {
+			f.script = func(c context.Context, e func(string, map[string]any) error) error {
+				return e("run.failed", map[string]any{})
+			}
+		},
+	} {
+		fh := newFake()
+		setup(fh)
+		a := newAppWithHermes(t, fh)
+		u := a.active("alice")
+		post := u.draftToCheck(name)
+		u.startCheck(post)
+		u.waitCheck(post.ID, "ready", "failed")
+		deadline := time.Now().Add(3 * time.Second)
+		for {
+			fh.mu.Lock()
+			n, d := fh.sessions, len(fh.deleted)
+			fh.mu.Unlock()
+			if n == 1 && d == 1 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("%s: %d sessions made, %d deleted", name, n, d)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+}
+
+func TestThereIsADailyCapOnChecks(t *testing.T) {
+	fh := newFake()
+	fh.output = goodReply
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("Daily")
+	now := time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z")
+	for i := 0; i < maxChecksPerDay; i++ {
+		a.db.Exec(`INSERT INTO post_checks (id, post_id, author_id, version, state, prev_status, started_at) VALUES (?, ?, ?, 1, 'failed', 'draft', ?)`, "old"+string(rune('a'+i%26))+string(rune('a'+i/26)), post.ID, u.id, now)
+	}
+	if w := u.do("POST", "/api/blog/posts/"+post.ID+"/check", nil); w.Code != 422 || !strings.Contains(w.Body.String(), "LIMIT_REACHED") {
+		t.Fatalf("past the daily cap: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestACheckRecordsWhichInstructionProducedIt(t *testing.T) {
+	fh := newFake()
+	fh.output = goodReply
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("Version")
+	u.startCheck(post)
+	u.waitCheck(post.ID, "ready")
+	var v string
+	a.db.QueryRow(`SELECT prompt_version FROM post_checks WHERE post_id = ?`, post.ID).Scan(&v)
+	if v != "blog-check v1" {
+		t.Fatalf("prompt version %q", v)
 	}
 }

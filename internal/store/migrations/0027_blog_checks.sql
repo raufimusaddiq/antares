@@ -11,6 +11,13 @@ CREATE TABLE post_checks (
   prev_status    TEXT NOT NULL,
   hermes_session TEXT NOT NULL DEFAULT '',
   hermes_run     TEXT NOT NULL DEFAULT '',
+  prompt_version TEXT NOT NULL DEFAULT '',
+  -- What the run reported spending, so the author's spending limits count it like a chat reply's (store.UserModelUsage).
+  usage_model        TEXT,
+  input_tokens       INTEGER,
+  output_tokens      INTEGER,
+  cache_read_tokens  INTEGER,
+  cache_write_tokens INTEGER,
   notes          TEXT NOT NULL DEFAULT '[]',
   notices        TEXT NOT NULL DEFAULT '[]',
   started_at     TEXT NOT NULL,

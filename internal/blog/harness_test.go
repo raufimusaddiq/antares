@@ -46,7 +46,13 @@ type person struct {
 func newApp(t testing.TB) *app { return newAppWithHermes(t, nil) }
 
 // newAppWithHermes also turns the AI check on, against a scripted Hermes (nil: checking is not offered).
-func newAppWithHermes(t testing.TB, fh *fakeHermes) *app {
+func newAppWithHermes(t testing.TB, fh *fakeHermes) *app { return newAppWith(t, fh, nil) }
+
+type spendFake struct{ reached bool }
+
+func (s *spendFake) HardLimitReached(context.Context, string) (bool, error) { return s.reached, nil }
+
+func newAppWith(t testing.TB, fh *fakeHermes, spend Spend) *app {
 	t.Helper()
 	db, err := store.Open(filepath.Join(t.TempDir(), "antares.sqlite"))
 	if err != nil {
@@ -62,7 +68,7 @@ func newAppWithHermes(t testing.TB, fh *fakeHermes) *app {
 	}
 	opt := Options{DB: db}
 	if fh != nil {
-		opt.Hermes, opt.Box = fh, box
+		opt.Hermes, opt.Box, opt.Spend = fh, box, spend
 	}
 	svc, err := New(opt)
 	if err != nil {

@@ -19,6 +19,8 @@ type fakeHermes struct {
 	stopped   []string
 	nextRun   int
 	discovers int
+	deleted   []string
+	usage     map[string]any
 
 	// script is what a run's event stream does. nil: finish at once with output.
 	script func(ctx context.Context, emit func(name string, data map[string]any) error) error
@@ -76,7 +78,13 @@ func (f *fakeHermes) StreamEvents(ctx context.Context, b hermes.Binding, runID s
 	}
 	_ = emit("tool.started", map[string]any{"tool": "web_search", "preview": "a query", "tool_call_id": "c1"})
 	_ = emit("tool.completed", map[string]any{"tool": "web_search", "preview": "", "error": false, "tool_call_id": "c1"})
-	return emit("run.completed", map[string]any{"output": output})
+	done := map[string]any{"output": output}
+	f.mu.Lock()
+	if f.usage != nil {
+		done["usage"], done["runtime"] = f.usage, map[string]any{"model": "gpt-test", "provider": "p"}
+	}
+	f.mu.Unlock()
+	return emit("run.completed", done)
 }
 
 func (f *fakeHermes) GetRun(ctx context.Context, b hermes.Binding, runID string) (hermes.RunStatus, error) {
@@ -91,6 +99,14 @@ func (f *fakeHermes) StopRun(ctx context.Context, b hermes.Binding, runID string
 	defer f.mu.Unlock()
 	f.note(b)
 	f.stopped = append(f.stopped, runID)
+	return nil
+}
+
+func (f *fakeHermes) DeleteSession(ctx context.Context, b hermes.Binding, sessionID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.note(b)
+	f.deleted = append(f.deleted, sessionID)
 	return nil
 }
 

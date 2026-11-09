@@ -20,6 +20,8 @@ func TestEveryAuthenticatedRouteRefusesTheIneligible(t *testing.T) {
 		{"GET", "/api/blog/posts/" + p.ID}, {"PUT", "/api/blog/posts/" + p.ID}, {"PATCH", "/api/blog/posts/" + p.ID + "/settings"},
 		{"DELETE", "/api/blog/posts/" + p.ID}, {"POST", "/api/blog/posts/" + p.ID + "/publish"}, {"POST", "/api/blog/posts/" + p.ID + "/unpublish"},
 		{"POST", "/api/blog/posts/" + p.ID + "/duplicate"}, {"POST", "/api/blog/posts/" + p.ID + "/assets"},
+		{"POST", "/api/blog/posts/" + p.ID + "/check"}, {"GET", "/api/blog/posts/" + p.ID + "/check"}, {"POST", "/api/blog/posts/" + p.ID + "/check/cancel"},
+		{"PUT", "/api/blog/posts/" + p.ID + "/blocks/00000000000000000000000000000000"},
 		{"GET", "/api/blog/posts/" + p.ID + "/assets/00000000000000000000000000000000"},
 	}
 	for who, person := range people {

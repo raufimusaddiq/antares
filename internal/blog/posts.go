@@ -30,11 +30,12 @@ const (
 
 // Service is the blog's store and handlers.
 type Service struct {
-	db  *sql.DB
-	now func() time.Time
-	hx  Runner       // nil: checking is not offered
-	box *secrets.Box // opens the author's own credential for a check
-	rt  *checkRuntime
+	db    *sql.DB
+	now   func() time.Time
+	hx    Runner       // nil: checking is not offered
+	box   *secrets.Box // opens the author's own credential for a check
+	spend Spend        // the account's spending rule; nil: none
+	rt    *checkRuntime
 
 	capMu    sync.Mutex
 	capCache map[string]capEntry
@@ -46,6 +47,7 @@ type Options struct {
 	Now    func() time.Time
 	Hermes Runner
 	Box    *secrets.Box
+	Spend  Spend // checks are refused while the author is over their daily hard limit; nil applies none
 }
 
 func New(o Options) (*Service, error) {
@@ -55,7 +57,7 @@ func New(o Options) (*Service, error) {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	s := &Service{db: o.DB, now: o.Now, hx: o.Hermes, box: o.Box}
+	s := &Service{db: o.DB, now: o.Now, hx: o.Hermes, box: o.Box, spend: o.Spend}
 	s.initChecks()
 	return s, nil
 }

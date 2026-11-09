@@ -128,6 +128,8 @@ func reply(w http.ResponseWriter, p Post, err error) {
 		apiError(w, http.StatusConflict, "SLUG_TAKEN", "That address is used by another published post", nil)
 	case errors.Is(err, ErrInvalid):
 		apiError(w, http.StatusUnprocessableEntity, "INVALID_REQUEST", "That cannot be saved or published as it is", nil)
+	case errors.Is(err, ErrBudget):
+		apiError(w, http.StatusForbidden, "BUDGET_REACHED", "You have reached the daily spending limit you set; raise or remove it to continue", nil)
 	case errors.Is(err, ErrCheckRunning):
 		apiError(w, http.StatusConflict, "CHECK_RUNNING", "A check is already running for this post", nil)
 	case errors.Is(err, ErrUnavailable):
