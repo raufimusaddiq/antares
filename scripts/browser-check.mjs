@@ -575,14 +575,29 @@ async function blogPages(browser, which, onlyViews) {
         if (shape.rows === 0 || shape.withChip < shape.rows) editorProblems.push(`${shape.rows} rows but ${shape.withChip} status chips: every post shows its state`);
         if (!/Only you can see drafts/.test(shape.note)) editorProblems.push(`the list does not say who can see drafts (${JSON.stringify(shape.note)})`);
       }
-      // Publish: the limits are stated before anyone publishes; a post too long to check says so and cannot start one.
+      // Publish is a dialog over the editor: modal, inside the viewport, the editor still there but out of reach; the limits are
+      // stated before anyone publishes, and a post too long to check says so and cannot start one.
       if (which === "blog-editor" && name.startsWith("publish") && shown) {
-        const f = await page.evaluate(() => ({
-          text: document.querySelector(".blog-limits")?.textContent ?? "",
-          alert: document.querySelector(".blog-limits [role=alert]")?.textContent ?? "",
-          check: [...document.querySelectorAll(".blog-flow button")].find((b) => /Check and add blocks/.test(b.textContent ?? ""))?.disabled,
-          original: [...document.querySelectorAll(".blog-flow button")].find((b) => /Publish my original/.test(b.textContent ?? ""))?.disabled,
-        }));
+        const f = await page.evaluate(() => {
+          const dlg = document.querySelector('.blog-dialog[role="dialog"]');
+          const r = dlg?.getBoundingClientRect();
+          const btn = (re) => [...(dlg?.querySelectorAll("button") ?? [])].find((b) => re.test(b.textContent ?? ""));
+          return {
+            modal: dlg?.getAttribute("aria-modal") === "true",
+            named: dlg?.getAttribute("aria-labelledby") === "publish-title" && document.getElementById("publish-title")?.textContent === "Publish this post",
+            inside: !!r && r.left >= 0 && r.top >= 0 && r.right <= innerWidth + 0.5 && r.bottom <= innerHeight + 0.5,
+            behind: { editor: !!document.querySelector(".blog-behind .blog-editor"), inert: document.querySelector(".blog-behind")?.hasAttribute("inert") === true },
+            focusIn: !!dlg && dlg.contains(document.activeElement),
+            text: dlg?.querySelector(".blog-limits")?.textContent ?? "",
+            alert: dlg?.querySelector(".blog-limits [role=alert]")?.textContent ?? "",
+            check: btn(/^Check and enrich$/)?.disabled,
+            original: btn(/^Publish my original$/)?.disabled,
+          };
+        });
+        if (!f.modal || !f.named) editorProblems.push(`Publish is not a named modal dialog: ${JSON.stringify(f)}`);
+        if (!f.inside) editorProblems.push("the Publish dialog does not fit inside the viewport");
+        if (!f.behind.editor || !f.behind.inert) editorProblems.push(`the editor is not behind the dialog and out of reach: ${JSON.stringify(f.behind)}`);
+        if (!f.focusIn) editorProblems.push("focus did not move into the Publish dialog");
         if (!/up to 10 blocks/.test(f.text) || !/Images: \d+ of 30/.test(f.text)) editorProblems.push(`the limits are not all stated: ${JSON.stringify(f.text)}`);
         if (name === "publish" && (f.alert !== "" || f.check !== false)) editorProblems.push(`a post of ordinary length is refused a check: ${JSON.stringify(f)}`);
         if (name === "publish too long" && (!/longer than the assistant can read/.test(f.alert) || f.check !== true || f.original !== false)) editorProblems.push(`a post too long to check is not told so, or can start one: ${JSON.stringify(f)}`);
