@@ -1309,6 +1309,7 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 .blog-rail .brand { grid-area: auto; padding: 0 0.35rem 0.6rem; }
 .blog-rail > button { width: 100%; justify-content: flex-start; min-height: 2.75rem; padding: 0 0.9rem; font-weight: 700; }
 .blog-rail .rail-item { background: transparent; border-color: transparent; box-shadow: none; }
+.blog-rail span.rail-item { display: flex; align-items: center; box-sizing: border-box; min-height: 2.75rem; padding: 0 0.9rem; font-weight: 700; border-radius: 999px; } /* the current page: a mark, not a control */
 .blog-rail .rail-item[aria-current="page"] { background: var(--ink); color: var(--canvas); }
 .blog-rail-foot { margin-top: auto; padding-top: 0.75rem; border-top: 2px solid var(--ink); flex: 0 0 auto; }
 .blog-shell .blog-list { max-width: 64rem; width: 100%; margin: 0; padding: 2rem 2.5rem 4rem; }

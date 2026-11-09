@@ -15,13 +15,15 @@ export interface RowAction {
  */
 export function RowMenu({ label, actions }: { label: string; actions: RowAction[] }) {
   const [open, setOpen] = useState(false);
+  const [at, setAt] = useState<"first" | "last">("first"); // ArrowUp on the closed button opens onto the last item
   const button = useRef<HTMLButtonElement>(null);
   const list = useRef<HTMLDivElement>(null);
   const items = () => Array.from(list.current?.querySelectorAll<HTMLElement>('[role="menuitem"]') ?? []);
 
   useEffect(() => {
     if (!open) return;
-    items()[0]?.focus();
+    const all = items();
+    (at === "last" ? all[all.length - 1] : all[0])?.focus();
     const away = (e: PointerEvent) => {
       const t = e.target as Node;
       if (!list.current?.contains(t) && !button.current?.contains(t)) setOpen(false);
@@ -64,9 +66,9 @@ export function RowMenu({ label, actions }: { label: string; actions: RowAction[
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={label}
-        onClick={() => setOpen((o) => !o)}
+        onClick={() => (setAt("first"), setOpen((o) => !o))}
         onKeyDown={(e) => {
-          if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) (e.preventDefault(), setOpen(true));
+          if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) (e.preventDefault(), setAt(e.key === "ArrowUp" ? "last" : "first"), setOpen(true));
         }}
       >
         ⋯
@@ -86,7 +88,7 @@ export function RowMenu({ label, actions }: { label: string; actions: RowAction[
                 tabIndex={-1}
                 className={a.danger ? "danger" : undefined}
                 onClick={() => {
-                  close(false);
+                  close(true); // focus stays on the button (a dialog the action opens returns to it); only a link leaves the page
                   a.run?.();
                 }}
               >

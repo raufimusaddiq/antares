@@ -28,7 +28,7 @@ export function PostList({ email, onOpen, onChats }: { email: string; onOpen: (i
     inflight.current?.abort();
     const ctl = new AbortController();
     inflight.current = ctl;
-    setLoad({ k: "loading" });
+    setLoad((l) => (l.k === "ok" ? l : { k: "loading" })); // a reload keeps the list on screen, so focus stays where it was
     void listPosts(ctl.signal).then((r) => {
       if (ctl.signal.aborted) return;
       setLoad(r.ok ? { k: "ok", posts: r.value } : { k: "error", why: describeBlogError(r, "load your posts") });
@@ -105,14 +105,14 @@ export function PostList({ email, onOpen, onChats }: { email: string; onOpen: (i
                   {p.status === "published" && p.slug ? ` · /b/${p.slug}` : ""}
                 </span>
               </span>
-              <span className="blog-row-end">
+              <div className="blog-row-end">
                 <span className={`chip chip-${p.status}`}>{STATUS_WORDS[p.status]}</span>
                 {p.interactive && <span className="chip chip-ai">Interactive</span>}
                 <button type="button" className="quiet" aria-label={`Open ${p.title || "Untitled"}`} onClick={() => onOpen(p.id)}>
                   Open
                 </button>
                 <RowMenu label={`More actions for ${p.title || "Untitled"}`} actions={actionsOf(p)} />
-              </span>
+              </div>
             </li>
           ))}
         </ul>

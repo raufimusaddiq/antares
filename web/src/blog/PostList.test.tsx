@@ -97,7 +97,8 @@ describe("My posts: the rail", () => {
     expect(within(rail).getByText("Antares")).toBeTruthy();
     expect(within(rail).getByRole("button", { name: "New post" })).toBeTruthy();
     expect(within(rail).getByRole("button", { name: "Chats" })).toBeTruthy();
-    expect(within(rail).getByRole("button", { name: "Blog posts" }).getAttribute("aria-current")).toBe("page");
+    expect(within(rail).getByText("Blog posts").getAttribute("aria-current")).toBe("page");
+    expect(within(rail).queryByRole("button", { name: "Blog posts" })).toBeNull(); // the page you are on is not a control
     expect(within(rail).getByText("writer@example.test")).toBeTruthy();
   });
 
@@ -149,6 +150,25 @@ describe("My posts: row actions", () => {
     fireEvent.click(menuOf("Draft one").getByRole("menuitem", { name: "Duplicate" }));
     await waitFor(() => expect(calls).toContainEqual({ method: "POST", url: "/api/blog/posts/d1/duplicate" }));
     await waitFor(() => expect(calls.filter((c) => c.method === "GET").length).toBeGreaterThanOrEqual(3));
+  });
+
+  it("keeps the list on screen while it reloads, so focus stays on the row's ⋯ button", async () => {
+    let release: (r: Response) => void = () => {};
+    let n = 0;
+    vi.stubGlobal("fetch", (u: string, init?: RequestInit) => {
+      const m = init?.method ?? "GET";
+      if (m === "GET" && u === "/api/blog/posts") return ++n === 1 ? Promise.resolve(json(FIVE)) : new Promise<Response>((r) => (release = r)); // the second load is held open
+      return Promise.resolve(json(post({})));
+    });
+    mount();
+    await screen.findByText("Draft one");
+    const more = within(row("Draft one")).getByRole("button", { name: "More actions for Draft one" });
+    fireEvent.click(menuOf("Draft one").getByRole("menuitem", { name: "Duplicate" }));
+    await waitFor(() => expect(n).toBe(2)); // reloading
+    expect(screen.queryByText(/loading your posts/i)).toBeNull();
+    expect(screen.getByText("Draft one")).toBeTruthy();
+    expect(document.activeElement).toBe(more);
+    release(json(FIVE));
   });
 
   it("shows why an action failed and keeps the list", async () => {

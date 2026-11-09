@@ -19,9 +19,9 @@ export function BlogShell({ email, onNewPost, onChats, children }: { email: stri
         <button type="button" className="quiet rail-item" onClick={onChats}>
           Chats
         </button>
-        <button type="button" className="quiet rail-item" aria-current="page">
+        <span className="rail-item" aria-current="page">
           Blog posts
-        </button>
+        </span>
         <p className="who-am-i blog-rail-foot">{email}</p>
       </nav>
       {children}
