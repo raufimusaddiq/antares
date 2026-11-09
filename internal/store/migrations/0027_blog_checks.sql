@@ -1,6 +1,7 @@
 -- The AI check of a blog post (specs/001-blog-cms-openui-publish/data-model.md): one run of the author's own assistant over
 -- a pinned version of the draft, the notes and proposed blocks it returned, and the blocks the author accepted at publish.
--- Every table carries the author; every authenticated query filters on it.
+-- Every table a request reaches directly carries the author and every authenticated query filters on it; block_sources and
+-- published_blocks (and its sources) are reached only through a post_blocks or posts row that does.
 CREATE TABLE post_checks (
   id             TEXT PRIMARY KEY,
   post_id        TEXT NOT NULL REFERENCES posts(id) ON DELETE CASCADE,

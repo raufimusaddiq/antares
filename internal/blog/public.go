@@ -43,7 +43,7 @@ type PublicPost struct {
 	PublishedAt string          `json:"publishedAt"`
 }
 
-// PublicBlock is an accepted block as readers get it: where it goes, its markup, its plain-text version and its sources.
+// PublicBlock is an accepted block (its sources carry verified: always false today, so a client can say they were not checked) as readers get it: where it goes, its markup, its plain-text version and its sources.
 type PublicBlock struct {
 	Anchor   int      `json:"anchor"`
 	Markup   string   `json:"markup"`

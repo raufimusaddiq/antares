@@ -118,7 +118,7 @@ func TestACheckRunsOnTheAuthorsOwnAssistantAndShowsWhatCameBack(t *testing.T) {
 		t.Fatalf("sessions %d runs %d", sessions, len(runs))
 	}
 	r := runs[0]
-	if r.Instructions != checkPrompt || !strings.HasPrefix(r.SessionKey, "chatui:blog:") || !strings.Contains(r.Input, "TITLE: A post") ||
+	if r.Instructions != checkPrompt || r.SessionKey != "chatui:user:"+u.id || !strings.Contains(r.Input, "TITLE: A post") ||
 		!strings.Contains(r.Input, "[0] First part") || !strings.Contains(r.Input, "[2] ## A heading") {
 		t.Fatalf("run request: %+v", r)
 	}
@@ -196,8 +196,9 @@ func TestEveryFailureIsShownAsItselfAndNothingIsPublished(t *testing.T) {
 
 func TestCancellingStopsTheRunAndALateAnswerChangesNothing(t *testing.T) {
 	fh := newFake()
-	release := make(chan struct{})
+	release, live := make(chan struct{}), make(chan struct{})
 	fh.script = func(ctx context.Context, emit func(string, map[string]any) error) error {
+		close(live)
 		select {
 		case <-release:
 			return emit("run.completed", map[string]any{"output": goodReply})
@@ -209,6 +210,7 @@ func TestCancellingStopsTheRunAndALateAnswerChangesNothing(t *testing.T) {
 	u := a.active("alice")
 	post := u.draftToCheck("Cancel me")
 	u.startCheck(post)
+	<-live // the run exists upstream: cancelling now has something to stop
 	w := u.do("POST", "/api/blog/posts/"+post.ID+"/check/cancel", nil)
 	if w.Code != 200 || into[CheckView](t, w).State != "cancelled" {
 		t.Fatalf("cancel: %d %s", w.Code, w.Body)
@@ -748,14 +750,14 @@ func TestTheChecksHermesSessionIsDeletedWhateverHappens(t *testing.T) {
 	}
 }
 
-func TestThereIsADailyCapOnChecks(t *testing.T) {
+func TestThereIsACapOnChecksPer24Hours(t *testing.T) {
 	fh := newFake()
 	fh.output = goodReply
 	a := newAppWithHermes(t, fh)
 	u := a.active("alice")
 	post := u.draftToCheck("Daily")
 	now := time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z")
-	for i := 0; i < maxChecksPerDay; i++ {
+	for i := 0; i < maxChecksPer24h; i++ {
 		a.db.Exec(`INSERT INTO post_checks (id, post_id, author_id, version, state, prev_status, started_at) VALUES (?, ?, ?, 1, 'failed', 'draft', ?)`, "old"+string(rune('a'+i%26))+string(rune('a'+i/26)), post.ID, u.id, now)
 	}
 	if w := u.do("POST", "/api/blog/posts/"+post.ID+"/check", nil); w.Code != 422 || !strings.Contains(w.Body.String(), "LIMIT_REACHED") {
@@ -866,5 +868,85 @@ func TestChecksDoNotAccumulateVersionRows(t *testing.T) {
 	}
 	if n := versions(a, post.ID); n > base+1 {
 		t.Fatalf("%d version rows after three finished checks and three edits", n)
+	}
+}
+
+// The admin's blocked-model list applies to a check as to a chat: the model that would run is named, and a blocked one never runs.
+func TestACheckNeverRunsOnABlockedModel(t *testing.T) {
+	fh := newFake()
+	fh.output = goodReply
+	fh.defaultModel = hermes.ModelCatalog{Provider: "p", Model: "blocked-model"}
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("Policy")
+
+	// No block list: nothing is pinned, the profile's own default runs.
+	u.startCheck(post)
+	u.waitCheck(post.ID, "ready")
+	if _, runs, _, _ := fh.snapshot(); len(runs) != 1 || runs[0].Model != "" {
+		t.Fatalf("with no block list the run is not pinned: %+v", runs)
+	}
+
+	if _, err := a.db.Exec(`INSERT INTO model_blocked (model_id, blocked_by, created_at) VALUES ('blocked-model', ?, 'x')`, u.id); err != nil {
+		t.Fatal(err)
+	}
+	u.startCheck(post)
+	if c := u.waitCheck(post.ID, "failed"); c.Reason != "error" {
+		t.Fatalf("a check on a blocked default model: %+v", c)
+	}
+	if _, runs, _, _ := fh.snapshot(); len(runs) != 1 {
+		t.Fatalf("a run was sent on a blocked model: %d runs", len(runs))
+	}
+
+	// A block list exists and the default is another model: it is named explicitly on the run.
+	a.db.Exec(`DELETE FROM model_blocked`)
+	if _, err := a.db.Exec(`INSERT INTO model_blocked (model_id, blocked_by, created_at) VALUES ('some-other', ?, 'x')`, u.id); err != nil {
+		t.Fatal(err)
+	}
+	u.startCheck(post)
+	u.waitCheck(post.ID, "ready")
+	if _, runs, _, _ := fh.snapshot(); len(runs) != 2 || runs[1].Model != "blocked-model" || runs[1].Provider != "p" {
+		t.Fatalf("the allowed default must be named on the run: %+v", runs)
+	}
+
+	// A block list and a default that cannot be determined: refused, not assumed allowed.
+	fh.mu.Lock()
+	fh.defaultModel = hermes.ModelCatalog{}
+	fh.mu.Unlock()
+	u.startCheck(post)
+	u.waitCheck(post.ID, "failed")
+	if _, runs, _, _ := fh.snapshot(); len(runs) != 2 {
+		t.Fatalf("a run was sent with an unknown default: %d runs", len(runs))
+	}
+}
+
+func TestAnAccountSuspendedDuringACheckGetsNoResult(t *testing.T) {
+	fh := newFake()
+	release := make(chan struct{})
+	fh.script = func(ctx context.Context, emit func(string, map[string]any) error) error {
+		<-release
+		return emit("run.completed", map[string]any{"output": goodReply})
+	}
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("Suspended")
+	u.startCheck(post)
+	if _, err := a.db.Exec(`UPDATE users SET approval_status = 'SUSPENDED' WHERE id = ?`, u.id); err != nil {
+		t.Fatal(err)
+	}
+	close(release)
+	deadline := time.Now().Add(3 * time.Second)
+	for {
+		var state string
+		var blocks int
+		a.db.QueryRow(`SELECT state FROM post_checks WHERE post_id = ?`, post.ID).Scan(&state)
+		a.db.QueryRow(`SELECT COUNT(*) FROM post_blocks WHERE post_id = ?`, post.ID).Scan(&blocks)
+		if state == "cancelled" && blocks == 0 {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("state %q with %d blocks: a suspended account must get no result", state, blocks)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }

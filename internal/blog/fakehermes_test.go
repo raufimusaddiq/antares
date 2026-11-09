@@ -12,15 +12,17 @@ import (
 // fakeHermes is the part of Hermes a check talks to, scripted: what each run emits, and what fails. It records every call
 // with the binding it was made under, so a test can prove whose assistant did the work.
 type fakeHermes struct {
-	mu        sync.Mutex
-	sessions  int
-	runs      []hermes.RunRequest
-	bindings  []hermes.Binding
-	stopped   []string
-	nextRun   int
-	discovers int
-	deleted   []string
-	usage     map[string]any
+	mu           sync.Mutex
+	sessions     int
+	runs         []hermes.RunRequest
+	bindings     []hermes.Binding
+	stopped      []string
+	nextRun      int
+	discovers    int
+	defaultModel hermes.ModelCatalog
+	modelErr     error
+	deleted      []string
+	usage        map[string]any
 
 	// script is what a run's event stream does. nil: finish at once with output.
 	script func(ctx context.Context, emit func(name string, data map[string]any) error) error
@@ -108,6 +110,13 @@ func (f *fakeHermes) DeleteSession(ctx context.Context, b hermes.Binding, sessio
 	f.note(b)
 	f.deleted = append(f.deleted, sessionID)
 	return nil
+}
+
+func (f *fakeHermes) ModelOptions(ctx context.Context, b hermes.Binding, refresh bool) (hermes.ModelCatalog, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.note(b)
+	return f.defaultModel, f.modelErr
 }
 
 func (f *fakeHermes) Discover(ctx context.Context, b hermes.Binding) (hermes.Inventory, error) {

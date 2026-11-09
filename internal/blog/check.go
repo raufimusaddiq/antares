@@ -27,12 +27,13 @@ var checkPrompt string
 const (
 	checkTimeout     = 6 * time.Minute
 	maxChecksPerUser = 2
-	maxChecksPerDay  = 30
+	maxChecksPer24h  = 30 // a rolling 24 hours, not a calendar day
 	maxCheckInput    = 120 << 10
 )
 
 var (
 	ErrBudget       = errors.New("blog: the daily spending limit is reached")
+	ErrModel        = errors.New("blog: the model this check would use is not available")
 	ErrNoCheck      = errors.New("blog: no check")
 	ErrCheckRunning = errors.New("blog: a check is already running")
 	ErrUnavailable  = errors.New("blog: checking is not available")
@@ -51,6 +52,7 @@ type Runner interface {
 	StopRun(ctx context.Context, b hermes.Binding, runID string) error
 	Discover(ctx context.Context, b hermes.Binding) (hermes.Inventory, error)
 	DeleteSession(ctx context.Context, b hermes.Binding, sessionID string) error
+	ModelOptions(ctx context.Context, b hermes.Binding, refresh bool) (hermes.ModelCatalog, error)
 }
 
 // Spend is the account's spending rule, which a check is subject to like any run.
@@ -337,7 +339,7 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 	ins, err := tx.ExecContext(ctx, `INSERT INTO post_checks (id, post_id, author_id, version, state, prev_status, started_at, prompt_version)
 		SELECT ?, ?, ?, ?, 'running', ?, ?, ? WHERE (SELECT COUNT(*) FROM post_checks WHERE author_id = ? AND state = 'running') < ?
 		AND (SELECT COUNT(*) FROM post_checks WHERE author_id = ? AND started_at >= ?) < ?`,
-		id, postID, author, cur.LatestVersion, cur.Status, now, checkPromptVersion(), author, maxChecksPerUser, author, since, maxChecksPerDay)
+		id, postID, author, cur.LatestVersion, cur.Status, now, checkPromptVersion(), author, maxChecksPerUser, author, since, maxChecksPer24h)
 	if err != nil {
 		if isUnique(err) { // another start won the race for this post
 			return nil, ErrCheckRunning
@@ -452,7 +454,7 @@ type outcome struct {
 }
 
 func (s *Service) runCheck(ctx context.Context, id, author, postID, input string, topNodes int, b hermes.Binding) {
-	out := s.driveRun(ctx, id, input, topNodes, b)
+	out := s.driveRun(ctx, id, author, input, topNodes, b)
 	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
 	if out.sessionID != "" { // the session is single-use: it must not pile up in the author's workspace
@@ -470,12 +472,18 @@ func (s *Service) runCheck(ctx context.Context, id, author, postID, input string
 	if out.skip {
 		return
 	}
+	// Default deny holds for as long as the run does: an account suspended or no longer ready while it ran gets no result.
+	if out.state == "ready" {
+		if _, err := store.ActiveBinding(bg, s.db, author); err != nil {
+			out = outcome{state: "cancelled"}
+		}
+	}
 	if err := s.finishCheck(bg, id, author, postID, out); err != nil {
 		log.Printf("blog: finish check: %v", err)
 	}
 }
 
-func (s *Service) driveRun(ctx context.Context, id, input string, topNodes int, b hermes.Binding) (out outcome) {
+func (s *Service) driveRun(ctx context.Context, id, author, input string, topNodes int, b hermes.Binding) (out outcome) {
 	var sid string
 	var usage *hermes.Usage
 	defer func() { out.sessionID, out.usage = sid, usage }()
@@ -504,7 +512,32 @@ func (s *Service) driveRun(ctx context.Context, id, input string, topNodes int, 
 		}
 		return failed("error")
 	}
-	req := hermes.RunRequest{SessionID: sid, Input: input, SessionKey: "chatui:blog:" + id, IdempotencyKey: "antares-blog-" + id, Instructions: checkPrompt}
+	// The account's one stable, server-derived key (PRD MEM-002), the same the chats use: a check does not mint a memory scope of
+	// its own.
+	// Policy applies to the model that will actually run, as for a chat: with a block list, the profile default is resolved and
+	// named explicitly, so a blocked model cannot run and a default changed since cannot be swapped in.
+	var provider, model string
+	if blocked, err := store.BlockedModels(ctx, s.db); err != nil {
+		if ctx.Err() != nil {
+			return ended("")
+		}
+		return failed("error")
+	} else if len(blocked) > 0 {
+		cat, err := s.hx.ModelOptions(ctx, b, false)
+		if ctx.Err() != nil {
+			return ended("")
+		}
+		if err != nil || cat.Model == "" {
+			return failed("error") // a block list exists and the default cannot be determined: refused, not assumed allowed
+		}
+		for _, m := range blocked {
+			if m == cat.Model {
+				return failed("error")
+			}
+		}
+		provider, model = cat.Provider, cat.Model
+	}
+	req := hermes.RunRequest{SessionID: sid, Provider: provider, Model: model, Input: input, SessionKey: "chatui:user:" + author, IdempotencyKey: "antares-blog-" + id, Instructions: checkPrompt}
 	runID, err := s.hx.CreateRun(ctx, b, req)
 	if err != nil {
 		if ctx.Err() != nil {
