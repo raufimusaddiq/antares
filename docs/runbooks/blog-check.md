@@ -39,3 +39,7 @@ A check ends as exactly one of: `ready`, `failed` (`error`: the assistant report
 `timed_out`, `cancelled` (by the author, or the account lost eligibility while it ran) or `out_of_date` (the draft changed). A
 process restart marks a running check `failed`/`disconnected`. Sources are never marked verified: the run's events do not expose what a
 search returned (research R4).
+
+## Trust caveat
+
+Antares is still described as trusted-use only (README, AGENTS.md): the blog must not be represented as safe for multiple mutually untrusted authors until the project's isolation gate is demonstrated. An approved author's public post is visible to anyone; there is no admin takedown in v1, so the remedy is suspending or rejecting the author, which hides their posts.

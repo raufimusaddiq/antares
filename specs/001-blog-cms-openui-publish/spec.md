@@ -125,7 +125,7 @@ The author has a CMS list of their own posts with status (draft, checking, ready
 
 **AI check and enrichment**
 
-- **FR-007**: Pressing Publish MUST start an assistant check of the draft before anything becomes public, unless the author explicitly chooses to publish the original.
+- **FR-007**: Pressing Publish MUST start an assistant check of the draft before anything becomes public, unless the author explicitly chooses to publish the original. (Built as a dialog over the editor: "Check and enrich" or "Publish my original".)
 - **FR-008**: The check MUST produce notes on the writing and a proposed set of interactive blocks placed within the post, without modifying the author's original text.
 - **FR-009**: The author MUST see a preview of the enriched post and be able to accept all, accept or reject each block individually, or publish the original.
 - **FR-010**: Every AI-added block MUST be visibly marked as AI-added to the author in the preview and to readers on the published post.
@@ -136,14 +136,14 @@ The author has a CMS list of their own posts with status (draft, checking, ready
 
 **Sourced data**
 
-- **FR-015**: Data the assistant adds MUST come from web search performed through the assistant, and every data-bearing block MUST show its sources and a retrieved-on date.
+- **FR-015**: Data the assistant adds MUST come from web search performed through the assistant, and every data-bearing block MUST show its sources and a retrieved-on date. Sources are shown as unverified (the assistant's run exposes the search query, not what a search returned), and the author MUST tick "I have checked these sources myself" for a block before it can be accepted.
 - **FR-016**: The system MUST NOT present a figure as sourced when no source was found; unsourced claims MUST yield an author-facing note rather than an invented value.
 - **FR-017**: The author MUST be able to see, per block, which sources were used before accepting it.
 - **FR-018**: Published data MUST NOT change after publication unless the author republishes.
 
 **Reading**
 
-- **FR-019**: Published posts and the blog index MUST be readable by anyone on the internet without an account. This is the only unauthenticated surface: it serves published, non-hidden posts and their published assets, and nothing else; drafts, chats, memory and every other route remain default-deny.
+- **FR-019**: Published posts and the blog index MUST be readable by anyone on the internet without an account. This is an unauthenticated read surface, alongside the shared-chat link (constitution Principle I, v1.1.0): it serves published, non-hidden posts and their published assets, and nothing else; drafts, chats, memory and every other route remain default-deny.
 - **FR-020**: Readers MUST be able to interact with native blocks (for example sort, filter, expand, hover for detail) without being able to trigger any action that reads or changes account data, chats, memory or files.
 - **FR-021**: A block that cannot be rendered MUST fall back to a plain readable version of its content without breaking the rest of the post.
 - **FR-022**: Published pages MUST work on phone, tablet and desktop, in light and dark themes, and be usable with keyboard and screen reader.
@@ -181,7 +181,7 @@ The author has a CMS list of their own posts with status (draft, checking, ready
 - **SC-005**: 0 attempts by one user to read, edit, publish or delete another user's draft or post succeed, across all post operations.
 - **SC-006**: A draft is never lost: after a closed tab, crash or dropped connection, at least the last 5 seconds of work before the interruption is restored.
 - **SC-007**: A published post opens and becomes readable in under 2 seconds on a typical mobile connection for 95% of loads.
-- **SC-008**: In a review of published enriched posts, no block shows a figure the assistant could not trace to a listed source.
+- **SC-008**: In a review of published enriched posts, no block shows a figure without a listed source and a retrieved-on date, and no block with sources was accepted without the author's acknowledgement. (Sources are never marked verified.)
 - **SC-009**: At least 80% of authors who try the enrichment step accept at least one proposed block.
 - **SC-010**: When the assistant is unavailable, 100% of authors see a clear failure state and none have a post published as checked.
 
@@ -191,7 +191,7 @@ The author has a CMS list of their own posts with status (draft, checking, ready
 - The blog is part of the same Antares deployment (same sign-in, same footprint) rather than a separate service.
 - The assistant (Hermes) is the only source of the check, the block markup and the web-searched data; Antares adds no second AI pipeline of its own, and the author's own assistant binding performs the check.
 - Interactive blocks use the same native styled component set as Antares chat; a block catalogue specific to the blog may be a subset or extension of it, to be settled in planning.
-- Administrators can approve, revoke and suspend accounts but cannot read drafts; whether they can unpublish or hide a public post for abuse is a planning question.
+- Administrators can approve, revoke and suspend accounts but cannot read drafts; they have no takedown of a public post in v1 (research R8): the only remedy is suspending or rejecting the author, which hides their posts. A takedown is a candidate for a later spec.
 - Publishing is always an explicit author action; nothing is published automatically.
 - Comments, reader accounts, subscriptions, multi-author collaboration, scheduled publishing, paid content and an importer from other CMSs are out of scope for this feature.
 - Post text language is the author's choice; the assistant checks in the language written.
