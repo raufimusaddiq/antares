@@ -15,6 +15,17 @@ const detail = (u: AdminUser) => renderToStaticMarkup(<UserDetail user={u} onDec
 
 afterEach(() => vi.unstubAllGlobals());
 
+describe("a suspended author's posts", () => {
+  it("the user's page says they are hidden from readers and that admins see none of the content", () => {
+    const html = detail(user({ approvalStatus: "SUSPENDED", tenantStatus: "READY" }));
+    expect(html).toContain("Their published posts are hidden from readers until the account is reinstated. Admins see no post or draft content.");
+    expect(html).toContain('role="note"');
+  });
+  it("is said of a suspended account only", () => {
+    for (const approvalStatus of ["PENDING", "APPROVED", "REJECTED"]) expect(detail(user({ approvalStatus }))).not.toContain("published posts are hidden");
+  });
+});
+
 describe("role: who sees the admin area", () => {
   it("canAdmin comes only from the server's /api/me and defaults to false", () => {
     const base = { state: "ACTIVE", email: "a@example.test" };

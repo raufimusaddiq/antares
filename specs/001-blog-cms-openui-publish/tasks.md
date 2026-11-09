@@ -150,7 +150,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 
 - [x] T055 [US3] Source cleaning (public https addresses only) in `internal/blog/sources.go` (`TestPublicHTTPS`, `TestCleanSource`); no verification against run tool events, because research R4 found they do not expose search results, so every source is `verified: false` and `ack` is enforced in the block decision handler (`ErrNeedsAck` in `check.go`, `ACK_REQUIRED` in `handlers.go`)
 - [ ] T076 [US3] The preview as designed: "Accept all and publish" and Accept / Reject on each block, the "Notes from the assistant" column and the "Sources for the selected block" drawer, in `web/src/blog/PublishFlow.tsx` (the Publish / preview frames in `docs/design/antares.figcraft`; the code has "Publish with N blocks" and a Sources list inside each block)
-- [x] T056 [P] [US3] Sources drawer and acknowledgement UI in `web/src/blog/Sources.tsx`; show sources and retrieved-on date on published data blocks in `web/src/blog/PublicPost.tsx`
+- [x] T056 [P] [US3] Sources list and acknowledgement UI in `web/src/blog/Sources.tsx` (a list inside each block; the designed drawer is T076); show sources and retrieved-on date on published data blocks in `web/src/blog/PublicPost.tsx`
 - [ ] T057 [US3] Re-run behaviour: republish after edits re-checks and drops or re-proposes blocks tied to changed text in `internal/blog/check.go`; test in `internal/blog/check_republish_test.go`
 
 **Checkpoint**: published data is never an unlabelled model claim.
@@ -201,7 +201,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 
 ## Phase 9: Polish and cross-cutting
 
-- [ ] T070 [P] Admin page: suspended-user note per the design, confirm no endpoint or screen exposes post or draft content, in `web/src/Admin.tsx` and `internal/blog/admin_blind_test.go` (kept security test)
+- [x] T070 [P] Admin page: suspended-user note per the design, confirm no endpoint or screen exposes post or draft content, in `web/src/Admin.tsx` and `internal/blog/admin_blind_test.go` (kept security test) (the note is on a suspended user's page in `web/src/Admin.tsx`; `internal/auth/admin_blog_test.go` scans every admin endpoint for a writer's post, draft, address and image before and after the suspension; `internal/blog/admin_blind_test.go` has an admin attack every author route and checks a suspended author's post is hidden from every reader. Each fails when I leak on purpose)
 - [x] T071 [P] Secrets and log hygiene test: no credential, run id or provider text in any blog response, error or log, in `internal/blog/redaction_test.go` (`TestNothingFromTheAssistantsSideReachesAnAuthorOrTheLog`: seven ways a check can end, each with a secret-looking key and provider text in every place Hermes can put them; the unsealed key, the profile, run and session ids and the provider text are scanned for in every response an author can fetch and in the log; `TestABindingNeverPrintsItsKey`. Checked by leaking on purpose: once into a response, once into the log, both fail)
 - [X] T072 [P] Update `docs/PRD.md` (new section for the blog and the public-surface exception), `docs/runbooks/security-invariants.md` and `.specify/memory/constitution.md` Principle I wording in the same PR, bumping the constitution version
 - [ ] T073 Update `docs/design/README.md` to match what shipped (known gaps), and reconcile any code/design disagreement
