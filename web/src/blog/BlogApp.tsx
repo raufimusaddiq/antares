@@ -44,6 +44,14 @@ function PostScreen({ id, email, publishing, caps, onNavigate }: { id: string; e
   const [settings, setSettings] = useState(false);
   // Without an open editor, "saved" means this browser holds nothing the server has not confirmed.
   const flush = useRef<() => Promise<boolean>>(() => Promise.resolve(loadLocalCopy(email, id) === null));
+  // The editor is mounted behind Publish and stays through it; when Publish closes it is opened again on the post as the server
+  // has it, not on what it was first given (what the author comes back to is what was confirmed).
+  const [editorKey, setEditorKey] = useState(0);
+  const wasPublishing = useRef(false);
+  useEffect(() => {
+    if (wasPublishing.current && !publishing) setEditorKey((k) => k + 1);
+    wasPublishing.current = publishing;
+  }, [publishing]);
 
   useEffect(() => {
     const ctl = new AbortController();
@@ -61,32 +69,37 @@ function PostScreen({ id, email, publishing, caps, onNavigate }: { id: string; e
       </main>
     );
 
-  if (publishing)
-    return (
-      <PublishFlow
-        post={post}
-        caps={caps}
-        flush={() => flush.current()}
-        onPost={setPost}
-        onBackToEditing={() => onNavigate(editPath(id))}
-        onMyPosts={() => onNavigate("/blog")}
-      />
-    );
-
+  // The editor stays where it is, mounted behind Publish (the design's dialog sits over it): inert while Publish is open, so
+  // nothing in it can be reached or read out, and its saved state and flush are the ones Publish asks for.
   return (
-    <Suspense fallback={<main className="blog-flow" aria-busy="true"><p>Loading the editor…</p></main>}>
-      <Editor
-        post={post}
-        email={email}
-        onPost={(p) => setPost((cur) => (typeof cur === "object" ? { ...cur, title: p.title, summary: p.summary, slug: p.slug, coverUrl: p.coverUrl, doc: p.doc, check: p.check, latestVersion: p.latestVersion, status: p.status, updatedAt: p.updatedAt } : p))}
-        onSettings={() => setSettings(true)}
-        onPublish={(f) => {
-          flush.current = f;
-          void f().then((saved) => saved && onNavigate(publishPath(id))); // a failed save stays in the editor, where its state shows
-        }}
-        onBack={() => onNavigate("/blog")}
-      />
-      {settings && <PostSettings post={post} onSaved={setPost} onClose={() => setSettings(false)} />}
-    </Suspense>
+    <>
+      <Suspense fallback={<main className="blog-flow" aria-busy="true"><p>Loading the editor…</p></main>}>
+        <div className="blog-behind" inert={publishing} aria-hidden={publishing || undefined}>
+          <Editor
+            key={editorKey}
+            post={post}
+            email={email}
+            onPost={(p) => setPost((cur) => (typeof cur === "object" ? { ...cur, title: p.title, summary: p.summary, slug: p.slug, coverUrl: p.coverUrl, doc: p.doc, check: p.check, latestVersion: p.latestVersion, status: p.status, updatedAt: p.updatedAt } : p))}
+            onSettings={() => setSettings(true)}
+            onPublish={(f) => {
+              flush.current = f;
+              void f().then((saved) => saved && onNavigate(publishPath(id))); // a failed save stays in the editor, where its state shows
+            }}
+            onBack={() => onNavigate("/blog")}
+          />
+        </div>
+        {settings && !publishing && <PostSettings post={post} onSaved={setPost} onClose={() => setSettings(false)} />}
+      </Suspense>
+      {publishing && (
+        <PublishFlow
+          post={post}
+          caps={caps}
+          flush={() => flush.current()}
+          onPost={setPost}
+          onBackToEditing={() => onNavigate(editPath(id))}
+          onMyPosts={() => onNavigate("/blog")}
+        />
+      )}
+    </>
   );
 }

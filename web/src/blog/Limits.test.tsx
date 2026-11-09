@@ -74,7 +74,7 @@ describe("Publish: the limits are stated before anyone publishes", () => {
     expect(box.textContent).toMatch(/up to 10 blocks, each naming up to 10 sources/);
     expect(box.textContent).toMatch(/30 checks in 24 hours/);
     expect(box.textContent).toMatch(/Images: 1 of 30 in this post, up to 5 MB each/);
-    expect((screen.getByRole("button", { name: "Check and add blocks" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Check and enrich" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("says a post is too long to check before it is tried, and still lets the original go out", async () => {
@@ -83,7 +83,7 @@ describe("Publish: the limits are stated before anyone publishes", () => {
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toMatch(/longer than the assistant can read in one check/);
     expect(alert.textContent).toMatch(/Publish your original, or shorten it/);
-    expect((screen.getByRole("button", { name: "Check and add blocks" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((screen.getByRole("button", { name: "Check and enrich" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Publish my original" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
@@ -98,16 +98,16 @@ describe("Publish: the limits are stated before anyone publishes", () => {
   it("shows nothing, and blocks nothing, when the limits cannot be had", async () => {
     vi.stubGlobal("fetch", async () => json({}, 500));
     flow(doc(p("x")));
-    await waitFor(() => expect(screen.getByRole("button", { name: "Check and add blocks" })).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole("button", { name: "Check and enrich" })).toBeTruthy());
     expect(screen.queryByRole("region", { name: "Limits" })).toBeNull();
-    expect((screen.getByRole("button", { name: "Check and add blocks" }) as HTMLButtonElement).disabled).toBe(false);
+    expect((screen.getByRole("button", { name: "Check and enrich" }) as HTMLButtonElement).disabled).toBe(false);
   });
 
   it("explains a refusal from the server in the same words", async () => {
     vi.stubGlobal("fetch", async (_u: string, init?: RequestInit) => (init?.method === "POST" ? json({ error: { code: "TOO_LONG_TO_CHECK" } }, 422) : json(LIMITS)));
     flow(doc(p("short")));
     await screen.findByRole("region", { name: "Limits" });
-    fireEvent.click(screen.getByRole("button", { name: "Check and add blocks" }));
+    fireEvent.click(screen.getByRole("button", { name: "Check and enrich" }));
     expect((await screen.findByRole("alert")).textContent).toMatch(/longer than the assistant can read in one check/);
   });
 });

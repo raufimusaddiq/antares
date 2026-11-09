@@ -2,6 +2,7 @@ import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { cancelCheck, decideBlock, describeBlogError, getCheck, getLimits, publish, startCheck } from "./blogApi";
 import { checkBytes, imageCount, sizeWords, type Limits } from "./limits";
 import { SourceList } from "./Sources";
+import { useDialog } from "./useDialog";
 import type { Capabilities, Check, CheckBlock, Post } from "./types";
 
 const ReaderBlock = lazy(() => import("./ReaderBlock"));
@@ -123,140 +124,190 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
 
   if (phase.k === "published")
     return (
-      <main className="blog-flow">
-        <h1>Your post is live</h1>
-        <p>Anyone can read it, without an account.</p>
-        <div className="blog-actions">
-          <a className="btn" href={`/b/${phase.slug}`}>
-            View post
-          </a>
-          <button type="button" className="quiet" onClick={onMyPosts}>
-            My posts
-          </button>
-        </div>
-      </main>
+      <div className="blog-takeover">
+        <main className="blog-flow">
+          <h1>Your post is live</h1>
+          <p>Anyone can read it, without an account.</p>
+          <div className="blog-actions">
+            <a className="btn" href={`/b/${phase.slug}`}>
+              View post
+            </a>
+            <button type="button" className="quiet" onClick={onMyPosts}>
+              My posts
+            </button>
+          </div>
+        </main>
+      </div>
     );
 
   if (phase.k === "checking" || phase.k === "starting")
     return (
-      <main className="blog-flow" aria-busy="true">
-        <h1>Checking your writing</h1>
-        <p role="status">Your assistant is reading the post, looking for data to add and finding sources. This can take a minute or two.</p>
-        <p className="label">Nothing is published yet. Your original is unchanged.</p>
-        <div className="blog-actions">
-          <button
-            type="button"
-            className="quiet"
-            disabled={phase.k === "starting"}
-            onClick={() => void cancelCheck(post.id).then((r) => (r.ok ? apply(r.value) : setError(describeBlogError(r, "cancel the check"))))}
-          >
-            Cancel
-          </button>
-        </div>
-        {error && <p className="blog-error" role="alert">{error}</p>}
-      </main>
+      <div className="blog-takeover">
+        <main className="blog-flow" aria-busy="true">
+          <h1>Checking your writing</h1>
+          <p role="status">Your assistant is reading the post, looking for data to add and finding sources. This can take a minute or two.</p>
+          <p className="label">Nothing is published yet. Your original is unchanged.</p>
+          <div className="blog-actions">
+            <button
+              type="button"
+              className="quiet"
+              disabled={phase.k === "starting"}
+              onClick={() => void cancelCheck(post.id).then((r) => (r.ok ? apply(r.value) : setError(describeBlogError(r, "cancel the check"))))}
+            >
+              Cancel
+            </button>
+          </div>
+          {error && <p className="blog-error" role="alert">{error}</p>}
+        </main>
+      </div>
     );
 
   if (phase.k === "stopped" && check)
     return (
-      <main className="blog-flow">
-        <h1>{check.state === "out_of_date" ? "The draft changed" : "The check did not finish"}</h1>
-        <p role="alert">{failureWords(check)}</p>
-        <p className="label">Nothing was published.</p>
-        <div className="blog-actions">
-          {canCheck && (
-            <button type="button" className="btn" onClick={() => void begin()}>
-              Try again
+      <div className="blog-takeover">
+        <main className="blog-flow">
+          <h1>{check.state === "out_of_date" ? "The draft changed" : "The check did not finish"}</h1>
+          <p role="alert">{failureWords(check)}</p>
+          <p className="label">Nothing was published.</p>
+          <div className="blog-actions">
+            {canCheck && (
+              <button type="button" className="btn" onClick={() => void begin()}>
+                Try again
+              </button>
+            )}
+            <button type="button" className="quiet" disabled={busy || !ready} onClick={() => void go("original")}>
+              Publish original
             </button>
-          )}
-          <button type="button" className="quiet" disabled={busy || !ready} onClick={() => void go("original")}>
-            Publish original
-          </button>
-          <button type="button" className="quiet" onClick={onBackToEditing}>
-            Back to editing
-          </button>
-        </div>
-        {error && <p className="blog-error" role="alert">{error}</p>}
-      </main>
+            <button type="button" className="quiet" onClick={onBackToEditing}>
+              Back to editing
+            </button>
+          </div>
+          {error && <p className="blog-error" role="alert">{error}</p>}
+        </main>
+      </div>
     );
 
   if (phase.k === "preview" && check) {
     const taken = check.blocks.filter((b) => b.decision === "accepted").length;
     return (
-      <main className="blog-flow blog-preview">
-        <h1>Preview</h1>
-        <p>The assistant proposed {check.blocks.length} {check.blocks.length === 1 ? "block" : "blocks"}. Your writing is unchanged. Accept the ones you want.</p>
-        {check.notices.map((n) => (
-          <p key={n} className="blog-notice" role="status">{n}</p>
-        ))}
-        {check.notes.length > 0 && (
-          <section aria-label="Notes">
-            <h2>Notes</h2>
-            <ul>
-              {check.notes.map((n, i) => (
-                <li key={i}><span className="chip">{n.kind}</span> {n.text}</li>
-              ))}
-            </ul>
-          </section>
-        )}
-        {check.blocks.map((b) => {
-          const blocked = b.needsAck && !acks[b.id];
-          return (
-            <section key={b.id} className="blog-block" aria-label={`Proposed block: ${b.kind}`}>
-              <span className="chip chip-ai">AI-added</span>
-              <Suspense fallback={<p className="label">Loading…</p>}>
-                <ReaderBlock markup={b.markup} fallback={b.fallback} />
-              </Suspense>
-              <SourceList sources={b.sources} needsAck={b.needsAck} acked={acks[b.id] === true} onAck={(v) => setAcks({ ...acks, [b.id]: v })} />
-              <div className="blog-actions">
-                <button type="button" className="btn" aria-pressed={b.decision === "accepted"} disabled={blocked} onClick={() => void decide(b, "accepted")}>
-                  {b.decision === "accepted" ? "Accepted" : "Accept"}
-                </button>
-                <button type="button" className="quiet" aria-pressed={b.decision === "rejected"} onClick={() => void decide(b, "rejected")}>
-                  {b.decision === "rejected" ? "Rejected" : "Reject"}
-                </button>
-              </div>
+      <div className="blog-takeover">
+        <main className="blog-flow blog-preview">
+          <h1>Preview</h1>
+          <p>The assistant proposed {check.blocks.length} {check.blocks.length === 1 ? "block" : "blocks"}. Your writing is unchanged. Accept the ones you want.</p>
+          {check.notices.map((n) => (
+            <p key={n} className="blog-notice" role="status">{n}</p>
+          ))}
+          {check.notes.length > 0 && (
+            <section aria-label="Notes">
+              <h2>Notes</h2>
+              <ul>
+                {check.notes.map((n, i) => (
+                  <li key={i}><span className="chip">{n.kind}</span> {n.text}</li>
+                ))}
+              </ul>
             </section>
-          );
-        })}
-        {error && <p className="blog-error" role="alert">{error}</p>}
-        <div className="blog-actions">
-          <button type="button" className="btn" disabled={busy || taken === 0} onClick={() => void go("enriched")}>
-            Publish with {taken} {taken === 1 ? "block" : "blocks"}
-          </button>
-          <button type="button" className="quiet" disabled={busy || !ready} onClick={() => void go("original")}>
-            Publish original
-          </button>
-          <button type="button" className="quiet" onClick={onBackToEditing}>
-            Back to editing
-          </button>
-        </div>
-      </main>
+          )}
+          {check.blocks.map((b) => {
+            const blocked = b.needsAck && !acks[b.id];
+            return (
+              <section key={b.id} className="blog-block" aria-label={`Proposed block: ${b.kind}`}>
+                <span className="chip chip-ai">AI-added</span>
+                <Suspense fallback={<p className="label">Loading…</p>}>
+                  <ReaderBlock markup={b.markup} fallback={b.fallback} />
+                </Suspense>
+                <SourceList sources={b.sources} needsAck={b.needsAck} acked={acks[b.id] === true} onAck={(v) => setAcks({ ...acks, [b.id]: v })} />
+                <div className="blog-actions">
+                  <button type="button" className="btn" aria-pressed={b.decision === "accepted"} disabled={blocked} onClick={() => void decide(b, "accepted")}>
+                    {b.decision === "accepted" ? "Accepted" : "Accept"}
+                  </button>
+                  <button type="button" className="quiet" aria-pressed={b.decision === "rejected"} onClick={() => void decide(b, "rejected")}>
+                    {b.decision === "rejected" ? "Rejected" : "Reject"}
+                  </button>
+                </div>
+              </section>
+            );
+          })}
+          {error && <p className="blog-error" role="alert">{error}</p>}
+          <div className="blog-actions">
+            <button type="button" className="btn" disabled={busy || taken === 0} onClick={() => void go("enriched")}>
+              Publish with {taken} {taken === 1 ? "block" : "blocks"}
+            </button>
+            <button type="button" className="quiet" disabled={busy || !ready} onClick={() => void go("original")}>
+              Publish original
+            </button>
+            <button type="button" className="quiet" onClick={onBackToEditing}>
+              Back to editing
+            </button>
+          </div>
+        </main>
+      </div>
     );
   }
 
   return (
-    <main className="blog-flow">
-      <h1>Publish</h1>
-      {!ready && <p className="blog-error" role="alert">Give the post a title before publishing.</p>}
-      <p>You can publish exactly what you wrote, or have your assistant check it first and propose interactive blocks with sourced data. You approve each one.</p>
-      {!canCheck && <p className="blog-notice" role="status">Checking is not available right now, so only your original can be published.</p>}
-      {limits && <LimitsNote limits={limits} post={post} canCheck={canCheck} />}
-      <div className="blog-actions">
-        {canCheck && (
-          <button type="button" className="btn" disabled={!ready || (limits !== null && checkBytes(post.title, post.doc) > limits.checkBytes)} onClick={() => void begin()}>
-            Check and add blocks
-          </button>
+    <ChooseDialog
+      post={post}
+      ready={ready}
+      canCheck={canCheck}
+      busy={busy}
+      limits={limits}
+      error={error}
+      onCheck={() => void begin()}
+      onOriginal={() => void go("original")}
+      onCancel={onBackToEditing}
+    />
+  );
+}
+
+/**
+ * The first step, a dialog over the editor as the design has it: check and enrich, or publish what was written. Focus
+ * moves in, Tab stays inside, Escape and Cancel go back to editing. The editor behind it is inert.
+ */
+function ChooseDialog({ post, ready, canCheck, busy, limits, error, onCheck, onOriginal, onCancel }: { post: Post; ready: boolean; canCheck: boolean; busy: boolean; limits: Limits | null; error: string; onCheck: () => void; onOriginal: () => void; onCancel: () => void }) {
+  const ref = useDialog<HTMLDivElement>(onCancel);
+  const tooLong = limits !== null && checkBytes(post.title, post.doc) > limits.checkBytes;
+  const checkOk = canCheck && ready && !tooLong; // focus starts on the first choice that can be taken
+  // The limits arrive after the dialog opens: a button that was enabled when focus moved in can become disabled (the post is too
+  // long to check), which drops focus out of the dialog. Put it back on the first choice that can be taken.
+  useEffect(() => {
+    const el = ref.current;
+    const now = document.activeElement as HTMLButtonElement | null;
+    if (!el || (el.contains(now) && !now?.disabled)) return; // focus is on something that can be used
+    (el.querySelector<HTMLElement>("[data-autofocus]:not(:disabled)") ?? el.querySelector<HTMLElement>("button:not(:disabled)"))?.focus();
+  }, [ref, checkOk, ready]);
+  return (
+    <div className="blog-scrim">
+      <div ref={ref} className="blog-dialog" role="dialog" aria-modal="true" aria-labelledby="publish-title" tabIndex={-1}>
+        <h2 id="publish-title">Publish this post</h2>
+        {!ready && <p className="blog-error" role="alert">Give the post a title before publishing.</p>}
+        {canCheck ? (
+          <section className="blog-option blog-option-check" aria-labelledby="opt-check">
+            <h3 id="opt-check">Check and enrich</h3>
+            <p>Your assistant reads the post, checks claims against the web, and proposes tables, charts and other blocks. You review everything before it goes live.</p>
+            <button type="button" className="btn" data-autofocus={checkOk ? true : undefined} disabled={!ready || tooLong} onClick={onCheck}>
+              Check and enrich
+            </button>
+          </section>
+        ) : (
+          <section className="blog-notice" role="status">
+            <h3>Checking is not available right now</h3>
+            <p>The assistant or its web search is not set up. You can still publish your post exactly as written.</p>
+          </section>
         )}
-        <button type="button" className={canCheck ? "quiet" : "btn"} disabled={busy || !ready} onClick={() => void go("original")}>
-          Publish my original
-        </button>
-        <button type="button" className="quiet" onClick={onBackToEditing}>
-          Back to editing
+        <section className="blog-option" aria-labelledby="opt-original">
+          <h3 id="opt-original">Publish my original</h3>
+          <p>Publish exactly what you wrote. No blocks are added.</p>
+          <button type="button" className={canCheck ? "quiet" : "btn"} data-autofocus={!checkOk && ready ? true : undefined} disabled={busy || !ready} onClick={onOriginal}>
+            Publish my original
+          </button>
+        </section>
+        {limits && <LimitsNote limits={limits} post={post} canCheck={canCheck} />}
+        {error && <p className="blog-error" role="alert">{error}</p>}
+        <button type="button" className="quiet" onClick={onCancel}>
+          Cancel
         </button>
       </div>
-      {error && <p className="blog-error" role="alert">{error}</p>}
-    </main>
+    </div>
   );
 }
 
@@ -267,7 +318,7 @@ function LimitsNote({ limits, post, canCheck }: { limits: Limits; post: Post; ca
   const tooLong = bytes > limits.checkBytes;
   return (
     <section className="blog-limits" aria-label="Limits">
-      <h2>Limits</h2>
+      <h3>Limits</h3>
       <ul>
         {canCheck && (
           <li className={tooLong ? "blog-error" : undefined} role={tooLong ? "alert" : undefined}>
