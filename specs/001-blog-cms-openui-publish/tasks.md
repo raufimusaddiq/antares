@@ -171,7 +171,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 ### Implementation for User Story 4
 
 - [X] T061 [US4] Read-only OpenUI library variant (actions removed) in `web/src/openui/readerLibrary.ts`; renderer wrapper with per-block error boundary and fallback in `web/src/blog/ReaderBlock.tsx`
-- [ ] T062 [US4] Reader page polish per the design: keyboard and screen-reader order, dark/light, phone, AI-added marker, in `web/src/blog/PublicPost.tsx` and `web/src/styles.css`
+- [ ] T062 [US4] Reader page polish per the design: keyboard and screen-reader order, dark/light, phone, AI-added marker, in `web/src/blog/Public.tsx` and `web/src/styles.css` (compared with the Blog public frames in antares.figcraft: the header and the opened-accordion spacing now follow them; still different: the AI-added marker sits above a block, the design has it beside the block's title, which needs the marker injected into the OpenUI card; the design's VERIFIED pills are deliberately not built, sources are never verified)
 - [X] T063 [US4] Add CSP/robots handling for `/b/*` in `internal/server/` (indexable, same strict script/frame sources); extend `web/src/openui/csp.test.ts` if affected
 - [X] T064 [US4] Browser checks `blog-reader-phone`, `blog-reader-dark`, `blog-reader-keyboard` in `scripts/browser-check.mjs`; rebuild `internal/webui/dist`
 
