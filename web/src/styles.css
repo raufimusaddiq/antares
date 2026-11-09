@@ -1304,6 +1304,10 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 .blog-row-title { font-weight: 700; overflow-wrap: anywhere; }
 .blog-row-text { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; flex: 1 1 14rem; min-width: 0; }
 .blog-bar-note { margin: 0.25rem 0 0; }
+.blog-limits { margin: 1rem 0; padding: 0.75rem 1rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
+.blog-limits h2 { margin: 0 0 0.25rem; font-size: 1rem; }
+.blog-limits ul { margin: 0; padding-left: 1.2rem; font-size: 0.9rem; }
+.blog-limits li + li { margin-top: 0.25rem; }
 .blog-list .blog-bar > div { flex: 1; min-width: 0; }
 .blog-row-actions { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .blog-empty { padding: 2rem 1rem; text-align: center; }

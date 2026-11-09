@@ -108,6 +108,7 @@ var PushRoutes = []Route{
 // the blog does not provide is not mounted at all.
 var BlogRoutes = []Route{
 	{"GET", "/api/blog/capabilities"},
+	{"GET", "/api/blog/limits"},
 	{"GET", "/api/blog/posts"},
 	{"POST", "/api/blog/posts"},
 	{"GET", "/api/blog/posts/{id}"},

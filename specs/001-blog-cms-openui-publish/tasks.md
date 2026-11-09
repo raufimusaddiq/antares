@@ -187,14 +187,14 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 
 ### Tests for User Story 5
 
-- [ ] T065 [P] [US5] List test: only my posts, correct status chips for all five states, in `internal/blog/list_test.go`
-- [ ] T066 [P] [US5] Web test: list states (empty, loading, error), row actions, delete confirm, in `web/src/blog/PostList.test.tsx`
+- [x] T065 [P] [US5] List test: only my posts, correct status chips for all five states, in `internal/blog/list_test.go` (also an empty list is `[]`; `internal/blog/list_test.go` has the two tests)
+- [x] T066 [P] [US5] Web test: list states (empty, loading, error), row actions, delete confirm, in `web/src/blog/PostList.test.tsx` (12 tests incl. the five chips, row actions per state, delete confirm; mutation-checked)
 
 ### Implementation for User Story 5
 
 - [x] T067 [US5] CMS list UI per the design in `web/src/blog/PostList.tsx` (status chips, row actions, delete confirmation)
-- [ ] T068 [US5] Show limits (size, images, blocks) to the author before publishing in `web/src/blog/PublishFlow.tsx` and `internal/blog/handlers.go`
-- [ ] T069 [US5] Browser check `blog-list` in `scripts/browser-check.mjs`; rebuild `internal/webui/dist`
+- [x] T068 [US5] Show limits (size, images, blocks) to the author before publishing in `web/src/blog/PublishFlow.tsx` and `internal/blog/handlers.go` (`GET /api/blog/limits` reads the enforced constants; a draft over the check limit is refused as `TOO_LONG_TO_CHECK` and the Publish screen says so first; images are counted client-side)
+- [x] T069 [US5] Browser check `blog-list` in `scripts/browser-check.mjs`; rebuild `internal/webui/dist` (run as `ONLY=blog-list` (and as part of `blog-editor`, which now also covers the Publish screens, ordinary and too long); rebuilt `internal/webui/dist`)
 
 ---
 

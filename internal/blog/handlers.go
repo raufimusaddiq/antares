@@ -126,6 +126,8 @@ func reply(w http.ResponseWriter, p Post, err error) {
 		apiError(w, http.StatusConflict, "CONFLICT", "The post changed", map[string]any{"latest": c.Latest})
 	case errors.Is(err, ErrSlugTaken):
 		apiError(w, http.StatusConflict, "SLUG_TAKEN", "That address is used by another published post", nil)
+	case errors.Is(err, ErrTooLong):
+		apiError(w, http.StatusUnprocessableEntity, "TOO_LONG_TO_CHECK", "This post is longer than the assistant can read in one check", nil)
 	case errors.Is(err, ErrInvalid):
 		apiError(w, http.StatusUnprocessableEntity, "INVALID_REQUEST", "That cannot be saved or published as it is", nil)
 	case errors.Is(err, ErrBudget):
@@ -157,6 +159,9 @@ func reply(w http.ResponseWriter, p Post, err error) {
 // same-origin check; every one acts on the caller's own posts only.
 func (s *Service) Handlers() map[string]http.Handler {
 	return map[string]http.Handler{
+		"GET /api/blog/limits": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			writeJSON(w, http.StatusOK, CurrentLimits())
+		}),
 		"GET /api/blog/capabilities": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Writing and publishing need nothing outside Antares. Checking needs the assistant to confirm, under this
 			// author's own binding, that it can search the web: nothing is assumed.

@@ -4,6 +4,7 @@
 
 import { purgeDrafts } from "../drafts";
 import { purgeUserState } from "../pwa";
+import type { Limits } from "./limits";
 import { EMPTY_DOC, type Capabilities, type Check, type CheckBlock, type CheckNote, type Decision, type DocNode, type Post, type PostStatus, type PostSummary, type PublicBlock, type PublicPost, type PublicSummary, type Source } from "./types";
 
 export type BlogResult<T> = { ok: true; value: T } | { ok: false; status: number; code: string; latest?: Post };
@@ -107,6 +108,14 @@ export function parseSummary(v: unknown): PostSummary | null {
   return { id: str(o.id), title: str(o.title), status: str(o.status) as PostStatus, slug: str(o.slug), updatedAt: str(o.updatedAt), publishedAt: str(o.publishedAt), interactive: o.interactive === true };
 }
 
+export function parseLimits(v: unknown): Limits | null {
+  const o = obj(v);
+  if (!o) return null;
+  const l = { checkBytes: num(o.checkBytes), docBytes: num(o.docBytes), imagesPerPost: num(o.imagesPerPost), imageBytes: num(o.imageBytes), blocksPerCheck: num(o.blocksPerCheck), sourcesPerBlock: num(o.sourcesPerBlock), checksPer24h: num(o.checksPer24h) };
+  // A number the server did not send must not become "0 allowed" on the page: no limits at all is the honest answer.
+  return Object.values(l).every((n) => n > 0) ? l : null;
+}
+
 export function parseCapabilities(v: unknown): Capabilities | null {
   const o = obj(v);
   return o ? { writing: o.writing === true, check: o.check === true, webSearch: o.webSearch === true } : null;
@@ -185,6 +194,7 @@ export const cancelCheck = (id: string) => request("POST", `${P}/${enc(id)}/chec
 export const decideBlock = (id: string, blockId: string, decision: "accepted" | "rejected", ack?: true) => request("PUT", `${P}/${enc(id)}/blocks/${enc(blockId)}`, parseBlock, { decision, ...(ack ? { ack } : {}) });
 export const publish = (id: string, mode: "enriched" | "original") => request("POST", `${P}/${enc(id)}/publish`, parsePost, { mode });
 export const unpublish = (id: string) => request("POST", `${P}/${enc(id)}/unpublish`, parsePost, {});
+export const getLimits = (signal?: AbortSignal) => request("GET", "/api/blog/limits", parseLimits, undefined, signal);
 export const getCapabilities = (signal?: AbortSignal) => request("GET", "/api/blog/capabilities", parseCapabilities, undefined, signal);
 
 export async function uploadImage(id: string, file: File): Promise<BlogResult<{ url: string; assetId: string }>> {

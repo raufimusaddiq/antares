@@ -24,6 +24,7 @@ query is scoped to the caller as `author_id`. A foreign or missing id returns th
 | POST | `/api/blog/posts/{id}/assets` | Upload an image (type/size limited) |
 | GET | `/api/blog/posts/{id}/assets/{assetId}` | Author-only read before publish |
 | GET | `/api/blog/capabilities` | Whether writing, checking and web search are available (FR-029) |
+| GET | `/api/blog/limits` | The numbers the author is held to (text a check reads, post size, images, blocks, checks per 24 h), read from the enforced constants, shown before publishing |
 
 ## Public (no session): the only unauthenticated blog routes
 

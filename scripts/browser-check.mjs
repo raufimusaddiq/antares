@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-editor|shots|phone-shots)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -41,6 +41,8 @@ const RICH = "b".repeat(32);
 
 const BLOG_ID = "e".repeat(32);
 const BLOG_EMPTY_ID = "f".repeat(32);
+const BLOG_LONG_ID = "9".repeat(32); // a post too long for a check to read
+const BLOG_LIMITS = { checkBytes: 122880, docBytes: 524288, imagesPerPost: 30, imageBytes: 5242880, blocksPerCheck: 10, sourcesPerBlock: 10, checksPer24h: 30 };
 const text = (t, marks) => ({ type: "text", text: t, ...(marks ? { marks } : {}) });
 const BLOG_DOC = {
   type: "doc",
@@ -81,7 +83,7 @@ function transcript(rich) {
 const DATA = { [PLAIN]: transcript(false), [RICH]: transcript(true) };
 const b64 = (s) => Buffer.from(s).toString("base64url");
 
-const state = { log: [], delayMs: 15, models: false, admin: false, email: "reader@example.test", budgetReached: false, emptyList: false, hold: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map() };
+const state = { log: [], delayMs: 15, models: false, admin: false, email: "reader@example.test", budgetReached: false, emptyList: false, hold: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map(), blogCheck: false };
 // A slow runner answers later than a fast one. MOCK_DELAY_MS adds that latency to the image endpoints of the mock (upload, delete, send) so
 // the ordering a slow CI runner produces can be reproduced on demand. Unset (the default) the mock answers at once.
 const MOCK_DELAY = Number(process.env.MOCK_DELAY_MS || 0);
@@ -98,11 +100,14 @@ function api(req, res, url) {
   if (url.pathname === "/api/me") return send(200, { email: state.email, displayName: "Reader", requestedAt: "", state: "ACTIVE", ...(state.admin ? { canAdmin: true } : {}) });
   // The blog (specs/001-blog-cms-openui-publish): the same shapes the Go server documents, with text that tries to push a
   // phone sideways (a long unbroken address, a long code line).
-  if (url.pathname === "/api/blog/capabilities") return send(200, { writing: true, check: false, webSearch: false });
+  if (url.pathname === "/api/blog/capabilities") return send(200, { writing: true, check: state.blogCheck === true, webSearch: state.blogCheck === true });
+  if (url.pathname === "/api/blog/limits") return send(200, BLOG_LIMITS);
   if (url.pathname === "/api/blog/posts" && req.method === "GET")
     return send(200, [BLOG_ID, "c".repeat(32), "d".repeat(32)].map((id, i) => ({ id, title: ["A long title that has to wrap on a phone without pushing the page sideways", "", "Second post"][i], status: ["published", "draft", "unpublished"][i], slug: i === 0 ? "first-post" : "", updatedAt: "2026-11-09T01:00:00Z", publishedAt: i === 0 ? "2026-11-08T01:00:00Z" : "", interactive: false })));
   if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "GET") return send(200, blogPost());
   if (url.pathname === `/api/blog/posts/${BLOG_EMPTY_ID}` && req.method === "GET") return send(200, { ...blogPost(), id: BLOG_EMPTY_ID, title: "", doc: { type: "doc", content: [{ type: "paragraph" }] } });
+  if (url.pathname === `/api/blog/posts/${BLOG_LONG_ID}` && req.method === "GET")
+    return send(200, { ...blogPost(), id: BLOG_LONG_ID, title: "Too long to check", doc: { type: "doc", content: Array.from({ length: 130 }, () => ({ type: "paragraph", content: [{ type: "text", text: "word ".repeat(200) }] })) } });
   if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "PUT") return send(200, { ...blogPost(), latestVersion: 4 });
   if (url.pathname === "/api/public/blog/posts") return send(200, [{ slug: "first-post", title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary with " + "words ".repeat(30), coverUrl: "", authorName: "A Writer With A Rather Long Display Name", publishedAt: "2026-11-08T01:00:00Z" }]);
   if (url.pathname === "/api/public/blog/posts/first-post") return send(200, { title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", coverUrl: "", doc: BLOG_DOC, blocks: BLOG_BLOCKS, authorName: "A Writer", publishedAt: "2026-11-08T01:00:00Z" });
@@ -202,7 +207,8 @@ function api(req, res, url) {
     return send(200, { days: 7, since: "2026-10-23", currency: "IDR", priceDate: "2026-10-23", total: t(37, 1267791, 34914), byModel: [{ model: "minimax-m3-1-flash", ...t(37, 1267791, 34914) }], byChat: [{ chatId: PLAIN, title: "Kemampuan yang Bisa Dibantu", deleted: false, ...t(5, 340000, 6743) }, { chatId: RICH, title: "Saran Game untuk Weekend", deleted: false, ...t(1, 38000, 1047) }, { chatId: "", title: "", deleted: true, ...t(29, 830000, 21168), unreported: 9 }], byDay: Array.from({ length: 7 }, (_, i) => ({ day: `2026-10-${23 + i}`, ...t(i * 2, 40000 * i * i, 1000 * i) })) });
   }
   if (url.pathname === "/api/me/templates") return send(200, { templates: [] });
-  if (url.pathname === "/api/blog/capabilities") return send(200, { writing: true, check: false, webSearch: false });
+  if (url.pathname === "/api/blog/capabilities") return send(200, { writing: true, check: state.blogCheck === true, webSearch: state.blogCheck === true });
+  if (url.pathname === "/api/blog/limits") return send(200, BLOG_LIMITS);
   if (/^\/api\/(me\/new-chat-draft|chats\/[0-9a-f]{32}\/draft)$/.test(url.pathname)) {
     if (req.method === "DELETE") { res.writeHead(204); return void res.end(); }
     return send(200, { body: "", revision: 0 });
@@ -533,12 +539,13 @@ async function startingCard(browser) {
 // The blog pages on a phone and a wide screen, light and dark: reading a post and the index signed out, and the author's list
 // and editor. Each page must stay inside the viewport (no sideways scroll), raise no console error or CSP violation and
 // make no off-origin request, and show its main content.
-async function blogPages(browser, which) {
+async function blogPages(browser, which, onlyViews) {
   const views = which === "blog-public"
     ? [["index", "/b", "h1, h2"], ["post", "/b/first-post", "article h1, main h1"]]
-    : [["list", "/blog", ".blog-rows, .blog-empty"], ["editor", `/blog/${BLOG_ID}`, "[contenteditable=true]"], ["empty editor", `/blog/${BLOG_EMPTY_ID}`, "[contenteditable=true]"]];
+    : [["list", "/blog", ".blog-rows, .blog-empty"], ["editor", `/blog/${BLOG_ID}`, "[contenteditable=true]"], ["empty editor", `/blog/${BLOG_EMPTY_ID}`, "[contenteditable=true]"], ["publish", `/blog/${BLOG_ID}/publish`, ".blog-limits"], ["publish too long", `/blog/${BLOG_LONG_ID}/publish`, ".blog-limits"]].filter(([name]) => !onlyViews || onlyViews.includes(name));
   for (const [label, w, h, scheme] of [["phone", 390, 844, "light"], ["phone", 390, 844, "dark"], ["narrow", 320, 640, "light"], ["desktop", 1280, 800, "dark"]]) {
     for (const [name, route, want] of views) {
+      state.blogCheck = name.startsWith("publish"); // the Publish screens are shown with checking available
       const { ctx, page, consoleErrors, external } = await openPage(browser, { viewport: { width: w, height: h }, colorScheme: scheme, ...(label !== "desktop" ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) });
       const logFrom = state.log.length;
       await page.goto(base + route);
@@ -559,6 +566,26 @@ async function blogPages(browser, which) {
           });
         }));
         if (clash.length) editorProblems.push(`a post title runs under its actions: ${JSON.stringify(clash)}`);
+        // Every row says what state its post is in, and the page says who can see what.
+        const shape = await page.evaluate(() => ({
+          rows: document.querySelectorAll(".blog-row").length,
+          withChip: document.querySelectorAll(".blog-row .chip").length,
+          note: document.querySelector(".blog-bar-note")?.textContent ?? "",
+        }));
+        if (shape.rows === 0 || shape.withChip < shape.rows) editorProblems.push(`${shape.rows} rows but ${shape.withChip} status chips: every post shows its state`);
+        if (!/Only you can see drafts/.test(shape.note)) editorProblems.push(`the list does not say who can see drafts (${JSON.stringify(shape.note)})`);
+      }
+      // Publish: the limits are stated before anyone publishes; a post too long to check says so and cannot start one.
+      if (which === "blog-editor" && name.startsWith("publish") && shown) {
+        const f = await page.evaluate(() => ({
+          text: document.querySelector(".blog-limits")?.textContent ?? "",
+          alert: document.querySelector(".blog-limits [role=alert]")?.textContent ?? "",
+          check: [...document.querySelectorAll(".blog-flow button")].find((b) => /Check and add blocks/.test(b.textContent ?? ""))?.disabled,
+          original: [...document.querySelectorAll(".blog-flow button")].find((b) => /Publish my original/.test(b.textContent ?? ""))?.disabled,
+        }));
+        if (!/up to 10 blocks/.test(f.text) || !/Images: \d+ of 30/.test(f.text)) editorProblems.push(`the limits are not all stated: ${JSON.stringify(f.text)}`);
+        if (name === "publish" && (f.alert !== "" || f.check !== false)) editorProblems.push(`a post of ordinary length is refused a check: ${JSON.stringify(f)}`);
+        if (name === "publish too long" && (!/longer than the assistant can read/.test(f.alert) || f.check !== true || f.original !== false)) editorProblems.push(`a post too long to check is not told so, or can start one: ${JSON.stringify(f)}`);
       }
       if (which === "blog-editor" && name.endsWith("editor") && shown) {
         await page.focus("[contenteditable=true]");
@@ -885,6 +912,7 @@ try {
   if (!only || only === "images") await images(browser);
   if (!only || only === "blog-public") await blogPages(browser, "blog-public");
   if (!only || only === "blog-editor") await blogPages(browser, "blog-editor");
+  if (only === "blog-list") await blogPages(browser, "blog-editor", ["list"]); // the list alone (it is also part of blog-editor)
   if (!only || only === "mobile-layout" || only === "mobile-budget") await mobileBudget(browser);
   if (!only || only === "mobile-layout") await adminPhone(browser);
   if (only === "shots") await shots(browser);
