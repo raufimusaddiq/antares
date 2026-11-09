@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DocView } from "./DocView";
 import ReaderBlock from "./ReaderBlock";
+import { openuiChatLibrary } from "@openuidev/react-ui/genui-lib";
 import { READER_COMPONENTS } from "../openui/readerLibrary";
 
 // jsdom has no layout: the charts and tables of the library measure with a ResizeObserver.
@@ -136,5 +137,10 @@ describe("the allowed components", () => {
     expect(body, "readerComponents moved or was renamed in internal/blog/openui.go").not.toBeNull();
     const server = [...(body![1].matchAll(/"([A-Za-z]+)"/g))].map((m) => m[1]).sort();
     expect([...READER_COMPONENTS].sort()).toEqual(server);
+  });
+
+  it("all exist in the chat library the reader library is cut from", () => {
+    const missing = READER_COMPONENTS.filter((n) => !(n in (openuiChatLibrary.components as Record<string, unknown>)));
+    expect(missing, "the reader list names components @openuidev/react-ui no longer has").toEqual([]);
   });
 });

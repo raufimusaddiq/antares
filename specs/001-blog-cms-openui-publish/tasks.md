@@ -164,13 +164,13 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 
 ### Tests for User Story 4
 
-- [X] T058 [P] [US4] Read-only renderer test: malicious markup (unregistered action, `/admin/*` fetch, unknown component) is refused with no request made and no side effect; a block that throws falls back to its plain text and the rest renders, in `web/src/blog/ReaderBlocks.test.tsx`
-- [X] T059 [P] [US4] Reader interaction test: sort, expand and hover work with no network call to any authenticated API, in `web/src/blog/ReaderInteraction.test.tsx`
-- [X] T060 [P] [US4] Metadata test: shell contains escaped title, description, canonical and Open Graph tags for a published post and none for unpublished, in `internal/blog/public_meta_test.go`
+- [X] T058 [P] [US4] Read-only renderer test: malicious markup (unregistered action, `/admin/*` fetch, unknown component) is refused with no request made and no side effect; a block that throws falls back to its plain text and the rest renders, in `web/src/blog/ReaderBlocks.test.tsx` and `ReaderBoundary.test.tsx`
+- [ ] T059 [P] [US4] Reader interaction test: sort, expand and hover work with no network call to any authenticated API, in `web/src/blog/ReaderBlocks.test.tsx` (covered: accordion collapse/expand and tab switching with no network call or window opened; NOT covered: sorting, because it is not verified that the library's Table offers it, and hover)
+- [X] T060 [P] [US4] Metadata test: shell contains escaped title, description, canonical and Open Graph tags for a published post and none for unpublished, in `internal/blog/public_meta_test.go` (Open Graph, Twitter, canonical and cover for a published post; an unpublished one carries none)
 
 ### Implementation for User Story 4
 
-- [X] T061 [US4] Read-only OpenUI library variant (actions removed) in `web/src/openui/readerLibrary.ts`; renderer wrapper with per-block error boundary and fallback in `web/src/blog/ReaderBlocks.tsx`
+- [X] T061 [US4] Read-only OpenUI library variant (actions removed) in `web/src/openui/readerLibrary.ts`; renderer wrapper with per-block error boundary and fallback in `web/src/blog/ReaderBlock.tsx`
 - [ ] T062 [US4] Reader page polish per the design: keyboard and screen-reader order, dark/light, phone, AI-added marker, in `web/src/blog/PublicPost.tsx` and `web/src/styles.css`
 - [X] T063 [US4] Add CSP/robots handling for `/b/*` in `internal/server/` (indexable, same strict script/frame sources); extend `web/src/openui/csp.test.ts` if affected
 - [X] T064 [US4] Browser checks `blog-reader-phone`, `blog-reader-dark`, `blog-reader-keyboard` in `scripts/browser-check.mjs`; rebuild `internal/webui/dist`

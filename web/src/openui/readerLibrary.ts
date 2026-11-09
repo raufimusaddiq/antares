@@ -37,11 +37,8 @@ const ReaderCard = defineComponent({
 });
 
 export const readerLibrary = createLibrary({
-  components: READER_COMPONENTS.map((n) => {
-    if (n === "Card") return ReaderCard;
-    const c = chat[n];
-    if (!c) throw new Error(`the chat library has no ${n}: the reader list is out of step with @openuidev/react-ui`);
-    return c;
-  }),
+  // A component the chat library no longer has is left out, not thrown at import: the post then shows that block's plain
+  // text instead of going blank. The parity test (ReaderBlocks.test.tsx) fails when this happens, so it is seen in CI.
+  components: READER_COMPONENTS.filter((n) => n === "Card" || chat[n]).map((n) => (n === "Card" ? ReaderCard : chat[n])),
   root: "Card",
 });
