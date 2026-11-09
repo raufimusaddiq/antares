@@ -68,6 +68,7 @@ const BLOG_DOC = {
 const BLOG_BLOCKS = [
   { anchor: 1, markup: 'root = Card([tbl], [{url: "https://example.org/data", title: "The data", sourceName: "example.org"}])\ntbl = Table([Col("City", ["Jakarta", "Bandung"]), Col("People", [11000000, 2500000], "number")])', fallback: "City / People: Jakarta 11,000,000; Bandung 2,500,000.", sources: [{ url: "https://example.org/data", title: "The data", retrievedAt: "2026-11-08", verified: false }] },
   { anchor: 2, markup: 'root = Card([acc])\nacc = Accordion([i1])\ni1 = AccordionItem("more", "More detail", [t1])\nt1 = TextContent("Detail a reader can open and close.")', fallback: "More detail: Detail a reader can open and close.", sources: [] },
+  { anchor: 4, markup: 'root = Card([c])\nc = BarChart(["Seats", "Server", "Container"], [Series("Monthly cost", [85, 10, 24])])', fallback: "Monthly cost: seats 85, server 10, container 24.", sources: [] },
   { anchor: 3, markup: 'root = Card([b])\nb = Buttons([Button("Go", @OpenUrl("https://example.org/"))])', fallback: "This block could not be run; its plain text is shown instead.", sources: [] },
 ];
 const blogPost = () => ({ id: BLOG_ID, title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", slug: "first-post", coverUrl: "", status: "draft", latestVersion: 3, publishedVersion: 0, doc: BLOG_DOC, check: null, updatedAt: "2026-11-09T01:00:00Z" });
@@ -723,7 +724,7 @@ async function blogPages(browser, which, onlyViews) {
           buttons: document.querySelectorAll(".blog-doc button:not(.openui-accordion-trigger)").length,
           triggers: document.querySelectorAll(".openui-accordion-trigger").length,
         }));
-        if (r.drawn !== 2) editorProblems.push(`${r.drawn} blocks were drawn, expected 2`);
+        if (r.drawn !== 3) editorProblems.push(`${r.drawn} blocks were drawn, expected 3`);
         if (r.plain.length !== 1 || !/could not be run/.test(r.plain[0] ?? "")) editorProblems.push(`the block with a button did not fall back to its text: ${JSON.stringify(r.plain)}`);
         if (r.buttons !== 0) editorProblems.push(`${r.buttons} buttons in the post: a reader must not be offered one`);
         // Keyboard: Tab reaches the section's trigger, and Enter closes and reopens it.
@@ -739,6 +740,32 @@ async function blogPages(browser, which, onlyViews) {
           await page.keyboard.press("Enter");
           const now = await open();
           if (was === now) editorProblems.push(`Enter did not toggle the section (aria-expanded stayed ${was})`);
+        }
+        // Hover (T059): a chart reacts to the pointer (its highlight band follows the bar and fades out when the pointer leaves),
+        // and hovering asks the server for nothing. A pointer is a desktop thing; a phone has touch.
+        if (label === "desktop") {
+          const asked = state.log.length;
+          const band = () => page.evaluate(() => { const g = document.querySelector(".openui-bar-chart-hover-highlight")?.parentElement; return g ? { opacity: Number(getComputedStyle(g).opacity), at: g.style.transform } : null; });
+          const bars = page.locator(".openui-bar-chart-bar");
+          if ((await bars.count()) !== 3 || !(await band())) editorProblems.push("the chart block has no three bars and highlight band to hover");
+          else {
+            await bars.first().scrollIntoViewIfNeeded();
+            if ((await band()).opacity !== 0) editorProblems.push("the highlight band shows before anything is hovered");
+            const seen = new Set();
+            for (let i = 0; i < 3; i++) {
+              const bx = await bars.nth(i).boundingBox();
+              await page.mouse.move(bx.x + bx.width / 2, bx.y + bx.height / 2);
+              await page.waitForTimeout(400);
+              const h = await band();
+              if (h.opacity !== 1) editorProblems.push(`hovering bar ${i + 1} did not show the highlight (opacity ${h.opacity})`);
+              seen.add(h.at);
+            }
+            if (seen.size !== 3) editorProblems.push(`the highlight does not follow the bar under the pointer: ${JSON.stringify([...seen])}`);
+            await page.mouse.move(2, 2);
+            await page.waitForTimeout(500);
+            if ((await band()).opacity !== 0) editorProblems.push("the highlight stays after the pointer leaves");
+          }
+          if (state.log.length !== asked) editorProblems.push(`hovering made ${state.log.length - asked} request(s): ${JSON.stringify(state.log.slice(asked))}`);
         }
       }
       await page.screenshot({ path: path.join(outDir, `${which}-${name}-${label}-${scheme}.png`), fullPage: true });
