@@ -113,7 +113,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 
 ### Tests for User Story 2
 
-- [ ] T039 [P] [US2] Envelope validation table test: valid envelope; bad JSON; unknown version; oversize; `afterNode` not in the checked version; script/raw HTML/unknown component/`@ToAssistant`/unregistered action in markup, all dropped with a notice, in `internal/blog/envelope_test.go`
+- [X] T039 [P] [US2] Envelope validation table test: valid envelope; bad JSON; unknown version; oversize; `afterNode` not in the checked version; script/raw HTML/unknown component/`@ToAssistant`/unregistered action in markup, all dropped with a notice, in `internal/blog/envelope_test.go`
 - [ ] T040 [P] [US2] Check lifecycle test: running → ready; failed, timed out, cancelled, disconnected each shown as itself, nothing published, post returns to `draft`, in `internal/blog/check_test.go`
 - [ ] T041 [P] [US2] Out-of-date test: editing the head version during `running`/`ready` marks the check `out_of_date` and publish-enriched is refused, in `internal/blog/check_outofdate_test.go`
 - [ ] T042 [P] [US2] Two-user test: B cannot start, read, cancel or accept blocks on A's check; the check uses A's binding and never B's, in `internal/blog/check_ownership_test.go`
@@ -122,8 +122,8 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 ### Implementation for User Story 2
 
 - [ ] T044 [US2] Versioned instruction `internal/blog/blog_prompt.txt` (check the writing, propose blocks, search the web, return the envelope, never rewrite the text); embed and expose its version
-- [ ] T045 [US2] Server-side OpenUI validation against the read-only reader allowlist (no `@ToAssistant`, no submitting forms; `@OpenUrl` only to `https` urls listed in the block's sources) in `internal/blog/validate_openui.go`; keep the allowlist in step with `web/src/openui/validate.ts`
-- [ ] T046 [US2] Envelope parser and validator per `contracts/check-envelope.md` in `internal/blog/envelope.go`
+- [X] T045 [US2] Server-side OpenUI validation against the read-only reader allowlist (no `@ToAssistant`, no submitting forms; `@OpenUrl` only to `https` urls listed in the block's sources) in `internal/blog/validate_openui.go`; keep the allowlist in step with `web/src/openui/validate.ts` (server half done, in `openui.go` rather than `validate_openui.go`; keeping the allowlist in step with `web/src/openui/validate.ts` stays open until the read-only library, T061)
+- [X] T046 [US2] Envelope parser and validator per `contracts/check-envelope.md` in `internal/blog/envelope.go`
 - [ ] T047 [US2] Check runner in `internal/blog/check.go`: create the Hermes run through the author's backend-selected binding with `Instructions`, track run states, persist notes and proposed blocks, cancel, mark out of date; error codes carry no provider text or credential
 - [ ] T048 [US2] Block decision, publish-enriched (snapshot accepted blocks with the pinned version) and check handlers in `internal/blog/handlers.go` per `contracts/http-api.md`
 - [x] T049 [P] [US2] Publish flow UI: choice, checking with Cancel, Preview with notes and per-block Accept/Reject in `web/src/blog/PublishFlow.tsx` and `web/src/blog/Preview.tsx`
@@ -142,7 +142,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 
 ### Tests for User Story 3
 
-- [ ] T052 [P] [US3] Data block with no sources is dropped and an `unsourced` note added; non-`https`, credentialed, loopback or private-host source urls are rejected, in `internal/blog/sources_test.go`
+- [X] T052 [P] [US3] Data block with no sources is dropped and an `unsourced` note added; non-`https`, credentialed, loopback or private-host source urls are rejected, in `internal/blog/sources_test.go`
 - [ ] T053 [P] [US3] Source `verified` is set only when the url appears in the run's observed search results; unverified blocks cannot be accepted without `ack`, in `internal/blog/sources_verify_test.go`
 - [ ] T054 [P] [US3] Web test: sources drawer, verified/unverified marking, acknowledgement required, in `web/src/blog/Sources.test.tsx`
 
