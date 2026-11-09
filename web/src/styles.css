@@ -1167,6 +1167,7 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 .openui-root .openui-follow-up-item-icon { display: none; }
 /* Sections, accordions, code and sources. */
 .openui-root :is(.openui-foldable-section-trigger-content-text, .openui-accordion-trigger) { font-weight: 700; color: var(--ink); }
+.openui-root .openui-accordion .openui-accordion-item .openui-accordion-content-wrapper { padding-top: 0.5rem; }  /* the opened text clears the rule under its heading, as in the design */
 .openui-root .openui-code-block-wrapper { border: 2px solid var(--ink); border-radius: var(--r-md); overflow: hidden; }
 .openui-root .openui-listed-sources-header { font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
 .openui-root .openui-listed-source-item { background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
@@ -1312,7 +1313,10 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 
 /* Public pages */
 .blog-public-head { display: flex; align-items: center; justify-content: space-between; padding: 1rem; border-bottom: 2px solid var(--ink); background: var(--card); }
-.blog-brand { font-weight: 700; font-size: 1.2rem; color: var(--ink); text-decoration: none; }
+.blog-public-head { border-bottom-width: 3px; }
+.blog-brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; font-size: 1.5rem; letter-spacing: -0.04em; color: var(--ink); text-decoration: none; }
+.blog-brand svg { width: 2rem; height: 2rem; padding: 0.3rem; background: var(--mark); color: var(--mark-ink); border: 2px solid var(--ink); border-radius: 10px; box-shadow: var(--hard-sm); }
+.blog-brand .label { font-size: 0.7rem; font-weight: 400; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
 .blog-public-foot { padding: 2rem 1rem; text-align: center; }
 .blog-index, .blog-article { max-width: 72rem; margin: 0 auto; padding: 1.5rem 1rem 3rem; box-sizing: border-box; }
 .blog-article { max-width: 46rem; }

@@ -570,7 +570,9 @@ async function blogPages(browser, which) {
       }
       // The reader's blocks (T064): drawn, within the page, keyboard-operable, and the one that must not run falls back to its text.
       if (which === "blog-public" && name === "post" && shown) {
-        await page.waitForTimeout(600); // the block renderer loads on demand
+        // The block renderer loads on demand: wait for the two blocks rather than for a fixed time.
+        // (A locator, not waitForFunction: that one evaluates code in the page, which the page's CSP refuses.)
+        await page.locator(".openui-root").nth(1).waitFor({ timeout: 15000 }).catch(() => {});
         const r = await page.evaluate(() => ({
           drawn: document.querySelectorAll(".openui-root").length,
           plain: [...document.querySelectorAll(".blog-block-plain")].map((e) => e.textContent),

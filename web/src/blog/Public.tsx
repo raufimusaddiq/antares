@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { getPublic, listPublic, mediaUrl } from "./blogApi";
+import { LOGIN_URL } from "../api";
+import { AntaresMark } from "../brand/AntaresMark";
 import { DocView } from "./DocView";
 import type { PublicPost, PublicSummary } from "./types";
 
@@ -24,8 +26,12 @@ function Frame({ children, title }: { children: React.ReactNode; title: string }
   return (
     <div className="blog-public">
       <header className="blog-public-head">
-        <a className="blog-brand" href="/b">Antares Blog</a>
-        <a className="quiet" href="/login">Sign in</a>
+        <a className="blog-brand" href="/b">
+          <AntaresMark size={20} />
+          <span>Antares</span>
+          <span className="label">Blog</span>
+        </a>
+        <a className="btn" href={LOGIN_URL}>Sign in with Google</a>
       </header>
       {children}
       <footer className="blog-public-foot label">Written by Antares users. Blocks marked AI-added were proposed by an assistant and approved by the author.</footer>

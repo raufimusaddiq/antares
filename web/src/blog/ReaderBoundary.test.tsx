@@ -20,7 +20,7 @@ import ReaderBlock from "./ReaderBlock";
 afterEach(cleanup);
 
 describe("a reader block that throws while drawing", () => {
-  it("falls back to its plain text, and a block beside it still draws", async () => {
+  it("falls back to its plain text and leaves the rest of the post alone", async () => {
     vi.spyOn(console, "error").mockImplementation(() => {});
     render(
       <>
