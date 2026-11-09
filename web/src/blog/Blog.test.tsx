@@ -103,9 +103,14 @@ describe("publish flow", () => {
 
   it("without the checking capability only the original can be published, and it says so", () => {
     flow(null, { writing: true, check: false, webSearch: false });
-    expect(screen.queryByRole("button", { name: "Check and add blocks" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Check and enrich" })).toBeNull();
     expect(screen.getByRole("status").textContent).toMatch(/not available/);
     expect(screen.getByRole("button", { name: "Publish my original" })).toBeTruthy();
+  });
+
+  it("with the checking capability Check and enrich is offered (so the absence above means something)", () => {
+    flow(null, { writing: true, check: true, webSearch: true });
+    expect(screen.getByRole("button", { name: "Check and enrich" })).toBeTruthy();
   });
 
   it("a block with an unverified source cannot be accepted until the author acknowledges it", async () => {

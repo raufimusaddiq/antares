@@ -143,12 +143,13 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 ### Tests for User Story 3
 
 - [X] T052 [P] [US3] Data block with no sources is dropped and an `unsourced` note added; non-`https`, credentialed, loopback or private-host source urls are rejected, in `internal/blog/sources_test.go`
-- [ ] T053 [P] [US3] Source `verified` is set only when the url appears in the run's observed search results; unverified blocks cannot be accepted without `ack`, in `internal/blog/sources_verify_test.go`
-- [ ] T054 [P] [US3] Web test: sources drawer, verified/unverified marking, acknowledgement required, in `web/src/blog/Sources.test.tsx`
+- [x] T053 [P] [US3] Every source is stored unverified, and a block that names sources cannot be accepted without `ack`. (The plan said "verified only when the url appears in the run's observed search results"; research R4 found the run's events expose the query, not the results, so nothing can verify a source and the database refuses `verified = 1`.) Tests in `internal/blog/check_test.go`: `TestASourceCanNeverBeStoredAsVerified`, `TestBlockDecisionsAndPublishingTheAcceptedOnes` (422 `ACK_REQUIRED` without `ack`), and `TestACheckRunsOnTheAuthorsOwnAssistantAndShowsWhatCameBack` (a data block is unverified and needs `ack`; words with no sources need none)
+- [x] T054 [P] [US3] Web test: unverified marking and acknowledgement required, in `web/src/blog/Blog.test.tsx` ("a block with an unverified source cannot be accepted until the author acknowledges it"). The design's sources drawer is not built: see T076
 
 ### Implementation for User Story 3
 
-- [ ] T055 [US3] Source validation and verification against run tool events in `internal/blog/sources.go` (falls back to "unverified" if events are not exposed, per research R4); enforce `ack` in the block decision handler
+- [x] T055 [US3] Source cleaning (public https addresses only) in `internal/blog/sources.go` (`TestPublicHTTPS`, `TestCleanSource`); no verification against run tool events, because research R4 found they do not expose search results, so every source is `verified: false` and `ack` is enforced in the block decision handler (`ErrNeedsAck` in `check.go`, `ACK_REQUIRED` in `handlers.go`)
+- [ ] T076 [US3] The preview as designed: "Accept all and publish" and Accept / Reject on each block, the "Notes from the assistant" column and the "Sources for the selected block" drawer, in `web/src/blog/PublishFlow.tsx` (the Publish / preview frames in `docs/design/antares.figcraft`; the code has "Publish with N blocks" and a Sources list inside each block)
 - [x] T056 [P] [US3] Sources drawer and acknowledgement UI in `web/src/blog/Sources.tsx`; show sources and retrieved-on date on published data blocks in `web/src/blog/PublicPost.tsx`
 - [ ] T057 [US3] Re-run behaviour: republish after edits re-checks and drops or re-proposes blocks tied to changed text in `internal/blog/check.go`; test in `internal/blog/check_republish_test.go`
 
@@ -201,7 +202,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 ## Phase 9: Polish and cross-cutting
 
 - [ ] T070 [P] Admin page: suspended-user note per the design, confirm no endpoint or screen exposes post or draft content, in `web/src/Admin.tsx` and `internal/blog/admin_blind_test.go` (kept security test)
-- [ ] T071 [P] Secrets and log hygiene test: no credential, run id or provider text in any blog response, error or log, in `internal/blog/redaction_test.go`
+- [x] T071 [P] Secrets and log hygiene test: no credential, run id or provider text in any blog response, error or log, in `internal/blog/redaction_test.go` (`TestNothingFromTheAssistantsSideReachesAnAuthorOrTheLog`: seven ways a check can end, each with a secret-looking key and provider text in every place Hermes can put them; the unsealed key, the profile, run and session ids and the provider text are scanned for in every response an author can fetch and in the log; `TestABindingNeverPrintsItsKey`. Checked by leaking on purpose: once into a response, once into the log, both fail)
 - [X] T072 [P] Update `docs/PRD.md` (new section for the blog and the public-surface exception), `docs/runbooks/security-invariants.md` and `.specify/memory/constitution.md` Principle I wording in the same PR, bumping the constitution version
 - [ ] T073 Update `docs/design/README.md` to match what shipped (known gaps), and reconcile any code/design disagreement
 - [ ] T074 Run every quickstart scenario against the built bundle; record per-package `go test -cover` before and after in the PR description
