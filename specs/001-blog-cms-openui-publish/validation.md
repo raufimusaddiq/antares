@@ -47,12 +47,12 @@ Before is `a25e8189` (the last commit with no Go blog code); after is `main` wit
 | internal/blog | (new) | 85.5% | |
 | internal/chat | 86.0% | 85.8% | -0.2 |
 | internal/config, hermes, kenari, push, redact, secrets, store, tenant, webui | unchanged | unchanged | 0 |
-| internal/server | 91.8% | **67.6% → 93.2%** | +1.4 (see below) |
+| internal/server | 91.8% | **67.6% → about 93%** | +1 or so (see below) |
 | internal/smoke | 81.3% | 77.5% | -3.8 |
 
 What the numbers said, and what was done:
 
-- **internal/server fell to 67.6%.** The blog's page shell (`blogpages.go`: the title, description and cover written into the page for search engines and link previews) was tested only from `internal/blog`, and Go counts coverage per package. `blogpages_test.go` now tests it where it lives: the index's title, noindex removed, a stranger's markup escaped (a `$1` stays `$1`), the cover only when it is a relative address, one answer for everything a reader may not see (and no lookup for a malformed address), a lookup failure that is a 500 and never says why, one address per page, HEAD without a body, the request allowance, and `setAttr`. Coverage is 93.2%. Each security test was shown to fail when the behaviour is broken on purpose (escaping removed; the 500 leaking its cause).
+- **internal/server fell to 67.6%.** The blog's page shell (`blogpages.go`: the title, description and cover written into the page for search engines and link previews) was tested only from `internal/blog`, and Go counts coverage per package. `blogpages_test.go` now tests it where it lives: the index's title, noindex removed, a stranger's markup escaped (a `$1` stays `$1`), the cover only when it is a relative address, one answer for everything a reader may not see (and no lookup for a malformed address), a lookup failure that is a 500 and never says why, one address per page, HEAD without a body, the request allowance, and `setAttr`. Coverage is about 93% (93.2% to 93.5% by machine). Each security test was shown to fail when the behaviour is broken on purpose (escaping removed; the 500 leaking its cause).
 - **A real inconsistency came out of that test.** A post's page redirected a trailing slash to its one canonical address, but the index served `/b/` with a canonical of `/b/`: two addresses. `/b/` now redirects to `/b`.
 - **cmd/antares-smoke, internal/smoke (-7.1, -3.8):** the smoke tool grew its production-only paths (the real-Hermes check steps, event capture, its own `main`, the error branches that need a live Hermes). They are exercised by every production smoke run and not by unit tests; accepted.
 - **cmd/antares, internal/auth, internal/chat (-1.5, -0.9, -0.2):** wiring and a few new lines in each; accepted.

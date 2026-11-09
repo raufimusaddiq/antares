@@ -73,8 +73,9 @@ Blog: where the frames and the code still differ (kept honest; each is a gap to 
   Landscape frames do not show it yet.
 - Sort, hover and expand interactions in blocks are static states in the frames; the reader opens accordions and switches tabs (tested),
   and sorting and hover are not yet proven (T059).
-- The AI-added marker sits above a block in code; the frames put it beside the block's title, which needs it injected into the
-  OpenUI card (T062).
+- The AI-added marker sits above a block in code, and the frames put it beside the block's title. Kept above, by decision (T062):
+  a block need not have a title, and every AI-added block must carry the marker, so it belongs to the block and not to what is
+  inside it. The frames' inline placement is the drawn variant for blocks that have a title.
 - The Admin frame is a single card, not a full Admin screen.
 
 Known gaps: only states the mock backend could show were captured (no live Hermes). Text is placed per rendered line, so
