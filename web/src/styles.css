@@ -299,6 +299,9 @@ dd:where(:not(.openui-root *)):last-child { margin-bottom: 0; }
 .side ul::before { content: "Chats"; display: block; margin: 0.9rem 0.25rem 0.4rem; font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; letter-spacing: 0.18em; text-transform: uppercase; }
 .side > button { width: 100%; justify-content: flex-start; min-height: 2.75rem; padding: 0 0.9rem; font-weight: 700; background: var(--cobalt); color: var(--cobalt-ink); box-shadow: var(--hard-sm); }
 .side > button[data-icon]::before { width: 1.3rem; height: 1.3rem; margin-right: 0.6rem; }
+/* Blog posts is a way elsewhere, not the main action: a plain outlined pill under the blue New chat. */
+.side > button.rail-blog { margin-top: 0.5rem; background: var(--card); color: var(--ink); box-shadow: none; }
+.side > button.rail-blog:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 8%, var(--card)); }
 /* A conversation: a numbered tile (three pastels in turn) and a title; the open one is a filled pill. */
 .side button.item {
   counter-increment: chat; position: relative; display: block; width: 100%; min-height: 2.75rem; margin: 0.15rem 0; padding: 0.2rem 0.7rem 0.2rem 3.1rem;
