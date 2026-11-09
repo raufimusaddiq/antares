@@ -560,7 +560,7 @@ async function blogPages(browser, which, onlyViews) {
       if (which === "blog-editor" && name === "list" && shown) {
         const clash = await page.evaluate(() => [...document.querySelectorAll(".blog-row")].flatMap((row) => {
           const a = row.querySelector(".blog-row-title")?.getBoundingClientRect();
-          return [...row.querySelectorAll(".blog-row-actions > *")].flatMap((el) => {
+          return [...row.querySelectorAll(".blog-row-end > *")].flatMap((el) => {
             const b = el.getBoundingClientRect();
             return a && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom ? [el.textContent] : [];
           });
@@ -574,6 +574,24 @@ async function blogPages(browser, which, onlyViews) {
         }));
         if (shape.rows === 0 || shape.withChip < shape.rows) editorProblems.push(`${shape.rows} rows but ${shape.withChip} status chips: every post shows its state`);
         if (!/Only you can see drafts/.test(shape.note)) editorProblems.push(`the list does not say who can see drafts (${JSON.stringify(shape.note)})`);
+        // The rail beside the page (a strip above it on a phone) and a row's "⋯" menu, which opens inside the viewport.
+        const rail = await page.evaluate(() => {
+          const r = document.querySelector(".blog-rail")?.getBoundingClientRect();
+          const page = document.querySelector(".blog-list")?.getBoundingClientRect();
+          return { has: !!r && !!page, beside: !!r && !!page && r.right <= page.left + 1, above: !!r && !!page && r.bottom <= page.top + 1, current: document.querySelector('.blog-rail [aria-current="page"]')?.textContent ?? "" };
+        });
+        if (!rail.has) editorProblems.push("the list has no rail");
+        else if (!(w >= 840 ? rail.beside : rail.above)) editorProblems.push(`the rail is not ${w >= 840 ? "beside" : "above"} the page: ${JSON.stringify(rail)}`);
+        if (rail.current !== "Blog posts") editorProblems.push(`the rail does not mark Blog posts as the current page: ${JSON.stringify(rail)}`);
+        await page.locator(".blog-more").first().click();
+        const menu = await page.evaluate(() => {
+          const m = document.querySelector('[role="menu"]')?.getBoundingClientRect();
+          return { open: !!m, inside: !!m && m.left >= -0.5 && m.right <= innerWidth + 0.5 && m.top >= -0.5, focused: document.activeElement?.getAttribute("role") === "menuitem", items: [...document.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent) };
+        });
+        if (!menu.open || !menu.inside || !menu.focused) editorProblems.push(`the row menu does not open inside the viewport with focus in it: ${JSON.stringify(menu)}`);
+        if (!menu.items.includes("Delete") || !menu.items.includes("Duplicate")) editorProblems.push(`the row menu is missing its actions: ${JSON.stringify(menu.items)}`);
+        await page.screenshot({ path: path.join(outDir, `blog-list-menu-${label}-${scheme}.png`) });
+        await page.keyboard.press("Escape");
       }
       // Publish is a dialog over the editor: modal, inside the viewport, the editor still there but out of reach; the limits are
       // stated before anyone publishes, and a post too long to check says so and cannot start one.

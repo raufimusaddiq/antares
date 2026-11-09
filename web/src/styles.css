@@ -1299,13 +1299,43 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 
 .blog-rows { list-style: none; margin: 1rem 0; padding: 0; display: grid; gap: 0.75rem; }
 .blog-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
-/* A button does not wrap its text, so (white-space: normal below) a long title ran out of the row and under the actions. */
-.blog-row-main { display: flex; justify-content: flex-start; flex: 1; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 12rem; text-align: left; white-space: normal; background: transparent; border-color: transparent; }
 .blog-row-title { font-weight: 700; overflow-wrap: anywhere; }
+.blog-row-end { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; }
+.blog-row-end .chip { white-space: nowrap; }
+
+/* My posts: a rail beside the page (the design's My posts frames); on a phone the rail is a strip above it. */
+.blog-shell { display: grid; grid-template-columns: 17rem minmax(0, 1fr); min-height: 100dvh; color: var(--ink); background: var(--canvas); }
+.blog-rail { position: sticky; top: 0; display: flex; flex-direction: column; gap: 0.5rem; height: 100dvh; box-sizing: border-box; padding: 1.1rem 0.9rem; background-color: var(--rail); background-image: var(--dots); border-right: var(--line) solid var(--ink); }
+.blog-rail .brand { grid-area: auto; padding: 0 0.35rem 0.6rem; }
+.blog-rail > button { width: 100%; justify-content: flex-start; min-height: 2.75rem; padding: 0 0.9rem; font-weight: 700; }
+.blog-rail .rail-item { background: transparent; border-color: transparent; box-shadow: none; }
+.blog-rail .rail-item[aria-current="page"] { background: var(--ink); color: var(--canvas); }
+.blog-rail-foot { margin-top: auto; padding-top: 0.75rem; border-top: 2px solid var(--ink); flex: 0 0 auto; }
+.blog-shell .blog-list { max-width: 64rem; width: 100%; margin: 0; padding: 2rem 2.5rem 4rem; }
+
+/* The "⋯" menu of a post row (the chat list has its own, row-menu). */
+.blog-menu { position: relative; }
+.blog-more { width: 2.4rem; height: 2.4rem; padding: 0; justify-content: center; border-radius: 999px; font-size: 1.1rem; line-height: 1; }
+.blog-menu-list { position: absolute; right: 0; top: calc(100% + 0.35rem); z-index: 15; display: grid; gap: 0.1rem; min-width: 12rem; padding: 0.35rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
+.blog-menu-list [role="menuitem"] { display: block; box-sizing: border-box; width: 100%; padding: 0.5rem 0.75rem; text-align: left; font: inherit; color: var(--ink); text-decoration: none; background: transparent; border: 0; border-radius: var(--r-sm); box-shadow: none; cursor: pointer; }
+.blog-menu-list [role="menuitem"]:hover, .blog-menu-list [role="menuitem"]:focus-visible { background: color-mix(in srgb, var(--ink) 10%, var(--card)); }
+.blog-menu-list [role="menuitem"].danger { background: var(--blush); color: var(--ink); }
+@media (max-width: 52rem) {
+  .blog-shell { grid-template-columns: minmax(0, 1fr); }
+  .blog-rail { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; border-right: 0; border-bottom: var(--line) solid var(--ink); padding: 0.6rem 0.9rem; }
+  .blog-rail .brand { padding: 0; margin-right: auto; }
+  .blog-rail > button { width: auto; min-height: 2.25rem; }
+  .blog-rail .rail-new, .blog-rail-foot { display: none; } /* the page has its own New post, and the account line has no room */
+  .blog-shell .blog-list { padding: 1rem; }
+  .blog-shell .blog-bar > .btn { width: 100%; }
+}
 .blog-row-text { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; flex: 1 1 14rem; min-width: 0; }
 .blog-bar-note { margin: 0.25rem 0 0; }
 .blog-limits { margin: 1rem 0; padding: 0.75rem 1rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
 .blog-limits h3 { margin: 0 0 0.25rem; font-size: 1rem; }
+/* The blog's primary buttons are the design's blue; the shared rule colours only a.btn. */
+:is(.blog-shell, .blog-editor, .blog-flow, .blog-dialog, .blog-takeover) button.btn:not(:disabled) { background: var(--cobalt); color: var(--cobalt-ink); font-weight: 700; box-shadow: var(--hard-sm); }
+:is(.blog-shell, .blog-editor, .blog-flow, .blog-dialog, .blog-takeover) button.btn:hover:not(:disabled) { background: var(--ink); color: var(--canvas); }
 .blog-limits ul { margin: 0; padding-left: 1.2rem; font-size: 0.9rem; }
 .blog-limits li + li { margin-top: 0.25rem; }
 /* Publish is a dialog over the editor (the Publish / choose frame); its later steps cover the screen. */
@@ -1323,7 +1353,6 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 .blog-dialog .blog-limits { padding: 0; background: transparent; border: 0; box-shadow: none; }
 .blog-dialog .blog-limits h3 { font-size: 0.85rem; }
 .blog-list .blog-bar > div { flex: 1; min-width: 0; }
-.blog-row-actions { display: flex; flex-wrap: wrap; gap: 0.25rem; }
 .blog-empty { padding: 2rem 1rem; text-align: center; }
 .blog-empty > * { margin-inline: auto; }
 
