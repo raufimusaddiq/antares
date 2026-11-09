@@ -45,7 +45,7 @@ func TestAnAdminCannotReachAnotherAuthorsPostsAndASuspendedAuthorsAreHidden(t *t
 		for _, r := range routes {
 			foreign := admin.do(r.method, strings.Replace(r.path, "%s", id, 1), r.body)
 			absent := admin.do(r.method, strings.Replace(r.path, "%s", missing, 1), r.body)
-			if foreign.Code != 404 || foreign.Code != absent.Code {
+			if absent.Code != 404 || foreign.Code != 404 {
 				t.Errorf("admin %s %s: foreign %d, missing %d", r.method, r.path, foreign.Code, absent.Code)
 			}
 			if strip(foreign.Body.String()) != strip(absent.Body.String()) {

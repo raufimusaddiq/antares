@@ -1,6 +1,8 @@
 package auth
 
 import (
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -9,6 +11,41 @@ import (
 // address or image, for a live account or a suspended one. A writer's published post, draft and image are put in the database
 // with recognisable text, and everything the admin API will say about that writer is scanned for it, before and after the
 // suspension.
+// scanned is every GET endpoint the admin API has, with the status filters of the user list. A user's page takes the writer's id.
+func scanned(writer string) []string {
+	paths := []string{
+		"/api/admin/users", "/api/admin/users/" + writer, "/api/admin/audit",
+		"/api/admin/model-policy", "/api/admin/tool-policy", "/api/admin/media-models", "/api/admin/kenari-usage", "/api/admin/metrics",
+	}
+	for _, st := range []string{"PENDING", "APPROVED", "REJECTED", "SUSPENDED"} {
+		paths = append(paths, "/api/admin/users?status="+st)
+	}
+	return paths
+}
+
+// "Every admin endpoint" stays literal: a GET route added to admin.go that scanned() does not list fails here, so a new admin
+// view cannot go in without being checked for post and draft content.
+func TestEveryAdminGetRouteIsScannedForPostContent(t *testing.T) {
+	src, err := os.ReadFile("admin.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	have := map[string]bool{}
+	for _, p := range scanned("WRITER") {
+		have[strings.SplitN(strings.Replace(p, "WRITER", "{userId}", 1), "?", 2)[0]] = true
+	}
+	found := 0
+	for _, m := range regexp.MustCompile(`mux\.Handle\("GET (/api/admin/[^"]+)"`).FindAllStringSubmatch(string(src), -1) {
+		found++
+		if !have[m[1]] {
+			t.Errorf("GET %s is an admin route and is not scanned for post content (add it to scanned)", m[1])
+		}
+	}
+	if found < 8 {
+		t.Fatalf("found only %d admin GET routes in admin.go: the pattern no longer matches how they are registered", found)
+	}
+}
+
 func TestAdminSeesNoPostOrDraftContent(t *testing.T) {
 	h := newHarness(t)
 	admin, _, _ := h.adminWithKicks()
@@ -34,13 +71,9 @@ func TestAdminSeesNoPostOrDraftContent(t *testing.T) {
 
 	scan := func(when string) {
 		t.Helper()
-		paths := []string{"/api/admin/users", "/api/admin/users/" + writer, "/api/admin/audit"}
-		for _, st := range []string{"PENDING", "APPROVED", "REJECTED", "SUSPENDED"} {
-			paths = append(paths, "/api/admin/users?status="+st)
-		}
-		for _, p := range paths {
+		for _, p := range scanned(writer) {
 			w := admin.get(p)
-			if w.Code != 200 && w.Code != 400 {
+			if w.Code != 200 { // an endpoint that did not answer has not been scanned
 				t.Errorf("%s: GET %s: %d", when, p, w.Code)
 			}
 			for _, bad := range []string{title, summary, body, slug, draft, image, "dra1", "pub1", "img1"} {
