@@ -245,3 +245,18 @@ func TestEventsOutRecordsOneLinePerEvent(t *testing.T) {
 		}
 	}
 }
+
+func TestSkippingTheBlogCheckRemovesItFromTheRun(t *testing.T) {
+	s := newStack(t, false, nil)
+	cfg := s.config()
+	cfg.SkipBlogCheck = true
+	rep := s.run(cfg)
+	if rep.Verdict != "PASS" {
+		t.Fatalf("verdict %s", rep.Verdict)
+	}
+	for _, st := range rep.Steps {
+		if st.ID == "blog.check" {
+			t.Fatalf("blog.check ran with SkipBlogCheck: %+v", st)
+		}
+	}
+}

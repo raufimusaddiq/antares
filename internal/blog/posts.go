@@ -30,12 +30,13 @@ const (
 
 // Service is the blog's store and handlers.
 type Service struct {
-	db    *sql.DB
-	now   func() time.Time
-	hx    Runner       // nil: checking is not offered
-	box   *secrets.Box // opens the author's own credential for a check
-	spend Spend        // the account's spending rule; nil: none
-	rt    *checkRuntime
+	db        *sql.DB
+	now       func() time.Time
+	hx        Runner       // nil: checking is not offered
+	box       *secrets.Box // opens the author's own credential for a check
+	spend     Spend        // the account's spending rule; nil: none
+	checkMode string       // CheckOff, CheckSmoke, or anything else for on (the default)
+	rt        *checkRuntime
 
 	capMu    sync.Mutex
 	capCache map[string]capEntry
@@ -48,6 +49,8 @@ type Options struct {
 	Hermes Runner
 	Box    *secrets.Box
 	Spend  Spend // checks are refused while the author is over their daily hard limit; nil applies none
+	// CheckMode is "on" (the default when empty), "smoke" (synthetic test accounts only) or "off".
+	CheckMode string
 }
 
 func New(o Options) (*Service, error) {
@@ -57,7 +60,7 @@ func New(o Options) (*Service, error) {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	s := &Service{db: o.DB, now: o.Now, hx: o.Hermes, box: o.Box, spend: o.Spend}
+	s := &Service{db: o.DB, now: o.Now, hx: o.Hermes, box: o.Box, spend: o.Spend, checkMode: o.CheckMode}
 	s.initChecks()
 	return s, nil
 }
@@ -392,7 +395,7 @@ func (s *Service) Delete(ctx context.Context, author, id string) error {
 		return err
 	}
 	// A deleted post must not reset the author's spending: what its checks cost moves to the same per-day archive a deleted
-	// chat's runs go to (store.UserModelUsage reads it), and a check still running is cancelled first (its cost is not yet known).
+	// chat's runs go to (store.UserModelUsage reads it). A post with a check still running cannot be deleted: its cost is not yet known.
 	var running int
 	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM post_checks WHERE post_id = ? AND author_id = ? AND state = 'running'`, id, author).Scan(&running); err != nil {
 		return err

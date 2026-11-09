@@ -52,7 +52,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 - [x] T012 Start implementation from a branch cut from `origin/main` after the design PR merges (merge `origin/main` if behind, never rebase), and create empty packages `internal/blog/` and `web/src/blog/`
 - [x] T013 [P] Evaluate and add the editor dependency to `web/package.json` (R1); record bundle-size delta and licence in `specs/001-blog-cms-openui-publish/research.md`
 - [X] T014 [P] (recorded 2026-11-09 with `antares-smoke --events-out`: the events of a run that used web search, from an ordinary chat run; R4 resolved in research.md. A run created with no chat row is NOT recorded: that is T014b.) Record Hermes fixtures (keys redacted) for the web-search tool events and a final output into `internal/hermes/testdata/blog_check_*.json`; update `specs/001-blog-cms-openui-publish/contracts/check-envelope.md` to the real shape (R3, R4). Required before Phase 5
-- [ ] T014b Create a Hermes session and run with no Antares chat row, through a synthetic smoke account, and record that it works and is not listed (R3); first test of Phase 5
+- [X] T014b Create a Hermes session and run with no Antares chat row, through a synthetic smoke account, and record that it works and is not listed (R3); first test of Phase 5 (done by the `blog.check` smoke step, which creates a session and run with no chat and checks the chat list is unchanged)
 
 ---
 
@@ -114,18 +114,18 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 ### Tests for User Story 2
 
 - [X] T039 [P] [US2] Envelope validation table test: valid envelope; bad JSON; unknown version; oversize; `afterNode` not in the checked version; script/raw HTML/unknown component/`@ToAssistant`/unregistered action in markup, all dropped with a notice, in `internal/blog/envelope_test.go`
-- [ ] T040 [P] [US2] Check lifecycle test: running → ready; failed, timed out, cancelled, disconnected each shown as itself, nothing published, post returns to `draft`, in `internal/blog/check_test.go`
-- [ ] T041 [P] [US2] Out-of-date test: editing the head version during `running`/`ready` marks the check `out_of_date` and publish-enriched is refused, in `internal/blog/check_outofdate_test.go`
-- [ ] T042 [P] [US2] Two-user test: B cannot start, read, cancel or accept blocks on A's check; the check uses A's binding and never B's, in `internal/blog/check_ownership_test.go`
+- [X] T040 [P] [US2] Check lifecycle test: running → ready; failed, timed out, cancelled, disconnected each shown as itself, nothing published, post returns to `draft`, in `internal/blog/check_test.go`
+- [X] T041 [P] [US2] Out-of-date test: editing the head version during `running`/`ready` marks the check `out_of_date` and publish-enriched is refused, in `internal/blog/check_outofdate_test.go`
+- [X] T042 [P] [US2] Two-user test: B cannot start, read, cancel or accept blocks on A's check; the check uses A's binding and never B's, in `internal/blog/check_ownership_test.go`
 - [ ] T043 [P] [US2] Web test: Preview shows AI-added badge per block, Accept all / Reject one / Publish original, and each failure state wording, in `web/src/blog/PublishFlow.test.tsx`
 
 ### Implementation for User Story 2
 
-- [ ] T044 [US2] Versioned instruction `internal/blog/blog_prompt.txt` (check the writing, propose blocks, search the web, return the envelope, never rewrite the text); embed and expose its version
+- [X] T044 [US2] Versioned instruction `internal/blog/blog_prompt.txt` (check the writing, propose blocks, search the web, return the envelope, never rewrite the text); embed and expose its version
 - [X] T045 [US2] Server-side OpenUI validation against the read-only reader allowlist (no `@ToAssistant`, no submitting forms; `@OpenUrl` only to `https` urls listed in the block's sources) in `internal/blog/validate_openui.go`; keep the allowlist in step with `web/src/openui/validate.ts` (server half done, in `openui.go` rather than `validate_openui.go`; keeping the allowlist in step with `web/src/openui/validate.ts` stays open until the read-only library, T061)
 - [X] T046 [US2] Envelope parser and validator per `contracts/check-envelope.md` in `internal/blog/envelope.go`
-- [ ] T047 [US2] Check runner in `internal/blog/check.go`: create the Hermes run through the author's backend-selected binding with `Instructions`, track run states, persist notes and proposed blocks, cancel, mark out of date; error codes carry no provider text or credential
-- [ ] T048 [US2] Block decision, publish-enriched (snapshot accepted blocks with the pinned version) and check handlers in `internal/blog/handlers.go` per `contracts/http-api.md`
+- [X] T047 [US2] Check runner in `internal/blog/check.go`: create the Hermes run through the author's backend-selected binding with `Instructions`, track run states, persist notes and proposed blocks, cancel, mark out of date; error codes carry no provider text or credential
+- [X] T048 [US2] Block decision, publish-enriched (snapshot accepted blocks with the pinned version) and check handlers in `internal/blog/handlers.go` per `contracts/http-api.md`
 - [x] T049 [P] [US2] Publish flow UI: choice, checking with Cancel, Preview with notes and per-block Accept/Reject in `web/src/blog/PublishFlow.tsx` and `web/src/blog/Preview.tsx`
 - [x] T050 [P] [US2] Failure and out-of-date states, rejected-block notice and unavailable state per the design in `web/src/blog/PublishFlow.tsx`
 - [ ] T051 [US2] Browser check `blog-publish` (checking, preview, phone layout) in `scripts/browser-check.mjs`; rebuild `internal/webui/dist`; run all tests
