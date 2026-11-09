@@ -527,10 +527,11 @@ async function startingCard(browser) {
 async function blogPages(browser, which) {
   const views = which === "blog-public"
     ? [["index", "/b", "h1, h2"], ["post", "/b/first-post", "article h1, main h1"]]
-    : [["list", "/blog", "main"], ["editor", `/blog/${BLOG_ID}`, "[contenteditable=true]"]];
+    : [["list", "/blog", ".blog-rows, .blog-empty"], ["editor", `/blog/${BLOG_ID}`, "[contenteditable=true]"]];
   for (const [label, w, h, scheme] of [["phone", 390, 844, "light"], ["phone", 390, 844, "dark"], ["narrow", 320, 640, "light"], ["desktop", 1280, 800, "dark"]]) {
     for (const [name, route, want] of views) {
       const { ctx, page, consoleErrors, external } = await openPage(browser, { viewport: { width: w, height: h }, colorScheme: scheme, ...(label !== "desktop" ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) });
+      const logFrom = state.log.length;
       await page.goto(base + route);
       let shown = true;
       try { await page.waitForSelector(want, { timeout: 8000 }); } catch { shown = false; }
@@ -538,9 +539,11 @@ async function blogPages(browser, which) {
       const m = await page.evaluate(() => ({ overflowX: document.documentElement.scrollWidth - innerWidth, bodyOverflow: document.body.scrollWidth - innerWidth }));
       await page.screenshot({ path: path.join(outDir, `${which}-${name}-${label}-${scheme}.png`), fullPage: true });
       const csp = await page.evaluate(() => window.__csp.length);
-      check(`${which} ${name}, ${label} ${w}px ${scheme}: content shown, no sideways scroll, no console error, CSP violation or off-origin request`,
-        shown && m.overflowX <= 0 && m.bodyOverflow <= 0 && consoleErrors.length === 0 && csp === 0 && external.length === 0,
-        JSON.stringify({ shown, ...m, csp, consoleErrors: consoleErrors.slice(0, 2), external: external.slice(0, 2) }));
+      // Signed out means the page never asks who it is: the app shell (which calls /api/me and the chat APIs) is not mounted.
+      const asked = which === "blog-public" ? state.log.slice(logFrom).filter((l) => /^\w+ \/api\/(me|chats|quota|capabilities|models)\b/.test(l)) : [];
+      check(`${which} ${name}, ${label} ${w}px ${scheme}: content shown, no sideways scroll, no console error, CSP violation or off-origin request${which === "blog-public" ? ", and no signed-in API call" : ""}`,
+        shown && m.overflowX <= 0 && m.bodyOverflow <= 0 && consoleErrors.length === 0 && csp === 0 && external.length === 0 && asked.length === 0,
+        JSON.stringify({ shown, ...m, csp, consoleErrors: consoleErrors.slice(0, 2), external: external.slice(0, 2), asked: asked.slice(0, 3) }));
       await ctx.close();
     }
   }

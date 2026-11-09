@@ -10,4 +10,8 @@ actually used." Ids are replaced by stable fakes. Content is public information;
   `summary`, `failed`, `durationMs`).
 - `blog_check_output.txt`: the run's final output.
 
+The `assistant.delta` lines are a fragment (the first two of several hundred, kept to show the shape): a real run streams the
+whole reply in many deltas, so an accumulator must be written against `run.completed.output`, not this file's deltas.
+`internal/hermes/blog_check_fixture_test.go` fails if the shape this recording shows (and research R4 rests on) changes.
+
 What it shows (research R3, R4): see `specs/001-blog-cms-openui-publish/research.md`. Re-record after a Hermes upgrade.
