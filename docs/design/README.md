@@ -42,6 +42,10 @@ myself" (Accept stays gated on it), and on the public post "Sources named by the
 in front of each block's source chips. Earlier versions of these frames showed green VERIFIED pills; they are gone.
 The public post's closing "Sources" card (a list of every source) is not built in code yet.
 
+My posts as built differs from its frames in two ways, on purpose. Phone rows also show an Open button (the title is plain text, so
+opening a post is one control and not two tab stops). The rail's account line shows the email and has no Menu button: Settings and Sign
+out stay in the chat's account menu, one click away through Chats.
+
 Blog gaps: the preview shows the first two blocks only (metrics, comparison); chart, accordion and fallback blocks are
 drawn on the public post. Sort/hover/expand interactions are shown as static states. The Admin frame is a single card,
 not a full Admin screen. Block-level accept/reject wiring is limited to Reject on the first block. The Phone, Tablet and Landscape menus have no Blog entry yet, and My posts and the Editor use a simplified rail (brand, New post, Chats, Blog posts) instead of the full chat rail; build the real rail in code and add the phone entry with the matching design change.

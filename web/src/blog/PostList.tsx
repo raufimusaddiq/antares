@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPost, deletePost, describeBlogError, duplicatePost, listPosts, unpublish } from "./blogApi";
 import type { BlogResult } from "./blogApi";
+import { BlogShell } from "./BlogShell";
+import { RowMenu, type RowAction } from "./RowMenu";
 import { useDialog } from "./useDialog";
 import { formatDay } from "./dates";
 import type { PostStatus, PostSummary } from "./types";
@@ -16,7 +18,7 @@ export const STATUS_WORDS: Record<PostStatus, string> = {
 type Load = { k: "loading" } | { k: "error"; why: string } | { k: "ok"; posts: PostSummary[] };
 
 
-export function PostList({ onOpen, onChats }: { onOpen: (id: string) => void; onChats: () => void }) {
+export function PostList({ email, onOpen, onChats }: { email: string; onOpen: (id: string) => void; onChats: () => void }) {
   const [load, setLoad] = useState<Load>({ k: "loading" });
   const [confirm, setConfirm] = useState<PostSummary | null>(null);
   const [note, setNote] = useState("");
@@ -53,12 +55,18 @@ export function PostList({ onOpen, onChats }: { onOpen: (id: string) => void; on
     else setNote(describeBlogError(r, "start a new post"));
   };
 
+  const actionsOf = (p: PostSummary): RowAction[] => [
+    { label: "Open", run: () => onOpen(p.id) },
+    ...(p.status === "published" && p.slug ? [{ label: "View post", href: `/b/${p.slug}` }] : []),
+    { label: "Duplicate", run: () => void act(duplicatePost(p.id), "duplicate") },
+    ...(p.status === "published" ? [{ label: "Unpublish", run: () => void act(unpublish(p.id), "unpublish") }] : []),
+    { label: "Delete", danger: true, run: () => setConfirm(p) },
+  ];
+
   return (
+    <BlogShell email={email} onNewPost={() => void create()} onChats={onChats}>
     <main className="blog-list">
       <header className="blog-bar">
-        <button type="button" className="quiet" onClick={onChats}>
-          Chats
-        </button>
         <div>
           <h1>My posts</h1>
           <p className="label blog-bar-note">Only you can see drafts. Published posts are public.</p>
@@ -90,34 +98,20 @@ export function PostList({ onOpen, onChats }: { onOpen: (id: string) => void; on
         <ul className="blog-rows">
           {load.posts.map((p) => (
             <li key={p.id} className="blog-row">
-              <button type="button" className="blog-row-main" onClick={() => onOpen(p.id)}>
-                <span className="blog-row-text">
-                  <span className="blog-row-title">{p.title || "Untitled"}</span>
-                  <span className="label">
-                    Edited {formatDay(p.updatedAt, false)}
-                    {p.status === "published" && p.slug ? ` · /b/${p.slug}` : ""}
-                  </span>
+              <span className="blog-row-text">
+                <span className="blog-row-title">{p.title || "Untitled"}</span>
+                <span className="label">
+                  Edited {formatDay(p.updatedAt, false)}
+                  {p.status === "published" && p.slug ? ` · /b/${p.slug}` : ""}
                 </span>
+              </span>
+              <span className="blog-row-end">
                 <span className={`chip chip-${p.status}`}>{STATUS_WORDS[p.status]}</span>
                 {p.interactive && <span className="chip chip-ai">Interactive</span>}
-              </button>
-              <span className="blog-row-actions">
-                {p.status === "published" && p.slug && (
-                  <a className="quiet" href={`/b/${p.slug}`}>
-                    View
-                  </a>
-                )}
-                {p.status === "published" && (
-                  <button type="button" className="quiet" onClick={() => void act(unpublish(p.id), "unpublish")}>
-                    Unpublish
-                  </button>
-                )}
-                <button type="button" className="quiet" onClick={() => void act(duplicatePost(p.id), "duplicate")}>
-                  Duplicate
+                <button type="button" className="quiet" aria-label={`Open ${p.title || "Untitled"}`} onClick={() => onOpen(p.id)}>
+                  Open
                 </button>
-                <button type="button" className="quiet" onClick={() => setConfirm(p)}>
-                  Delete
-                </button>
+                <RowMenu label={`More actions for ${p.title || "Untitled"}`} actions={actionsOf(p)} />
               </span>
             </li>
           ))}
@@ -135,6 +129,7 @@ export function PostList({ onOpen, onChats }: { onOpen: (id: string) => void; on
         />
       )}
     </main>
+    </BlogShell>
   );
 }
 

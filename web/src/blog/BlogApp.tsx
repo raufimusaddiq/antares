@@ -35,7 +35,7 @@ export function BlogApp({ caps, email, route, onNavigate, onChats }: { caps: Cap
         <button type="button" className="btn" onClick={onChats}>Back to chats</button>
       </main>
     );
-  if (route.kind === "list") return <PostList onOpen={(id) => onNavigate(editPath(id))} onChats={onChats} />;
+  if (route.kind === "list") return <PostList email={email} onOpen={(id) => onNavigate(editPath(id))} onChats={onChats} />;
   return <PostScreen key={route.id} id={route.id} email={email} publishing={route.kind === "publish"} caps={caps} onNavigate={onNavigate} />;
 }
 
