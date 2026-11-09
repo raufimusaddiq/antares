@@ -42,6 +42,15 @@ myself" (Accept stays gated on it), and on the public post "Sources named by the
 in front of each block's source chips. Earlier versions of these frames showed green VERIFIED pills; they are gone.
 The public post's closing "Sources" card (a list of every source) is not built in code yet.
 
+Behaviour the frames cannot show (built, and tested):
+- The post row's "⋯" is a menu button: Enter, Space or ArrowDown opens it onto the first item, ArrowUp onto the last; the arrows,
+  Home and End move (wrapping); Escape closes it and returns to the button; Tab leaves it; a press outside closes it.
+- Choosing an item leaves focus on that button (a dialog the action opens returns to it). The list is not replaced by "Loading…"
+  when it reloads, so Duplicate and Unpublish do not lose the keyboard user's place. After a Delete, focus goes to the row that took
+  the deleted one's place, or to New post when there are none.
+- Publish is a modal dialog over the editor (focus in, Tab kept inside, Escape or Cancel back to editing, the editor behind it inert);
+  each later full-screen step takes focus to its heading, and closing Publish returns focus to the editor's Publish button.
+
 My posts as built differs from its frames in two ways, on purpose. Phone rows also show an Open button (the title is plain text, so
 opening a post is one control and not two tab stops). The rail's account line shows the email and has no Menu button: Settings and Sign
 out stay in the chat's account menu, one click away through Chats.

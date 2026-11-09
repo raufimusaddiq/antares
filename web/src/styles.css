@@ -1307,9 +1307,10 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 .blog-shell { display: grid; grid-template-columns: 17rem minmax(0, 1fr); min-height: 100dvh; color: var(--ink); background: var(--canvas); }
 .blog-rail { position: sticky; top: 0; display: flex; flex-direction: column; gap: 0.5rem; height: 100dvh; box-sizing: border-box; padding: 1.1rem 0.9rem; background-color: var(--rail); background-image: var(--dots); border-right: var(--line) solid var(--ink); }
 .blog-rail .brand { grid-area: auto; padding: 0 0.35rem 0.6rem; }
-.blog-rail > button { width: 100%; justify-content: flex-start; min-height: 2.75rem; padding: 0 0.9rem; font-weight: 700; }
+.blog-rail > button, .blog-rail > span.rail-item { min-height: 2.75rem; padding: 0 0.9rem; font-weight: 700; }
+.blog-rail > button { width: 100%; justify-content: flex-start; }
 .blog-rail .rail-item { background: transparent; border-color: transparent; box-shadow: none; }
-.blog-rail span.rail-item { display: flex; align-items: center; box-sizing: border-box; min-height: 2.75rem; padding: 0 0.9rem; font-weight: 700; border-radius: 999px; } /* the current page: a mark, not a control */
+.blog-rail span.rail-item { display: flex; align-items: center; box-sizing: border-box; border-radius: 999px; } /* the current page: a mark, not a control */
 .blog-rail .rail-item[aria-current="page"] { background: var(--ink); color: var(--canvas); }
 .blog-rail-foot { margin-top: auto; padding-top: 0.75rem; border-top: 2px solid var(--ink); flex: 0 0 auto; }
 .blog-shell .blog-list { max-width: 64rem; width: 100%; margin: 0; padding: 2rem 2.5rem 4rem; }
@@ -1325,7 +1326,8 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
   .blog-shell { grid-template-columns: minmax(0, 1fr); }
   .blog-rail { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; border-right: 0; border-bottom: var(--line) solid var(--ink); padding: 0.6rem 0.9rem; }
   .blog-rail .brand { padding: 0; margin-right: auto; }
-  .blog-rail > button { width: auto; min-height: 2.25rem; }
+  .blog-rail > button, .blog-rail > span.rail-item { min-height: 2.25rem; }
+  .blog-rail > button { width: auto; }
   .blog-rail .rail-new, .blog-rail-foot { display: none; } /* the page has its own New post, and the account line has no room */
   .blog-shell .blog-list { padding: 1rem; }
   .blog-shell .blog-bar > .btn { width: 100%; }
