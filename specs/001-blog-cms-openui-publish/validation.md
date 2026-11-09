@@ -56,3 +56,16 @@ What the numbers said, and what was done:
 - **A real inconsistency came out of that test.** A post's page redirected a trailing slash to its one canonical address, but the index served `/b/` with a canonical of `/b/`: two addresses. `/b/` now redirects to `/b`.
 - **cmd/antares-smoke, internal/smoke (-7.1, -3.8):** the smoke tool grew its production-only paths (the real-Hermes check steps, event capture, its own `main`, the error branches that need a live Hermes). They are exercised by every production smoke run and not by unit tests; accepted.
 - **cmd/antares, internal/auth, internal/chat (-1.5, -0.9, -0.2):** wiring and a few new lines in each; accepted.
+
+## Success criteria and their evidence
+
+| SC | Evidence |
+|---|---|
+| SC-001 | Not timed; the plain-post path is covered by scenario 1 and the production smoke (`blog.lifecycle`). |
+| SC-002 | One real check in the smoke ran in about a minute on a short post; the 90% figure over 1,500 words is not measured. |
+| SC-003, SC-008 | Server rejects a source-less data block; acceptance needs the author's acknowledgement (scenarios on sources). Sources are never marked verified. |
+| SC-004, SC-005 | Allowlist and ownership tests, the two-user and fuzz tests, the route inventory, the admin-blind scan. |
+| SC-006 | Autosave and local-copy tests; the editor browser check. |
+| SC-007 | Not measured on a real mobile connection; the mobile-layout browser check is the proxy. |
+| SC-009 | Not measurable without usage data; revisit after real use. |
+| SC-010 | Failure-state tests and `ANTARES_BLOG_CHECK=off` behaviour (runbook). |
