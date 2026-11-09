@@ -52,6 +52,13 @@ const BLOG_DOC = {
     { type: "codeBlock", content: [text("const long = " + "y".repeat(220))] },
   ],
 };
+// Accepted blocks as readers get them: a table with its source, a section that opens and closes, and one the reader must not be
+// able to run (a button with an action), which has to fall back to its plain text.
+const BLOG_BLOCKS = [
+  { anchor: 1, markup: 'root = Card([tbl], [{url: "https://example.org/data", title: "The data", sourceName: "example.org"}])\ntbl = Table([Col("City", ["Jakarta", "Bandung"]), Col("People", [11000000, 2500000], "number")])', fallback: "City / People: Jakarta 11,000,000; Bandung 2,500,000.", sources: [{ url: "https://example.org/data", title: "The data", retrievedAt: "2026-11-08", verified: false }] },
+  { anchor: 2, markup: 'root = Card([acc])\nacc = Accordion([i1])\ni1 = AccordionItem("more", "More detail", [t1])\nt1 = TextContent("Detail a reader can open and close.")', fallback: "More detail: Detail a reader can open and close.", sources: [] },
+  { anchor: 3, markup: 'root = Card([b])\nb = Buttons([Button("Go", @OpenUrl("https://example.org/"))])', fallback: "This block could not be run; its plain text is shown instead.", sources: [] },
+];
 const blogPost = () => ({ id: BLOG_ID, title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", slug: "first-post", coverUrl: "", status: "draft", latestVersion: 3, publishedVersion: 0, doc: BLOG_DOC, check: null, updatedAt: "2026-11-09T01:00:00Z" });
 
 const TABLE = 'root = Card([hdr, txt, tbl, chart, btns])\nhdr = CardHeader("Compare", "Three plans side by side")\ntxt = TextContent("**A** is cheapest; **C** has the most storage.")\ntbl = Table([Col("Plan", ["A", "B", "C"]), Col("Cost ($)", [1, 2, 3])])\nchart = BarChart(["A", "B", "C"], [Series("Cost", [1, 2, 3])])\nbtns = Buttons([Button("Tell me more", @ToAssistant("Tell me more about plan A"))])';
@@ -98,7 +105,7 @@ function api(req, res, url) {
   if (url.pathname === `/api/blog/posts/${BLOG_EMPTY_ID}` && req.method === "GET") return send(200, { ...blogPost(), id: BLOG_EMPTY_ID, title: "", doc: { type: "doc", content: [{ type: "paragraph" }] } });
   if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "PUT") return send(200, { ...blogPost(), latestVersion: 4 });
   if (url.pathname === "/api/public/blog/posts") return send(200, [{ slug: "first-post", title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary with " + "words ".repeat(30), coverUrl: "", authorName: "A Writer With A Rather Long Display Name", publishedAt: "2026-11-08T01:00:00Z" }]);
-  if (url.pathname === "/api/public/blog/posts/first-post") return send(200, { title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", coverUrl: "", doc: BLOG_DOC, blocks: [], authorName: "A Writer", publishedAt: "2026-11-08T01:00:00Z" });
+  if (url.pathname === "/api/public/blog/posts/first-post") return send(200, { title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", coverUrl: "", doc: BLOG_DOC, blocks: BLOG_BLOCKS, authorName: "A Writer", publishedAt: "2026-11-08T01:00:00Z" });
   // The shared plan quota every account sees in the chat (GET /api/quota): shares and reset times, no amounts.
   if (url.pathname === "/api/quota")
     return send(200, { state: "OK", plan: "Studio", windows: [{ key: "week", usedFrac: 0.365, resetsAt: "2026-11-03T05:08:00Z" }, { key: "month", usedFrac: 0.92, resetsAt: "2026-11-19T05:08:00Z" }] });
@@ -560,6 +567,33 @@ async function blogPages(browser, which) {
         else if (g.flush > 1) editorProblems.push(`the title, toolbar and body text do not share a left edge (off by ${g.flush}px); the design has them flush`);
         if (name === "empty editor" && (!g.empty || !/Tell your story/.test(g.placeholder))) editorProblems.push(`an empty body shows no placeholder (${JSON.stringify(g)})`);
         if (name === "editor" && g.empty) editorProblems.push("a body with text is marked empty");
+      }
+      // The reader's blocks (T064): drawn, within the page, keyboard-operable, and the one that must not run falls back to its text.
+      if (which === "blog-public" && name === "post" && shown) {
+        await page.waitForTimeout(600); // the block renderer loads on demand
+        const r = await page.evaluate(() => ({
+          drawn: document.querySelectorAll(".openui-root").length,
+          plain: [...document.querySelectorAll(".blog-block-plain")].map((e) => e.textContent),
+          buttons: document.querySelectorAll(".blog-doc button:not(.openui-accordion-trigger)").length,
+          triggers: document.querySelectorAll(".openui-accordion-trigger").length,
+        }));
+        if (r.drawn !== 2) editorProblems.push(`${r.drawn} blocks were drawn, expected 2`);
+        if (r.plain.length !== 1 || !/could not be run/.test(r.plain[0] ?? "")) editorProblems.push(`the block with a button did not fall back to its text: ${JSON.stringify(r.plain)}`);
+        if (r.buttons !== 0) editorProblems.push(`${r.buttons} buttons in the post: a reader must not be offered one`);
+        // Keyboard: Tab reaches the section's trigger, and Enter closes and reopens it.
+        let reached = false;
+        for (let i = 0; i < 60 && !reached; i++) {
+          await page.keyboard.press("Tab");
+          reached = await page.evaluate(() => document.activeElement?.classList.contains("openui-accordion-trigger") ?? false);
+        }
+        if (!reached) editorProblems.push("Tab never reached the section's trigger");
+        else {
+          const open = () => page.evaluate(() => document.activeElement?.getAttribute("aria-expanded"));
+          const was = await open();
+          await page.keyboard.press("Enter");
+          const now = await open();
+          if (was === now) editorProblems.push(`Enter did not toggle the section (aria-expanded stayed ${was})`);
+        }
       }
       await page.screenshot({ path: path.join(outDir, `${which}-${name}-${label}-${scheme}.png`), fullPage: true });
       const csp = await page.evaluate(() => window.__csp.length);
