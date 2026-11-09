@@ -30,7 +30,7 @@ export function RowMenu({ label, actions }: { label: string; actions: RowAction[
     };
     document.addEventListener("pointerdown", away);
     return () => document.removeEventListener("pointerdown", away);
-  }, [open]);
+  }, [open, at]);
 
   const close = (refocus: boolean) => {
     setOpen(false);
@@ -38,13 +38,13 @@ export function RowMenu({ label, actions }: { label: string; actions: RowAction[
   };
   const onMenuKey = (e: React.KeyboardEvent) => {
     const all = items();
-    const at = all.indexOf(document.activeElement as HTMLElement);
+    const idx = all.indexOf(document.activeElement as HTMLElement);
     const go = (i: number) => (e.preventDefault(), all[(i + all.length) % all.length]?.focus());
     switch (e.key) {
       case "ArrowDown":
-        return go(at + 1);
+        return go(idx + 1);
       case "ArrowUp":
-        return go(at - 1);
+        return go(idx - 1);
       case "Home":
         return go(0);
       case "End":

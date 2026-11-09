@@ -22,6 +22,9 @@ export function PostList({ email, onOpen, onChats }: { email: string; onOpen: (i
   const [load, setLoad] = useState<Load>({ k: "loading" });
   const [confirm, setConfirm] = useState<PostSummary | null>(null);
   const [note, setNote] = useState("");
+  // Where focus goes once a deleted post is gone: the row that took its place, else New post (the row it came from is unmounted).
+  const focusAfterDelete = useRef<number | null>(null);
+  const newPost = useRef<HTMLButtonElement>(null);
 
   const inflight = useRef<AbortController | null>(null);
   const refresh = useCallback(() => {
@@ -43,8 +46,17 @@ export function PostList({ email, onOpen, onChats }: { email: string; onOpen: (i
     setNote("");
     const r = await p;
     if (r.ok) return refresh();
+    focusAfterDelete.current = null;
     setNote(describeBlogError(r, what));
   };
+
+  useEffect(() => {
+    if (focusAfterDelete.current === null || load.k !== "ok") return;
+    const at = focusAfterDelete.current;
+    focusAfterDelete.current = null;
+    const more = document.querySelectorAll<HTMLElement>(".blog-list .blog-more");
+    (more.length > 0 ? more[Math.min(at, more.length - 1)] : newPost.current)?.focus();
+  }, [load]);
 
   const creating = useRef(false);
   const create = async () => {
@@ -71,7 +83,7 @@ export function PostList({ email, onOpen, onChats }: { email: string; onOpen: (i
           <h1>My posts</h1>
           <p className="label blog-bar-note">Only you can see drafts. Published posts are public.</p>
         </div>
-        <button type="button" className="btn" onClick={() => void create()}>
+        <button ref={newPost} type="button" className="btn" onClick={() => void create()}>
           New post
         </button>
       </header>
@@ -123,6 +135,7 @@ export function PostList({ email, onOpen, onChats }: { email: string; onOpen: (i
           onDelete={() => {
             const p = confirm;
             setConfirm(null);
+            focusAfterDelete.current = load.k === "ok" ? Math.max(0, load.posts.findIndex((x) => x.id === p.id)) : 0;
             void act(deletePost(p.id), "delete the post");
           }}
           onKeep={() => setConfirm(null)}

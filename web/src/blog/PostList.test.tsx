@@ -181,6 +181,39 @@ describe("My posts: row actions", () => {
   });
 });
 
+describe("My posts: focus after a delete", () => {
+  /** Delete the row called `title`; the server then has `rest`. */
+  async function deleteIt(title: string, id: string, all: ReturnType<typeof post>[]) {
+    let posts = all;
+    serve(() => posts, (c) => {
+      if (c.method === "DELETE") posts = posts.filter((p) => p.id !== id);
+      return json({});
+    });
+    mount();
+    await screen.findByText(title);
+    fireEvent.click(menuOf(title).getByRole("menuitem", { name: "Delete" }));
+    fireEvent.click(within(screen.getByRole("alertdialog")).getByRole("button", { name: "Delete post" }));
+    await waitFor(() => expect(screen.queryByText(title)).toBeNull());
+  }
+
+  it("goes to the row that took the place of a deleted one", async () => {
+    await deleteIt("Checking one", "c1", FIVE);
+    await waitFor(() => expect(document.activeElement).toBe(within(row("Ready one")).getByRole("button", { name: "More actions for Ready one" })));
+  });
+
+  it("goes to the previous row when the last one is deleted", async () => {
+    await deleteIt("Unpublished one", "u1", FIVE);
+    await waitFor(() => expect(document.activeElement).toBe(within(row("Published one")).getByRole("button", { name: "More actions for Published one" })));
+  });
+
+  it("goes to New post when no post is left", async () => {
+    await deleteIt("Only one", "o1", [post({ id: "o1", title: "Only one" })]);
+    await screen.findByText("No posts yet");
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("New post"));
+    expect(document.activeElement?.closest(".blog-bar")).not.toBeNull(); // the page's, not the rail's
+  });
+});
+
 describe("My posts: delete confirmation", () => {
   it("asks first, and nothing is deleted until the author says so", async () => {
     const calls = serve(() => FIVE);
