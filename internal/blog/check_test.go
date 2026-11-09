@@ -74,7 +74,13 @@ func (p *person) post(id string) Post {
 
 func TestACheckRunsOnTheAuthorsOwnAssistantAndShowsWhatCameBack(t *testing.T) {
 	fh := newFake()
-	fh.output = goodReply
+	release := make(chan struct{})
+	fh.script = func(ctx context.Context, emit func(string, map[string]any) error) error {
+		<-release // held, so the running state can be seen
+		_ = emit("tool.started", map[string]any{"tool": "web_search", "preview": "a query", "tool_call_id": "c1"})
+		_ = emit("tool.completed", map[string]any{"tool": "web_search", "preview": "", "error": false, "tool_call_id": "c1"})
+		return emit("run.completed", map[string]any{"output": goodReply})
+	}
 	a := newAppWithHermes(t, fh)
 	u := a.active("alice")
 	post := u.draftToCheck("A post")
@@ -86,6 +92,7 @@ func TestACheckRunsOnTheAuthorsOwnAssistantAndShowsWhatCameBack(t *testing.T) {
 	if got := u.post(post.ID); got.Status != "checking" || got.Check == nil || got.Check.State != "running" {
 		t.Fatalf("while it runs the post says so: %+v", got)
 	}
+	close(release)
 	c := u.waitCheck(post.ID, "ready")
 	if len(c.Notes) != 1 || c.Notes[0].Text != "Check the 2019 figure." {
 		t.Fatalf("notes: %+v", c.Notes)
