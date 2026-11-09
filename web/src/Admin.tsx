@@ -430,6 +430,11 @@ export function UserDetail({ user, onDecide, onRequeue }: { user: AdminUser; onD
         <dt>Last sign-in</dt>
         <dd>{when(user.lastLoginAt)}</dd>
       </dl>
+      {user.approvalStatus === "SUSPENDED" && (
+        <p className="admin-note" role="note">
+          Their published posts are hidden from readers until the account is reinstated. Admins see no post or draft content.
+        </p>
+      )}
 
       <h2>Workspace</h2>
       <dl className="facts">

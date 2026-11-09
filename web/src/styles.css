@@ -405,6 +405,7 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Notices are colour-coded by meaning: status is the pink highlighter, an alert is blush. */
 .notice { margin: 0.5rem 0.25rem; padding: 0.7rem 1rem; background: var(--mark); color: var(--mark-ink); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: 3px 3px 0 var(--ink); }
 .notice[role="alert"] { background: var(--blush); color: var(--ink); }
+.admin-note { margin: 0.75rem 0; padding: 0.6rem 0.9rem; background: var(--rail); color: var(--ink); border-radius: var(--r-md); font-size: 0.9rem; } /* the Admin / Suspended user frame */
 .notice button { background: var(--card); color: var(--ink); }
 .turn .notice { margin: 0.5rem 0; }
 .tools { margin: 0.3rem 0; padding-left: 1.1rem; font-size: 0.85rem; color: var(--ink-2); }
