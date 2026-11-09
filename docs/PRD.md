@@ -1733,11 +1733,14 @@ indexable.
 (PNG, JPEG, WebP, GIF by content, 5 MiB each, 30 per post, 200 MiB per author). The document is the editor's JSON,
 validated against an allowlist and rebuilt from what passed; no raw HTML is stored or rendered.
 
-**AI check (not built yet).** One Hermes run per check through the author's own binding, in a session of its own with
-no chat row. The recorded events carry the search query but not what a search returned, so no source can be marked
-verified: every source is shown as unverified and every block with data needs the author's explicit acknowledgement.
-Until the check exists, `GET /api/blog/capabilities` reports `check` and `webSearch` as false and publishing offers the
-original only.
+**AI check (built; on by default).** One Hermes run per check through the author's own binding, in a session of its own with
+no chat row; it needs an assistant that confirms web search. The recorded events carry the search query but not what a search
+returned, so no source can be marked verified: every source is shown as unverified and every block with sources needs the
+author's explicit "I have checked these sources myself" before it can be accepted. The author accepts or rejects each proposed
+block; any later edit makes the check out of date. It is billed like a chat reply and obeys the same spending limit, blocked-model
+list and run allowance; on top, two running checks per author and 30 per rolling 24 hours. `ANTARES_BLOG_CHECK` (`on`, `smoke`,
+`off`) switches it; with `off`, `GET /api/blog/capabilities` reports `check` false and publishing offers the original only
+(`docs/runbooks/blog-check.md`).
 
 **Acceptance.** Two-user ownership (a foreign id is the missing id, body included), the public surface leaks no
 identity, suspending or rejecting an author hides their posts and reinstating restores them, the route inventory fails
