@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -30,11 +31,14 @@ type Config struct {
 	Admin, A, B, Pending *Actor
 	RunID                string
 	Prompt               string
-	RunTimeout           time.Duration // chat: send → terminal phase
-	TenantTimeout        time.Duration // approval → READY, and a re-verification
-	FailedGrace          time.Duration // a tenant that stays FAILED this long has failed
-	Poll                 time.Duration
-	suspendedB           bool
+	// EventsOut, when set, receives every event of the chat runs as "<account> <name> <data>" lines. The data is what
+	// Antares sends the browser (already redacted); the accounts are the synthetic test ones. Nothing else is written.
+	EventsOut     io.Writer
+	RunTimeout    time.Duration // chat: send → terminal phase
+	TenantTimeout time.Duration // approval → READY, and a re-verification
+	FailedGrace   time.Duration // a tenant that stays FAILED this long has failed
+	Poll          time.Duration
+	suspendedB    bool
 }
 
 func (c *Config) defaults() {
@@ -133,6 +137,7 @@ func Run(ctx context.Context, cfg *Config, r *Runner) {
 		r.Run("tenant.verify."+n, "tenant "+n+" re-verified now: own credential, toolset policy applied", []string{"tenant.ready." + n}, func() (string, error) { return s.reverify(ctx, a) })
 		r.Run("chat."+n+".reply", "user "+n+" sends a message and gets an assistant reply", []string{"tenant.verify." + n}, func() (string, error) { return s.chat(ctx, a) })
 	}
+	r.Run("blog.lifecycle", "a user writes, publishes, unpublishes and deletes a post; a stranger sees none of it, a reader sees only the published one", []string{"chat.a.reply", "chat.b.reply"}, func() (string, error) { return s.blog(ctx) })
 	r.Run("negative.cross_user", "two users cannot read each other's chats", []string{"chat.a.reply", "chat.b.reply"}, func() (string, error) { return s.crossUser(ctx) })
 	r.Run("negative.revoked", "revoked account loses access immediately", []string{"chat.b.reply", "chat.a.reply", "admin.active"}, func() (string, error) { return s.revoke(ctx) })
 	r.Run("cleanup.restore", "revoked test account restored for the next run", []string{"login.admin"}, func() (string, error) { return s.restore(ctx) })
@@ -434,6 +439,9 @@ func (s *scn) chat(ctx context.Context, a *Actor) (string, error) {
 	path := "/api/runs/" + run.RunID + "/events"
 	status, err := s.c.Stream(rctx, a.Session, path, func(e SSEEvent) bool {
 		counts[e.Name]++
+		if s.cfg.EventsOut != nil {
+			fmt.Fprintf(s.cfg.EventsOut, "%s %s %s\n", a.Name, e.Name, e.Data)
+		}
 		if terminalEvents[e.Name] {
 			terminal = e.Name
 			return true

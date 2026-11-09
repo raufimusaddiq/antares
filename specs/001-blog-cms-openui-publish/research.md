@@ -25,23 +25,34 @@ Each item: decision, rationale, alternatives. Items R3 and R4 depend on the depl
 - **Alternatives**: inline blocks as document nodes (mixes author and AI content; harder to prove the
   original was untouched).
 
-## R3. How a check runs on Hermes (open, needs fixture)
+## R3. How a check runs on Hermes (resolved 2026-11-09)
 
 - **Decision**: a check is one Hermes run created through the author's binding, with the draft text as input
   and the blog prompt in the per-run `instructions` field (the same mechanism as the OpenUI prompt for chat).
   Antares tracks it with the existing run states (running, completed, failed, cancelled, timed out,
   disconnected). The check's session is a dedicated, non-chat session that is not listed in the author's chats.
 - **Rationale**: Principle II (Hermes does the work); reuses stop/steer/status plumbing; no queue needed.
-- **Open**: confirm from a recorded fixture that a run can be created without a user-visible chat, and what
-  the tool-event stream for web search looks like. If a hidden session is impossible, fall back to a chat
-  flagged `kind=blog_check` that the chat list filters out; both are covered by the ownership tests.
+- **Resolved**: Hermes knows sessions and runs, not Antares chats. A chat is an Antares row that points at a Hermes
+  session; the list the author sees is that table. A check therefore creates its own Hermes session
+  (`Client.CreateSession`) and run (`Client.CreateRun`, with `Instructions`) and records the ids on `post_checks`;
+  with no `chats` row it is never listed. No `kind=blog_check` chat is needed. The tool events of a web-search run
+  were recorded from the deployed Hermes (`internal/hermes/testdata/blog_check_*`): per search a `tool.started`
+  (`label: "web_search"`, `detail`: the query) and a `tool.completed` (`failed`, `durationMs` null, **`summary` empty**),
+  then `message.delta`s and `run.completed` with the full output. Not yet run: a session and run created with no chat
+  row, end to end; the first Phase 5 test must do that against the smoke account before relying on it.
 
-## R4. Verifying sources (open, needs fixture)
+## R4. Verifying sources (resolved 2026-11-09: events do not expose the results)
 
 - **Decision**: the reply must carry, per data-bearing block, a list of sources `{url, title, retrievedAt}`.
   Antares (a) accepts only `https` URLs, (b) drops blocks with data but no sources (FR-016), (c) when the run's
   tool events expose the URLs the search tool actually returned, marks a source *verified* if it appears there,
   *unverified* otherwise, and requires explicit author acceptance for blocks with unverified sources.
+- **Recorded fact**: the run's events carry the search *query* but not what the search returned: `tool.completed`
+  has an empty `summary` for `web_search`. There is nothing to cross-check a cited URL against, so **no source can be
+  marked verified**. Every source is shown as unverified, every block with data needs the author's explicit
+  acknowledgement (`needs_ack` is always true), and the preview says plainly that the assistant's sources were not
+  checked. `verified` stays in the model for a future Hermes that exposes results; until a recording shows it does,
+  the server never sets it. This is the fallback this item always named, now the actual behaviour.
 - **Rationale**: the model cannot be trusted to cite honestly; the cross-check is only as good as the events
   Hermes exposes, so the plan states the weaker fallback instead of claiming more (Principle III).
 - **Alternatives**: Antares fetching each URL itself (a server-side fetch of model-chosen URLs is an SSRF

@@ -202,3 +202,15 @@ in-process tests do complete a full OIDC Authorization Code + PKCE flow against 
   removed only through the helper when the owner says to.
 - **Production data.** It creates chats on the target. Point it at production only with the owner's say-so
   (`docs/runbooks/deployment.md`).
+
+
+## The blog step and recording a run
+
+`blog.lifecycle` (after both chat steps) runs the blog through the real routes: A writes, a stale save is refused with 409,
+B (a stranger) gets 404 on A's draft, an anonymous reader gets 404 for the draft, then 200 for the published post with no
+account or post id in it, `/b/<slug>` carries its own title and is not `noindex`, and an unpublished or deleted post is
+gone. The post is deleted at the end (and on any failure on the way out); the fixture cleanup removes the accounts.
+
+`--events-out FILE` (mode 0600) writes every chat event as Antares sends it to a browser, one `<account> <event> <json>`
+line each, for recording what Hermes does with the synthetic accounts (for example with `--prompt "Use web search to …"`).
+It is how `internal/hermes/testdata/blog_check_*` was recorded.

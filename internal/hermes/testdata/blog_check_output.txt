@@ -1,0 +1,18 @@
+root = Card([hdr, body1, body2, facts, fu], sources)
+
+hdr = CardHeader("Jakarta Population")
+
+body1 = TextContent("Jakarta's official registered population is 11,010,514 for the first semester of 2025, per the Home Ministry's Dukcapil clean population data [1].")
+
+body2 = TextContent("The UN's World Urbanization Prospects 2025 instead puts the wider Jakarta urban area at nearly 42 million, which the city says reflects commuters rather than KTP-registered residents [2].")
+
+facts = EntityList([r1, r2], "default", hd, null)
+hd = {left: "Measure", right: "Population", rightVariant: "text"}
+r1 = {left: "Province (Dukcapil, H1 2025)", right: "11,010,514", rightVariant: "number"}
+r2 = {left: "Metro area (UN, 2025)", right: "~42,000,000", rightVariant: "number"}
+
+fu = FollowUpBlock([f1, f2])
+f1 = FollowUpItem("Break down Jakarta's population by municipality")
+f2 = FollowUpItem("Explain the Dukcapil vs UN counting difference")
+
+sources = [{title: "Jakarta Population Recorded at 11.01 Million", sourceName: "Berita Jakarta", url: "https://m.beritajakarta.id/en/read/61194/jakarta-population-recorded-at-1101-million"}, {title: "Penduduk Jakarta 11 juta, bukan 42 juta orang", sourceName: "ANTARA News", url: "https://www.antaranews.com/berita/5270513/penduduk-jakarta-11-juta-bukan-42-juta-orang"}]

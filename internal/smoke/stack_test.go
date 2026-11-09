@@ -17,12 +17,14 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -30,6 +32,7 @@ import (
 	"time"
 
 	"github.com/raufimusaddiq/antares/internal/auth"
+	"github.com/raufimusaddiq/antares/internal/blog"
 	"github.com/raufimusaddiq/antares/internal/chat"
 	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/secrets"
@@ -406,12 +409,28 @@ func newStack(t *testing.T, stale bool, wrap func(*stack, http.Handler) http.Han
 	if err != nil {
 		t.Fatal(err)
 	}
-	identity, err := auth.New(auth.Options{DB: db, Endpoints: s.idp.endpoints(), ClientID: clientID, ClientSecret: clientSecret,
+	blogs, err := blog.New(blog.Options{DB: db})
+	if err != nil {
+		t.Fatal(err)
+	}
+	identity, err := auth.New(auth.Options{DB: db, Blog: blogs, Endpoints: s.idp.endpoints(), ClientID: clientID, ClientSecret: clientSecret,
 		PublicOrigin: testOrigin, Tenants: tenants, Chat: chats})
 	if err != nil {
 		t.Fatal(err)
 	}
-	h := server.New(func(context.Context) error { return nil }, t.TempDir()).WithAuth(identity).Routes()
+	static := t.TempDir()
+	shell := `<!doctype html><html><head><meta name="robots" content="noindex" /><title>Antares</title><meta name="description" content="x" /><link rel="canonical" href="https://example.test/" /></head><body><div id="root"></div></body></html>`
+	if err := os.WriteFile(filepath.Join(static, "index.html"), []byte(shell), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	h := server.New(func(context.Context) error { return nil }, static).WithAuth(identity).
+		WithBlog(func(ctx context.Context, slug string) (server.PageMeta, error) {
+			m, err := blogs.Meta(ctx, slug)
+			if errors.Is(err, blog.ErrNotFound) {
+				err = server.ErrNoPage
+			}
+			return server.PageMeta{Title: m.Title, Description: m.Description}, err
+		}, nil).Routes()
 	if wrap != nil {
 		h = wrap(s, h)
 	}

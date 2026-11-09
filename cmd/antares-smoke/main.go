@@ -46,6 +46,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	tenantTO := fs.Duration("tenant-timeout", 5*time.Minute, "bound on a tenant reaching READY, and on a re-verification")
 	total := fs.Duration("timeout", 20*time.Minute, "bound on the whole run")
 	prompt := fs.String("prompt", "", "message to send (default: a short fixed sentence)")
+	eventsOut := fs.String("events-out", "", "write the chat runs' events (as Antares sends them to a browser) to this file, mode 0600; for recording what Hermes does, with the synthetic test accounts only")
 	allowHTTP := fs.Bool("allow-http", false, "permit a non-loopback http:// target (session cookies then cross the network in clear)")
 	if err := fs.Parse(args); err != nil {
 		return usageExit
@@ -92,6 +93,14 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 		Client: smoke.NewClient(*target, *origin, red), RunID: runID, Prompt: *prompt,
 		Admin: actors["admin"], A: actors["a"], B: actors["b"], Pending: actors["pending"],
 		RunTimeout: *runTO, TenantTimeout: *tenantTO,
+	}
+	if *eventsOut != "" {
+		f, err := os.OpenFile(*eventsOut, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+		if err != nil {
+			return fail("--events-out: %v", err)
+		}
+		defer f.Close()
+		cfg.EventsOut = f
 	}
 	human := stdout
 	if *jsonOut == "-" {
