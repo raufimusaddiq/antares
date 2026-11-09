@@ -51,7 +51,8 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 
 - [x] T012 Start implementation from a branch cut from `origin/main` after the design PR merges (merge `origin/main` if behind, never rebase), and create empty packages `internal/blog/` and `web/src/blog/`
 - [x] T013 [P] Evaluate and add the editor dependency to `web/package.json` (R1); record bundle-size delta and licence in `specs/001-blog-cms-openui-publish/research.md`
-- [X] T014 [P] (recorded 2026-11-09 with `antares-smoke --events-out`; R3/R4 resolved in research.md) Record Hermes fixtures (keys redacted) for a run created without a chat, its web-search tool events, and a final output into `internal/hermes/testdata/blog_check_*.json`; update `specs/001-blog-cms-openui-publish/contracts/check-envelope.md` to the real shape (R3, R4). Required before Phase 5
+- [X] T014 [P] (recorded 2026-11-09 with `antares-smoke --events-out`: the events of a run that used web search, from an ordinary chat run; R4 resolved in research.md. A run created with no chat row is NOT recorded: that is T014b.) Record Hermes fixtures (keys redacted) for the web-search tool events and a final output into `internal/hermes/testdata/blog_check_*.json`; update `specs/001-blog-cms-openui-publish/contracts/check-envelope.md` to the real shape (R3, R4). Required before Phase 5
+- [ ] T014b Create a Hermes session and run with no Antares chat row, through a synthetic smoke account, and record that it works and is not listed (R3); first test of Phase 5
 
 ---
 

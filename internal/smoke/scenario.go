@@ -436,11 +436,12 @@ func (s *scn) chat(ctx context.Context, a *Actor) (string, error) {
 	start := time.Now()
 	counts := map[string]int{}
 	terminal := ""
+	var eventsErr error
 	path := "/api/runs/" + run.RunID + "/events"
 	status, err := s.c.Stream(rctx, a.Session, path, func(e SSEEvent) bool {
 		counts[e.Name]++
-		if s.cfg.EventsOut != nil {
-			fmt.Fprintf(s.cfg.EventsOut, "%s %s %s\n", a.Name, e.Name, e.Data)
+		if s.cfg.EventsOut != nil && eventsErr == nil {
+			_, eventsErr = fmt.Fprintf(s.cfg.EventsOut, "%s %s %s\n", a.Name, e.Name, e.Data)
 		}
 		if terminalEvents[e.Name] {
 			terminal = e.Name
@@ -471,6 +472,9 @@ func (s *scn) chat(ctx context.Context, a *Actor) (string, error) {
 	}
 	if terminal != "" && terminal != "run.completed" {
 		return "", fmt.Errorf("stream ended with %s but the run row says COMPLETED", terminal)
+	}
+	if eventsErr != nil { // a recording that stopped half way must not look complete
+		return "", fmt.Errorf("--events-out: %v", eventsErr)
 	}
 	reply, err := s.assistantReply(rctx, a)
 	if err != nil {

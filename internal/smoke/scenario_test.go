@@ -1,6 +1,7 @@
 package smoke
 
 import (
+	"bytes"
 	"net/http"
 	"strings"
 	"sync/atomic"
@@ -221,5 +222,26 @@ func TestUnapprovedAccountThatCanChatIsCaught(t *testing.T) {
 	d := wantStatus(t, rep, "negative.unapproved", Fail).Detail
 	if !strings.Contains(d, "ALLOWED") {
 		t.Fatalf("detail = %q", d)
+	}
+}
+
+func TestEventsOutRecordsOneLinePerEvent(t *testing.T) {
+	s := newStack(t, false, nil)
+	var buf bytes.Buffer
+	cfg := s.config()
+	cfg.EventsOut = &buf
+	if rep := s.run(cfg); rep.Verdict != "PASS" {
+		t.Fatalf("verdict %s", rep.Verdict)
+	}
+	out := buf.String()
+	for _, want := range []string{"A run.started {", "A run.completed {", "B run.completed {"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("the recording lacks %q:\n%s", want, out)
+		}
+	}
+	for _, line := range strings.Split(strings.TrimSpace(out), "\n") {
+		if f := strings.SplitN(line, " ", 3); len(f) != 3 || (f[0] != "A" && f[0] != "B") {
+			t.Errorf("malformed line %q", line)
+		}
 	}
 }

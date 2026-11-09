@@ -87,13 +87,26 @@ func (s *scn) blog(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	me, _, merr := s.me(ctx, a)
+	me, mr, merr := s.me(ctx, a)
 	if merr != nil {
 		return "", merr
 	}
-	for _, leak := range []string{p.ID, me.ID, "@", "tenant", "profile"} {
-		if leak != "" && strings.Contains(string(pub.Body), leak) {
-			return "", fmt.Errorf("the public post contains %q", leak)
+	if mr.Status != 200 || me.ID == "" {
+		return "", fmt.Errorf("cannot read A's own account (%s), so the check that the public post carries no account id cannot be made", mr.Brief())
+	}
+	// By what the post says about its author, not by text: a reader's prose may contain "@" or the word "profile".
+	var shape map[string]any
+	if err := pub.JSON(&shape); err != nil {
+		return "", fmt.Errorf("the public post is not JSON")
+	}
+	for _, key := range []string{"id", "postId", "authorId", "author_id", "userId", "email", "authorEmail", "profile", "tenant", "chatId", "runId"} {
+		if _, there := shape[key]; there {
+			return "", fmt.Errorf("the public post has a %q field", key)
+		}
+	}
+	for _, leak := range []string{p.ID, me.ID} {
+		if strings.Contains(string(pub.Body), leak) {
+			return "", fmt.Errorf("the public post contains an internal id")
 		}
 	}
 	if !strings.Contains(string(pub.Body), title) {

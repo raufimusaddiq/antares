@@ -100,6 +100,9 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 			return fail("--events-out: %v", err)
 		}
 		defer f.Close()
+		if err := f.Chmod(0o600); err != nil { // OpenFile's mode only applies to a new file
+			return fail("--events-out: %v", err)
+		}
 		cfg.EventsOut = f
 	}
 	human := stdout

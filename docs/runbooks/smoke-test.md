@@ -203,7 +203,6 @@ in-process tests do complete a full OIDC Authorization Code + PKCE flow against 
 - **Production data.** It creates chats on the target. Point it at production only with the owner's say-so
   (`docs/runbooks/deployment.md`).
 
-
 ## The blog step and recording a run
 
 `blog.lifecycle` (after both chat steps) runs the blog through the real routes: A writes, a stale save is refused with 409,

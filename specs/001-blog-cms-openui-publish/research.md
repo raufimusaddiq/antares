@@ -38,7 +38,7 @@ Each item: decision, rationale, alternatives. Items R3 and R4 depend on the depl
   with no `chats` row it is never listed. No `kind=blog_check` chat is needed. The tool events of a web-search run
   were recorded from the deployed Hermes (`internal/hermes/testdata/blog_check_*`): per search a `tool.started`
   (`label: "web_search"`, `detail`: the query) and a `tool.completed` (`failed`, `durationMs` null, **`summary` empty**),
-  then `message.delta`s and `run.completed` with the full output. Not yet run: a session and run created with no chat
+  then `assistant.delta`s (the name Antares forwards; Hermes' own `message.delta` is normalised to it) and `run.completed` with the full output. Not yet run: a session and run created with no chat
   row, end to end; the first Phase 5 test must do that against the smoke account before relying on it.
 
 ## R4. Verifying sources (resolved 2026-11-09: events do not expose the results)
