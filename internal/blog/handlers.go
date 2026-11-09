@@ -134,6 +134,8 @@ func reply(w http.ResponseWriter, p Post, err error) {
 		apiError(w, http.StatusServiceUnavailable, "CAPABILITY_UNAVAILABLE", "Checking is not available right now", nil)
 	case errors.Is(err, ErrStale):
 		apiError(w, http.StatusConflict, "CHECK_OUT_OF_DATE", "The draft changed after the check", nil)
+	case errors.Is(err, ErrSuperseded):
+		apiError(w, http.StatusConflict, "CHECK_SUPERSEDED", "A newer check exists: decide on that one", nil)
 	case errors.Is(err, ErrNeedsAck):
 		apiError(w, http.StatusUnprocessableEntity, "ACK_REQUIRED", "This block's sources were not checked: accept it knowingly", nil)
 	case errors.Is(err, ErrNoReadyCheck):

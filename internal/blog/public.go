@@ -54,40 +54,31 @@ type PublicBlock struct {
 // publicBlocks are the blocks published with the post's published version (none for a post published as written).
 func (s *Service) publicBlocks(ctx context.Context, postID string) ([]PublicBlock, error) {
 	out := []PublicBlock{}
-	rows, err := s.db.QueryContext(ctx, `SELECT b.position, b.anchor, b.markup, b.fallback FROM published_blocks b JOIN posts p ON p.id = b.post_id AND p.published_version = b.version
-		WHERE b.post_id = ? ORDER BY b.position`, postID)
+	rows, err := s.db.QueryContext(ctx, `SELECT b.position, b.anchor, b.markup, b.fallback, s.url, s.title, s.retrieved_at
+		FROM published_blocks b JOIN posts p ON p.id = b.post_id AND p.published_version = b.version
+		LEFT JOIN published_block_sources s ON s.post_id = b.post_id AND s.version = b.version AND s.block = b.position
+		WHERE b.post_id = ? ORDER BY b.position, s.position`, postID)
 	if err != nil {
 		return nil, err
 	}
-	var pos []int
+	defer rows.Close()
+	last := -1
 	for rows.Next() {
+		var pos int
 		var b PublicBlock
-		var p int
-		if err := rows.Scan(&p, &b.Anchor, &b.Markup, &b.Fallback); err != nil {
-			rows.Close()
+		var url, title, at sql.NullString
+		if err := rows.Scan(&pos, &b.Anchor, &b.Markup, &b.Fallback, &url, &title, &at); err != nil {
 			return nil, err
 		}
-		b.Sources = []Source{}
-		out, pos = append(out, b), append(pos, p)
-	}
-	rows.Close()
-	for i, p := range pos {
-		srows, err := s.db.QueryContext(ctx, `SELECT s.url, s.title, s.retrieved_at FROM published_block_sources s JOIN posts q ON q.id = s.post_id AND q.published_version = s.version
-			WHERE s.post_id = ? AND s.block = ? ORDER BY s.position`, postID, p)
-		if err != nil {
-			return nil, err
+		if pos != last {
+			b.Sources = []Source{}
+			out, last = append(out, b), pos
 		}
-		for srows.Next() {
-			var src Source
-			if err := srows.Scan(&src.URL, &src.Title, &src.RetrievedAt); err != nil {
-				srows.Close()
-				return nil, err
-			}
-			out[i].Sources = append(out[i].Sources, src)
+		if url.Valid {
+			out[len(out)-1].Sources = append(out[len(out)-1].Sources, Source{URL: url.String, Title: title.String, RetrievedAt: at.String})
 		}
-		srows.Close()
 	}
-	return out, nil
+	return out, rows.Err()
 }
 
 func publicAssetURL(slug, assetID string) string {

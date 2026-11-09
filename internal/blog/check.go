@@ -35,6 +35,7 @@ var (
 	ErrCheckRunning = errors.New("blog: a check is already running")
 	ErrUnavailable  = errors.New("blog: checking is not available")
 	ErrStale        = errors.New("blog: the draft changed after the check")
+	ErrSuperseded   = errors.New("blog: a newer check exists")
 	ErrNeedsAck     = errors.New("blog: this block needs the author's acknowledgement")
 	ErrNoReadyCheck = errors.New("blog: there is no finished check of this version")
 )
@@ -279,6 +280,10 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 	if err != nil {
 		return nil, err
 	}
+	// The same answer the page was given: if the assistant cannot be confirmed to search the web, no check is started.
+	if _, check, _ := s.Capabilities(ctx, author); !check {
+		return nil, ErrUnavailable
+	}
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return nil, err
@@ -299,22 +304,22 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 	if n > 0 {
 		return nil, ErrCheckRunning
 	}
-	if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM post_checks WHERE author_id = ? AND state = 'running'`, author).Scan(&n); err != nil {
-		return nil, err
-	}
-	if n >= maxChecksPerUser {
-		return nil, ErrTooMany
-	}
 	id, now := store.NewID(), s.stamp()
 	if _, err := tx.ExecContext(ctx, `UPDATE post_versions SET pinned = 1 WHERE post_id = ? AND version = ?`, postID, cur.LatestVersion); err != nil {
 		return nil, err
 	}
-	if _, err := tx.ExecContext(ctx, `INSERT INTO post_checks (id, post_id, author_id, version, state, prev_status, started_at) VALUES (?,?,?,?, 'running', ?, ?)`,
-		id, postID, author, cur.LatestVersion, cur.Status, now); err != nil {
+	// One statement counts and inserts, so two starts cannot both pass the per-author cap.
+	ins, err := tx.ExecContext(ctx, `INSERT INTO post_checks (id, post_id, author_id, version, state, prev_status, started_at)
+		SELECT ?, ?, ?, ?, 'running', ?, ? WHERE (SELECT COUNT(*) FROM post_checks WHERE author_id = ? AND state = 'running') < ?`,
+		id, postID, author, cur.LatestVersion, cur.Status, now, author, maxChecksPerUser)
+	if err != nil {
 		if isUnique(err) { // another start won the race for this post
 			return nil, ErrCheckRunning
 		}
 		return nil, err
+	}
+	if n, _ := ins.RowsAffected(); n == 0 {
+		return nil, ErrTooMany
 	}
 	if cur.Status == "draft" || cur.Status == "unpublished" {
 		if _, err := tx.ExecContext(ctx, `UPDATE posts SET status = 'checking' WHERE id = ? AND author_id = ?`, postID, author); err != nil {
@@ -657,7 +662,7 @@ func (s *Service) DecideBlock(ctx context.Context, author, postID, blockID, deci
 		return nil, err
 	}
 	if latestID != checkID {
-		return nil, ErrStale
+		return nil, ErrSuperseded // a newer check exists (even one that did not finish): the author is looking at that one
 	}
 	if decision == "accepted" && needsAck == 1 && !ack {
 		return nil, ErrNeedsAck
@@ -665,7 +670,7 @@ func (s *Service) DecideBlock(ctx context.Context, author, postID, blockID, deci
 	if _, err := tx.ExecContext(ctx, `UPDATE post_blocks SET decision = ? WHERE id = ? AND author_id = ?`, decision, blockID, author); err != nil {
 		return nil, err
 	}
-	view, err := latestCheck(ctx, tx, author, postID)
+	view, err := readCheck(ctx, tx, `SELECT id, state, reason, notes, notices FROM post_checks WHERE id = ? AND author_id = ?`, checkID, author)
 	if err != nil {
 		return nil, err
 	}
@@ -695,14 +700,20 @@ func (s *Service) PublishEnriched(ctx context.Context, author, postID string) (P
 	if strings.TrimSpace(cur.Title) == "" || !ValidSlug(cur.Slug) {
 		return Post{}, ErrInvalid
 	}
-	var checkID string
-	err = tx.QueryRowContext(ctx, `SELECT id FROM post_checks WHERE post_id = ? AND author_id = ? AND version = ? AND state = 'ready' ORDER BY started_at DESC, rowid DESC LIMIT 1`,
-		postID, author, cur.LatestVersion).Scan(&checkID)
+	// The check the author sees and decides on is the post's newest. If that one did not finish, an older finished check is not
+	// published behind its back.
+	var checkID, checkState string
+	var checkVersion int
+	err = tx.QueryRowContext(ctx, `SELECT id, state, version FROM post_checks WHERE post_id = ? AND author_id = ? ORDER BY started_at DESC, rowid DESC LIMIT 1`,
+		postID, author).Scan(&checkID, &checkState, &checkVersion)
 	if errors.Is(err, sql.ErrNoRows) {
 		return Post{}, ErrNoReadyCheck
 	}
 	if err != nil {
 		return Post{}, err
+	}
+	if checkState != "ready" || checkVersion != cur.LatestVersion {
+		return Post{}, ErrNoReadyCheck
 	}
 	now := s.stamp()
 	if _, err := tx.ExecContext(ctx, `UPDATE post_versions SET pinned = (version = ?) WHERE post_id = ?`, cur.LatestVersion, postID); err != nil {

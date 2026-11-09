@@ -560,7 +560,7 @@ func TestOnlyTheLatestChecksBlocksCanBeDecidedOn(t *testing.T) {
 		t.Fatal("expected a second check")
 	}
 	w := u.do("PUT", "/api/blog/posts/"+post.ID+"/blocks/"+first.Blocks[0].ID, map[string]any{"decision": "accepted", "ack": true})
-	if w.Code != 409 {
+	if w.Code != 409 || !strings.Contains(w.Body.String(), "CHECK_SUPERSEDED") {
 		t.Fatalf("deciding on the older check's block: %d %s", w.Code, w.Body)
 	}
 	var decision string
@@ -597,5 +597,78 @@ func TestEditingStopsTheWorkerOfTheCheckItMadeStale(t *testing.T) {
 			t.Fatal("the upstream run of the stale check was not stopped")
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+// A newer check that did not finish must not leave the author deciding on one check while another is published.
+func TestAFailedNewerCheckLeavesNothingToPublishEnriched(t *testing.T) {
+	fh := newFake()
+	fh.output = goodReply
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("Two checks")
+	u.do("PATCH", "/api/blog/posts/"+post.ID+"/settings", map[string]any{"slug": "two-checks-post"})
+	u.startCheck(post)
+	first := u.waitCheck(post.ID, "ready")
+	u.do("PUT", "/api/blog/posts/"+post.ID+"/blocks/"+first.Blocks[0].ID, map[string]any{"decision": "accepted", "ack": true})
+	fh.mu.Lock()
+	fh.output = "not an envelope"
+	fh.mu.Unlock()
+	u.startCheck(post)
+	if c := u.waitCheck(post.ID, "failed"); c.Reason != "unusable" {
+		t.Fatalf("%+v", c)
+	}
+	// What the author sees is the failed check, and the older one is not published behind it.
+	if w := u.do("POST", "/api/blog/posts/"+post.ID+"/publish", map[string]any{"mode": "enriched"}); w.Code != 409 || !strings.Contains(w.Body.String(), "CHECK_REQUIRED") {
+		t.Fatalf("publishing enriched while the newest check failed: %d %s", w.Code, w.Body)
+	}
+	if w := u.do("PUT", "/api/blog/posts/"+post.ID+"/blocks/"+first.Blocks[0].ID, map[string]any{"decision": "rejected"}); w.Code != 409 || strings.Contains(w.Body.String(), "OUT_OF_DATE") {
+		t.Fatalf("the refusal must not claim the draft changed: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestTheCapForRunningChecksHoldsAcrossPosts(t *testing.T) {
+	fh := newFake()
+	hold := make(chan struct{})
+	fh.script = func(ctx context.Context, emit func(string, map[string]any) error) error {
+		select {
+		case <-hold:
+		case <-ctx.Done():
+		}
+		return ctx.Err()
+	}
+	a := newAppWithHermes(t, fh)
+	t.Cleanup(func() { close(hold) })
+	u := a.active("alice")
+	var posts []Post
+	for i := 0; i < 5; i++ {
+		posts = append(posts, u.draftToCheck("P"+string(rune('a'+i))))
+	}
+	codes := make(chan int, len(posts))
+	for _, p := range posts {
+		go func(id string) { codes <- u.do("POST", "/api/blog/posts/"+id+"/check", nil).Code }(p.ID)
+	}
+	ok := 0
+	for range posts {
+		if <-codes == 202 {
+			ok++
+		}
+	}
+	if ok != maxChecksPerUser {
+		t.Fatalf("%d checks started at once, the limit is %d", ok, maxChecksPerUser)
+	}
+}
+
+func TestACheckIsNotStartedWhenTheAssistantCannotBeConfirmed(t *testing.T) {
+	fh := newFake()
+	fh.toolsets = []hermes.Toolset{{Name: "file", Status: hermes.StatusAvailable}}
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("No web")
+	if w := u.do("POST", "/api/blog/posts/"+post.ID+"/check", nil); w.Code != 503 {
+		t.Fatalf("with no web search the capability says unavailable, so must the start: %d %s", w.Code, w.Body)
+	}
+	if _, runs, _, _ := fh.snapshot(); len(runs) != 0 {
+		t.Fatal("a run was sent")
 	}
 }

@@ -32,7 +32,7 @@ CREATE TABLE post_blocks (
   markup     TEXT NOT NULL,
   fallback   TEXT NOT NULL,
   decision   TEXT NOT NULL DEFAULT 'proposed' CHECK (decision IN ('proposed','accepted','rejected')),
-  needs_ack  INTEGER NOT NULL
+  needs_ack  INTEGER NOT NULL CHECK (needs_ack IN (0,1))
 );
 CREATE INDEX post_blocks_check ON post_blocks (check_id, position);
 
