@@ -29,9 +29,13 @@ export interface EditorProps {
 
 /** True for a document with nothing in it: no nodes, or only paragraphs with no content. */
 function docIsEmpty(doc: DocNode | undefined): boolean {
-  const nodes = doc?.content ?? [];
-  // The same meaning as the editor's own isEmpty: a paragraph holding only empty text is empty too.
-  return nodes.every((n) => n.type === "paragraph" && (n.content ?? []).every((c) => c.type === "text" && !c.text));
+  // The same meaning as the editor's own isEmpty: text blocks (paragraph, heading, …) holding nothing, or only empty text.
+  const empty = (n: DocNode): boolean => {
+    if (n.type === "text") return !n.text;
+    if (n.type === "image" || n.type === "horizontalRule" || n.type === "hardBreak") return false;
+    return (n.content ?? []).every(empty);
+  };
+  return (doc?.content ?? []).every(empty);
 }
 
 const BODY_HINT = "Tell your story…";
@@ -50,7 +54,9 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
     injectCSS: false, // see the rules at the end of styles.css: the CSP refuses an injected <style>
     extensions: [StarterKit.configure({ heading: { levels: [2, 3, 4] }, link: { openOnClick: false, autolink: false, protocols: ["https", "http", "mailto"] } }), Image],
     content: (loadLocalCopy(email, post.id)?.doc ?? post.doc) as object,
-    editorProps: { attributes: { "aria-label": "Post body", class: "blog-prose" } },
+    // The hint element is always there and only its text changes, so the attribute never has to be set or removed (the editor
+    // re-applies these options on every render).
+    editorProps: { attributes: { "aria-label": "Post body", "aria-describedby": "blog-body-hint", class: "blog-prose" } },
     onUpdate: ({ editor: e }) => {
       setEmpty(e.isEmpty);
       saver.current?.change({ doc: e.getJSON() as DocNode });
@@ -61,10 +67,6 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
     if (editor) setEmpty(editor.isEmpty);
   }, [editor]);
 
-  // While the body is empty its hint is also given to assistive technology (the drawn one is generated content).
-  useEffect(() => {
-    editor?.setOptions({ editorProps: { attributes: { "aria-label": "Post body", class: "blog-prose", ...(empty ? { "aria-describedby": "blog-body-hint" } : {}) } } });
-  }, [editor, empty]);
 
   useEffect(() => {
     const s = new Autosaver({ id: post.id, email, version: post.latestVersion, onState: (st, l) => (setSave(st), setLatest(l)), onSaved: onPost });
@@ -194,11 +196,9 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
       )}
       {/* An empty body is a blank box: say where to type. A placeholder drawn by CSS, so no editor extension is needed. */}
       <div className="blog-body" data-empty={empty ? "true" : undefined}>
-        {empty && (
-          <span id="blog-body-hint" className="blog-sr">
-            {BODY_HINT}
-          </span>
-        )}
+        <span id="blog-body-hint" className="blog-sr">
+          {empty ? BODY_HINT : ""}
+        </span>
         <EditorContent editor={editor} />
       </div>
     </main>

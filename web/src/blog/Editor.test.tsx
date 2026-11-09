@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import Editor from "./Editor";
 import { EMPTY_DOC, type Post } from "./types";
@@ -69,12 +69,20 @@ describe("editor", () => {
     expect(container.querySelector('.blog-body[data-empty="true"]')).toBeNull();
   });
 
-  it("gives the empty body's hint to assistive technology, and takes it away once there is text", () => {
+  it("gives the empty body's hint to assistive technology, and keeps the attribute through re-renders", async () => {
     const { container } = render(<Editor {...props} />);
+    const body = () => container.querySelector("[contenteditable=true]");
+    await waitFor(() => expect(body()).not.toBeNull());
+    expect(body()?.getAttribute("aria-describedby")).toBe("blog-body-hint");
     expect(container.querySelector("#blog-body-hint")?.textContent).toBe("Tell your story…");
-    const withText = { ...post, doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Words" }] }] } };
+    // A re-render (typing a title) must not drop it: the editor re-applies its options on every render.
+    fireEvent.change(screen.getByLabelText("Title"), { target: { value: "A title" } });
+    expect(body()?.getAttribute("aria-describedby")).toBe("blog-body-hint");
     cleanup();
+    const withText = { ...post, doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Words" }] }] } };
     const r2 = render(<Editor {...props} post={withText} />);
-    expect(r2.container.querySelector("#blog-body-hint")).toBeNull();
+    await waitFor(() => expect(r2.container.querySelector("[contenteditable=true]")).not.toBeNull());
+    expect(r2.container.querySelector("#blog-body-hint")?.textContent).toBe(""); // nothing to announce once there is text
   });
+
 });
