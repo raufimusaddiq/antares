@@ -50,11 +50,15 @@ var draftWrites = map[string]bool{
 	// The blog's writes (an autosave is one every second or so while typing).
 	"POST /api/blog/posts": true, "PUT /api/blog/posts/{id}": true, "PATCH /api/blog/posts/{id}/settings": true,
 	"DELETE /api/blog/posts/{id}": true, "POST /api/blog/posts/{id}/publish": true, "POST /api/blog/posts/{id}/unpublish": true,
-	"POST /api/blog/posts/{id}/duplicate": true,
+	"POST /api/blog/posts/{id}/duplicate":    true,
+	"POST /api/blog/posts/{id}/check/cancel": true, "PUT /api/blog/posts/{id}/blocks/{blockId}": true,
 }
 
 // blogUpload is an image upload to a post; it draws from the same per-minute allowance as a chat upload.
 const blogUpload = "POST /api/blog/posts/{id}/assets"
+
+// blogCheck starts an AI check.
+const blogCheck = "POST /api/blog/posts/{id}/check"
 
 // blogAssetRead is the author reading an image back; it shares the asset-read allowance.
 const blogAssetRead = "GET /api/blog/posts/{id}/assets/{assetId}"
@@ -65,6 +69,8 @@ func (a *Auth) limit(route string, next http.Handler) http.Handler {
 		route = "POST /api/assets"
 	case blogAssetRead:
 		route = assetRead
+	case blogCheck:
+		route = "POST /api/chats/{chatId}/messages" // a check is a run: it draws from the same per-minute allowance
 	}
 	switch route {
 	case "POST /api/chats/{chatId}/messages", "POST /api/assets", "GET /api/runs/{runId}/events", artifactDownload, artifactPreview, assetRead, mediaRead, historyRead:

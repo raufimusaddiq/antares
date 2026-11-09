@@ -169,10 +169,11 @@ func run() error {
 	}
 	defer chats.Close() // after the server drains (serve returns first), before db.Close
 
-	blogs, err := blog.New(blog.Options{DB: db})
+	blogs, err := blog.New(blog.Options{DB: db, Hermes: hermesClient, Box: box})
 	if err != nil {
 		return err
 	}
+	defer blogs.Close() // stops the running checks; their rows are recovered on the next start
 	// No WriteTimeout: SSE run streams outlive any fixed write deadline.
 	identity, err := auth.New(auth.Options{
 		DB:           db,
