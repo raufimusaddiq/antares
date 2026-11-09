@@ -201,7 +201,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 
 - [ ] T070 [P] Admin page: suspended-user note per the design, confirm no endpoint or screen exposes post or draft content, in `web/src/Admin.tsx` and `internal/blog/admin_blind_test.go` (kept security test)
 - [ ] T071 [P] Secrets and log hygiene test: no credential, run id or provider text in any blog response, error or log, in `internal/blog/redaction_test.go`
-- [ ] T072 [P] Update `docs/PRD.md` (new section for the blog and the public-surface exception), `docs/runbooks/security-invariants.md` and `.specify/memory/constitution.md` Principle I wording in the same PR, bumping the constitution version
+- [X] T072 [P] Update `docs/PRD.md` (new section for the blog and the public-surface exception), `docs/runbooks/security-invariants.md` and `.specify/memory/constitution.md` Principle I wording in the same PR, bumping the constitution version
 - [ ] T073 Update `docs/design/README.md` to match what shipped (known gaps), and reconcile any code/design disagreement
 - [ ] T074 Run every quickstart scenario against the built bundle; record per-package `go test -cover` before and after in the PR description
 - [ ] T075 Deploy only with the owner's explicit approval, following `docs/runbooks/deployment.md` (backup, release, verify `/api/version`, smoke test, clean up smoke accounts)
