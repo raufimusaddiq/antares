@@ -6,6 +6,7 @@ export interface Limits {
   docBytes: number;
   imagesPerPost: number;
   imageBytes: number;
+  imageBytesTotal: number;
   blocksPerCheck: number;
   sourcesPerBlock: number;
   checksPer24h: number;
@@ -33,6 +34,8 @@ function partText(n: DocNode): string {
 /**
  * About how many bytes of text a check would read for this draft: the title and each top-level part, numbered, as the
  * server builds it. An estimate to tell the author early; the server still has the last word and says so itself.
+ * (JS trim() and the server's strings.TrimSpace differ on a few characters such as U+FEFF, so it can be a few bytes off
+ * at the very edge of the limit; the button only disables, and the server refuses by itself.)
  */
 export function checkBytes(title: string, doc: DocNode): number {
   let s = `TITLE: ${title.trim()}\n\n`;

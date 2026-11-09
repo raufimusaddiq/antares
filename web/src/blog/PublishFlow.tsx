@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { cancelCheck, decideBlock, describeBlogError, getCheck, getLimits, publish, startCheck } from "./blogApi";
 import { checkBytes, imageCount, sizeWords, type Limits } from "./limits";
 import { SourceList } from "./Sources";
@@ -124,9 +124,9 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
 
   if (phase.k === "published")
     return (
-      <div className="blog-takeover">
+      <Takeover step="published">
         <main className="blog-flow">
-          <h1>Your post is live</h1>
+          <h1 tabIndex={-1}>Your post is live</h1>
           <p>Anyone can read it, without an account.</p>
           <div className="blog-actions">
             <a className="btn" href={`/b/${phase.slug}`}>
@@ -137,14 +137,14 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
             </button>
           </div>
         </main>
-      </div>
+      </Takeover>
     );
 
   if (phase.k === "checking" || phase.k === "starting")
     return (
-      <div className="blog-takeover">
+      <Takeover step="checking">
         <main className="blog-flow" aria-busy="true">
-          <h1>Checking your writing</h1>
+          <h1 tabIndex={-1}>Checking your writing</h1>
           <p role="status">Your assistant is reading the post, looking for data to add and finding sources. This can take a minute or two.</p>
           <p className="label">Nothing is published yet. Your original is unchanged.</p>
           <div className="blog-actions">
@@ -159,14 +159,14 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
           </div>
           {error && <p className="blog-error" role="alert">{error}</p>}
         </main>
-      </div>
+      </Takeover>
     );
 
   if (phase.k === "stopped" && check)
     return (
-      <div className="blog-takeover">
+      <Takeover step="stopped">
         <main className="blog-flow">
-          <h1>{check.state === "out_of_date" ? "The draft changed" : "The check did not finish"}</h1>
+          <h1 tabIndex={-1}>{check.state === "out_of_date" ? "The draft changed" : "The check did not finish"}</h1>
           <p role="alert">{failureWords(check)}</p>
           <p className="label">Nothing was published.</p>
           <div className="blog-actions">
@@ -184,15 +184,15 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
           </div>
           {error && <p className="blog-error" role="alert">{error}</p>}
         </main>
-      </div>
+      </Takeover>
     );
 
   if (phase.k === "preview" && check) {
     const taken = check.blocks.filter((b) => b.decision === "accepted").length;
     return (
-      <div className="blog-takeover">
+      <Takeover step="preview">
         <main className="blog-flow blog-preview">
-          <h1>Preview</h1>
+          <h1 tabIndex={-1}>Preview</h1>
           <p>The assistant proposed {check.blocks.length} {check.blocks.length === 1 ? "block" : "blocks"}. Your writing is unchanged. Accept the ones you want.</p>
           {check.notices.map((n) => (
             <p key={n} className="blog-notice" role="status">{n}</p>
@@ -240,7 +240,7 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
             </button>
           </div>
         </main>
-      </div>
+      </Takeover>
     );
   }
 
@@ -333,9 +333,21 @@ function LimitsNote({ limits, post, canCheck }: { limits: Limits; post: Post; ca
           </li>
         )}
         <li>
-          Images: {images} of {limits.imagesPerPost} in this post, up to {sizeWords(limits.imageBytes)} each. A saved post can be up to {sizeWords(limits.docBytes)}.
+          Images: {images} of {limits.imagesPerPost} in this post, up to {sizeWords(limits.imageBytes)} each, and up to {sizeWords(limits.imageBytesTotal)} across all your posts. A saved post can be up to {sizeWords(limits.docBytes)}.
         </li>
       </ul>
     </section>
   );
+}
+
+/**
+ * A full-screen step of Publish. When one appears (the dialog has just gone, or the step changed) focus moves to its
+ * heading, so the change is announced and the keyboard starts at the top of what is new.
+ */
+function Takeover({ step, children }: { step: string; children: ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    ref.current?.querySelector<HTMLElement>("h1")?.focus();
+  }, [step]);
+  return <div ref={ref} className="blog-takeover">{children}</div>;
 }

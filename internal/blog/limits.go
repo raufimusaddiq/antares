@@ -7,6 +7,7 @@ type Limits struct {
 	DocBytes        int `json:"docBytes"`        // a saved post
 	ImagesPerPost   int `json:"imagesPerPost"`   // uploaded images in one post
 	ImageBytes      int `json:"imageBytes"`      // one uploaded image
+	ImageBytesTotal int `json:"imageBytesTotal"` // everything one author keeps as post images, across all posts
 	BlocksPerCheck  int `json:"blocksPerCheck"`  // blocks the assistant may propose in one check
 	SourcesPerBlock int `json:"sourcesPerBlock"` // sources one block may name
 	ChecksPer24h    int `json:"checksPer24h"`    // checks one author may start in a rolling 24 hours
@@ -19,6 +20,7 @@ func CurrentLimits() Limits {
 		DocBytes:        maxDocBytes,
 		ImagesPerPost:   maxAssetsPerPost,
 		ImageBytes:      maxAssetBytes,
+		ImageBytesTotal: maxAssetBytesPerAuthor,
 		BlocksPerCheck:  maxBlocks,
 		SourcesPerBlock: maxSourcesPer,
 		ChecksPer24h:    maxChecksPer24h,

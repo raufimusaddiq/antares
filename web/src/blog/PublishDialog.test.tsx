@@ -54,7 +54,7 @@ describe("Publish is a dialog over the editor", () => {
   });
 
   it("keeps focus in the dialog when the limits arrive and the check turns out to be too long", async () => {
-    const LIMITS = { checkBytes: 50, docBytes: 524288, imagesPerPost: 30, imageBytes: 5242880, blocksPerCheck: 10, sourcesPerBlock: 10, checksPer24h: 30 };
+    const LIMITS = { checkBytes: 50, docBytes: 524288, imagesPerPost: 30, imageBytes: 5242880, imageBytesTotal: 209715200, blocksPerCheck: 10, sourcesPerBlock: 10, checksPer24h: 30 };
     vi.stubGlobal("fetch", async () => json(LIMITS));
     flow({ post: post({ doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "word ".repeat(60) }] }] } }) });
     expect(document.activeElement?.textContent).toBe("Check and enrich"); // before the limits are known it can be taken
@@ -82,9 +82,10 @@ describe("Publish is a dialog over the editor", () => {
     flow();
     fireEvent.click(screen.getByRole("button", { name: "Check and enrich" }));
     await waitFor(() => expect(calls).toContain("POST /api/blog/posts/p1/check"));
-    await screen.findByText(/Checking your writing/);
+    const heading = await screen.findByRole("heading", { name: "Checking your writing" });
     expect(screen.queryByRole("dialog")).toBeNull();
     expect(document.querySelector(".blog-takeover")).not.toBeNull();
+    expect(document.activeElement).toBe(heading); // the new step is announced and the keyboard starts at its top
   });
 });
 
@@ -101,6 +102,23 @@ describe("Publish over the editor", () => {
     const behind = document.querySelector(".blog-behind") as HTMLElement;
     expect(behind.hasAttribute("inert")).toBe(true);
     expect(behind.getAttribute("aria-hidden")).toBe("true");
+  });
+
+  it("puts focus back on the editor's Publish button when Publish closes (the button that had it before is gone)", async () => {
+    server(post());
+    const { rerender } = app("publish");
+    await screen.findByRole("dialog", { name: "Publish this post" });
+    await waitFor(() => expect(document.querySelector(".blog-behind .blog-editor")).not.toBeNull());
+    rerender(<BlogApp caps={CAN} email="a@example.com" route={{ kind: "edit", id: "p1" }} onNavigate={() => {}} onChats={() => {}} />);
+    await waitFor(() => expect(document.activeElement?.hasAttribute("data-publish")).toBe(true));
+    expect(document.activeElement?.textContent).toBe("Publish");
+  });
+
+  it("does not take focus when the editor is simply opened", async () => {
+    server(post());
+    app("edit");
+    await screen.findByLabelText("Title");
+    expect(document.activeElement?.hasAttribute("data-publish")).toBe(false);
   });
 
   it("is not inert when Publish is closed", async () => {

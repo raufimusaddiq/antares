@@ -42,7 +42,7 @@ const RICH = "b".repeat(32);
 const BLOG_ID = "e".repeat(32);
 const BLOG_EMPTY_ID = "f".repeat(32);
 const BLOG_LONG_ID = "9".repeat(32); // a post too long for a check to read
-const BLOG_LIMITS = { checkBytes: 122880, docBytes: 524288, imagesPerPost: 30, imageBytes: 5242880, blocksPerCheck: 10, sourcesPerBlock: 10, checksPer24h: 30 };
+const BLOG_LIMITS = { checkBytes: 122880, docBytes: 524288, imagesPerPost: 30, imageBytes: 5242880, imageBytesTotal: 209715200, blocksPerCheck: 10, sourcesPerBlock: 10, checksPer24h: 30 };
 const text = (t, marks) => ({ type: "text", text: t, ...(marks ? { marks } : {}) });
 const BLOG_DOC = {
   type: "doc",
