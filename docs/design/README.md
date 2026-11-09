@@ -18,7 +18,8 @@ Spec and plan: `specs/001-blog-cms-openui-publish/`. Two pages and one Admin fra
   one block in plain-fallback state, not found), and Phone versions.
 - **Blog CMS** (signed in): My posts (all five status chips, dark, empty, loading, error, row actions, delete confirm,
   Phone), Blog entry shown/hidden, Editor (empty, writing, dark, selection toolbar, saving, offline, conflict, image
-  uploading/failed/inserted, post settings, Phone), and the publish flow: choose, unavailable, checking, preview (dark,
+  uploading/failed/inserted, post settings, Phone), and the publish flow: choose (with a Limits note: what a check reads, blocks, checks per 24 h, images), too long to check (the check
+  disabled, the original still allowed), unavailable, checking, preview (dark,
   unverified source, refused block), failed, timed out, cancelled, disconnected, out of date, unusable reply, published,
   and Phone checking/preview/failed/published.
 - **Admin / Suspended user (posts hidden)** on the Admin page: states that posts are hidden and no content is shown.
