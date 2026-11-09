@@ -47,6 +47,8 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	total := fs.Duration("timeout", 20*time.Minute, "bound on the whole run")
 	prompt := fs.String("prompt", "", "message to send (default: a short fixed sentence)")
 	eventsOut := fs.String("events-out", "", "write the chat runs' events (as Antares sends them to a browser) to this file, mode 0600; for recording what Hermes does, with the synthetic test accounts only")
+	skipCheck := fs.Bool("skip-blog-check", false, "do not run blog.check (for a deployment that does not offer the AI check; otherwise it is skipped, and a skip is INCOMPLETE)")
+	checkTO := fs.Duration("check-timeout", 5*time.Minute, "bound on the AI check: started → finished")
 	allowHTTP := fs.Bool("allow-http", false, "permit a non-loopback http:// target (session cookies then cross the network in clear)")
 	if err := fs.Parse(args); err != nil {
 		return usageExit
@@ -92,7 +94,7 @@ func run(ctx context.Context, args []string, getenv func(string) string, stdout,
 	cfg := &smoke.Config{
 		Client: smoke.NewClient(*target, *origin, red), RunID: runID, Prompt: *prompt,
 		Admin: actors["admin"], A: actors["a"], B: actors["b"], Pending: actors["pending"],
-		RunTimeout: *runTO, TenantTimeout: *tenantTO,
+		RunTimeout: *runTO, TenantTimeout: *tenantTO, CheckTimeout: *checkTO, SkipBlogCheck: *skipCheck,
 	}
 	if *eventsOut != "" {
 		f, err := os.OpenFile(*eventsOut, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)

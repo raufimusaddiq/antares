@@ -2,8 +2,10 @@ package smoke
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 )
 
 type blogPost struct {
@@ -138,4 +140,219 @@ func (s *scn) blog(ctx context.Context) (string, error) {
 		return "", err
 	}
 	return "draft private, 409 on a stale save, stranger got 404, published post readable signed out (no ids), page carries its own title, unpublished and deleted posts gone", nil
+}
+
+// blogCheck runs the AI check for real through the routes: a draft with claims worth checking, a run on the account's own
+// assistant, and everything the author does with the result. It skips (never passes) where the deployment does not offer the
+// check, because then nothing was exercised.
+func (s *scn) blogCheck(ctx context.Context) (string, error) {
+	a := s.cfg.A
+	var caps struct {
+		Writing, Check, WebSearch bool
+	}
+	r, err := s.c.Do(ctx, a.Session, "GET", "/api/blog/capabilities", nil, nil)
+	if err != nil {
+		return "", err
+	}
+	if r.Status != 200 || r.JSON(&caps) != nil {
+		return "", fmt.Errorf("capabilities: %s", r.Brief())
+	}
+	if !caps.Check {
+		return "", Skipped("this deployment does not offer the AI check (capabilities: check=false); use --skip-blog-check if that is intended")
+	}
+
+	chatsBefore, err := s.chatCount(ctx, a)
+	if err != nil {
+		return "", err
+	}
+	call := func(want int, method, path string, body any) (*Response, error) {
+		r, err := s.c.Do(ctx, a.Session, method, path, nil, body)
+		if err != nil {
+			return nil, err
+		}
+		if r.Status != want {
+			return r, fmt.Errorf("%s %s: wanted %d, got %s", method, path, want, r.Brief())
+		}
+		return r, nil
+	}
+	para := func(text string) any {
+		return map[string]any{"type": "paragraph", "content": []any{map[string]any{"type": "text", "text": text}}}
+	}
+	doc := map[string]any{"type": "doc", "content": []any{
+		para("The Eiffel Tower in Paris was completed in 1889."),
+		para("Jakarta is the capital of Indonesia and has roughly eleven million registered residents."),
+	}}
+	slug := "smoke-check-" + s.cfg.RunID
+	r, err = call(200, "POST", "/api/blog/posts", map[string]any{})
+	if err != nil {
+		return "", err
+	}
+	var p blogPost
+	if r.JSON(&p) != nil || p.ID == "" {
+		return "", fmt.Errorf("create: unreadable answer")
+	}
+	path := "/api/blog/posts/" + p.ID
+	defer func() { // a running check blocks a delete, so stop it first (best effort)
+		_, _ = s.c.Do(context.WithoutCancel(ctx), a.Session, "POST", path+"/check/cancel", nil, map[string]any{})
+		_, _ = s.c.Do(context.WithoutCancel(ctx), a.Session, "DELETE", path, nil, nil)
+	}()
+	if _, err := call(200, "PUT", path, map[string]any{"baseVersion": p.LatestVersion, "title": "Smoke check " + s.cfg.RunID, "doc": doc}); err != nil {
+		return "", err
+	}
+	if _, err := call(200, "PATCH", path+"/settings", map[string]any{"slug": slug}); err != nil {
+		return "", err
+	}
+	if _, err := call(202, "POST", path+"/check", map[string]any{}); err != nil {
+		return "", err
+	}
+
+	type checkView struct {
+		ID      string   `json:"id"`
+		State   string   `json:"state"`
+		Reason  string   `json:"reason"`
+		Notices []string `json:"notices"`
+		Notes   []struct {
+			Kind      string `json:"kind"`
+			Text      string `json:"text"`
+			AfterNode int    `json:"afterNode"`
+		} `json:"notes"`
+		Blocks []struct {
+			ID        string `json:"id"`
+			Kind      string `json:"kind"`
+			AfterNode int    `json:"afterNode"`
+			Markup    string `json:"markup"`
+			Fallback  string `json:"fallback"`
+			Decision  string `json:"decision"`
+			NeedsAck  bool   `json:"needsAck"`
+			Sources   []struct {
+				URL      string `json:"url"`
+				Verified bool   `json:"verified"`
+			} `json:"sources"`
+		} `json:"blocks"`
+	}
+	timeout := s.cfg.CheckTimeout
+	if timeout <= 0 {
+		timeout = 5 * time.Minute
+	}
+	cctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	var c checkView
+	start := time.Now()
+	last := "no answer yet"
+	for {
+		rr, err := s.c.Do(cctx, a.Session, "GET", path+"/check", nil, nil)
+		switch {
+		case err != nil:
+			last = err.Error()
+		case rr.Status != 200:
+			last = "GET /check answered " + rr.Brief()
+		case rr.JSON(&c) != nil:
+			last = "GET /check answered something that is not a check"
+		case c.State == "running":
+			last = "still running"
+		default:
+			last = ""
+		}
+		if last == "" {
+			break
+		}
+		if !sleep(cctx, 2*time.Second) {
+			return "", fmt.Errorf("the check did not finish within %s; the last answer was: %s", timeout, last)
+		}
+	}
+	took := time.Since(start).Round(time.Second)
+	if c.State != "ready" {
+		return "", fmt.Errorf("the check ended %s (reason %q) after %s: a failed check is a failure", c.State, c.Reason, took)
+	}
+	for _, n := range c.Notes {
+		if n.AfterNode < 0 || n.AfterNode > 1 || strings.TrimSpace(n.Text) == "" {
+			return "", fmt.Errorf("a note points at node %d or is empty", n.AfterNode)
+		}
+	}
+	for i, b := range c.Blocks {
+		if b.AfterNode < 0 || b.AfterNode > 1 || b.Markup == "" || b.Fallback == "" || b.Decision != "proposed" {
+			return "", fmt.Errorf("block %d is malformed (anchor %d, decision %q)", i+1, b.AfterNode, b.Decision)
+		}
+		for _, src := range b.Sources {
+			if src.Verified {
+				return "", fmt.Errorf("block %d has a source marked verified: nothing can verify one yet", i+1)
+			}
+		}
+		if len(b.Sources) > 0 && !b.NeedsAck {
+			return "", fmt.Errorf("block %d cites sources that were not checked but needs no acknowledgement", i+1)
+		}
+	}
+
+	// The author's choices: accept the first block (knowingly), publish with it, and a reader sees exactly that.
+	accepted := 0
+	if len(c.Blocks) > 0 {
+		if _, err := call(200, "PUT", path+"/blocks/"+c.Blocks[0].ID, map[string]any{"decision": "accepted", "ack": c.Blocks[0].NeedsAck}); err != nil {
+			return "", err
+		}
+		accepted = 1
+		if c.Blocks[0].NeedsAck {
+			if r, err := s.c.Do(ctx, a.Session, "PUT", path+"/blocks/"+c.Blocks[0].ID, nil, map[string]any{"decision": "accepted"}); err != nil || r.Status != 422 {
+				return "", fmt.Errorf("accepting a block with unchecked sources without acknowledging must be refused (got %v %v)", err, r)
+			}
+		}
+	}
+	if _, err := call(200, "POST", path+"/publish", map[string]any{"mode": "enriched"}); err != nil {
+		return "", err
+	}
+	pub, err := s.c.Do(ctx, nil, "GET", "/api/public/blog/posts/"+slug, nil, nil)
+	if err != nil || pub.Status != 200 {
+		return "", fmt.Errorf("the published post is not readable signed out: %v %v", err, pub)
+	}
+	var got struct {
+		Blocks []struct {
+			Markup string `json:"markup"`
+		} `json:"blocks"`
+	}
+	if pub.JSON(&got) != nil || len(got.Blocks) != accepted {
+		return "", fmt.Errorf("readers got %d blocks, the author accepted %d", len(got.Blocks), accepted)
+	}
+	body := strings.ToLower(string(pub.Body))
+	for _, leak := range []string{"hermes", "session", p.ID, "run_"} {
+		if strings.Contains(body, leak) {
+			return "", fmt.Errorf("the public post contains %q", leak)
+		}
+	}
+	// An edit after the check makes it out of date, and the published post keeps what was published.
+	var cur blogPost
+	if g, err := call(200, "GET", path, nil); err != nil || g.JSON(&cur) != nil {
+		return "", fmt.Errorf("read post: %v", err)
+	}
+	if _, err := call(200, "PUT", path, map[string]any{"baseVersion": cur.LatestVersion, "title": "Smoke check " + s.cfg.RunID + " edited"}); err != nil {
+		return "", err
+	}
+	var after checkView
+	if g, err := call(200, "GET", path+"/check", nil); err != nil || g.JSON(&after) != nil || after.State != "out_of_date" {
+		return "", fmt.Errorf("after an edit the check must be out of date (got %q, %v)", after.State, err)
+	}
+	if _, err := call(200, "POST", path+"/unpublish", map[string]any{}); err != nil {
+		return "", err
+	}
+	// A check is no chat: the account's chat list is what it was.
+	chatsAfter, err := s.chatCount(ctx, a)
+	if err != nil {
+		return "", err
+	}
+	if chatsAfter != chatsBefore {
+		return "", fmt.Errorf("the account has %d chats after the check, %d before: a check must not create one", chatsAfter, chatsBefore)
+	}
+	return fmt.Sprintf("a real check ran in %s on the account's own assistant: %d notes, %d blocks (all sources unverified, acknowledgement required), accepted %d, published with exactly those, out of date after an edit, no chat created", took, len(c.Notes), len(c.Blocks), accepted), nil
+}
+
+func (s *scn) chatCount(ctx context.Context, a *Actor) (int, error) {
+	r, err := s.c.Do(ctx, a.Session, "GET", "/api/chats", nil, nil)
+	if err != nil {
+		return 0, err
+	}
+	var v struct {
+		Chats []json.RawMessage `json:"chats"`
+	}
+	if r.Status != 200 || r.JSON(&v) != nil {
+		return 0, fmt.Errorf("list chats: %s", r.Brief())
+	}
+	return len(v.Chats), nil
 }

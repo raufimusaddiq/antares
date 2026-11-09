@@ -33,7 +33,6 @@ const (
 
 var (
 	ErrBudget       = errors.New("blog: the daily spending limit is reached")
-	ErrModel        = errors.New("blog: the model this check would use is not available")
 	ErrNoCheck      = errors.New("blog: no check")
 	ErrCheckRunning = errors.New("blog: a check is already running")
 	ErrUnavailable  = errors.New("blog: checking is not available")
@@ -121,7 +120,46 @@ func (s *Service) Close() {
 	s.rt.wg.Wait()
 }
 
+// Check modes (ANTARES_BLOG_CHECK; ParseCheckMode is strict): the AI check is on by default. "off" is the escape hatch (nobody can start a check); "smoke"
+// lets only the synthetic test accounts use it, which proves a deployment end to end before users can.
+const (
+	CheckOff   = "off"
+	CheckSmoke = "smoke"
+	CheckOn    = "on"
+)
+
 func (s *Service) checksConfigured() bool { return s.hx != nil && s.box != nil }
+
+// checkAllowed says whether this author may use the check at all under the configured mode.
+func (s *Service) checkAllowed(ctx context.Context, author string) bool {
+	switch s.checkMode {
+	case CheckOff:
+		return false
+	case CheckSmoke:
+		var issuer string
+		if err := s.db.QueryRowContext(ctx, `SELECT google_issuer FROM users WHERE id = ?`, author).Scan(&issuer); err != nil {
+			return false
+		}
+		return issuer == store.SyntheticIssuer
+	case CheckOn:
+		return true
+	}
+	return false // a mode that is none of the three never widens exposure
+}
+
+// ParseCheckMode reads ANTARES_BLOG_CHECK strictly: surrounding space and case are forgiven, an empty value is the default (on),
+// and anything else that is not on, smoke or off is an error. New turns an error into "off", so a typo in a switch flipped
+// during an incident can neither leave the check open to everyone nor stop the product from starting.
+func ParseCheckMode(raw string) (string, error) {
+	switch m := strings.ToLower(strings.TrimSpace(raw)); m {
+	case "", CheckOn:
+		return CheckOn, nil
+	case CheckSmoke, CheckOff:
+		return m, nil
+	default:
+		return "", fmt.Errorf("blog: ANTARES_BLOG_CHECK must be on, smoke or off, not %q", raw)
+	}
+}
 
 // binding is the author's own credential, read from the database now: no cache, and no account that is not eligible.
 func (s *Service) binding(ctx context.Context, author string) (hermes.Binding, error) {
@@ -175,6 +213,9 @@ type capEntry struct {
 }
 
 func (s *Service) probeWebSearch(ctx context.Context, author string) bool {
+	if !s.checkAllowed(ctx, author) {
+		return false
+	}
 	b, err := s.binding(ctx, author)
 	if err != nil {
 		return false
@@ -349,7 +390,7 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 	if n, _ := ins.RowsAffected(); n == 0 {
 		return nil, ErrTooMany
 	}
-	if cur.Status == "draft" || cur.Status == "unpublished" {
+	if cur.Status == "draft" || cur.Status == "unpublished" || cur.Status == "ready" {
 		if _, err := tx.ExecContext(ctx, `UPDATE posts SET status = 'checking' WHERE id = ? AND author_id = ?`, postID, author); err != nil {
 			return nil, err
 		}

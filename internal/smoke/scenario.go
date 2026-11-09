@@ -35,6 +35,8 @@ type Config struct {
 	// Antares sends the browser (already redacted); the accounts are the synthetic test ones. Nothing else is written.
 	EventsOut     io.Writer
 	RunTimeout    time.Duration // chat: send → terminal phase
+	CheckTimeout  time.Duration // blog.check: started → finished
+	SkipBlogCheck bool          // do not register blog.check (a deployment that does not offer the AI check)
 	TenantTimeout time.Duration // approval → READY, and a re-verification
 	FailedGrace   time.Duration // a tenant that stays FAILED this long has failed
 	Poll          time.Duration
@@ -138,6 +140,9 @@ func Run(ctx context.Context, cfg *Config, r *Runner) {
 		r.Run("chat."+n+".reply", "user "+n+" sends a message and gets an assistant reply", []string{"tenant.verify." + n}, func() (string, error) { return s.chat(ctx, a) })
 	}
 	r.Run("blog.lifecycle", "a user writes, publishes, unpublishes and deletes a post; a stranger sees none of it, a reader sees only the published one", []string{"chat.a.reply", "chat.b.reply"}, func() (string, error) { return s.blog(ctx) })
+	if !cfg.SkipBlogCheck {
+		r.Run("blog.check", "the AI check runs on the user's own assistant and everything the author does with it works", []string{"blog.lifecycle"}, func() (string, error) { return s.blogCheck(ctx) })
+	}
 	r.Run("negative.cross_user", "two users cannot read each other's chats", []string{"chat.a.reply", "chat.b.reply"}, func() (string, error) { return s.crossUser(ctx) })
 	r.Run("negative.revoked", "revoked account loses access immediately", []string{"chat.b.reply", "chat.a.reply", "admin.active"}, func() (string, error) { return s.revoke(ctx) })
 	r.Run("cleanup.restore", "revoked test account restored for the next run", []string{"login.admin"}, func() (string, error) { return s.restore(ctx) })

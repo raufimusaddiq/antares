@@ -171,6 +171,7 @@ type fakeHermes struct {
 
 type fakeRun struct {
 	profile, session, input, mode string
+	check                         bool
 }
 
 func newFakeHermes(t *testing.T) *fakeHermes {
@@ -210,7 +211,7 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	switch {
 	case path == "/v1/capabilities":
-		io.WriteString(w, `{"object":"hermes.api_server.capabilities","auth":{"required":true},"features":{"memory_write_api":false,"admin_config_rw":false}}`)
+		io.WriteString(w, `{"object":"hermes.api_server.capabilities","auth":{"required":true},"features":{"memory_write_api":false,"admin_config_rw":false},"endpoints":{"toolsets":{"method":"GET","path":"/v1/toolsets"}}}`)
 	case path == "/v1/models":
 		io.WriteString(w, `{"object":"list","data":[]}`)
 	case path == "/v1/toolsets":
@@ -220,7 +221,7 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 			if stale && n == "terminal" {
 				on = true // the helper never wrote agent.disabled_toolsets
 			}
-			data = append(data, map[string]any{"name": n, "enabled": on})
+			data = append(data, map[string]any{"name": n, "enabled": on, "configured": true})
 		}
 		json.NewEncoder(w).Encode(map[string]any{"object": "list", "data": data})
 	case r.Method == "GET" && path == "/api/sessions":
@@ -242,13 +243,25 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		json.NewEncoder(w).Encode(map[string]any{"messages": m})
+	case r.Method == "DELETE" && strings.HasPrefix(path, "/api/sessions/"):
+		sid := strings.TrimPrefix(path, "/api/sessions/")
+		f.mu.Lock()
+		owner := f.sessions[sid]
+		delete(f.sessions, sid)
+		f.mu.Unlock()
+		if owner != profile {
+			w.WriteHeader(http.StatusNotFound)
+			io.WriteString(w, `{"error":{"code":"session_not_found"}}`)
+			return
+		}
+		io.WriteString(w, `{"deleted":true}`)
 	case r.Method == "POST" && path == "/v1/runs":
 		var in map[string]string
 		_ = json.Unmarshal(body, &in)
 		f.mu.Lock()
 		f.n++
 		id := fmt.Sprintf("run_%d", f.n)
-		f.runs[id] = &fakeRun{profile: profile, session: in["session_id"], input: in["input"], mode: mode}
+		f.runs[id] = &fakeRun{profile: profile, session: in["session_id"], input: in["input"], mode: mode, check: strings.Contains(in["instructions"], "blog-check v1")}
 		f.mu.Unlock()
 		fmt.Fprintf(w, `{"run_id":%q,"status":"started"}`, id)
 	case strings.HasPrefix(path, "/v1/runs/"):
@@ -290,6 +303,11 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 // outcome is the run's result; it also writes the turns into the transcript the
 // first time a finished run is read.
 func (f *fakeHermes) outcome(run *fakeRun) (status, output string) {
+	if run.check { // the blog's AI check: a valid envelope, as the real assistant is asked to return
+		return "completed", `{"version":1,"notes":[{"kind":"fact","text":"Both claims check out.","afterNode":0}],"blocks":[{"kind":"table","afterNode":1,` +
+			`"markup":"root = Card([tbl])\ntbl = Table([Col(\"City\", [\"Jakarta\"]), Col(\"People\", [11000000], \"number\")])","fallback":"Jakarta: 11,000,000",` +
+			`"sources":[{"url":"https://example.org/jakarta","title":"Jakarta population","retrievedAt":"` + time.Now().UTC().Format("2006-01-02") + `"}]}]}`
+	}
 	switch run.mode {
 	case "hang":
 		return "running", ""
@@ -409,7 +427,7 @@ func newStack(t *testing.T, stale bool, wrap func(*stack, http.Handler) http.Han
 	if err != nil {
 		t.Fatal(err)
 	}
-	blogs, err := blog.New(blog.Options{DB: db})
+	blogs, err := blog.New(blog.Options{DB: db, Hermes: hx, Box: box, Spend: chats})
 	if err != nil {
 		t.Fatal(err)
 	}

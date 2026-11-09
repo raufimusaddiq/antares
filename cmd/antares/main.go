@@ -169,7 +169,7 @@ func run() error {
 	}
 	defer chats.Close() // after the server drains (serve returns first), before db.Close
 
-	blogs, err := blog.New(blog.Options{DB: db, Hermes: hermesClient, Box: box, Spend: chats})
+	blogs, err := blog.New(blog.Options{DB: db, Hermes: hermesClient, Box: box, Spend: chats, CheckMode: os.Getenv("ANTARES_BLOG_CHECK")}) // the AI check is on by default; off or smoke narrow it (docs/runbooks/blog-check.md)
 	if err != nil {
 		return err
 	}

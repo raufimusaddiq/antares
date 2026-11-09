@@ -213,3 +213,6 @@ gone. The post is deleted at the end (and on any failure on the way out); the fi
 `--events-out FILE` (mode 0600) writes every chat event as Antares sends it to a browser, one `<account> <event> <json>`
 line each, for recording what Hermes does with the synthetic accounts (for example with `--prompt "Use web search to …"`).
 It is how `internal/hermes/testdata/blog_check_*` was recorded.
+
+`blog.check` (after `blog.lifecycle`) runs a real AI check on account A: see `blog-check.md`. It takes up to a minute or two and spends a
+little on the shared account like a chat reply does. `--skip-blog-check` leaves it out; `--check-timeout` bounds it.

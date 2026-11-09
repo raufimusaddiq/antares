@@ -33,9 +33,10 @@ start, or after a pause, so history stays small. Compare-and-set on `version` (R
 |-------|-------|
 | id, post_id, version | the exact version checked |
 | state | `running` / `ready` / `failed` / `cancelled` / `timed_out` / `out_of_date` |
-| run_ref | the Hermes run, tracked like a chat run; never shown to readers |
+| prompt_version, usage_* | the instruction's version ("blog-check v1") and the tokens the run reported (counted in the author's spending) |
+| hermes_session, hermes_run | the check's own Hermes session and run (no Antares chat); never shown to readers; the session is deleted when the check ends |
 | notes | JSON list of author-facing notes (text only) |
-| error_code | when failed; no provider text, no credential |
+| reason | when failed: `error`, `disconnected` or `unusable`; no provider text, no credential |
 | started_at, finished_at | |
 
 ### post_blocks
@@ -45,8 +46,7 @@ start, or after a pause, so history stays small. Compare-and-set on `version` (R
 | anchor | `{afterNode: n}` in the checked version |
 | kind | catalogue name (table, chart, metric, accordion, sources…) |
 | markup | validated OpenUI Lang text, size/depth bounded |
-| fallback_text | plain text shown if rendering fails (FR-021) |
-| ai_added | always true; the flag exists so a future author-written block cannot be mistaken for it |
+| fallback | plain text shown if rendering fails (FR-021) |
 | decision | `proposed` / `accepted` / `rejected` |
 | needs_ack | true if any source is unverified (R4); acceptance must be explicit |
 

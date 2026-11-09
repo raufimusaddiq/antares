@@ -950,3 +950,90 @@ func TestAnAccountSuspendedDuringACheckGetsNoResult(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
+func TestTheCheckModeSwitch(t *testing.T) {
+	caps := func(a *app, u *person) map[string]bool {
+		return into[map[string]bool](t, u.do("GET", "/api/blog/capabilities", nil))
+	}
+	mk := func(mode string) (*app, *person, *person, Post) {
+		fh := newFake()
+		fh.output = goodReply
+		a := newAppWithHermes(t, fh)
+		a.svc.checkMode = mode
+		if mode == "" {
+			a.svc.checkMode = CheckOn // what New makes of an empty value
+		}
+		u, synth := a.active("alice"), a.active("synth")
+		a.db.Exec(`UPDATE users SET google_issuer = ? WHERE id = ?`, store.SyntheticIssuer, synth.id)
+		return a, u, synth, u.draftToCheck("Mode")
+	}
+	// Default (unset) and "on": every account with web search may check.
+	for _, mode := range []string{"", "on"} {
+		a, u, _, post := mk(mode)
+		if c := caps(a, u); !c["check"] {
+			t.Errorf("mode %q: check must be available by default: %v", mode, c)
+		}
+		if w := u.do("POST", "/api/blog/posts/"+post.ID+"/check", nil); w.Code != 202 {
+			t.Errorf("mode %q: start: %d", mode, w.Code)
+		}
+	}
+	// "off": nobody, and nothing is sent.
+	a, u, synth, post := mk("off")
+	if c := caps(a, u); c["check"] || c["webSearch"] || !c["writing"] {
+		t.Errorf("off: %v", c)
+	}
+	if w := u.do("POST", "/api/blog/posts/"+post.ID+"/check", nil); w.Code != 503 {
+		t.Errorf("off: start %d", w.Code)
+	}
+	if c := caps(a, synth); c["check"] {
+		t.Errorf("off must refuse the synthetic account too: %v", c)
+	}
+	// "smoke": only the synthetic test accounts.
+	a, u, synth, post = mk("smoke")
+	if c := caps(a, u); c["check"] {
+		t.Errorf("smoke: a real account must not see the check: %v", c)
+	}
+	if w := u.do("POST", "/api/blog/posts/"+post.ID+"/check", nil); w.Code != 503 {
+		t.Errorf("smoke: a real account started a check: %d", w.Code)
+	}
+	if c := caps(a, synth); !c["check"] {
+		t.Errorf("smoke: the synthetic account must see it: %v", c)
+	}
+	sp := synth.draftToCheck("Synthetic")
+	if w := synth.do("POST", "/api/blog/posts/"+sp.ID+"/check", nil); w.Code != 202 {
+		t.Errorf("smoke: the synthetic account could not start: %d", w.Code)
+	}
+}
+
+func TestTheCheckModeIsParsedStrictly(t *testing.T) {
+	for raw, want := range map[string]string{"": "on", "on": "on", " ON ": "on", "smoke": "smoke", "Smoke\n": "smoke", "off": "off", "OFF": "off", " off ": "off"} {
+		if got, err := ParseCheckMode(raw); err != nil || got != want {
+			t.Errorf("%q: %q %v, want %q", raw, got, err, want)
+		}
+	}
+	for _, raw := range []string{"ofl", "of", "false", "0", "yes", "true", "disabled", "smoke,on", "on off"} {
+		if got, err := ParseCheckMode(raw); err == nil {
+			t.Errorf("%q was accepted as %q: a typo must not leave the check open", raw, got)
+		}
+		// New does not refuse (the product must start), it turns the check off.
+		a := newAppWithHermes(t, newFake())
+		svc, err := New(Options{DB: a.db, Hermes: a.fh, Box: a.box, CheckMode: raw})
+		if err != nil {
+			t.Fatalf("New refused the mode %q: a bad blog switch must not stop the product: %v", raw, err)
+		}
+		t.Cleanup(svc.Close)
+		if svc.checkMode != CheckOff {
+			t.Errorf("mode %q gave %q, want off", raw, svc.checkMode)
+		}
+		if svc.checkAllowed(context.Background(), a.active("probe").id) {
+			t.Errorf("mode %q left the check open", raw)
+		}
+	}
+	// A service whose mode is somehow none of the three grants nothing.
+	a := newAppWithHermes(t, newFake())
+	a.svc.checkMode = "garbage"
+	u := a.active("alice")
+	if c := into[map[string]bool](t, u.do("GET", "/api/blog/capabilities", nil)); c["check"] {
+		t.Errorf("an unknown mode offered the check: %v", c)
+	}
+}
