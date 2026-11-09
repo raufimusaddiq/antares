@@ -68,4 +68,13 @@ describe("editor", () => {
     expect(container.querySelector(".blog-body")).not.toBeNull();
     expect(container.querySelector('.blog-body[data-empty="true"]')).toBeNull();
   });
+
+  it("gives the empty body's hint to assistive technology, and takes it away once there is text", () => {
+    const { container } = render(<Editor {...props} />);
+    expect(container.querySelector("#blog-body-hint")?.textContent).toBe("Tell your story…");
+    const withText = { ...post, doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Words" }] }] } };
+    cleanup();
+    const r2 = render(<Editor {...props} post={withText} />);
+    expect(r2.container.querySelector("#blog-body-hint")).toBeNull();
+  });
 });

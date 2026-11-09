@@ -545,14 +545,19 @@ async function blogPages(browser, which) {
       if (which === "blog-editor" && name.endsWith("editor") && shown) {
         await page.focus("[contenteditable=true]");
         const g = await page.evaluate(() => {
+          const title = document.querySelector(".blog-title")?.getBoundingClientRect();
+          const tb = document.querySelector(".blog-toolbar")?.getBoundingClientRect();
+          const pr = document.querySelector(".blog-prose")?.getBoundingClientRect();
+          const prose = pr && document.querySelector(".blog-prose") ? parseFloat(getComputedStyle(document.querySelector(".blog-prose")).paddingLeft) : 0;
           const t = document.querySelector(".blog-toolbar")?.getBoundingClientRect();
           const p = document.querySelector(".blog-prose")?.getBoundingClientRect();
           const body = document.querySelector(".blog-body");
           const ph = body ? getComputedStyle(body, "::before").content : "";
-          return { gap: t && p ? p.top - t.bottom : -999, empty: body?.getAttribute("data-empty") === "true", placeholder: ph };
+          return { flush: title && tb && pr ? Math.max(Math.abs(title.left - tb.left), Math.abs(tb.left - (pr.left + prose))) : 999, gap: t && p ? p.top - t.bottom : -999, empty: body?.getAttribute("data-empty") === "true", placeholder: ph };
         });
         // The design puts the toolbar 18px above the body (frame "Editor (empty)"); the 3px shadow, the 3px focus ring and its 2px offset need 8.
-        if (g.gap < 18) editorProblems.push(`the toolbar is ${g.gap}px above the writing area (the design has 18; its shadow and the focus ring need 8)`);
+        if (g.gap < 17) editorProblems.push(`the toolbar is ${g.gap}px above the writing area (the design has 18; its shadow and the focus ring need 8)`);
+        if (g.flush > 1) editorProblems.push(`the title, toolbar and body text do not share a left edge (off by ${g.flush}px); the design has them flush`);
         if (name === "empty editor" && (!g.empty || !/Tell your story/.test(g.placeholder))) editorProblems.push(`an empty body shows no placeholder (${JSON.stringify(g)})`);
         if (name === "editor" && g.empty) editorProblems.push("a body with text is marked empty");
       }

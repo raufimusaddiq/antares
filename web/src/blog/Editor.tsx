@@ -30,8 +30,11 @@ export interface EditorProps {
 /** True for a document with nothing in it: no nodes, or only paragraphs with no content. */
 function docIsEmpty(doc: DocNode | undefined): boolean {
   const nodes = doc?.content ?? [];
-  return nodes.every((n) => n.type === "paragraph" && (n.content ?? []).length === 0);
+  // The same meaning as the editor's own isEmpty: a paragraph holding only empty text is empty too.
+  return nodes.every((n) => n.type === "paragraph" && (n.content ?? []).every((c) => c.type === "text" && !c.text));
 }
+
+const BODY_HINT = "Tell your story…";
 
 export default function Editor({ post, email, onPost, onSettings, onPublish, onBack }: EditorProps) {
   const [save, setSave] = useState<SaveState>("saved");
@@ -57,6 +60,11 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
   useEffect(() => {
     if (editor) setEmpty(editor.isEmpty);
   }, [editor]);
+
+  // While the body is empty its hint is also given to assistive technology (the drawn one is generated content).
+  useEffect(() => {
+    editor?.setOptions({ editorProps: { attributes: { "aria-label": "Post body", class: "blog-prose", ...(empty ? { "aria-describedby": "blog-body-hint" } : {}) } } });
+  }, [editor, empty]);
 
   useEffect(() => {
     const s = new Autosaver({ id: post.id, email, version: post.latestVersion, onState: (st, l) => (setSave(st), setLatest(l)), onSaved: onPost });
@@ -186,6 +194,11 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
       )}
       {/* An empty body is a blank box: say where to type. A placeholder drawn by CSS, so no editor extension is needed. */}
       <div className="blog-body" data-empty={empty ? "true" : undefined}>
+        {empty && (
+          <span id="blog-body-hint" className="blog-sr">
+            {BODY_HINT}
+          </span>
+        )}
         <EditorContent editor={editor} />
       </div>
     </main>
