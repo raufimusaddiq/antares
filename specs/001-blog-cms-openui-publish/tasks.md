@@ -202,7 +202,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 ## Phase 9: Polish and cross-cutting
 
 - [ ] T070 [P] Admin page: suspended-user note per the design, confirm no endpoint or screen exposes post or draft content, in `web/src/Admin.tsx` and `internal/blog/admin_blind_test.go` (kept security test)
-- [ ] T071 [P] Secrets and log hygiene test: no credential, run id or provider text in any blog response, error or log, in `internal/blog/redaction_test.go`
+- [x] T071 [P] Secrets and log hygiene test: no credential, run id or provider text in any blog response, error or log, in `internal/blog/redaction_test.go` (`TestNothingFromTheAssistantsSideReachesAnAuthorOrTheLog`: seven ways a check can end, each with a secret-looking key and provider text in every place Hermes can put them; the unsealed key, the profile, run and session ids and the provider text are scanned for in every response an author can fetch and in the log; `TestABindingNeverPrintsItsKey`. Checked by leaking on purpose: once into a response, once into the log, both fail)
 - [X] T072 [P] Update `docs/PRD.md` (new section for the blog and the public-surface exception), `docs/runbooks/security-invariants.md` and `.specify/memory/constitution.md` Principle I wording in the same PR, bumping the constitution version
 - [ ] T073 Update `docs/design/README.md` to match what shipped (known gaps), and reconcile any code/design disagreement
 - [ ] T074 Run every quickstart scenario against the built bundle; record per-package `go test -cover` before and after in the PR description
