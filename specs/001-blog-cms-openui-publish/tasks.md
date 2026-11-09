@@ -117,7 +117,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 - [X] T040 [P] [US2] Check lifecycle test: running → ready; failed, timed out, cancelled, disconnected each shown as itself, nothing published, post returns to `draft`, in `internal/blog/check_test.go`
 - [X] T041 [P] [US2] Out-of-date test: editing the head version during `running`/`ready` marks the check `out_of_date` and publish-enriched is refused, in `internal/blog/check_test.go`
 - [X] T042 [P] [US2] Two-user test: B cannot start, read, cancel or accept blocks on A's check; the check uses A's binding and never B's, in `internal/blog/check_test.go`
-- [ ] T043 [P] [US2] Web test: Preview shows AI-added badge per block, Accept all / Reject one / Publish original, and each failure state wording, in `web/src/blog/PublishFlow.test.tsx`
+- [x] T043 [P] [US2] Web test: Preview shows AI-added badge per block, Accept all / Reject one / Publish original, and each failure state wording, in `web/src/blog/PublishFlow.test.tsx` (`web/src/blog/PreviewScreen.test.tsx` (14 tests: the parts, AI-added on each block, Accept all and Publish my original, the tick gate, deciding block by block, nothing proposed, what the server dropped) and the failure wordings in `Blog.test.tsx`)
 
 ### Implementation for User Story 2
 
@@ -128,7 +128,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 - [X] T048 [US2] Block decision, publish-enriched (snapshot accepted blocks with the pinned version) and check handlers in `internal/blog/handlers.go` per `contracts/http-api.md`
 - [x] T049 [P] [US2] Publish flow UI: choice, checking with Cancel, Preview with notes and per-block Accept/Reject in `web/src/blog/PublishFlow.tsx` and `web/src/blog/Preview.tsx`
 - [x] T050 [P] [US2] Failure and out-of-date states, rejected-block notice and unavailable state per the design in `web/src/blog/PublishFlow.tsx`
-- [ ] T051 [US2] Browser check `blog-publish` (checking, preview, phone layout) in `scripts/browser-check.mjs`; rebuild `internal/webui/dist`; run all tests
+- [x] T051 [US2] Browser check `blog-publish` (checking, preview, phone layout) in `scripts/browser-check.mjs`; rebuild `internal/webui/dist`; run all tests (`ONLY=blog-editor` covers the Publish dialog (ordinary and too long), the checking step and Review before publishing at 320/390/1280, light and dark: the parts in the design's order, nothing past the screen edge, the layout viewport staying the device's width, the tick gate; it found the fixed-layer width bug)
 
 **Checkpoint**: enriched publishing works end to end against the mock; real Hermes confirmed by T014 fixtures.
 
@@ -149,7 +149,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 ### Implementation for User Story 3
 
 - [x] T055 [US3] Source cleaning (public https addresses only) in `internal/blog/sources.go` (`TestPublicHTTPS`, `TestCleanSource`); no verification against run tool events, because research R4 found they do not expose search results, so every source is `verified: false` and `ack` is enforced in the block decision handler (`ErrNeedsAck` in `check.go`, `ACK_REQUIRED` in `handlers.go`)
-- [ ] T076 [US3] The preview as designed: "Accept all and publish" and Accept / Reject on each block, the "Notes from the assistant" column and the "Sources for the selected block" drawer, in `web/src/blog/PublishFlow.tsx` (the Publish / preview frames in `docs/design/antares.figcraft`; the code has "Publish with N blocks" and a Sources list inside each block)
+- [x] T076 [US3] The preview as designed: "Accept all and publish" and Accept / Reject on each block, the "Notes from the assistant" column and the "Sources for the selected block" drawer, in `web/src/blog/PublishFlow.tsx` (the Publish / preview frames in `docs/design/antares.figcraft`; the code has "Publish with N blocks" and a Sources list inside each block) (`web/src/blog/PreviewScreen.tsx`: Review before publishing with the original, the enriched preview, the notes and the sources drawer; Accept all and publish accepts each block with its tick and then publishes; `Sources.tsx` has the drawer and the acknowledgement gate)
 - [x] T056 [P] [US3] Sources list and acknowledgement UI in `web/src/blog/Sources.tsx` (a list inside each block; the designed drawer is T076); show sources and retrieved-on date on published data blocks in `web/src/blog/PublicPost.tsx`
 - [ ] T057 [US3] Re-run behaviour: republish after edits re-checks and drops or re-proposes blocks tied to changed text in `internal/blog/check.go`; test in `internal/blog/check_republish_test.go`
 

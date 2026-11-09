@@ -2,35 +2,50 @@ import { formatDay } from "./dates";
 import type { Source } from "./types";
 
 /**
- * The sources behind a proposed block, one row each. `verified` comes from the server alone: an address the web
- * search did not return is shown as unverified, never as checked. When any source is unverified the author must
- * tick the acknowledgement before the block can be accepted (FR-017).
+ * The sources of the selected block, as the design's "Sources for the selected block" drawer lists them. `verified` comes
+ * from the server alone: an address the web search did not return is shown as unverified, never as checked (and today nothing
+ * can be verified, so every one says unverified).
  */
-export function SourceList({ sources, needsAck, acked, onAck }: { sources: Source[]; needsAck: boolean; acked: boolean; onAck: (v: boolean) => void }) {
+export function SourceDrawer({ sources }: { sources: Source[] }) {
   return (
-    <details className="blog-sources" open={needsAck}>
-      <summary>
-        Sources ({sources.length}){needsAck && " · not all verified"}
-      </summary>
-      <ul>
-        {sources.map((s) => (
-          <li key={s.url}>
-            <a href={s.url} rel="noopener noreferrer nofollow" target="_blank">
-              {s.title}
-            </a>{" "}
-            <span className="label">
-              {new URL(s.url).hostname}
-              {s.retrievedAt && ` · retrieved ${formatDay(s.retrievedAt)}`}
-            </span>{" "}
-            <span className={s.verified ? "chip chip-ok" : "chip chip-warn"}>{s.verified ? "verified" : "unverified"}</span>
-          </li>
-        ))}
-      </ul>
-      {needsAck && (
-        <label className="blog-ack">
-          <input type="checkbox" checked={acked} onChange={(e) => onAck(e.target.checked)} /> I have checked these sources myself
-        </label>
+    <aside className="blog-drawer" aria-labelledby="drawer-h">
+      <h3 id="drawer-h">Sources for the selected block</h3>
+      {sources.length === 0 ? (
+        <p className="label">This block names no sources.</p>
+      ) : (
+        <ul>
+          {sources.map((s) => (
+            <li key={s.url}>
+              <a href={s.url} rel="noopener noreferrer nofollow" target="_blank">
+                {s.title}
+              </a>
+              <span className="label">
+                {new URL(s.url).hostname}
+                {s.retrievedAt && ` · retrieved ${formatDay(s.retrievedAt)}`}
+              </span>
+              <span className={s.verified ? "chip chip-ok" : "chip chip-warn"}>{s.verified ? "verified" : "unverified"}</span>
+            </li>
+          ))}
+        </ul>
       )}
-    </details>
+    </aside>
+  );
+}
+
+/**
+ * What stands between the author and accepting a block whose sources were not checked (FR-017): how many, what that means, and
+ * the tick. The block cannot be accepted until the tick is made; the server refuses it without.
+ */
+export function AckGate({ count, acked, onAck }: { count: number; acked: boolean; onAck: (v: boolean) => void }) {
+  return (
+    <div className="blog-gate">
+      <span className="chip chip-warn">
+        {count} unverified {count === 1 ? "source" : "sources"}
+      </span>
+      <p>Antares has not checked these sources. To accept this block, confirm you have checked them yourself.</p>
+      <label className="blog-ack">
+        <input type="checkbox" checked={acked} onChange={(e) => onAck(e.target.checked)} /> I have checked these sources myself
+      </label>
+    </div>
   );
 }

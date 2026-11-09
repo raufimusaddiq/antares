@@ -51,6 +51,13 @@ Behaviour the frames cannot show (built, and tested):
 - Publish is a modal dialog over the editor (focus in, Tab kept inside, Escape or Cancel back to editing, the editor behind it inert);
   each later full-screen step takes focus to its heading, and closing Publish returns focus to the editor's Publish button.
 
+Publish / preview as built: Review before publishing has the frames' three parts (your original, the enriched preview with Accept and
+Reject on each block, the assistant's notes with "Sources for the selected block"). One state the frames do not draw: once the author has
+decided a block, "Accept all and publish" becomes "Publish with N blocks" (publishing what was accepted); "Accept all and publish" waits
+for the "I have checked these sources myself" tick on every block, since the server refuses an unticked acceptance. The steps after the
+dialog (checking, preview, failure) are the page itself, below a "Back to editing" bar, with the editor hidden while they show.
+(They used to be a fixed full-screen layer; on phones that made the browser widen its layout to 832px.)
+
 My posts as built differs from its frames in two ways, on purpose. Phone rows also show an Open button (the title is plain text, so
 opening a post is one control and not two tab stops). The rail's account line shows the email and has no Menu button: Settings and Sign
 out stay in the chat's account menu, one click away through Chats.

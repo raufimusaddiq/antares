@@ -1,11 +1,9 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { cancelCheck, decideBlock, describeBlogError, getCheck, getLimits, publish, startCheck } from "./blogApi";
 import { checkBytes, imageCount, sizeWords, type Limits } from "./limits";
-import { SourceList } from "./Sources";
+import { PreviewScreen } from "./PreviewScreen";
 import { useDialog } from "./useDialog";
 import type { Capabilities, Check, CheckBlock, Post } from "./types";
-
-const ReaderBlock = lazy(() => import("./ReaderBlock"));
 
 // Publish: choose, check, preview, publish. A failed, cancelled, timed-out or disconnected check is shown as itself,
 // never as completed, and nothing is published until the author says so (FR-012, FR-013). The wording follows
@@ -122,6 +120,24 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
     setCheck((c) => (c ? { ...c, blocks: c.blocks.map((x) => (x.id === b.id ? r.value : x)) } : c)); // decisions can overlap
   };
 
+  // Accept every block (each one's tick was needed to get here), then publish with them. A refusal stops it where it is.
+  const acceptAll = async () => {
+    if (!check) return;
+    setBusy(true);
+    setError("");
+    for (const b of check.blocks) {
+      if (b.decision === "accepted") continue;
+      const r = await decideBlock(post.id, b.id, "accepted", b.needsAck ? true : undefined);
+      if (!r.ok) {
+        setBusy(false);
+        return setError(describeBlogError(r, "save that choice"));
+      }
+      setCheck((c) => (c ? { ...c, blocks: c.blocks.map((x) => (x.id === b.id ? r.value : x)) } : c));
+    }
+    setBusy(false);
+    await go("enriched");
+  };
+
   if (phase.k === "published")
     return (
       <Takeover step="published">
@@ -142,7 +158,7 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
 
   if (phase.k === "checking" || phase.k === "starting")
     return (
-      <Takeover step="checking">
+      <Takeover step="checking" onBack={onBackToEditing}>
         <main className="blog-flow" aria-busy="true">
           <h1 tabIndex={-1}>Checking your writing</h1>
           <p role="status">Your assistant is reading the post, looking for data to add and finding sources. This can take a minute or two.</p>
@@ -164,7 +180,7 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
 
   if (phase.k === "stopped" && check)
     return (
-      <Takeover step="stopped">
+      <Takeover step="stopped" onBack={onBackToEditing}>
         <main className="blog-flow">
           <h1 tabIndex={-1}>{check.state === "out_of_date" ? "The draft changed" : "The check did not finish"}</h1>
           <p role="alert">{failureWords(check)}</p>
@@ -187,62 +203,24 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
       </Takeover>
     );
 
-  if (phase.k === "preview" && check) {
-    const taken = check.blocks.filter((b) => b.decision === "accepted").length;
+  if (phase.k === "preview" && check)
     return (
-      <Takeover step="preview">
-        <main className="blog-flow blog-preview">
-          <h1 tabIndex={-1}>Preview</h1>
-          <p>The assistant proposed {check.blocks.length} {check.blocks.length === 1 ? "block" : "blocks"}. Your writing is unchanged. Accept the ones you want.</p>
-          {check.notices.map((n) => (
-            <p key={n} className="blog-notice" role="status">{n}</p>
-          ))}
-          {check.notes.length > 0 && (
-            <section aria-label="Notes">
-              <h2>Notes</h2>
-              <ul>
-                {check.notes.map((n, i) => (
-                  <li key={i}><span className="chip">{n.kind}</span> {n.text}</li>
-                ))}
-              </ul>
-            </section>
-          )}
-          {check.blocks.map((b) => {
-            const blocked = b.needsAck && !acks[b.id];
-            return (
-              <section key={b.id} className="blog-block" aria-label={`Proposed block: ${b.kind}`}>
-                <span className="chip chip-ai">AI-added</span>
-                <Suspense fallback={<p className="label">Loading…</p>}>
-                  <ReaderBlock markup={b.markup} fallback={b.fallback} />
-                </Suspense>
-                <SourceList sources={b.sources} needsAck={b.needsAck} acked={acks[b.id] === true} onAck={(v) => setAcks({ ...acks, [b.id]: v })} />
-                <div className="blog-actions">
-                  <button type="button" className="btn" aria-pressed={b.decision === "accepted"} disabled={blocked} onClick={() => void decide(b, "accepted")}>
-                    {b.decision === "accepted" ? "Accepted" : "Accept"}
-                  </button>
-                  <button type="button" className="quiet" aria-pressed={b.decision === "rejected"} onClick={() => void decide(b, "rejected")}>
-                    {b.decision === "rejected" ? "Rejected" : "Reject"}
-                  </button>
-                </div>
-              </section>
-            );
-          })}
-          {error && <p className="blog-error" role="alert">{error}</p>}
-          <div className="blog-actions">
-            <button type="button" className="btn" disabled={busy || taken === 0} onClick={() => void go("enriched")}>
-              Publish with {taken} {taken === 1 ? "block" : "blocks"}
-            </button>
-            <button type="button" className="quiet" disabled={busy || !ready} onClick={() => void go("original")}>
-              Publish original
-            </button>
-            <button type="button" className="quiet" onClick={onBackToEditing}>
-              Back to editing
-            </button>
-          </div>
-        </main>
+      <Takeover step="preview" onBack={onBackToEditing}>
+        <PreviewScreen
+          post={post}
+          check={check}
+          acks={acks}
+          onAck={(id, v) => setAcks((a) => ({ ...a, [id]: v }))}
+          busy={busy}
+          ready={ready}
+          error={error}
+          onDecide={(b, d) => void decide(b, d)}
+          onAcceptAll={() => void acceptAll()}
+          onPublishAccepted={() => void go("enriched")}
+          onOriginal={() => void go("original")}
+        />
       </Takeover>
     );
-  }
 
   return (
     <ChooseDialog
@@ -344,10 +322,21 @@ function LimitsNote({ limits, post, canCheck }: { limits: Limits; post: Post; ca
  * A full-screen step of Publish. When one appears (the dialog has just gone, or the step changed) focus moves to its
  * heading, so the change is announced and the keyboard starts at the top of what is new.
  */
-function Takeover({ step, children }: { step: string; children: ReactNode }) {
+function Takeover({ step, onBack, children }: { step: string; onBack?: () => void; children: ReactNode }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
     ref.current?.querySelector<HTMLElement>("h1")?.focus();
   }, [step]);
-  return <div ref={ref} className="blog-takeover">{children}</div>;
+  return (
+    <div ref={ref} className="blog-takeover">
+      {onBack && (
+        <header className="blog-takeover-bar">
+          <button type="button" className="quiet" onClick={onBack}>
+            ‹ Back to editing
+          </button>
+        </header>
+      )}
+      {children}
+    </div>
+  );
 }

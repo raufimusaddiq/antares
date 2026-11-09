@@ -59,8 +59,9 @@ describe("Publish is a dialog over the editor", () => {
     flow({ post: post({ doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "word ".repeat(60) }] }] } }) });
     expect(document.activeElement?.textContent).toBe("Check and enrich"); // before the limits are known it can be taken
     await waitFor(() => expect((screen.getByRole("button", { name: "Check and enrich" }) as HTMLButtonElement).disabled).toBe(true));
+    // The effect that puts focus back runs just after the commit that disabled the button: wait for it, not for the commit.
+    await waitFor(() => expect(document.activeElement?.textContent).toBe("Publish my original"));
     expect(screen.getByRole("dialog").contains(document.activeElement)).toBe(true);
-    expect(document.activeElement?.textContent).toBe("Publish my original");
   });
 
   it("says plainly when checking is not available, and makes the original the one choice", () => {
