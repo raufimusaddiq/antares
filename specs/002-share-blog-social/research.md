@@ -34,20 +34,29 @@
   `ctx.direction` from the text's dominant direction. The title is clamped to 4 lines.
 - **Alternatives**: CSS-to-image libraries (new dependency, and the same measuring problem).
 
-## R4. Card design: Antares's own look, reused
+## R4. Card design: the chat picture's style, in blog colours
 
-- **Decision**: reuse the look and the code of the shared-chat picture (#250/#261, `web/src/shareImage.ts`). The paper
-  background with dots, the cobalt badge with the A, the date pill, the tilted sticker, the dotted periwinkle strip with
-  a mono capital label, the white card with a thick ink outline and hard offset shadow, the pink highlighter bar, cobalt
-  diamond bullets, and the Space Grotesk and mono faces. The picture is always on the light paper (the existing
-  behaviour), so there is no dark variant and no per-theme contrast work: the pairs are the ones already used by the chat
-  picture. Layout for a post: brand row, "POST" sticker, title headline, card labelled "SUMMARY" with the summary and
-  the cover, author name, footer "Shared from Antares". Story-safe zones: the top 250 px and bottom 340 px hold no
-  text-critical content beyond the brand row and footer, which the chat picture already treats as chrome.
-- **Rationale**: the owner asked for it to look like sharing a chat; reusing the primitives makes that true by
-  construction and keeps one place to change the look. The drawing primitives are exported from a shared module rather than
-  copied.
-- **Alternatives**: a second, separately styled card (drift, duplicated code; rejected); a template picker (out of scope).
+- **Decision**: reuse the style and the code of the shared-chat picture (#250/#261, `web/src/shareImage.ts`): dotted flat
+  background, badge with the A and the date pill, tilted sticker, dotted strip with a mono capital label, white card with a
+  thick ink outline and hard offset shadow, highlighter bar, diamond bullets, Space Grotesk and mono. Only the palette
+  differs, so a post's picture and a chat's picture are told apart at a glance and both read as Antares.
+- **Blog palette (all from `--blush`, `--mint`, `--mark`, `--cobalt`, `--ink` in `styles.css`)**:
+
+  | Role | Chat picture | Blog picture |
+  |---|---|---|
+  | Background | paper `#f4f1e8` | blush `#ffb199` |
+  | Card strip | periwinkle `#b3c1ff` | mint `#8ef0c0` |
+  | Badge, label squares, diamonds | cobalt `#2d4bff` | pink `#ff6fae` |
+  | Highlighter bar, "POST" sticker | pink `#ff6fae` | cobalt `#2d4bff` |
+  | Card, ink, text | white, `#0b0b0b` | white, `#0b0b0b` |
+
+  The roles of cobalt and pink are swapped, which keeps it inside Antares's colour set. The mark's A is ink on pink (white on
+  pink is under 3:1); text on the blush background (footer) uses ink, not the grey.
+- **Always light**, whatever the reader's theme (the chat picture's existing behaviour). A test checks every text and
+  background pair of the blog palette at WCAG AA and that the two palettes differ.
+- **Rationale**: one drawing kit, one place to change colours; the owner asked for a different colour from chat. The
+  palette is a single object, so adjusting it later is one edit.
+- **Alternatives**: a second, separately drawn card (drift; rejected); a template picker (out of scope).
 
 ## R4b. Summary and highlights without AI
 

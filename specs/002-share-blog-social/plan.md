@@ -10,7 +10,8 @@ Published posts get a Share control and a "Story image" flow. The 9:16 picture i
 from data the post page already holds (title, summary, author name, cover), then handed to the device's native sharing
 sheet or saved. It is drawn with the same canvas toolkit, fonts and dialog that already make a shared chat's 9:16
 picture (`web/src/shareImage.ts`, `ShareImageDialog` in `ShareChat.tsx`, #250/#261), so it looks like Antares
-by construction (spec FR-020). **No new server route, no new database table, no new dependency, no AI.** This is the smallest design
+by construction, in its own blog colours so it is told apart from a chat picture (spec FR-020). The colours are one
+palette object passed to the kit; the chat picture keeps its current palette. **No new server route, no new database table, no new dependency, no AI.** This is the smallest design
 that meets FR-001…FR-018 and makes the spec's new-public-surface requirement (FR-019) unnecessary; see
 [research.md](research.md) R1 for why drawing on the server was rejected.
 
@@ -96,13 +97,14 @@ a canvas-like context) so it is unit-testable without a browser.
 
 0. **Design in figcraft** (blocks code): Share menu (phone sheet, desktop list), Story dialog (preview, sending,
    saved-and-copied, failure), editor share preview; light and dark; record the frames' ids in the design README.
-1. **Kit and card**: lift the drawing primitives out of `shareImage.ts` into `cardKit.ts` with no change to the chat
-   picture (its existing `ShareImage.test.tsx` and a pixel comparison of a fixed sample before and after prove it), then
+1. **Kit and card**: lift the drawing primitives out of `shareImage.ts` into `cardKit.ts`, with the colours turned from
+   the module constant `C` into a `Palette` argument (the chat passes today's values; no change to the chat
+   picture: its existing `ShareImage.test.tsx` and a pixel comparison of a fixed sample before and after prove it), then
    `postCard.ts` composing them: brand row (mark, "Antares", date pill), a tilted "POST" sticker, the title as the
-   headline with the pink bar, a card with the dotted periwinkle strip labelled "SUMMARY" holding the summary and, after cobalt
+   headline with the highlighter bar, a card with the dotted strip labelled "SUMMARY" holding the summary and, after
    diamonds, up to four highlights (the post's headings), the cover in a thick-outlined frame, the author's name, and the
    footer. The canvas is a fixed 1080 × 1920 (the chat picture's `STORY_H`), never sized from content; the card steps the
-   type down (as `summaryUnits` does), then drops parts in the order FR-022. Tests: the output is always 1080 × 1920 for
+   type down (as `summaryUnits` does), then drops parts in the order FR-022. Tests: the blog palette's text pairs meet WCAG AA and differ from the chat palette; the output is always 1080 × 1920 for
    no summary, no headings, twelve headings, a very long post, no cover, RTL and emoji; every word drawn is found in
    the post; truncation at a word boundary.
 2. **Share**: `ShareMenu`, `shareLinks`, canonical-link test, Share on the post page.

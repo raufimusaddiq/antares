@@ -10,8 +10,8 @@ Prerequisites: a published post with a summary and cover, one without either, on
    the camera roll; the dialog says so).
 4. **Story image (desktop)**: Save image downloads a 1080 × 1920 PNG and the link is copied; text explains the link
    sticker.
-5. **Same product**: put the post's picture beside a shared chat's picture; background, mark, cards, labels and the pink
-   bar match (SC-008). The chat picture is unchanged by the refactor (its test and a before/after comparison).
+5. **Same product, different colours**: put the post's picture beside a shared chat's picture; layout, mark, cards and
+   labels match, the colours do not (blush and mint against paper and periwinkle) (SC-008). The chat picture is unchanged by the refactor (its test and a before/after comparison).
 6. **Edge cases**: the three prepared posts, one with twelve headings, one of 20,000 words, an emoji title and a very long title: every picture is exactly 1080 × 1920, legible, with highlights dropped before anything overflows.
 7. **Privacy**: a draft or unpublished post shows no Share control; no network request carries anything beyond what the
    post page already fetched (check in the browser's network panel: only the cover image).
