@@ -40,18 +40,18 @@
   background, badge with the A and the date pill, tilted sticker, dotted strip with a mono capital label, white card with a
   thick ink outline and hard offset shadow, highlighter bar, diamond bullets, Space Grotesk and mono. Only the palette
   differs, so a post's picture and a chat's picture are told apart at a glance and both read as Antares.
-- **Blog palette (all from `--blush`, `--mint`, `--mark`, `--cobalt`, `--ink` in `styles.css`)**:
+- **Blog palette (chosen by the owner from options drawn in figcraft; all from the `Antares` variables)**:
 
   | Role | Chat picture | Blog picture |
   |---|---|---|
-  | Background | paper `#f4f1e8` | blush `#ffb199` |
+  | Background | paper `#f4f1e8` | warm beige `#e9e4d4` (`rail`) |
   | Card strip | periwinkle `#b3c1ff` | mint `#8ef0c0` |
   | Badge, label squares, diamonds | cobalt `#2d4bff` | pink `#ff6fae` |
-  | Highlighter bar, "POST" sticker | pink `#ff6fae` | cobalt `#2d4bff` |
+  | Highlighter bar, sticker | pink / pink | cobalt / cobalt (sticker text white) |
   | Card, ink, text | white, `#0b0b0b` | white, `#0b0b0b` |
 
-  The roles of cobalt and pink are swapped, which keeps it inside Antares's colour set. The mark's A is ink on pink (white on
-  pink is under 3:1); text on the blush background (footer) uses ink, not the grey.
+  Rejected after review: blush, mint, periwinkle and cobalt backgrounds (too strong against the chat's neutral look) and
+  a dark option. The mark's A is ink on pink; all text on the beige background is ink.
 - **Always light**, whatever the reader's theme (the chat picture's existing behaviour). A test checks every text and
   background pair of the blog palette at WCAG AA and that the two palettes differ.
 - **Rationale**: one drawing kit, one place to change colours; the owner asked for a different colour from chat. The

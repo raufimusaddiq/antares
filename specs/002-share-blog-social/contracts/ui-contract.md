@@ -26,7 +26,7 @@ There is **no new HTTP route**. This contract is the behaviour the design frames
 
 ## Picture
 
-- PNG, exactly 1080 × 1920 for every post (fixed canvas), drawn in the style of the chat's share picture but in the blog palette (blush background, mint strip, pink and cobalt accents; spec FR-020, research R4), always light.
+- PNG, exactly 1080 × 1920 for every post (fixed canvas), drawn in the style of the chat's share picture but in the blog palette (warm beige background, mint strip, pink and cobalt accents; spec FR-020, research R4), always light.
 - Contains: brand row (mark, "Antares", date), "POST" sticker, title (≤ 4 lines), card labelled "SUMMARY" with the
   summary (largest type that fits), up to four highlights (the post's headings) and the cover, author name, short address, footer "Shared from Antares".
 - Text is clamped at a word boundary with an ellipsis; plain text only.

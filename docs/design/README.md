@@ -22,6 +22,12 @@ Spec and plan: `specs/001-blog-cms-openui-publish/`. Two pages and one Admin fra
   disabled, the original still allowed), unavailable, checking, preview (dark,
   unverified source, refused block), failed, timed out, cancelled, disconnected, out of date, unusable reply, published,
   and Phone checking/preview/failed/published.
+- **Blog share** (designed for spec `specs/002-share-blog-social/`, not built yet): the chat's shared picture beside the
+  blog's story card (1080 × 1920, warm beige `#e9e4d4` background, mint strip, white card, pink mark and bullets, cobalt
+  "POST" sticker and highlighter bar; same layout language as the chat picture, different colours), the Share menu on
+  the post page (desktop: Copy link, WhatsApp, X, Facebook, LinkedIn, Telegram, Email, Story image; phones open the
+  device's own sheet instead), the Story dialog (ready, saved with no share sheet, failed; Phone ready), and the editor's
+  Share preview in Post settings.
 - **Admin / Suspended user (posts hidden)** on the Admin page: states that posts are hidden and no content is shown.
 
 Flows are wired as prototype interactions: index to post and back, sign in to My posts, My posts to Editor, row actions
