@@ -1310,6 +1310,7 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 .blog-limits li + li { margin-top: 0.25rem; }
 /* Publish is a dialog over the editor (the Publish / choose frame); its later steps cover the screen. */
 .blog-behind { min-height: 100dvh; }
+.blog-takeover h1:focus { outline: none; }
 .blog-takeover { position: fixed; inset: 0; z-index: 20; overflow: auto; background: var(--canvas); }
 .blog-scrim { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 1rem; overflow: auto; background: color-mix(in srgb, var(--ink) 55%, transparent); }
 .blog-dialog { display: grid; gap: 0.875rem; width: min(35rem, 100%); max-height: calc(100dvh - 2rem); overflow: auto; box-sizing: border-box; padding: 1.5rem; color: var(--ink); background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: var(--hard); }

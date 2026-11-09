@@ -12,11 +12,11 @@ import (
 func TestTheLimitsTheAuthorIsToldAreTheEnforcedOnes(t *testing.T) {
 	a := newApp(t)
 	got := into[Limits](t, a.active("alice").do("GET", "/api/blog/limits", nil))
-	want := Limits{CheckBytes: maxCheckInput, DocBytes: maxDocBytes, ImagesPerPost: maxAssetsPerPost, ImageBytes: maxAssetBytes, BlocksPerCheck: maxBlocks, SourcesPerBlock: maxSourcesPer, ChecksPer24h: maxChecksPer24h}
+	want := Limits{CheckBytes: maxCheckInput, DocBytes: maxDocBytes, ImagesPerPost: maxAssetsPerPost, ImageBytes: maxAssetBytes, ImageBytesTotal: maxAssetBytesPerAuthor, BlocksPerCheck: maxBlocks, SourcesPerBlock: maxSourcesPer, ChecksPer24h: maxChecksPer24h}
 	if got != want {
 		t.Fatalf("limits: %+v, want %+v", got, want)
 	}
-	for name, v := range map[string]int{"checkBytes": got.CheckBytes, "docBytes": got.DocBytes, "imagesPerPost": got.ImagesPerPost, "imageBytes": got.ImageBytes, "blocksPerCheck": got.BlocksPerCheck, "sourcesPerBlock": got.SourcesPerBlock, "checksPer24h": got.ChecksPer24h} {
+	for name, v := range map[string]int{"checkBytes": got.CheckBytes, "docBytes": got.DocBytes, "imagesPerPost": got.ImagesPerPost, "imageBytes": got.ImageBytes, "imageBytesTotal": got.ImageBytesTotal, "blocksPerCheck": got.BlocksPerCheck, "sourcesPerBlock": got.SourcesPerBlock, "checksPer24h": got.ChecksPer24h} {
 		if v <= 0 {
 			t.Fatalf("%s is %d: a limit the author is told must be a real number", name, v)
 		}

@@ -49,7 +49,7 @@ describe("sizes in words", () => {
 });
 
 describe("the limits reply", () => {
-  const full = { checkBytes: 122880, docBytes: 524288, imagesPerPost: 30, imageBytes: 5242880, blocksPerCheck: 10, sourcesPerBlock: 10, checksPer24h: 30 };
+  const full = { checkBytes: 122880, docBytes: 524288, imagesPerPost: 30, imageBytes: 5242880, imageBytesTotal: 209715200, blocksPerCheck: 10, sourcesPerBlock: 10, checksPer24h: 30 };
   it("is read whole", () => expect(parseLimits(full)).toEqual(full));
   it("is not guessed at when a number is missing: no limits is better than limits of zero", () => {
     expect(parseLimits({ ...full, imagesPerPost: undefined })).toBeNull();
@@ -58,7 +58,7 @@ describe("the limits reply", () => {
   });
 });
 
-const LIMITS = { checkBytes: 200, docBytes: 524288, imagesPerPost: 30, imageBytes: 5242880, blocksPerCheck: 10, sourcesPerBlock: 10, checksPer24h: 30 };
+const LIMITS = { checkBytes: 200, docBytes: 524288, imagesPerPost: 30, imageBytes: 5242880, imageBytesTotal: 209715200, blocksPerCheck: 10, sourcesPerBlock: 10, checksPer24h: 30 };
 const post = (d: DocNode, title = "A title"): Post => ({ id: "p1", title, summary: "", slug: "", coverUrl: "", status: "draft", latestVersion: 1, publishedVersion: 0, doc: d, check: null, updatedAt: "" }) as Post;
 const json = (b: unknown, status = 200) => new Response(JSON.stringify(b), { status, headers: { "Content-Type": "application/json" } });
 const flow = (d: DocNode, caps = { writing: true, check: true, webSearch: true }) =>
@@ -73,7 +73,7 @@ describe("Publish: the limits are stated before anyone publishes", () => {
     expect(box.textContent).toMatch(/This post is about 1 KB/);
     expect(box.textContent).toMatch(/up to 10 blocks, each naming up to 10 sources/);
     expect(box.textContent).toMatch(/30 checks in 24 hours/);
-    expect(box.textContent).toMatch(/Images: 1 of 30 in this post, up to 5 MB each/);
+    expect(box.textContent).toMatch(/Images: 1 of 30 in this post, up to 5 MB each, and up to 200 MB across all your posts/);
     expect((screen.getByRole("button", { name: "Check and enrich" }) as HTMLButtonElement).disabled).toBe(false);
   });
 

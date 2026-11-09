@@ -137,7 +137,7 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
         <button type="button" className="quiet" onClick={onSettings}>
           Post settings
         </button>
-        <button type="button" className="btn" disabled={save === "conflict"} onClick={() => onPublish(() => saver.current?.flush() ?? Promise.resolve(false))}>
+        <button type="button" className="btn" data-publish disabled={save === "conflict"} onClick={() => onPublish(() => saver.current?.flush() ?? Promise.resolve(false))}>
           Publish
         </button>
       </header>

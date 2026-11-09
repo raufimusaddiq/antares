@@ -111,7 +111,7 @@ export function parseSummary(v: unknown): PostSummary | null {
 export function parseLimits(v: unknown): Limits | null {
   const o = obj(v);
   if (!o) return null;
-  const l = { checkBytes: num(o.checkBytes), docBytes: num(o.docBytes), imagesPerPost: num(o.imagesPerPost), imageBytes: num(o.imageBytes), blocksPerCheck: num(o.blocksPerCheck), sourcesPerBlock: num(o.sourcesPerBlock), checksPer24h: num(o.checksPer24h) };
+  const l = { checkBytes: num(o.checkBytes), docBytes: num(o.docBytes), imagesPerPost: num(o.imagesPerPost), imageBytes: num(o.imageBytes), imageBytesTotal: num(o.imageBytesTotal), blocksPerCheck: num(o.blocksPerCheck), sourcesPerBlock: num(o.sourcesPerBlock), checksPer24h: num(o.checksPer24h) };
   // A number the server did not send must not become "0 allowed" on the page: no limits at all is the honest answer.
   return Object.values(l).every((n) => n > 0) ? l : null;
 }

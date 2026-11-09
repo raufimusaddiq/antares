@@ -44,14 +44,18 @@ function PostScreen({ id, email, publishing, caps, onNavigate }: { id: string; e
   const [settings, setSettings] = useState(false);
   // Without an open editor, "saved" means this browser holds nothing the server has not confirmed.
   const flush = useRef<() => Promise<boolean>>(() => Promise.resolve(loadLocalCopy(email, id) === null));
-  // The editor is mounted behind Publish and stays through it; when Publish closes it is opened again on the post as the server
-  // has it, not on what it was first given (what the author comes back to is what was confirmed).
+  // The editor is mounted behind Publish and stays through it; when Publish closes it is opened again on the latest post this
+  // screen holds (what Publish saved and confirmed), not on what the editor was first given, and focus goes back to its Publish
+  // button, since the button that had focus before the dialog is the old editor's and is gone.
   const [editorKey, setEditorKey] = useState(0);
   const wasPublishing = useRef(false);
   useEffect(() => {
     if (wasPublishing.current && !publishing) setEditorKey((k) => k + 1);
     wasPublishing.current = publishing;
   }, [publishing]);
+  useEffect(() => {
+    if (editorKey > 0) document.querySelector<HTMLElement>("[data-publish]")?.focus();
+  }, [editorKey]);
 
   useEffect(() => {
     const ctl = new AbortController();
