@@ -1299,10 +1299,9 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 
 .blog-rows { list-style: none; margin: 1rem 0; padding: 0; display: grid; gap: 0.75rem; }
 .blog-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
-.blog-row-main { display: flex; justify-content: flex-start; flex: 1; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 12rem; text-align: left; background: transparent; border-color: transparent; }
+/* A button does not wrap its text, so (white-space: normal below) a long title ran out of the row and under the actions. */
+.blog-row-main { display: flex; justify-content: flex-start; flex: 1; flex-wrap: wrap; align-items: center; gap: 0.5rem; min-width: 12rem; text-align: left; white-space: normal; background: transparent; border-color: transparent; }
 .blog-row-title { font-weight: 700; overflow-wrap: anywhere; }
-/* A button does not wrap its text, so a long title ran out of the row and under the actions. */
-.blog-row-main { white-space: normal; }
 .blog-row-text { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; flex: 1 1 14rem; min-width: 0; }
 .blog-bar-note { margin: 0.25rem 0 0; }
 .blog-list .blog-bar > div { flex: 1; min-width: 0; }

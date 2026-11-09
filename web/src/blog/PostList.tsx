@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPost, deletePost, describeBlogError, duplicatePost, listPosts, unpublish } from "./blogApi";
 import type { BlogResult } from "./blogApi";
 import { useDialog } from "./useDialog";
+import { formatDay } from "./dates";
 import type { PostStatus, PostSummary } from "./types";
 
 export const STATUS_WORDS: Record<PostStatus, string> = {
@@ -14,7 +15,6 @@ export const STATUS_WORDS: Record<PostStatus, string> = {
 
 type Load = { k: "loading" } | { k: "error"; why: string } | { k: "ok"; posts: PostSummary[] };
 
-const day = (iso: string) => iso.slice(0, 10);
 
 export function PostList({ onOpen, onChats }: { onOpen: (id: string) => void; onChats: () => void }) {
   const [load, setLoad] = useState<Load>({ k: "loading" });
@@ -94,7 +94,7 @@ export function PostList({ onOpen, onChats }: { onOpen: (id: string) => void; on
                 <span className="blog-row-text">
                   <span className="blog-row-title">{p.title || "Untitled"}</span>
                   <span className="label">
-                    Edited {day(p.updatedAt)}
+                    Edited {formatDay(p.updatedAt, false)}
                     {p.status === "published" && p.slug ? ` · /b/${p.slug}` : ""}
                   </span>
                 </span>

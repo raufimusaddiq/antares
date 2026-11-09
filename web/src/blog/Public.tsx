@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { getPublic, listPublic, mediaUrl } from "./blogApi";
 import { LOGIN_URL } from "../api";
 import { AntaresMark } from "../brand/AntaresMark";
+import { formatDay } from "./dates";
 import { DocView } from "./DocView";
 import type { PublicPost, PublicSummary } from "./types";
 
@@ -16,7 +17,6 @@ export function publicBlogRoute(path: string): { kind: "index" } | { kind: "post
   return m ? { kind: "post", slug: m[1] } : null;
 }
 
-const day = (iso: string) => iso.slice(0, 10);
 const initials = (n: string) => n.split(/\s+/).map((w) => w[0] ?? "").join("").slice(0, 2).toUpperCase();
 
 function Frame({ children, title }: { children: React.ReactNode; title: string }) {
@@ -69,7 +69,7 @@ export function PublicIndex() {
               <li key={p.slug} className="blog-card">
                 <a href={`/b/${p.slug}`}>
                   {mediaUrl(p.coverUrl) && <img src={mediaUrl(p.coverUrl)} alt="" loading="lazy" />}
-                  <span className="label">{day(p.publishedAt)}</span>
+                  <span className="label">{formatDay(p.publishedAt)}</span>
                   <h2>{p.title}</h2>
                   <p>{p.summary}</p>
                   <span className="blog-by"><span className="avatar" aria-hidden="true">{initials(p.authorName)}</span> {p.authorName}</span>
@@ -124,7 +124,7 @@ export function PublicPostPage({ slug }: { slug: string }) {
           {p.summary && <p className="blog-lede">{p.summary}</p>}
           <p className="blog-byline">
             <span className="avatar" aria-hidden="true">{initials(p.authorName)}</span> <strong>{p.authorName}</strong>
-            <span className="label"> · {day(p.publishedAt)}</span>
+            <span className="label"> · {formatDay(p.publishedAt)}</span>
             {p.blocks.length > 0 && <span className="chip chip-info">Interactive</span>}
           </p>
           {mediaUrl(p.coverUrl) && <img className="blog-cover" src={mediaUrl(p.coverUrl)} alt="" />}
