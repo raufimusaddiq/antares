@@ -31,19 +31,27 @@ func TestBlogCheckRecordingShowsWhatTheDesignRestsOn(t *testing.T) {
 		}
 		rows = append(rows, r)
 	}
-	started, completed := map[string]bool{}, map[string]bool{}
+	started, completed, otherTool := map[string]bool{}, map[string]bool{}, map[string]bool{}
 	var sawRunStarted, sawRunCompleted bool
 	for _, r := range rows {
 		switch r.Event {
 		case "run.started":
 			sawRunStarted = true
 		case "tool.started":
+			// Only searches matter here: another tool in a later recording (a file read, say) is not what R4 is about.
+			if r.Data["label"] != "web_search" {
+				otherTool[asString(r.Data["toolCallId"])] = true
+				continue
+			}
 			// The query is visible; that is all a search tells us up front.
-			if r.Data["label"] != "web_search" || strings.TrimSpace(asString(r.Data["detail"])) == "" {
-				t.Errorf("tool.started no longer names web_search with its query: %v", r.Data)
+			if strings.TrimSpace(asString(r.Data["detail"])) == "" {
+				t.Errorf("a web_search no longer shows its query: %v", r.Data)
 			}
 			started[asString(r.Data["toolCallId"])] = true
 		case "tool.completed":
+			if otherTool[asString(r.Data["toolCallId"])] {
+				continue
+			}
 			completed[asString(r.Data["toolCallId"])] = true
 			// Research R4: what a search returned is NOT in the events. If this ever has text, sources can be cross-checked
 			// and the design (every source unverified, every data block acknowledged) can be relaxed. Until then, it must not.

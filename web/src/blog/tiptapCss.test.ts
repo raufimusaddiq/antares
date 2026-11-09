@@ -23,7 +23,7 @@ describe("the copy of TipTap's base CSS", () => {
 
     const css = readFileSync(join(__dirname, "..", "styles.css"), "utf8");
     const from = css.indexOf("The editor's own base rules");
-    expect(from).toBeGreaterThan(-1);
+    expect(from, "the marker comment above the copied rules in styles.css moved or was reworded").toBeGreaterThan(-1);
     // Our copy, with the one deliberate change (the gap cursor takes the theme's ink instead of black).
     const ours = squash(css.slice(css.indexOf("*/", from) + 2)).replace("var(--ink)", "black");
     expect(ours.startsWith(theirs)).toBe(true);
