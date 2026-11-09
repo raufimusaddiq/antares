@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"log"
 	"strings"
 	"sync"
 	"time"
@@ -35,7 +36,7 @@ type Service struct {
 	hx        Runner       // nil: checking is not offered
 	box       *secrets.Box // opens the author's own credential for a check
 	spend     Spend        // the account's spending rule; nil: none
-	checkMode string       // CheckOff, CheckSmoke, or anything else for on (the default)
+	checkMode string       // CheckOn, CheckSmoke or CheckOff, as ParseCheckMode normalised it
 	rt        *checkRuntime
 
 	capMu    sync.Mutex
@@ -49,7 +50,7 @@ type Options struct {
 	Hermes Runner
 	Box    *secrets.Box
 	Spend  Spend // checks are refused while the author is over their daily hard limit; nil applies none
-	// CheckMode is "on" (the default when empty), "smoke" (synthetic test accounts only) or "off"; anything else is refused by New.
+	// CheckMode is "on" (the default when empty), "smoke" (synthetic test accounts only) or "off"; a value that is none of them turns the check off (New logs it).
 	CheckMode string
 }
 
@@ -62,7 +63,10 @@ func New(o Options) (*Service, error) {
 	}
 	mode, err := ParseCheckMode(o.CheckMode)
 	if err != nil {
-		return nil, err
+		// A bad value for one blog feature must not stop the product from serving: the check fails closed (off) and the
+		// operator is told why, loudly, in the log.
+		log.Printf("blog: %v: the AI check is OFF until this is fixed", err)
+		mode = CheckOff
 	}
 	s := &Service{db: o.DB, now: o.Now, hx: o.Hermes, box: o.Box, spend: o.Spend, checkMode: mode}
 	s.initChecks()

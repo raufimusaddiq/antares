@@ -960,6 +960,9 @@ func TestTheCheckModeSwitch(t *testing.T) {
 		fh.output = goodReply
 		a := newAppWithHermes(t, fh)
 		a.svc.checkMode = mode
+		if mode == "" {
+			a.svc.checkMode = CheckOn // what New makes of an empty value
+		}
 		u, synth := a.active("alice"), a.active("synth")
 		a.db.Exec(`UPDATE users SET google_issuer = ? WHERE id = ?`, store.SyntheticIssuer, synth.id)
 		return a, u, synth, u.draftToCheck("Mode")
@@ -1012,9 +1015,18 @@ func TestTheCheckModeIsParsedStrictly(t *testing.T) {
 		if got, err := ParseCheckMode(raw); err == nil {
 			t.Errorf("%q was accepted as %q: a typo must not leave the check open", raw, got)
 		}
-		a := newApp(t)
-		if _, err := New(Options{DB: a.db, CheckMode: raw}); err == nil {
-			t.Errorf("New accepted the mode %q", raw)
+		// New does not refuse (the product must start), it turns the check off.
+		a := newAppWithHermes(t, newFake())
+		svc, err := New(Options{DB: a.db, Hermes: a.fh, Box: a.box, CheckMode: raw})
+		if err != nil {
+			t.Fatalf("New refused the mode %q: a bad blog switch must not stop the product: %v", raw, err)
+		}
+		t.Cleanup(svc.Close)
+		if svc.checkMode != CheckOff {
+			t.Errorf("mode %q gave %q, want off", raw, svc.checkMode)
+		}
+		if svc.checkAllowed(context.Background(), a.active("probe").id) {
+			t.Errorf("mode %q left the check open", raw)
 		}
 	}
 	// A service whose mode is somehow none of the three grants nothing.

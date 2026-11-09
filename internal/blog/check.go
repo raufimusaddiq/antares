@@ -141,15 +141,15 @@ func (s *Service) checkAllowed(ctx context.Context, author string) bool {
 			return false
 		}
 		return issuer == store.SyntheticIssuer
-	case CheckOn, "":
+	case CheckOn:
 		return true
 	}
-	return false // a mode that is not one of the three never widens exposure (New refuses it at startup)
+	return false // a mode that is none of the three never widens exposure
 }
 
 // ParseCheckMode reads ANTARES_BLOG_CHECK strictly: surrounding space and case are forgiven, an empty value is the default (on),
-// and anything else that is not on, smoke or off is an error, so a typo in a switch flipped during an incident cannot leave the
-// check open to everyone.
+// and anything else that is not on, smoke or off is an error. New turns an error into "off", so a typo in a switch flipped
+// during an incident can neither leave the check open to everyone nor stop the product from starting.
 func ParseCheckMode(raw string) (string, error) {
 	switch m := strings.ToLower(strings.TrimSpace(raw)); m {
 	case "", CheckOn:

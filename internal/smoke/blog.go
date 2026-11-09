@@ -238,13 +238,26 @@ func (s *scn) blogCheck(ctx context.Context) (string, error) {
 	defer cancel()
 	var c checkView
 	start := time.Now()
+	last := "no answer yet"
 	for {
 		rr, err := s.c.Do(cctx, a.Session, "GET", path+"/check", nil, nil)
-		if err == nil && rr.Status == 200 && rr.JSON(&c) == nil && c.State != "running" {
+		switch {
+		case err != nil:
+			last = err.Error()
+		case rr.Status != 200:
+			last = "GET /check answered " + rr.Brief()
+		case rr.JSON(&c) != nil:
+			last = "GET /check answered something that is not a check"
+		case c.State == "running":
+			last = "still running"
+		default:
+			last = ""
+		}
+		if last == "" {
 			break
 		}
 		if !sleep(cctx, 2*time.Second) {
-			return "", fmt.Errorf("the check did not finish within %s", timeout)
+			return "", fmt.Errorf("the check did not finish within %s; the last answer was: %s", timeout, last)
 		}
 	}
 	took := time.Since(start).Round(time.Second)
