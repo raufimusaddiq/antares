@@ -32,6 +32,7 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
   const [latest, setLatest] = useState<Post | null>(null);
   const [title, setTitle] = useState(() => loadLocalCopy(email, post.id)?.title ?? post.title);
   const [note, setNote] = useState("");
+  const [empty, setEmpty] = useState(false);
   const saver = useRef<Autosaver | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 
@@ -40,8 +41,15 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
     extensions: [StarterKit.configure({ heading: { levels: [2, 3, 4] }, link: { openOnClick: false, autolink: false, protocols: ["https", "http", "mailto"] } }), Image],
     content: (loadLocalCopy(email, post.id)?.doc ?? post.doc) as object,
     editorProps: { attributes: { "aria-label": "Post body", class: "blog-prose" } },
-    onUpdate: ({ editor: e }) => saver.current?.change({ doc: e.getJSON() as DocNode }),
+    onUpdate: ({ editor: e }) => {
+      setEmpty(e.isEmpty);
+      saver.current?.change({ doc: e.getJSON() as DocNode });
+    },
   });
+
+  useEffect(() => {
+    if (editor) setEmpty(editor.isEmpty);
+  }, [editor]);
 
   useEffect(() => {
     const s = new Autosaver({ id: post.id, email, version: post.latestVersion, onState: (st, l) => (setSave(st), setLatest(l)), onSaved: onPost });
@@ -169,7 +177,10 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
           {note}
         </p>
       )}
-      <EditorContent editor={editor} />
+      {/* An empty body is a blank box: say where to type. A placeholder drawn by CSS, so no editor extension is needed. */}
+      <div className="blog-body" data-empty={empty ? "true" : undefined}>
+        <EditorContent editor={editor} />
+      </div>
     </main>
   );
 }

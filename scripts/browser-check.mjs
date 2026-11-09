@@ -40,6 +40,7 @@ const PLAIN = "a".repeat(32);
 const RICH = "b".repeat(32);
 
 const BLOG_ID = "e".repeat(32);
+const BLOG_EMPTY_ID = "f".repeat(32);
 const text = (t, marks) => ({ type: "text", text: t, ...(marks ? { marks } : {}) });
 const BLOG_DOC = {
   type: "doc",
@@ -94,6 +95,7 @@ function api(req, res, url) {
   if (url.pathname === "/api/blog/posts" && req.method === "GET")
     return send(200, [BLOG_ID, "c".repeat(32), "d".repeat(32)].map((id, i) => ({ id, title: ["A long title that has to wrap on a phone without pushing the page sideways", "", "Second post"][i], status: ["published", "draft", "unpublished"][i], slug: i === 0 ? "first-post" : "", updatedAt: "2026-11-09T01:00:00Z", publishedAt: i === 0 ? "2026-11-08T01:00:00Z" : "", interactive: false })));
   if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "GET") return send(200, blogPost());
+  if (url.pathname === `/api/blog/posts/${BLOG_EMPTY_ID}` && req.method === "GET") return send(200, { ...blogPost(), id: BLOG_EMPTY_ID, title: "", doc: { type: "doc", content: [{ type: "paragraph" }] } });
   if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "PUT") return send(200, { ...blogPost(), latestVersion: 4 });
   if (url.pathname === "/api/public/blog/posts") return send(200, [{ slug: "first-post", title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary with " + "words ".repeat(30), coverUrl: "", authorName: "A Writer With A Rather Long Display Name", publishedAt: "2026-11-08T01:00:00Z" }]);
   if (url.pathname === "/api/public/blog/posts/first-post") return send(200, { title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", coverUrl: "", doc: BLOG_DOC, blocks: [], authorName: "A Writer", publishedAt: "2026-11-08T01:00:00Z" });
@@ -527,7 +529,7 @@ async function startingCard(browser) {
 async function blogPages(browser, which) {
   const views = which === "blog-public"
     ? [["index", "/b", "h1, h2"], ["post", "/b/first-post", "article h1, main h1"]]
-    : [["list", "/blog", ".blog-rows, .blog-empty"], ["editor", `/blog/${BLOG_ID}`, "[contenteditable=true]"]];
+    : [["list", "/blog", ".blog-rows, .blog-empty"], ["editor", `/blog/${BLOG_ID}`, "[contenteditable=true]"], ["empty editor", `/blog/${BLOG_EMPTY_ID}`, "[contenteditable=true]"]];
   for (const [label, w, h, scheme] of [["phone", 390, 844, "light"], ["phone", 390, 844, "dark"], ["narrow", 320, 640, "light"], ["desktop", 1280, 800, "dark"]]) {
     for (const [name, route, want] of views) {
       const { ctx, page, consoleErrors, external } = await openPage(browser, { viewport: { width: w, height: h }, colorScheme: scheme, ...(label !== "desktop" ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) });
@@ -537,13 +539,30 @@ async function blogPages(browser, which) {
       try { await page.waitForSelector(want, { timeout: 8000 }); } catch { shown = false; }
       await page.waitForTimeout(300);
       const m = await page.evaluate(() => ({ overflowX: document.documentElement.scrollWidth - innerWidth, bodyOverflow: document.body.scrollWidth - innerWidth }));
+      // The editor's own layout: the toolbar must clear the writing area (also while it has the focus ring), and an empty body must
+      // say where to type.
+      let editorProblems = [];
+      if (which === "blog-editor" && name.endsWith("editor") && shown) {
+        await page.focus("[contenteditable=true]");
+        const g = await page.evaluate(() => {
+          const t = document.querySelector(".blog-toolbar")?.getBoundingClientRect();
+          const p = document.querySelector(".blog-prose")?.getBoundingClientRect();
+          const body = document.querySelector(".blog-body");
+          const ph = body ? getComputedStyle(body, "::before").content : "";
+          return { gap: t && p ? p.top - t.bottom : -999, empty: body?.getAttribute("data-empty") === "true", placeholder: ph };
+        });
+        // 5px shadow + 3px focus ring + 2px offset must fit in the gap, with air to spare.
+        if (g.gap < 14) editorProblems.push(`the toolbar is ${g.gap}px above the writing area (its shadow and the focus ring need 10)`);
+        if (name === "empty editor" && (!g.empty || !/Start writing/.test(g.placeholder))) editorProblems.push(`an empty body shows no placeholder (${JSON.stringify(g)})`);
+        if (name === "editor" && g.empty) editorProblems.push("a body with text is marked empty");
+      }
       await page.screenshot({ path: path.join(outDir, `${which}-${name}-${label}-${scheme}.png`), fullPage: true });
       const csp = await page.evaluate(() => window.__csp.length);
       // Signed out means the page never asks who it is: the app shell (which calls /api/me and the chat APIs) is not mounted.
       const asked = which === "blog-public" ? state.log.slice(logFrom).filter((l) => /^\w+ \/api\/(me|chats|quota|capabilities|models)\b/.test(l)) : [];
       check(`${which} ${name}, ${label} ${w}px ${scheme}: content shown, no sideways scroll, no console error, CSP violation or off-origin request${which === "blog-public" ? ", and no signed-in API call" : ""}`,
-        shown && m.overflowX <= 0 && m.bodyOverflow <= 0 && consoleErrors.length === 0 && csp === 0 && external.length === 0 && asked.length === 0,
-        JSON.stringify({ shown, ...m, csp, consoleErrors: consoleErrors.slice(0, 2), external: external.slice(0, 2), asked: asked.slice(0, 3) }));
+        shown && m.overflowX <= 0 && m.bodyOverflow <= 0 && consoleErrors.length === 0 && csp === 0 && external.length === 0 && asked.length === 0 && editorProblems.length === 0,
+        JSON.stringify({ shown, ...m, csp, consoleErrors: consoleErrors.slice(0, 2), external: external.slice(0, 2), asked: asked.slice(0, 3), editorProblems }));
       await ctx.close();
     }
   }
