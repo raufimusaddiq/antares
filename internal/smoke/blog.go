@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -311,11 +312,28 @@ func (s *scn) blogCheck(ctx context.Context) (string, error) {
 	if pub.JSON(&got) != nil || len(got.Blocks) != accepted {
 		return "", fmt.Errorf("readers got %d blocks, the author accepted %d", len(got.Blocks), accepted)
 	}
-	body := strings.ToLower(string(pub.Body))
-	for _, leak := range []string{"hermes", "session", p.ID, "run_"} {
-		if strings.Contains(body, leak) {
-			return "", fmt.Errorf("the public post contains %q", leak)
+	// By identity, not by wording: the assistant's own notes and fallbacks are prose and may say "session" or "Hermes". What must
+	// not reach a reader is an id of ours: the post's, the account's, and a run or session id (Hermes ids carry these prefixes).
+	me, mr, merr := s.me(ctx, a)
+	if merr != nil || mr.Status != 200 || me.ID == "" {
+		return "", fmt.Errorf("cannot read A's own account, so the public post cannot be checked for an account id")
+	}
+	for _, id := range []string{p.ID, me.ID} {
+		if strings.Contains(string(pub.Body), id) {
+			return "", fmt.Errorf("the public post contains an internal id")
 		}
+	}
+	var shape map[string]any
+	if pub.JSON(&shape) != nil {
+		return "", fmt.Errorf("the public post is not JSON")
+	}
+	for _, key := range []string{"id", "postId", "authorId", "userId", "email", "profile", "tenant", "chatId", "runId", "sessionId", "hermesRun", "hermesSession"} {
+		if _, there := shape[key]; there {
+			return "", fmt.Errorf("the public post has a %q field", key)
+		}
+	}
+	if regexp.MustCompile(`\b(?:run|sess)_[A-Za-z0-9]{6,}`).Match(pub.Body) {
+		return "", fmt.Errorf("the public post carries what looks like a run or session id")
 	}
 	// An edit after the check makes it out of date, and the published post keeps what was published.
 	var cur blogPost
