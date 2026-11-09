@@ -1,88 +1,47 @@
-# Handover: blog feature
+# Handover: the blog feature (complete)
 
-Split of work after the design was approved (PR #274). Design and pages are done in the figcraft session;
-**backend and Hermes work goes to a separate session that has no FigCraft.** That session needs only this
-folder, `docs/design/README.md` and the PRD. It never needs to open the `.figcraft` file.
+Every task in `tasks.md` is done. The feature is live at `/b` (public) and `/blog` (authors), and the AI check is on by default.
+Production runs `e3bea183` or later; its last full smoke, on `e3bea183`, passed 19/19 with `cleanup=clean` (including a real check
+on the author's own assistant).
 
-## State
+## Where things are
 
-- Design approved by the owner (T011 ticked). The `.figcraft` file is the source of truth for look and flow;
-  read `docs/design/README.md` and `contracts/design-pages.md` for the frame and flow list in text form.
-- Setup branch `feat/blog-setup` (local worktree, not pushed): T012 empty packages, T013 TipTap 3.33.0 pinned
-  (MIT; about +424 KB minified, +133 KB gzip over bare React as a standalone bundle; lazy-load on the editor
-  route only). `internal/blog/doc.go` there is a placeholder; T016 replaces it.
-- Not done: everything from Phase 3 on. No Go code exists yet.
+| What | Where |
+|---|---|
+| What was asked, and why | `spec.md`, `plan.md`, `research.md`, `data-model.md`, `contracts/` |
+| Proof it works: the three quickstart commands, the fifteen scenarios with the tests behind each, `go test -cover` before and after | `validation.md` |
+| How to run, switch off and pay for the AI check | `docs/runbooks/blog-check.md` (`ANTARES_BLOG_CHECK=on|smoke|off`; limits: one running check per post, two per author, 30 per rolling 24 h, the daily hard spending limit) |
+| Smoke test and deploy | `docs/runbooks/smoke-test.md`, `docs/runbooks/deployment.md` |
+| The design, and where the code and the frames still differ | `docs/design/antares.figcraft`, `docs/design/README.md` (*Blog: where the frames and the code still differ*) |
+| Rules this feature added or relies on | `.specify/memory/constitution.md` (v1.1.0), `docs/PRD.md` §30, `docs/runbooks/security-invariants.md` (default deny, ownership on every query, admin blind) |
 
-## Backend and Hermes session (needs a Go toolchain, a Hermes, no FigCraft)
+## What was decided on the way (so nobody reopens it by accident)
 
-Tasks: T014 (fixtures, **blocker for US2/US3**), T015-T020, T021-T025, T027-T030, T039-T042, T044-T048,
-T052-T053, T055, T057, T060 (server part), T063, T065, T068 (server part), T071, T072, T074, T075 (owner approval only).
+- **Sources are never verified.** Hermes exposes the search query but not the results (research R4), so every source is stored
+  `verified: false` (the database refuses otherwise) and every block that names sources needs the author's tick before it can be
+  accepted. The product never shows a "verified" state.
+- **An edit after a check makes it out of date** and the author re-runs it (T057). Nothing is reused across an edit.
+- **The AI-added marker stays above a block** (T062), not beside its title: every block must carry it.
+- **Sorting is not built:** OpenUI's table has no sort control (T059).
+- **Publish is a dialog over the editor**; its later steps are the page itself below a "Back to editing" bar (a fixed full-screen
+  layer made mobile Chrome widen its layout to 832px).
+- **Admin is blind to posts and drafts**, proven by scanning every admin endpoint (`internal/auth/admin_blog_test.go`), and a
+  new admin route fails that test until it is scanned.
 
-Rules that apply:
-- `AGENTS.md` and `docs/runbooks/security-invariants.md`: default deny, backend selects the profile,
-  ownership on every query, admin blind. The public read surface is the one exception (Complexity Tracking in `plan.md`).
-- T014 needs a live Hermes. Record real shapes with keys redacted; do not guess them. Update
-  `contracts/check-envelope.md` to the recorded shape. Open risks R3 (run without a visible chat) and
-  R4 (does Hermes expose the URLs web search returned) decide whether sourced data can be marked verified.
-- Do not touch production without the owner's explicit approval.
+## Known differences and open edges
 
-## Page session: built, on branch `feat/blog-pages` (local, commits dae36775 and c48ca43c)
+- The frames and the code differ in a few listed places (the README section above); the biggest is that the editor screens were
+  not compared frame by frame.
+- Not drawn in the design or built: a sources list at the end of a public post, a cover-image control in Post settings (the API
+  accepts it), most of the smaller states listed under *Known gaps* in the README.
+- `cmd/antares-smoke` and `internal/smoke` carry production-only paths that unit tests do not reach; every production smoke run
+  exercises them.
+- CI occasionally creates fewer jobs than the workflow defines and reports the run as failed with every created job green
+  (seen once, on #303). Closing and reopening the PR starts a clean run without changing the commit.
 
-The pages exist as code in `web/src/blog/`, built from the approved frames against `contracts/http-api.md`. The
-backend does not exist yet, so none of it has run against a real server; it ran only against a mocked API in the
-browser (desktop dark, phone 375 px, no sideways scroll) and in vitest tests (see the PR for the count).
+## Process notes for the next feature
 
-| File | What it is |
-|------|------------|
-| `types.ts`, `blogApi.ts` | API shapes, strict parsers (https-only sources, unknown state is not a state), one request helper; `409` carries the latest post |
-| `autosave.ts` | compare-and-set autosave, local copy kept until the server confirms, conflict and offline states |
-| `Editor.tsx`, `PostSettings.tsx` | TipTap editor (lazy-loaded), toolbar, image upload, settings sheet with the address rules |
-| `PostList.tsx` | My posts: empty, loading, error, status chips, row actions, delete confirm |
-| `PublishFlow.tsx`, `Sources.tsx` | choose, check (polls `GET .../check`), preview with accept/reject, unverified sources need an acknowledgement, every failure worded as itself |
-| `DocView.tsx`, `ReaderBlock.tsx`, `Public.tsx` | document renderer (no HTML path, https/mailto links only), reader block (all actions ignored; plain-text fallback), public `/b` and `/b/<slug>` |
-| `BlogApp.tsx` | author routes `/blog`, `/blog/<id>`, `/blog/<id>/publish`; wired in `App.tsx`, `main.tsx` (public routes) and the rail button in `Chat.tsx` |
-
-Things the backend session must match (the page code assumes them; change the page if the real shape differs):
-- `GET /api/blog/posts/{id}` returns `{id,title,summary,slug,coverUrl,status,latestVersion,publishedVersion,doc,check,updatedAt}`;
-  a `409` on autosave returns `{error:{code}, latest:<post>}`.
-- A check is `{id,state,reason,notes,notices,blocks}`; `reason` is `error|disconnected|unusable` when failed; `notices` are the
-  server's one-sentence "block removed" lines; each block has `decision`, `needsAck`, `sources[{url,title,retrievedAt,verified}]`.
-- `GET /api/blog/capabilities` returns `{writing,check,webSearch}`; image upload `POST .../assets` takes the raw file body and returns `{assetId,url}`.
-- Public post returns `blocks[{anchor,markup,fallback,sources}]` where `anchor` is the index of the top-level node the block follows.
-
-Still open on the page side: no cover-image control in Post settings (`saveSettings` accepts `coverAssetId`, nothing sends it), and the publish preview lists the proposed blocks without showing the post itself (original vs enriched, design-pages.md);
-T037/T051/T064/T069 browser checks, T038 `internal/webui/dist` rebuild (Linux only), T043/T054/T058/T059/T066 tests for
-preview wording, sources drawer, malicious markup refusal, reader interaction and list states, T061 reader library with
-the actions removed (today every action is ignored), T062 polish, T070 Admin suspended note, T073 README gaps.
-
-## Known environment traps
-
-- No `go` on the Windows machine used so far; Docker Desktop was not running. Use Linux or WSL for Go.
-- `vite build` fails on Windows on `main` (case clash `Artifacts.ts` / `Artifacts.tsx`). Build `internal/webui/dist`
-  on Linux (T038 and the later rebuild tasks).
-
-## Design gaps carried forward
-
-Phone/Tablet/Landscape menus have no Blog entry; My posts and the Editor use a simplified rail; preview shows
-the first two blocks only; interactions are drawn as static states. See `docs/design/README.md`.
-
-- The public index (`listPublic`) asks for the first page only: the contract does not yet name a page parameter, so there is no "more" control until the backend defines one.
-
-## Backend: plain posts (feat/blog-backend)
-
-Done: migration `0026_blog.sql`, `internal/blog` (document allowlist that rebuilds what it keeps, slug rules, posts with
-compare-and-set autosave and pinned versions, images, duplicate, publish original, unpublish, delete, the public reads
-and the page metadata the server writes into `/b` and `/b/{slug}`), routes in `auth.BlogRoutes` / `auth.PublicBlogRoutes`,
-and the kept tests (ownership, public surface, suspend, access, route inventory).
-
-Behaviours worth knowing:
-- Title and body are versioned; the summary, address and cover are settings and take effect at once, also on the
-  published version (a settings save does not start a new version, so an open editor never hits a conflict from it).
-- A published version is never rewritten: the next autosave starts a new one; readers see the pinned one until republish.
-- `GET /api/blog/capabilities` reports `check` and `webSearch` false until the Hermes check exists; `publish` with
-  `mode: enriched` answers 501 CAPABILITY_UNAVAILABLE.
-- The public JSON reads and the HTML pages (`/b`, `/b/{slug}`) share one allowance of 600 a minute (not per caller); the page text copy in `/b/{slug}` is the title
-  and summary, not the whole body.
-
-Not done: everything that needs Hermes (T014, Phase 5 onward), T037 browser checks `blog-public` / `blog-editor`,
-T072-T075.
+- Changes start in the design file, then the code; a UI change lands with its design change (`AGENTS.md`).
+- Run the real-browser checks after any layout change: the fixed-layer width bug passed every unit test and the document's own
+  scroll-width check, and only the browser check on a phone viewport found it.
+- A task is ticked only when the file or test it names exists in the branch; reviewers check, and have caught it.
