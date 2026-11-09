@@ -1001,3 +1001,27 @@ func TestTheCheckModeSwitch(t *testing.T) {
 		t.Errorf("smoke: the synthetic account could not start: %d", w.Code)
 	}
 }
+
+func TestTheCheckModeIsParsedStrictly(t *testing.T) {
+	for raw, want := range map[string]string{"": "on", "on": "on", " ON ": "on", "smoke": "smoke", "Smoke\n": "smoke", "off": "off", "OFF": "off", " off ": "off"} {
+		if got, err := ParseCheckMode(raw); err != nil || got != want {
+			t.Errorf("%q: %q %v, want %q", raw, got, err, want)
+		}
+	}
+	for _, raw := range []string{"ofl", "of", "false", "0", "yes", "true", "disabled", "smoke,on", "on off"} {
+		if got, err := ParseCheckMode(raw); err == nil {
+			t.Errorf("%q was accepted as %q: a typo must not leave the check open", raw, got)
+		}
+		a := newApp(t)
+		if _, err := New(Options{DB: a.db, CheckMode: raw}); err == nil {
+			t.Errorf("New accepted the mode %q", raw)
+		}
+	}
+	// A service whose mode is somehow none of the three grants nothing.
+	a := newAppWithHermes(t, newFake())
+	a.svc.checkMode = "garbage"
+	u := a.active("alice")
+	if c := into[map[string]bool](t, u.do("GET", "/api/blog/capabilities", nil)); c["check"] {
+		t.Errorf("an unknown mode offered the check: %v", c)
+	}
+}

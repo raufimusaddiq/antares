@@ -115,8 +115,8 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 
 - [X] T039 [P] [US2] Envelope validation table test: valid envelope; bad JSON; unknown version; oversize; `afterNode` not in the checked version; script/raw HTML/unknown component/`@ToAssistant`/unregistered action in markup, all dropped with a notice, in `internal/blog/envelope_test.go`
 - [X] T040 [P] [US2] Check lifecycle test: running → ready; failed, timed out, cancelled, disconnected each shown as itself, nothing published, post returns to `draft`, in `internal/blog/check_test.go`
-- [X] T041 [P] [US2] Out-of-date test: editing the head version during `running`/`ready` marks the check `out_of_date` and publish-enriched is refused, in `internal/blog/check_outofdate_test.go`
-- [X] T042 [P] [US2] Two-user test: B cannot start, read, cancel or accept blocks on A's check; the check uses A's binding and never B's, in `internal/blog/check_ownership_test.go`
+- [X] T041 [P] [US2] Out-of-date test: editing the head version during `running`/`ready` marks the check `out_of_date` and publish-enriched is refused, in `internal/blog/check_test.go`
+- [X] T042 [P] [US2] Two-user test: B cannot start, read, cancel or accept blocks on A's check; the check uses A's binding and never B's, in `internal/blog/check_test.go`
 - [ ] T043 [P] [US2] Web test: Preview shows AI-added badge per block, Accept all / Reject one / Publish original, and each failure state wording, in `web/src/blog/PublishFlow.test.tsx`
 
 ### Implementation for User Story 2

@@ -37,7 +37,6 @@ start, or after a pause, so history stays small. Compare-and-set on `version` (R
 | hermes_session, hermes_run | the check's own Hermes session and run (no Antares chat); never shown to readers; the session is deleted when the check ends |
 | notes | JSON list of author-facing notes (text only) |
 | reason | when failed: `error`, `disconnected` or `unusable`; no provider text, no credential |
-| prompt_version, usage_* | the instruction's version ("blog-check v1") and the tokens the run reported (counted in the author's spending) |
 | started_at, finished_at | |
 
 ### post_blocks

@@ -120,7 +120,7 @@ func (s *Service) Close() {
 	s.rt.wg.Wait()
 }
 
-// Check modes (ANTARES_BLOG_CHECK): the AI check is on by default. "off" is the escape hatch (nobody can start a check); "smoke"
+// Check modes (ANTARES_BLOG_CHECK; ParseCheckMode is strict): the AI check is on by default. "off" is the escape hatch (nobody can start a check); "smoke"
 // lets only the synthetic test accounts use it, which proves a deployment end to end before users can.
 const (
 	CheckOff   = "off"
@@ -141,8 +141,24 @@ func (s *Service) checkAllowed(ctx context.Context, author string) bool {
 			return false
 		}
 		return issuer == store.SyntheticIssuer
+	case CheckOn, "":
+		return true
 	}
-	return true // "on", unset, or anything else: the default
+	return false // a mode that is not one of the three never widens exposure (New refuses it at startup)
+}
+
+// ParseCheckMode reads ANTARES_BLOG_CHECK strictly: surrounding space and case are forgiven, an empty value is the default (on),
+// and anything else that is not on, smoke or off is an error, so a typo in a switch flipped during an incident cannot leave the
+// check open to everyone.
+func ParseCheckMode(raw string) (string, error) {
+	switch m := strings.ToLower(strings.TrimSpace(raw)); m {
+	case "", CheckOn:
+		return CheckOn, nil
+	case CheckSmoke, CheckOff:
+		return m, nil
+	default:
+		return "", fmt.Errorf("blog: ANTARES_BLOG_CHECK must be on, smoke or off, not %q", raw)
+	}
 }
 
 // binding is the author's own credential, read from the database now: no cache, and no account that is not eligible.

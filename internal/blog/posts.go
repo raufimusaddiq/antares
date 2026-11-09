@@ -49,7 +49,7 @@ type Options struct {
 	Hermes Runner
 	Box    *secrets.Box
 	Spend  Spend // checks are refused while the author is over their daily hard limit; nil applies none
-	// CheckMode is "on" (the default when empty), "smoke" (synthetic test accounts only) or "off".
+	// CheckMode is "on" (the default when empty), "smoke" (synthetic test accounts only) or "off"; anything else is refused by New.
 	CheckMode string
 }
 
@@ -60,7 +60,11 @@ func New(o Options) (*Service, error) {
 	if o.Now == nil {
 		o.Now = time.Now
 	}
-	s := &Service{db: o.DB, now: o.Now, hx: o.Hermes, box: o.Box, spend: o.Spend, checkMode: o.CheckMode}
+	mode, err := ParseCheckMode(o.CheckMode)
+	if err != nil {
+		return nil, err
+	}
+	s := &Service{db: o.DB, now: o.Now, hx: o.Hermes, box: o.Box, spend: o.Spend, checkMode: mode}
 	s.initChecks()
 	return s, nil
 }

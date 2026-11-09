@@ -14,7 +14,7 @@ and proposed interactive blocks; the author accepts or rejects each one before p
 | `smoke` | only the synthetic smoke accounts (`google_issuer = https://synthetic-test.invalid/antares`) |
 | `off` | nobody; `GET /api/blog/capabilities` reports `check: false`, the UI hides it, `POST /check` answers 503 |
 
-Restart Antares after changing it. Writing and publishing never depend on it.
+Case and surrounding spaces are ignored. **Any other value stops Antares from starting** (it never silently leaves the check on). Restart Antares after changing it. Writing and publishing never depend on it.
 
 ## What a check costs and how it is limited
 
