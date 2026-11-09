@@ -48,7 +48,10 @@ func (s *scn) blog(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	if !strings.Contains(string(r.Body), `"writing":true`) {
+	var caps struct {
+		Writing bool `json:"writing"`
+	}
+	if r.JSON(&caps) != nil || !caps.Writing {
 		return "", fmt.Errorf("capabilities do not offer writing: %s", r.Brief())
 	}
 	r, err = step(200, a, "POST", "/api/blog/posts", map[string]any{})
