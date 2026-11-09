@@ -31,10 +31,12 @@ class Boundary extends Component<{ fallback: string; children: ReactNode }, { fa
   }
 }
 
+/** check()'s `partial` argument: the whole program is here, not a stream of it. */
+const PARTIAL = false;
+
 export default function ReaderBlock({ markup, fallback }: { markup: string; fallback: string }) {
   const program = useMemo(() => repair(markup, readerLibrary).program, [markup]);
-  const partial = false; // the whole program is here, not a stream
-  const verdict = useMemo(() => check(program, partial, readerLibrary), [program]);
+  const verdict = useMemo(() => check(program, PARTIAL, readerLibrary), [program]);
   if (!verdict.ok) return <Plain text={fallback} />;
   return (
     <Boundary fallback={fallback}>

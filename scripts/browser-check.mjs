@@ -549,6 +549,17 @@ async function blogPages(browser, which) {
       // The editor's own layout: the toolbar must clear the writing area (also while it has the focus ring), and an empty body must
       // show the design's placeholder.
       let editorProblems = [];
+      // The list: no row's title may run under its own actions (a button does not wrap text unless told to).
+      if (which === "blog-editor" && name === "list" && shown) {
+        const clash = await page.evaluate(() => [...document.querySelectorAll(".blog-row")].flatMap((row) => {
+          const a = row.querySelector(".blog-row-title")?.getBoundingClientRect();
+          return [...row.querySelectorAll(".blog-row-actions > *")].flatMap((el) => {
+            const b = el.getBoundingClientRect();
+            return a && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom ? [el.textContent] : [];
+          });
+        }));
+        if (clash.length) editorProblems.push(`a post title runs under its actions: ${JSON.stringify(clash)}`);
+      }
       if (which === "blog-editor" && name.endsWith("editor") && shown) {
         await page.focus("[contenteditable=true]");
         const g = await page.evaluate(() => {
