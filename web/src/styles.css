@@ -1345,7 +1345,39 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 /* Publish is a dialog over the editor (the Publish / choose frame); its later steps cover the screen. */
 .blog-behind { min-height: 100dvh; }
 .blog-takeover h1:focus { outline: none; }
-.blog-takeover { position: fixed; inset: 0; z-index: 20; overflow: auto; background: var(--canvas); }
+.blog-takeover-bar { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; gap: 0.5rem; padding: 0.6rem 1rem; background: var(--rail); border-bottom: var(--line) solid var(--ink); }
+/* Review before publishing: the original, the enriched preview and the assistant's notes (the Publish / preview frames). */
+.blog-review { max-width: 76rem; }
+.blog-review-head { display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between; gap: 0.75rem 1.5rem; }
+.blog-review-head h1 { margin: 0.25rem 0 0.25rem; font-size: clamp(1.6rem, 4vw, 2.4rem); }
+.blog-review-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; padding-top: 0.5rem; }
+.blog-review-hint { margin: 0.25rem 0 0; }
+.blog-review .label { white-space: normal; overflow-wrap: anywhere; } /* a label does not wrap by default; a sentence in one made the phone's layout 832px wide */
+.blog-review-cols { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr) minmax(0, 0.8fr); gap: 1.5rem; align-items: start; margin-top: 1rem; }
+.blog-original { padding: 1rem; background: var(--rail); border: 2px solid var(--ink); border-radius: var(--r-md); max-height: 80dvh; overflow: auto; color: var(--ink-2); }
+.blog-original h2 { font-size: 1.4rem; margin: 0.25rem 0 0.5rem; color: var(--ink); }
+.blog-original .blog-doc { font-size: 1rem; }
+.blog-enriched .blog-block { margin: 0.75rem 0; }
+.blog-enriched .blog-block.selected { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+.blog-block-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
+.blog-block-decide { display: flex; gap: 0.4rem; }
+.blog-gate { display: grid; gap: 0.4rem; margin-top: 0.75rem; }
+.blog-gate p { margin: 0; }
+.blog-review-side { display: grid; gap: 1rem; align-content: start; }
+.blog-notes, .blog-drawer { padding: 1rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
+.blog-notes h3, .blog-drawer h3 { margin: 0 0 0.5rem; font-size: 1.1rem; }
+.blog-note { margin: 0.5rem 0; padding: 0.5rem 0.75rem; background: var(--rail); border-radius: var(--r-sm); }
+.blog-note p { margin: 0; }
+.blog-note-warn { background: var(--blush); color: var(--ink); }
+.blog-drawer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
+.blog-drawer li { display: grid; gap: 0.15rem; justify-items: start; overflow-wrap: anywhere; }
+@media (max-width: 62rem) {
+  .blog-review-cols { grid-template-columns: minmax(0, 1fr); }
+  .blog-original { display: none; } /* the phone frames show the preview and the notes only */
+}
+/* A full-screen step of Publish is the page, in the document: the editor it came from is hidden while it shows (the dialog step keeps it in view). */
+.blog-takeover { min-height: 100dvh; background: var(--canvas); }
+.blog-behind:has(~ .blog-takeover) { display: none; }
 .blog-scrim { position: fixed; inset: 0; z-index: 30; display: grid; place-items: center; padding: 1rem; overflow: auto; background: color-mix(in srgb, var(--ink) 55%, transparent); }
 .blog-dialog { display: grid; gap: 0.875rem; width: min(35rem, 100%); max-height: calc(100dvh - 2rem); overflow: auto; box-sizing: border-box; padding: 1.5rem; color: var(--ink); background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-lg); box-shadow: var(--hard); }
 .blog-dialog h2 { margin: 0; font-size: 1.6rem; }

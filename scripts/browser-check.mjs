@@ -42,6 +42,15 @@ const RICH = "b".repeat(32);
 const BLOG_ID = "e".repeat(32);
 const BLOG_EMPTY_ID = "f".repeat(32);
 const BLOG_LONG_ID = "9".repeat(32); // a post too long for a check to read
+const BLOG_REVIEW_ID = "8".repeat(32); // a post whose check is ready: Review before publishing
+const BLOG_CHECKING_ID = "7".repeat(32); // a post whose check is running
+const RUNNING_CHECK = { id: "d".repeat(32), state: "running", reason: "", notes: [], notices: [], blocks: [] };
+const reviewSource = (host) => ({ url: `https://${host}/data`, title: `About ${host} with a title long enough to wrap on a phone`, retrievedAt: "2026-11-08T10:00:00Z", verified: false });
+const REVIEW_CHECK = {
+  id: "c".repeat(32), state: "ready", reason: "", notices: [],
+  notes: [{ kind: "clarity", text: "The second paragraph buries the question; consider leading with it.", afterNode: 0 }, { kind: "unsourced", text: "A claim with no public source. No figure was added.", afterNode: 1 }],
+  blocks: ["one", "two"].map((n, i) => ({ id: String(i + 1).repeat(32), kind: "summary", afterNode: i, markup: 'root = Card([t])\nt = TextContent("Block ' + n + ' as drawn")', fallback: "plain", decision: "proposed", needsAck: true, sources: [reviewSource(`${n}.example.org`)] })),
+};
 const BLOG_LIMITS = { checkBytes: 122880, docBytes: 524288, imagesPerPost: 30, imageBytes: 5242880, imageBytesTotal: 209715200, blocksPerCheck: 10, sourcesPerBlock: 10, checksPer24h: 30 };
 const text = (t, marks) => ({ type: "text", text: t, ...(marks ? { marks } : {}) });
 const BLOG_DOC = {
@@ -108,6 +117,11 @@ function api(req, res, url) {
   if (url.pathname === `/api/blog/posts/${BLOG_EMPTY_ID}` && req.method === "GET") return send(200, { ...blogPost(), id: BLOG_EMPTY_ID, title: "", doc: { type: "doc", content: [{ type: "paragraph" }] } });
   if (url.pathname === `/api/blog/posts/${BLOG_LONG_ID}` && req.method === "GET")
     return send(200, { ...blogPost(), id: BLOG_LONG_ID, title: "Too long to check", doc: { type: "doc", content: Array.from({ length: 130 }, () => ({ type: "paragraph", content: [{ type: "text", text: "word ".repeat(200) }] })) } });
+  if (url.pathname === `/api/blog/posts/${BLOG_REVIEW_ID}` && req.method === "GET")
+    return send(200, { ...blogPost(), id: BLOG_REVIEW_ID, title: "Self-hosting an assistant", status: "ready", check: REVIEW_CHECK });
+  if (url.pathname === `/api/blog/posts/${BLOG_CHECKING_ID}` && req.method === "GET")
+    return send(200, { ...blogPost(), id: BLOG_CHECKING_ID, title: "Being checked", status: "checking", check: RUNNING_CHECK });
+  if (url.pathname === `/api/blog/posts/${BLOG_CHECKING_ID}/check` && req.method === "GET") return send(200, RUNNING_CHECK);
   if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "PUT") return send(200, { ...blogPost(), latestVersion: 4 });
   if (url.pathname === "/api/public/blog/posts") return send(200, [{ slug: "first-post", title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary with " + "words ".repeat(30), coverUrl: "", authorName: "A Writer With A Rather Long Display Name", publishedAt: "2026-11-08T01:00:00Z" }]);
   if (url.pathname === "/api/public/blog/posts/first-post") return send(200, { title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", coverUrl: "", doc: BLOG_DOC, blocks: BLOG_BLOCKS, authorName: "A Writer", publishedAt: "2026-11-08T01:00:00Z" });
@@ -542,7 +556,7 @@ async function startingCard(browser) {
 async function blogPages(browser, which, onlyViews) {
   const views = which === "blog-public"
     ? [["index", "/b", "h1, h2"], ["post", "/b/first-post", "article h1, main h1"]]
-    : [["list", "/blog", ".blog-rows, .blog-empty"], ["editor", `/blog/${BLOG_ID}`, "[contenteditable=true]"], ["empty editor", `/blog/${BLOG_EMPTY_ID}`, "[contenteditable=true]"], ["publish", `/blog/${BLOG_ID}/publish`, ".blog-limits"], ["publish too long", `/blog/${BLOG_LONG_ID}/publish`, ".blog-limits"]].filter(([name]) => !onlyViews || onlyViews.includes(name));
+    : [["list", "/blog", ".blog-rows, .blog-empty"], ["editor", `/blog/${BLOG_ID}`, "[contenteditable=true]"], ["empty editor", `/blog/${BLOG_EMPTY_ID}`, "[contenteditable=true]"], ["publish", `/blog/${BLOG_ID}/publish`, ".blog-limits"], ["publish too long", `/blog/${BLOG_LONG_ID}/publish`, ".blog-limits"], ["review", `/blog/${BLOG_REVIEW_ID}/publish`, ".blog-review-cols"], ["checking", `/blog/${BLOG_CHECKING_ID}/publish`, ".blog-takeover h1"]].filter(([name]) => !onlyViews || onlyViews.includes(name));
   for (const [label, w, h, scheme] of [["phone", 390, 844, "light"], ["phone", 390, 844, "dark"], ["narrow", 320, 640, "light"], ["desktop", 1280, 800, "dark"]]) {
     for (const [name, route, want] of views) {
       state.blogCheck = name.startsWith("publish"); // the Publish screens are shown with checking available
@@ -619,6 +633,64 @@ async function blogPages(browser, which, onlyViews) {
         if (!/up to 10 blocks/.test(f.text) || !/Images: \d+ of 30/.test(f.text)) editorProblems.push(`the limits are not all stated: ${JSON.stringify(f.text)}`);
         if (name === "publish" && (f.alert !== "" || f.check !== false)) editorProblems.push(`a post of ordinary length is refused a check: ${JSON.stringify(f)}`);
         if (name === "publish too long" && (!/longer than the assistant can read/.test(f.alert) || f.check !== true || f.original !== false)) editorProblems.push(`a post too long to check is not told so, or can start one: ${JSON.stringify(f)}`);
+      }
+      // The check is running: the step says so, can be cancelled, and has its way back to editing.
+      if (which === "blog-editor" && name === "checking" && shown) {
+        const c = await page.evaluate(() => ({
+          h1: document.querySelector(".blog-takeover h1")?.textContent,
+          cancel: !![...document.querySelectorAll(".blog-takeover button")].find((b) => b.textContent === "Cancel"),
+          back: !![...document.querySelectorAll(".blog-takeover-bar button")].find((b) => /Back to editing/.test(b.textContent ?? "")),
+          editorHidden: getComputedStyle(document.querySelector(".blog-behind")).display === "none",
+          focused: document.activeElement?.tagName === "H1",
+          innerWidth,
+        }));
+        if (c.h1 !== "Checking your writing" || !c.cancel || !c.back || !c.editorHidden || !c.focused || c.innerWidth !== w) editorProblems.push(`the checking step is not as it should be: ${JSON.stringify(c)}`);
+      }
+      // Review before publishing: the design's parts in the design's order, inside the viewport, and the way through is gated on the ticks.
+      if (which === "blog-editor" && name === "review" && shown) {
+        const r = await page.evaluate(() => {
+          const box = (sel) => document.querySelector(sel)?.getBoundingClientRect();
+          const o = box(".blog-original"), e = box(".blog-enriched"), n = box(".blog-notes"), d = box(".blog-drawer");
+          const visible = (b) => !!b && b.width > 0 && b.height > 0;
+          const all = [...document.querySelectorAll("button")].find((b) => /Accept all and publish/.test(b.textContent ?? ""));
+          return {
+            heading: document.querySelector(".blog-review h1")?.textContent,
+            originalShown: visible(o), enriched: visible(e), notes: visible(n), drawer: visible(d),
+            sideBySide: visible(o) && visible(e) && visible(n) && o.right <= e.left + 1 && e.right <= n.left + 1,
+            stacked: visible(e) && visible(n) && e.bottom <= n.top + 1,
+            blocks: document.querySelectorAll(".blog-enriched .blog-block").length,
+            allDisabled: all?.disabled, drawerSources: document.querySelectorAll(".blog-drawer li").length,
+          };
+        });
+        // The screen is a fixed layer that scrolls on its own, so the document's width cannot see it overflow: look at the elements.
+        const innerW = await page.evaluate(() => innerWidth);
+        if (innerW !== w) editorProblems.push(`the layout viewport is ${innerW}px on a ${w}px screen: something in the page cannot get narrower`);
+        const past = await page.evaluate(() => [...document.querySelectorAll(".blog-review *")].filter((e) => { const r = e.getBoundingClientRect(); return !e.closest("pre") && r.width > 0 && (r.right > innerWidth + 1 || r.left < -1); }).slice(0, 5).map((e) => `${e.tagName}.${e.className} ${Math.round(e.getBoundingClientRect().left)}..${Math.round(e.getBoundingClientRect().right)} of ${innerWidth}`));
+        if (past.length) editorProblems.push(`the review screen runs past the edge of the screen: ${JSON.stringify(past)}`);
+        const wide = w >= 1000;
+        if (r.heading !== "Review before publishing" || r.blocks !== 2 || !r.enriched || !r.notes || !r.drawer) editorProblems.push(`the review screen is missing parts: ${JSON.stringify(r)}`);
+        if (wide && !r.sideBySide) editorProblems.push(`on a wide screen the original, the preview and the notes are not side by side: ${JSON.stringify(r)}`);
+        if (!wide && (r.originalShown || !r.stacked)) editorProblems.push(`on a narrow screen the preview and the notes are not stacked (the original is left out): ${JSON.stringify(r)}`);
+        if (r.allDisabled !== true || r.drawerSources !== 1) editorProblems.push(`Accept all must wait for the ticks, and the drawer lists the selected block's sources: ${JSON.stringify(r)}`);
+        for (const b of await page.locator(".blog-enriched input[type=checkbox]").all()) {
+          try {
+            await b.check({ timeout: 3000 });
+          } catch (e) {
+            // Something sits over the tick box: say what, and where, instead of stopping the whole check.
+            await page.screenshot({ path: path.join(outDir, `review-stuck-${label}-${scheme}.png`) });
+            const over = await b.evaluate((el) => {
+              const r = el.getBoundingClientRect();
+              const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+              const tk = document.querySelector(".blog-takeover");
+              const past = [...document.querySelectorAll(".blog-takeover *")].filter((x) => x.getBoundingClientRect().width > innerWidth + 1).slice(0, 4).map((x) => `${x.tagName}.${x.className} ${Math.round(x.getBoundingClientRect().left)}..${Math.round(x.getBoundingClientRect().right)}`);
+              return { box: [Math.round(r.left), Math.round(r.top), Math.round(r.width), Math.round(r.height)], over: top ? `${top.tagName}.${top.className}` : null, takeover: tk ? [tk.scrollLeft, tk.scrollWidth, tk.clientWidth] : null, innerWidth, past };
+            });
+            editorProblems.push(`a tick box cannot be pressed (covered): ${JSON.stringify(over)} ${String(e.message).replace(/\s+/g, " ").slice(0, 400)}`);
+            break;
+          }
+        }
+        const after = await page.evaluate(() => [...document.querySelectorAll("button")].find((b) => /Accept all and publish/.test(b.textContent ?? ""))?.disabled);
+        if (after !== false) editorProblems.push("Accept all and publish stays disabled after every block is ticked");
       }
       if (which === "blog-editor" && name.endsWith("editor") && shown) {
         await page.focus("[contenteditable=true]");
