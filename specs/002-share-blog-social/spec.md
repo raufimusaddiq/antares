@@ -29,7 +29,7 @@ A reader (or the author) finishes a published post and wants to pass it on. A Sh
 
 ### User Story 2 - Share as a 9:16 story card (Priority: P1)
 
-A reader or author wants to post the article to an Instagram or WhatsApp story. From Share they choose "Story image". Antares produces a vertical 9:16 picture built from the post: its title, its summary, the author's display name, the cover image when there is one, and the site name with a short readable address. On a phone the picture is handed to the native sharing sheet so the person can pick Instagram Stories or WhatsApp Status; where that is not possible the picture is saved to the device and the link is copied, with a one-line instruction on what to do next.
+A reader or author wants to post the article to an Instagram or WhatsApp story. From Share they choose "Story image". Antares produces a vertical 9:16 picture that condenses the post to its highlights: its title, a short summary, up to four section highlights, the author's display name, the cover image when there is one, and the site name with a short readable address. On a phone the picture is handed to the native sharing sheet so the person can pick Instagram Stories or WhatsApp Status; where that is not possible the picture is saved to the device and the link is copied, with a one-line instruction on what to do next.
 
 **Why this priority**: This is the distinctive part of the request.
 
@@ -37,7 +37,7 @@ A reader or author wants to post the article to an Instagram or WhatsApp story. 
 
 **Acceptance Scenarios**:
 
-1. **Given** a published post with a summary and a cover, **When** the reader chooses Story image, **Then** they see a preview of a 9:16 picture containing the title, the summary, the author's name, the cover and the site's name and address, all legible at phone size.
+1. **Given** a published post with a summary, section headings and a cover, **When** the reader chooses Story image, **Then** they see a preview of a picture of exactly 9:16 containing the title, the summary, the headings as highlights, the author's name, the cover and the site's name and address, all legible at phone size.
 2. **Given** a post with no cover or no summary, **When** the picture is made, **Then** a clean layout is still produced (the post's opening text is used if there is no summary) and nothing looks broken or empty.
 3. **Given** a very long title or summary, **When** the picture is made, **Then** the text is shortened at a word boundary with an ellipsis, never cut mid-word, never overflowing the card.
 4. **Given** a phone whose sharing sheet accepts pictures, **When** the reader confirms, **Then** the picture goes to the chosen app as an image, together with the link where the app accepts one.
@@ -79,7 +79,9 @@ In the editor the author can see a preview of the story card and the link previe
 - **FR-002**: Share MUST use the device's native sharing sheet when the device offers one, and otherwise MUST offer copy link plus at least WhatsApp, X, Facebook, LinkedIn, Telegram and email.
 - **FR-003**: Every shared link MUST be the post's canonical address and MUST NOT carry any identifier of the sharer or the reader.
 - **FR-004**: Copy link MUST confirm success to sight and to assistive technology, and MUST work without the sharing sheet.
-- **FR-005**: Antares MUST produce a 9:16 vertical picture for a published post from public data only: title, summary (or the post's opening text when there is none), author's display name, cover image when present, and the site name and short address.
+- **FR-005**: Antares MUST produce a picture of exactly 9:16 (1080 × 1920 pixels) for every published post, whatever its length, from public data only: title, a short summary of the post, up to four highlights, author's display name, cover image when present, and the site name and short address. The picture is never taller, shorter, scrolled or cropped by the app; a long post is condensed, never continued.
+- **FR-021**: The summary MUST be the author's own summary when the post has one, otherwise the post's opening text cut at a sentence or word boundary. The highlights MUST be the post's own section headings in reading order (up to four, each shortened to fit one or two lines); a post with no headings shows the summary alone, in larger type. Nothing on the picture MUST be invented: every word comes from the post.
+- **FR-022**: When everything cannot fit at the smallest readable size, the picture MUST drop the lowest-priority parts in this order: highlights from the last upwards, then the cover, then the end of the summary (ending with an ellipsis); the title, author, site name and address MUST always remain.
 - **FR-020**: The picture MUST look like Antares and like the picture already made when a chat answer is shared as an image: the same warm paper background with its dot texture, the Antares mark and name at the top, hard-edged cards with thick ink outlines and offset shadows, monospaced capital labels, the pink highlighter bar under the headline, and the same type. It MUST always be drawn in the light paper look whatever the reader's theme, and MUST end with "Shared from Antares".
 - **FR-006**: The picture MUST be legible on a phone screen: text meets accessible contrast against its background, and the longest allowed title and summary fit without overflow.
 - **FR-007**: Long text MUST be shortened at a word boundary with an ellipsis; text MUST appear as plain text only.
@@ -107,7 +109,7 @@ In the editor the author can see a preview of the story card and the link previe
 
 - **SC-001**: A reader can open Share on a phone and be in the target app's compose screen in two taps from the post.
 - **SC-002**: From a published post, a reader gets the story picture previewed in under 3 seconds on a typical mobile connection for 95% of attempts.
-- **SC-003**: In a review of 20 varied posts (long and short titles, no cover, no summary, RTL and emoji), 100% produce a picture with no clipped, overlapping or empty text.
+- **SC-003**: In a review of 20 varied posts (long and short titles, no cover, no summary, no headings, twelve headings, a 20,000-word post, RTL and emoji), 100% produce a picture of exactly 1080 × 1920 with no clipped, overlapping or empty text.
 - **SC-004**: 0 pictures are produced for a post a reader may not see, and 0 pictures or links contain any account, email, chat or run identifier.
 - **SC-005**: 100% of shared links are the plain canonical address.
 - **SC-006**: A sustained burst of requests for the picture for one post does not slow other public pages by more than 10% in a controlled test.
@@ -117,7 +119,7 @@ In the editor the author can see a preview of the story card and the link previe
 ## Assumptions
 
 - Instagram and WhatsApp offer no way for a web page to post a story directly or to attach a link sticker; the best a website can do is hand the picture to the device's sharing sheet, where the person picks the story option. Where the sheet cannot take images (many desktop browsers), the picture is saved instead. This limit is stated to the person, not hidden.
-- "Summarize" means the post's own summary, which the author already controls, or the opening text when there is none; the picture is not written by an AI. Using the assistant to write a shorter story-specific blurb is out of scope and can be a later feature.
+- "Summarize" means condensing without inventing: the post's own summary (which the author controls) plus its own section headings as highlights (FR-021); the picture is not written by an AI. A story-specific blurb written by the assistant, or authors choosing their own highlights, are out of scope and can be a later feature.
 - Anyone who can read a post may share it and produce its card; sharing is not limited to the author.
 - The card has one fixed design: the Antares paper look already used for shared chat pictures (FR-020), always on the light paper, with no template picker in this version. Sharing a post reuses the chat's share-image dialog behaviour (preview, native sheet, save).
 - The existing link previews (title, summary, cover) from the blog spec remain the way a shared link is displayed by other apps; this feature adds the Share control, the story picture and the author's preview.

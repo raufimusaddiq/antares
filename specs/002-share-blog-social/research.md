@@ -49,6 +49,18 @@
   copied.
 - **Alternatives**: a second, separately styled card (drift, duplicated code; rejected); a template picker (out of scope).
 
+## R4b. Summary and highlights without AI
+
+- **Decision**: summary = the author's summary, else the opening text cut at a sentence or word boundary; highlights = the
+  post's section headings (up to 4, in order), read from the published document the page already has. Priority when space
+  runs out: drop highlights from the last, then the cover, then shorten the summary; the title, author and address
+  stay. The canvas height is fixed at 1920 so the picture is 9:16 by construction.
+- **Rationale**: a faithful condensation with nothing invented (FR-021), no cost, no Hermes run, no latency. The chat
+  picture's summary is AI-written and labelled as such; for a post the author has already written a summary, so
+  reusing it is both cheaper and more faithful.
+- **Alternatives**: an AI blurb for the story (cost, invention risk, needs a run per share by a reader; deferred); the
+  full post text (unreadable on a story).
+
 ## R5. Server changes
 
 - **Decision**: none required. The share link is the post's canonical address, which the post page already knows (it is

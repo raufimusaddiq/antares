@@ -26,9 +26,9 @@ There is **no new HTTP route**. This contract is the behaviour the design frames
 
 ## Picture
 
-- PNG, 1080 × 1920, drawn in the Antares paper look of the chat's share picture (spec FR-020), always light.
+- PNG, exactly 1080 × 1920 for every post (fixed canvas), drawn in the Antares paper look of the chat's share picture (spec FR-020), always light.
 - Contains: brand row (mark, "Antares", date), "POST" sticker, title (≤ 4 lines), card labelled "SUMMARY" with the
-  summary (largest type that fits) and the cover, author name, short address, footer "Shared from Antares".
+  summary (largest type that fits), up to four highlights (the post's headings) and the cover, author name, short address, footer "Shared from Antares".
 - Text is clamped at a word boundary with an ellipsis; plain text only.
 
 ## Author preview (editor)
@@ -40,4 +40,5 @@ There is **no new HTTP route**. This contract is the behaviour the design frames
 
 - The shared URL equals the canonical address for the native sheet and every destination (no query, no fragment).
 - No Share control, card or link is rendered for a draft or a non-published post.
-- The produced picture is 1080 × 1920 and not blank for: long title, no summary, no cover, right-to-left title, emoji.
+- The produced picture is exactly 1080 × 1920 and not blank for: long title, no summary, no headings, twelve headings, a
+  20,000-word post, no cover, right-to-left title, emoji; and every word on it occurs in the post.

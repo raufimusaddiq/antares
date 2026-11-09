@@ -99,9 +99,12 @@ a canvas-like context) so it is unit-testable without a browser.
 1. **Kit and card**: lift the drawing primitives out of `shareImage.ts` into `cardKit.ts` with no change to the chat
    picture (its existing `ShareImage.test.tsx` and a pixel comparison of a fixed sample before and after prove it), then
    `postCard.ts` composing them: brand row (mark, "Antares", date pill), a tilted "POST" sticker, the title as the
-   headline with the pink bar, a card with the dotted periwinkle strip labelled "SUMMARY" holding the summary (largest
-   type that fits) and the cover in a thick-outlined frame, the author's name, and the footer. Tests: fit, truncate at
-   a word boundary, RTL, emoji, no cover, no summary.
+   headline with the pink bar, a card with the dotted periwinkle strip labelled "SUMMARY" holding the summary and, after cobalt
+   diamonds, up to four highlights (the post's headings), the cover in a thick-outlined frame, the author's name, and the
+   footer. The canvas is a fixed 1080 × 1920 (the chat picture's `STORY_H`), never sized from content; the card steps the
+   type down (as `summaryUnits` does), then drops parts in the order FR-022. Tests: the output is always 1080 × 1920 for
+   no summary, no headings, twelve headings, a very long post, no cover, RTL and emoji; every word drawn is found in
+   the post; truncation at a word boundary.
 2. **Share**: `ShareMenu`, `shareLinks`, canonical-link test, Share on the post page.
 3. **Story flow**: `StoryDialog` (the chat dialog's flow, generalised so both use it; card is produced when the dialog opens so the Send tap is a direct user action, which
    iOS Safari requires), fallbacks, announcements, focus.
