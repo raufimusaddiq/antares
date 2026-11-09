@@ -56,4 +56,16 @@ describe("editor", () => {
     expect((screen.getByLabelText("Title") as HTMLInputElement).value).toBe("Server title");
     expect(screen.getByRole("status").textContent).toBe("Saved");
   });
+
+  it("marks an empty post as empty on the first paint, so its placeholder is not a frame late", () => {
+    const { container } = render(<Editor {...props} />);
+    expect(container.querySelector('.blog-body[data-empty="true"]')).not.toBeNull();
+  });
+
+  it("does not mark a post with text as empty", () => {
+    const withText = { ...post, doc: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: "Words" }] }] } };
+    const { container } = render(<Editor {...props} post={withText} />);
+    expect(container.querySelector(".blog-body")).not.toBeNull();
+    expect(container.querySelector('.blog-body[data-empty="true"]')).toBeNull();
+  });
 });

@@ -27,12 +27,19 @@ export interface EditorProps {
   onBack: () => void;
 }
 
+/** True for a document with nothing in it: no nodes, or only paragraphs with no content. */
+function docIsEmpty(doc: DocNode | undefined): boolean {
+  const nodes = doc?.content ?? [];
+  return nodes.every((n) => n.type === "paragraph" && (n.content ?? []).length === 0);
+}
+
 export default function Editor({ post, email, onPost, onSettings, onPublish, onBack }: EditorProps) {
   const [save, setSave] = useState<SaveState>("saved");
   const [latest, setLatest] = useState<Post | null>(null);
   const [title, setTitle] = useState(() => loadLocalCopy(email, post.id)?.title ?? post.title);
   const [note, setNote] = useState("");
-  const [empty, setEmpty] = useState(false);
+  // Seeded from the text the editor opens with (the saved one or a kept local copy), so an empty post shows its placeholder on the first paint.
+  const [empty, setEmpty] = useState(() => docIsEmpty(loadLocalCopy(email, post.id)?.doc ?? post.doc));
   const saver = useRef<Autosaver | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
 

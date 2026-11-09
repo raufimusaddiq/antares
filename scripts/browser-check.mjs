@@ -540,7 +540,7 @@ async function blogPages(browser, which) {
       await page.waitForTimeout(300);
       const m = await page.evaluate(() => ({ overflowX: document.documentElement.scrollWidth - innerWidth, bodyOverflow: document.body.scrollWidth - innerWidth }));
       // The editor's own layout: the toolbar must clear the writing area (also while it has the focus ring), and an empty body must
-      // say where to type.
+      // show the design's placeholder.
       let editorProblems = [];
       if (which === "blog-editor" && name.endsWith("editor") && shown) {
         await page.focus("[contenteditable=true]");
@@ -551,9 +551,9 @@ async function blogPages(browser, which) {
           const ph = body ? getComputedStyle(body, "::before").content : "";
           return { gap: t && p ? p.top - t.bottom : -999, empty: body?.getAttribute("data-empty") === "true", placeholder: ph };
         });
-        // 5px shadow + 3px focus ring + 2px offset must fit in the gap, with air to spare.
-        if (g.gap < 14) editorProblems.push(`the toolbar is ${g.gap}px above the writing area (its shadow and the focus ring need 10)`);
-        if (name === "empty editor" && (!g.empty || !/Start writing/.test(g.placeholder))) editorProblems.push(`an empty body shows no placeholder (${JSON.stringify(g)})`);
+        // The design puts the toolbar 18px above the body (frame "Editor (empty)"); the 3px shadow, the 3px focus ring and its 2px offset need 8.
+        if (g.gap < 18) editorProblems.push(`the toolbar is ${g.gap}px above the writing area (the design has 18; its shadow and the focus ring need 8)`);
+        if (name === "empty editor" && (!g.empty || !/Tell your story/.test(g.placeholder))) editorProblems.push(`an empty body shows no placeholder (${JSON.stringify(g)})`);
         if (name === "editor" && g.empty) editorProblems.push("a body with text is marked empty");
       }
       await page.screenshot({ path: path.join(outDir, `${which}-${name}-${label}-${scheme}.png`), fullPage: true });
