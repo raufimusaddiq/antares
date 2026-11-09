@@ -1710,3 +1710,35 @@ All tests below require two approved isolated Google identities (`A` and `B`) an
 Tracking is the issue tracker; no separate parity table (owner decision 2026-10-28). Unsupported upstream does not count as a delivered feature. P0 auth, approval, isolation and least-privilege gates cannot be waived.
 
 Minimum Hermes probe before feature planning: check deployed `GET /v1/capabilities`, `GET /api/model/options`, session/message APIs incl. compacted history, model override/effort/tier fields on real runs, run steering/approvals, multimodal upload input format, returned artifact layout, memory/notes/skills read/write exposure, provider quota reporting and voice STT. Store harmless fixture shapes (redacting secrets, `scripts/hermes_contract.py`) rather than relying on README or another Hermes deployment.
+
+
+---
+
+## 30. Blog (added 2026-11-09; spec and plan in `specs/001-blog-cms-openui-publish/`)
+
+Every approved account with a ready workspace can write posts in a rich-text editor, publish them, and (once the
+Hermes check exists) have its own assistant check and enrich a draft before publishing. Readers need no account.
+
+**Surfaces.** Authenticated, owner-scoped (`/api/blog/*`, the web area `/blog`): list, create, edit with
+compare-and-set autosave, settings (address, summary, cover), images, duplicate, publish, unpublish, delete.
+Public, no session, read only: `/b`, `/b/{slug}`, `GET /api/public/blog/posts[/{slug}[/assets/{assetId}]]`.
+These are the second exception to "default deny" after the shared-chat link (§5, constitution Principle I): they serve
+only a post that is published, whose author is approved, in one query; they never reach Hermes; they carry the
+author's display name and nothing that identifies the account, profile, chat or run; reads are limited (600 a minute
+for pages and JSON together, 1200 for images); a post the reader may not see is the same 404 as one that does not
+exist. `/b/{slug}` is the app shell with the post's escaped title, description and Open Graph tags written in and is
+indexable.
+
+**Data.** Posts, versions (a published version keeps its title and body; the next save starts a new one) and images
+(PNG, JPEG, WebP, GIF by content, 5 MiB each, 30 per post, 200 MiB per author). The document is the editor's JSON,
+validated against an allowlist and rebuilt from what passed; no raw HTML is stored or rendered.
+
+**AI check (not built yet).** One Hermes run per check through the author's own binding, in a session of its own with
+no chat row. The recorded events carry the search query but not what a search returned, so no source can be marked
+verified: every source is shown as unverified and every block with data needs the author's explicit acknowledgement.
+Until the check exists, `GET /api/blog/capabilities` reports `check` and `webSearch` as false and publishing offers the
+original only.
+
+**Acceptance.** Two-user ownership (a foreign id is the missing id, body included), the public surface leaks no
+identity, suspending or rejecting an author hides their posts and reinstating restores them, the route inventory fails
+on any unlisted unauthenticated route, and the production smoke's `blog.lifecycle` step (`smoke-test.md`).
