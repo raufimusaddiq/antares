@@ -158,6 +158,12 @@ jobs:
         run: ONLY=desktop-layout node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
       - name: Starting card
         run: ONLY=starting-card node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
+      # The blog (specs/001-blog-cms-openui-publish): reading signed out, and the author's list and editor, on a phone and a wide
+      # screen, light and dark: no sideways scroll, no console error, CSP violation or off-origin request.
+      - name: Blog pages (public reading)
+        run: ONLY=blog-public node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
+      - name: Blog pages (list and editor)
+        run: ONLY=blog-editor node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
       - name: Image attach, retry, remove, send and a touch tap on a capability reason
         run: ONLY=images node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
 
