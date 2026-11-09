@@ -16,7 +16,7 @@ func TestEveryAuthenticatedRouteRefusesTheIneligible(t *testing.T) {
 		"ready, no binding": a.user("nobind", "APPROVED", "READY", false),
 	}
 	paths := []struct{ method, path string }{
-		{"GET", "/api/blog/capabilities"}, {"GET", "/api/blog/posts"}, {"POST", "/api/blog/posts"},
+		{"GET", "/api/blog/capabilities"}, {"GET", "/api/blog/limits"}, {"GET", "/api/blog/posts"}, {"POST", "/api/blog/posts"},
 		{"GET", "/api/blog/posts/" + p.ID}, {"PUT", "/api/blog/posts/" + p.ID}, {"PATCH", "/api/blog/posts/" + p.ID + "/settings"},
 		{"DELETE", "/api/blog/posts/" + p.ID}, {"POST", "/api/blog/posts/" + p.ID + "/publish"}, {"POST", "/api/blog/posts/" + p.ID + "/unpublish"},
 		{"POST", "/api/blog/posts/" + p.ID + "/duplicate"}, {"POST", "/api/blog/posts/" + p.ID + "/assets"},

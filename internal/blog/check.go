@@ -37,6 +37,7 @@ var (
 	ErrCheckRunning = errors.New("blog: a check is already running")
 	ErrUnavailable  = errors.New("blog: checking is not available")
 	ErrStale        = errors.New("blog: the draft changed after the check")
+	ErrTooLong      = errors.New("blog: the draft is longer than a check can read")
 	ErrSuperseded   = errors.New("blog: a newer check exists")
 	ErrNeedsAck     = errors.New("blog: this block needs the author's acknowledgement")
 	ErrNoReadyCheck = errors.New("blog: there is no finished check of this version")
@@ -438,7 +439,7 @@ func checkInput(title string, doc json.RawMessage) (string, int, error) {
 		return "", 0, ErrInvalid // nothing to check
 	}
 	if b.Len() > maxCheckInput {
-		return "", 0, ErrInvalid
+		return "", 0, ErrTooLong
 	}
 	return b.String(), len(root.Content), nil
 }

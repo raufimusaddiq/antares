@@ -1,5 +1,6 @@
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
-import { cancelCheck, decideBlock, describeBlogError, getCheck, publish, startCheck } from "./blogApi";
+import { cancelCheck, decideBlock, describeBlogError, getCheck, getLimits, publish, startCheck } from "./blogApi";
+import { checkBytes, imageCount, sizeWords, type Limits } from "./limits";
 import { SourceList } from "./Sources";
 import type { Capabilities, Check, CheckBlock, Post } from "./types";
 
@@ -42,8 +43,18 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [acks, setAcks] = useState<Record<string, boolean>>({});
+  const [limits, setLimits] = useState<Limits | null>(null);
   const canCheck = caps?.check === true;
   const ready = post.title.trim() !== "";
+
+  useEffect(() => {
+    if (phase.k !== "choose") return;
+    const ctl = new AbortController();
+    void getLimits(ctl.signal).then((r) => {
+      if (!ctl.signal.aborted && r.ok) setLimits(r.value); // not knowing the limits does not stop anyone publishing
+    });
+    return () => ctl.abort();
+  }, [phase.k]);
 
   const apply = useCallback((c: Check) => {
     setCheck(c);
@@ -84,7 +95,7 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
     const r = await startCheck(post.id);
     if (r.ok) return apply(r.value);
     setPhase({ k: "choose" });
-    setError(r.status === 409 ? "A check is already running for this post." : r.code === "CAPABILITY_UNAVAILABLE" ? "Checking is not available right now." : describeBlogError(r, "start the check"));
+    setError(r.status === 409 ? "A check is already running for this post." : r.code === "CAPABILITY_UNAVAILABLE" ? "Checking is not available right now." : r.code === "TOO_LONG_TO_CHECK" ? "This post is longer than the assistant can read in one check. Publish your original, or shorten it." : describeBlogError(r, "start the check"));
   };
 
   const go = async (mode: "enriched" | "original") => {
@@ -230,9 +241,10 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
       {!ready && <p className="blog-error" role="alert">Give the post a title before publishing.</p>}
       <p>You can publish exactly what you wrote, or have your assistant check it first and propose interactive blocks with sourced data. You approve each one.</p>
       {!canCheck && <p className="blog-notice" role="status">Checking is not available right now, so only your original can be published.</p>}
+      {limits && <LimitsNote limits={limits} post={post} canCheck={canCheck} />}
       <div className="blog-actions">
         {canCheck && (
-          <button type="button" className="btn" disabled={!ready} onClick={() => void begin()}>
+          <button type="button" className="btn" disabled={!ready || (limits !== null && checkBytes(post.title, post.doc) > limits.checkBytes)} onClick={() => void begin()}>
             Check and add blocks
           </button>
         )}
@@ -245,5 +257,34 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
       </div>
       {error && <p className="blog-error" role="alert">{error}</p>}
     </main>
+  );
+}
+
+/** What the author is held to, said before they publish and not after a failure. */
+function LimitsNote({ limits, post, canCheck }: { limits: Limits; post: Post; canCheck: boolean }) {
+  const bytes = checkBytes(post.title, post.doc);
+  const images = imageCount(post.doc);
+  const tooLong = bytes > limits.checkBytes;
+  return (
+    <section className="blog-limits" aria-label="Limits">
+      <h2>Limits</h2>
+      <ul>
+        {canCheck && (
+          <li className={tooLong ? "blog-error" : undefined} role={tooLong ? "alert" : undefined}>
+            {tooLong
+              ? `This post is longer than the assistant can read in one check (about ${sizeWords(bytes)}; the limit is ${sizeWords(limits.checkBytes)}). Publish your original, or shorten it.`
+              : `The assistant reads up to ${sizeWords(limits.checkBytes)} of text in a check. This post is about ${sizeWords(bytes)}.`}
+          </li>
+        )}
+        {canCheck && (
+          <li>
+            A check proposes up to {limits.blocksPerCheck} blocks, each naming up to {limits.sourcesPerBlock} sources, and you approve each one. You can start {limits.checksPer24h} checks in 24 hours.
+          </li>
+        )}
+        <li>
+          Images: {images} of {limits.imagesPerPost} in this post, up to {sizeWords(limits.imageBytes)} each. A saved post can be up to {sizeWords(limits.docBytes)}.
+        </li>
+      </ul>
+    </section>
   );
 }
