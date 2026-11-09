@@ -1,3 +1,4 @@
+import { formatDay } from "./dates";
 import type { Source } from "./types";
 
 /**
@@ -19,7 +20,7 @@ export function SourceList({ sources, needsAck, acked, onAck }: { sources: Sourc
             </a>{" "}
             <span className="label">
               {new URL(s.url).hostname}
-              {s.retrievedAt && ` · retrieved ${s.retrievedAt}`}
+              {s.retrievedAt && ` · retrieved ${formatDay(s.retrievedAt)}`}
             </span>{" "}
             <span className={s.verified ? "chip chip-ok" : "chip chip-warn"}>{s.verified ? "verified" : "unverified"}</span>
           </li>

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPost, deletePost, describeBlogError, duplicatePost, listPosts, unpublish } from "./blogApi";
 import type { BlogResult } from "./blogApi";
 import { useDialog } from "./useDialog";
+import { formatDay } from "./dates";
 import type { PostStatus, PostSummary } from "./types";
 
 export const STATUS_WORDS: Record<PostStatus, string> = {
@@ -14,7 +15,6 @@ export const STATUS_WORDS: Record<PostStatus, string> = {
 
 type Load = { k: "loading" } | { k: "error"; why: string } | { k: "ok"; posts: PostSummary[] };
 
-const day = (iso: string) => iso.slice(0, 10);
 
 export function PostList({ onOpen, onChats }: { onOpen: (id: string) => void; onChats: () => void }) {
   const [load, setLoad] = useState<Load>({ k: "loading" });
@@ -59,7 +59,10 @@ export function PostList({ onOpen, onChats }: { onOpen: (id: string) => void; on
         <button type="button" className="quiet" onClick={onChats}>
           Chats
         </button>
-        <h1>My posts</h1>
+        <div>
+          <h1>My posts</h1>
+          <p className="label blog-bar-note">Only you can see drafts. Published posts are public.</p>
+        </div>
         <button type="button" className="btn" onClick={() => void create()}>
           New post
         </button>
@@ -88,10 +91,15 @@ export function PostList({ onOpen, onChats }: { onOpen: (id: string) => void; on
           {load.posts.map((p) => (
             <li key={p.id} className="blog-row">
               <button type="button" className="blog-row-main" onClick={() => onOpen(p.id)}>
-                <span className="blog-row-title">{p.title || "Untitled"}</span>
+                <span className="blog-row-text">
+                  <span className="blog-row-title">{p.title || "Untitled"}</span>
+                  <span className="label">
+                    Edited {formatDay(p.updatedAt, false)}
+                    {p.status === "published" && p.slug ? ` · /b/${p.slug}` : ""}
+                  </span>
+                </span>
                 <span className={`chip chip-${p.status}`}>{STATUS_WORDS[p.status]}</span>
                 {p.interactive && <span className="chip chip-ai">Interactive</span>}
-                <span className="label">{day(p.status === "published" ? p.publishedAt : p.updatedAt)}</span>
               </button>
               <span className="blog-row-actions">
                 {p.status === "published" && p.slug && (

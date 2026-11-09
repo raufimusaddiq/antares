@@ -1,5 +1,6 @@
 import { Fragment, lazy, Suspense, type ReactNode } from "react";
 import { mediaUrl } from "./blogApi";
+import { formatDay } from "./dates";
 import type { DocNode, PublicBlock, Source } from "./types";
 
 // Draws a stored document for readers and for the preview. There is no HTML path in this file: every node is a React
@@ -92,7 +93,7 @@ export function SourcesLine({ sources }: { sources: Source[] }) {
           </a>
         </span>
       ))}
-      {sources[0].retrievedAt && <span className="label"> · retrieved {sources[0].retrievedAt}</span>}
+      {sources[0].retrievedAt && <span className="label"> · retrieved {formatDay(sources[0].retrievedAt)}</span>}
     </p>
   );
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"slices"
 	"testing"
 )
 
@@ -138,8 +139,10 @@ func runOwnershipProgram(t testing.TB, db *sql.DB, prog []byte, maxSteps int) {
 				t.Fatalf("step %d: %s moved run %q owned by %q", i, actor, id, m.runOwner[id])
 			case own && moved && RunTerminal(m.runStatus[id]):
 				t.Fatalf("step %d: terminal run %s (%s) moved to %s", i, id, m.runStatus[id], to)
-			case own && !moved && !RunTerminal(m.runStatus[id]):
-				t.Fatalf("step %d: live run %s (%s) refused its owner's move", i, id, m.runStatus[id])
+			case own && !moved && !RunTerminal(m.runStatus[id]) && slices.Contains(RunSources(to), m.runStatus[id]):
+				t.Fatalf("step %d: live run %s (%s) refused its owner's move to %s, which the lifecycle allows", i, id, m.runStatus[id], to)
+			case moved && !slices.Contains(RunSources(to), m.runStatus[id]):
+				t.Fatalf("step %d: run %s moved from %s to %s, which the lifecycle does not allow", i, id, m.runStatus[id], to)
 			case moved:
 				m.runStatus[id] = to
 			}
