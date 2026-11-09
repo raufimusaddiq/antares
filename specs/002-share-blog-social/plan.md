@@ -8,12 +8,14 @@
 
 Published posts get a Share control and a "Story image" flow. The 9:16 picture is **drawn in the reader's own browser**
 from data the post page already holds (title, summary, author name, cover), then handed to the device's native sharing
-sheet or saved. **No new server route, no new database table, no new dependency, no AI.** This is the smallest design
+sheet or saved. It is drawn with the same canvas toolkit, fonts and dialog that already make a shared chat's 9:16
+picture (`web/src/shareImage.ts`, `ShareImageDialog` in `ShareChat.tsx`, #250/#261), so it looks like Antares
+by construction (spec FR-020). **No new server route, no new database table, no new dependency, no AI.** This is the smallest design
 that meets FR-001…FR-018 and makes the spec's new-public-surface requirement (FR-019) unnecessary; see
 [research.md](research.md) R1 for why drawing on the server was rejected.
 
 Per AGENTS.md ("Design comes first") the Share menu, the Story dialog (preview, sending, fallback, failure) and the
-editor's share preview are designed in `docs/design/antares.figcraft` before code; see Stage 0 and
+editor's share preview are designed in `docs/design/antares.figcraft` before code; see Stage 0 (the chat's share-image frames are the base) and
 [contracts/ui-contract.md](contracts/ui-contract.md).
 
 ## Technical Context
@@ -75,12 +77,14 @@ specs/002-share-blog-social/
 web/src/blog/
 ├── share/
 │   ├── ShareMenu.tsx        # Share button, native sheet or fallback list, copy link
-│   ├── StoryDialog.tsx      # preview, send / save, plain-words fallback, failure
-│   ├── storyCard.ts         # pure layout + canvas drawing (1080×1920), no React
+│   ├── StoryDialog.tsx      # reuses the chat's ShareImageDialog flow (preview, send, save, note) for a post
+│   ├── postCard.ts          # the post's card: composes the shared drawing kit below (1080×1920)
 │   ├── shareLinks.ts        # destination URLs from title + canonical link
 │   └── *.test.ts(x)
 ├── Public.tsx               # mounts ShareMenu on the post page
 └── PostSettings.tsx / PreviewScreen.tsx   # author's share preview (draft data)
+web/src/shareImage.ts          # drawing primitives (badge, dots, pill, labels, layout, wrap) move to web/src/cardKit.ts,
+                               # exported and reused by both pictures; the chat picture's output must not change
 docs/design/antares.figcraft  # new frames, Stage 0
 scripts/browser-check.mjs     # share-menu, story-dialog views
 ```
@@ -92,10 +96,14 @@ a canvas-like context) so it is unit-testable without a browser.
 
 0. **Design in figcraft** (blocks code): Share menu (phone sheet, desktop list), Story dialog (preview, sending,
    saved-and-copied, failure), editor share preview; light and dark; record the frames' ids in the design README.
-1. **Card**: `storyCard.ts` with tests (fit, truncate at word boundary using `Intl.Segmenter`, RTL, emoji, no cover,
-   no summary, contrast of both variants checked by a test against the WCAG ratio).
+1. **Kit and card**: lift the drawing primitives out of `shareImage.ts` into `cardKit.ts` with no change to the chat
+   picture (its existing `ShareImage.test.tsx` and a pixel comparison of a fixed sample before and after prove it), then
+   `postCard.ts` composing them: brand row (mark, "Antares", date pill), a tilted "POST" sticker, the title as the
+   headline with the pink bar, a card with the dotted periwinkle strip labelled "SUMMARY" holding the summary (largest
+   type that fits) and the cover in a thick-outlined frame, the author's name, and the footer. Tests: fit, truncate at
+   a word boundary, RTL, emoji, no cover, no summary.
 2. **Share**: `ShareMenu`, `shareLinks`, canonical-link test, Share on the post page.
-3. **Story flow**: `StoryDialog` (card is produced when the dialog opens so the Send tap is a direct user action, which
+3. **Story flow**: `StoryDialog` (the chat dialog's flow, generalised so both use it; card is produced when the dialog opens so the Send tap is a direct user action, which
    iOS Safari requires), fallbacks, announcements, focus.
 4. **Author preview** in the editor from the draft.
 5. **Browser checks, docs, deploy, smoke**: real-browser views; `docs/PRD.md` §30 gains a Share paragraph; production

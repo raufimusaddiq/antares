@@ -80,7 +80,8 @@ In the editor the author can see a preview of the story card and the link previe
 - **FR-003**: Every shared link MUST be the post's canonical address and MUST NOT carry any identifier of the sharer or the reader.
 - **FR-004**: Copy link MUST confirm success to sight and to assistive technology, and MUST work without the sharing sheet.
 - **FR-005**: Antares MUST produce a 9:16 vertical picture for a published post from public data only: title, summary (or the post's opening text when there is none), author's display name, cover image when present, and the site name and short address.
-- **FR-006**: The picture MUST be legible on a phone screen: text meets accessible contrast against its background in both light and dark card variants, and the longest allowed title and summary fit without overflow.
+- **FR-020**: The picture MUST look like Antares and like the picture already made when a chat answer is shared as an image: the same warm paper background with its dot texture, the Antares mark and name at the top, hard-edged cards with thick ink outlines and offset shadows, monospaced capital labels, the pink highlighter bar under the headline, and the same type. It MUST always be drawn in the light paper look whatever the reader's theme, and MUST end with "Shared from Antares".
+- **FR-006**: The picture MUST be legible on a phone screen: text meets accessible contrast against its background, and the longest allowed title and summary fit without overflow.
 - **FR-007**: Long text MUST be shortened at a word boundary with an ellipsis; text MUST appear as plain text only.
 - **FR-008**: Posts without a cover or summary MUST still produce a complete, good-looking picture.
 - **FR-009**: On devices that can send a picture to an app, Story image MUST send the picture (and the link where accepted) through the native sharing sheet so the person can choose Instagram Stories or WhatsApp Status; on other devices it MUST save the picture and copy the link, and say what to do next.
@@ -111,13 +112,14 @@ In the editor the author can see a preview of the story card and the link previe
 - **SC-005**: 100% of shared links are the plain canonical address.
 - **SC-006**: A sustained burst of requests for the picture for one post does not slow other public pages by more than 10% in a controlled test.
 - **SC-007**: The share controls pass the same keyboard, screen-reader and contrast checks as the post page, in both themes.
+- **SC-008**: Placed beside a shared chat picture, a post's picture is recognisably from the same product in a blind comparison by the owner (same background, mark, cards, labels, highlighter bar).
 
 ## Assumptions
 
 - Instagram and WhatsApp offer no way for a web page to post a story directly or to attach a link sticker; the best a website can do is hand the picture to the device's sharing sheet, where the person picks the story option. Where the sheet cannot take images (many desktop browsers), the picture is saved instead. This limit is stated to the person, not hidden.
 - "Summarize" means the post's own summary, which the author already controls, or the opening text when there is none; the picture is not written by an AI. Using the assistant to write a shorter story-specific blurb is out of scope and can be a later feature.
 - Anyone who can read a post may share it and produce its card; sharing is not limited to the author.
-- The card has one fixed design in two colour variants (light and dark) following the site's look, with no template picker in this version.
+- The card has one fixed design: the Antares paper look already used for shared chat pictures (FR-020), always on the light paper, with no template picker in this version. Sharing a post reuses the chat's share-image dialog behaviour (preview, native sheet, save).
 - The existing link previews (title, summary, cover) from the blog spec remain the way a shared link is displayed by other apps; this feature adds the Share control, the story picture and the author's preview.
 - Share counts, analytics, scheduled posting and posting on a person's behalf are out of scope.
 - The one-user trusted-use caveat from the project's isolation gate applies, as for the blog.

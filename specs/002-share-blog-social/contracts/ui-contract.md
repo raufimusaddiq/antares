@@ -16,6 +16,7 @@ There is **no new HTTP route**. This contract is the behaviour the design frames
 ## Story dialog
 
 - `role="dialog"`, `aria-modal`, labelled "Share as a story"; focus moves in and returns to the trigger on close.
+- Same dialog behaviour as the chat's share-image dialog (it is generalised, not copied).
 - States: preparing (progress text), ready (preview of the 9:16 picture with an alternative text that reads the title and
   summary), sending, saved, failed.
 - Buttons: "Share to an app" (only when `canShare({files})`), "Save image", "Copy link", "Close".
@@ -25,8 +26,9 @@ There is **no new HTTP route**. This contract is the behaviour the design frames
 
 ## Picture
 
-- PNG, 1080 × 1920. Text safe zones: no text in the top 250 px or bottom 340 px.
-- Contains: title (≤ 4 lines), summary (≤ 6 lines), author name, cover or plain block, site name and short address.
+- PNG, 1080 × 1920, drawn in the Antares paper look of the chat's share picture (spec FR-020), always light.
+- Contains: brand row (mark, "Antares", date), "POST" sticker, title (≤ 4 lines), card labelled "SUMMARY" with the
+  summary (largest type that fits) and the cover, author name, short address, footer "Shared from Antares".
 - Text is clamped at a word boundary with an ellipsis; plain text only.
 
 ## Author preview (editor)

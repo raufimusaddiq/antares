@@ -10,8 +10,10 @@ Prerequisites: a published post with a summary and cover, one without either, on
    the camera roll; the dialog says so).
 4. **Story image (desktop)**: Save image downloads a 1080 × 1920 PNG and the link is copied; text explains the link
    sticker.
-5. **Edge cases**: the three prepared posts plus an emoji title and a very long title all produce legible pictures.
-6. **Privacy**: a draft or unpublished post shows no Share control; no network request carries anything beyond what the
+5. **Same product**: put the post's picture beside a shared chat's picture; background, mark, cards, labels and the pink
+   bar match (SC-008). The chat picture is unchanged by the refactor (its test and a before/after comparison).
+6. **Edge cases**: the three prepared posts plus an emoji title and a very long title all produce legible pictures.
+7. **Privacy**: a draft or unpublished post shows no Share control; no network request carries anything beyond what the
    post page already fetched (check in the browser's network panel: only the cover image).
-7. **Automated**: `npm test` (layout and components), `ONLY=share-menu,story-dialog node scripts/browser-check.mjs`
+8. **Automated**: `npm test` (layout and components), `ONLY=share-menu,story-dialog node scripts/browser-check.mjs`
    for both themes at 390, 820 and 1280 px; `go test ./...` passes with no change to the public-route inventory.

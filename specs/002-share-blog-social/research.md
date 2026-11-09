@@ -28,19 +28,26 @@
 
 ## R3. Text fitting and truncation
 
-- **Decision**: measure with `ctx.measureText`, break lines at word boundaries using `Intl.Segmenter` (granularity
-  `word`, so languages without spaces still break at a word), set `ctx.direction` from the text's dominant direction,
-  clamp title to 4 lines and summary to 6, and end a clamped block with an ellipsis. Font sizes step down once before
-  clamping.
+- **Decision**: reuse the chat picture's `wrap` and `layout` (measure with `ctx.measureText`, break at spaces and inside
+  a too-wide word, end a clamped block with an ellipsis, step the summary's type size down until it fits) and add what the
+  chat picture lacks: break at a word boundary with `Intl.Segmenter` for languages without spaces, and set
+  `ctx.direction` from the text's dominant direction. The title is clamped to 4 lines.
 - **Alternatives**: CSS-to-image libraries (new dependency, and the same measuring problem).
 
-## R4. Card design and contrast
+## R4. Card design: Antares's own look, reused
 
-- **Decision**: one design, two colour variants taken from the site's light and dark tokens; a test checks every
-  text-on-background pair at WCAG AA (4.5:1) from the token values. The cover sits in a rounded frame in the upper part
-  when present; without a cover, a plain brand block takes its place. Story-safe zones: the top 250 px and bottom 340 px
-  hold no text (Instagram overlays its own controls there).
-- **Alternatives**: a template picker (out of scope per spec).
+- **Decision**: reuse the look and the code of the shared-chat picture (#250/#261, `web/src/shareImage.ts`). The paper
+  background with dots, the cobalt badge with the A, the date pill, the tilted sticker, the dotted periwinkle strip with
+  a mono capital label, the white card with a thick ink outline and hard offset shadow, the pink highlighter bar, cobalt
+  diamond bullets, and the Space Grotesk and mono faces. The picture is always on the light paper (the existing
+  behaviour), so there is no dark variant and no per-theme contrast work: the pairs are the ones already used by the chat
+  picture. Layout for a post: brand row, "POST" sticker, title headline, card labelled "SUMMARY" with the summary and
+  the cover, author name, footer "Shared from Antares". Story-safe zones: the top 250 px and bottom 340 px hold no
+  text-critical content beyond the brand row and footer, which the chat picture already treats as chrome.
+- **Rationale**: the owner asked for it to look like sharing a chat; reusing the primitives makes that true by
+  construction and keeps one place to change the look. The drawing primitives are exported from a shared module rather than
+  copied.
+- **Alternatives**: a second, separately styled card (drift, duplicated code; rejected); a template picker (out of scope).
 
 ## R5. Server changes
 

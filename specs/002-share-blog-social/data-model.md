@@ -11,7 +11,6 @@ No stored data. No migration.
 | authorName | the post's public display name | as on the post page |
 | coverUrl | the post's cover, same-origin | optional; failure to load falls back to the plain block |
 | siteName, address | constants and the canonical address | short readable form (host and path) |
-| variant | the reader's theme | `light` or `dark` |
 
 ## ShareCard (in memory)
 
