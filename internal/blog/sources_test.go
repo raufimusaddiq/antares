@@ -1,6 +1,7 @@
 package blog
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -53,6 +54,8 @@ func TestCleanSource(t *testing.T) {
 	for name, s := range map[string]Source{
 		"http":         {URL: "http://example.org/", Title: "t", RetrievedAt: "2026-11-08"},
 		"private":      {URL: "https://10.1.1.1/", Title: "t", RetrievedAt: "2026-11-08"},
+		"long title":   {URL: "https://example.org/", Title: strings.Repeat("t", maxSourceTitle+1), RetrievedAt: "2026-11-08"},
+		"bidi title":   {URL: "https://example.org/", Title: "evil\u202egnp.exe", RetrievedAt: "2026-11-08"},
 		"no title":     {URL: "https://example.org/", Title: "  ", RetrievedAt: "2026-11-08"},
 		"not a date":   {URL: "https://example.org/", Title: "t", RetrievedAt: "yesterday"},
 		"future date":  {URL: "https://example.org/", Title: "t", RetrievedAt: "2027-01-01"},

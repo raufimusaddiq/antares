@@ -99,11 +99,16 @@ func TestMarkupLimits(t *testing.T) {
 		}
 		return "root = " + e
 	}
-	if _, err := ValidateMarkup(nest(maxCallDepth-1), nil); err != nil {
+	if _, err := ValidateMarkup(nest(maxNesting/2-1), nil); err != nil {
 		t.Errorf("nesting within the limit was refused: %v", err)
 	}
-	if _, err := ValidateMarkup(nest(maxCallDepth+3), nil); err == nil {
+	if _, err := ValidateMarkup(nest(maxNesting), nil); err == nil {
 		t.Error("a program nested past the limit was accepted")
+	}
+	// Arrays count too: brackets cannot be used to get around the limit.
+	brackets := "root = Card([" + strings.Repeat("[", maxNesting+2) + strings.Repeat("]", maxNesting+2) + "])"
+	if _, err := ValidateMarkup(brackets, nil); err == nil {
+		t.Error("arrays nested past the limit were accepted")
 	}
 	// Strings and total size.
 	if _, err := ValidateMarkup("root = Card([t])\nt = TextContent(\""+strings.Repeat("a", maxString+1)+"\")", nil); err == nil {

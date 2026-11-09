@@ -17,7 +17,7 @@ import (
 const (
 	maxMarkupBytes = 20000
 	maxMarkupNodes = 600
-	maxCallDepth   = 12
+	maxNesting     = 24 // calls, arrays and objects inside one another
 	maxStatements  = 300
 	maxArray       = 200
 	maxString      = 20000
@@ -36,7 +36,9 @@ var readerComponents = setOfNames(
 	"TagBlock", "Tag", "EntityList", "Icon",
 )
 
-// dataComponents show data: a block that uses one needs a source (FR-016).
+// dataComponents show data: a block that uses one needs a source (FR-016). Figures written into prose (TextContent) cannot
+// be told from words by code, so they are not caught here: the instruction to the assistant says to put figures in a table,
+// chart or list, and the author, who must accept every block, is the check on the rest.
 var dataComponents = setOfNames("Table", "Col", "BarChart", "LineChart", "AreaChart", "RadarChart", "HorizontalBarChart",
 	"PieChart", "RadialChart", "SingleStackedBarChart", "ScatterChart", "EntityList")
 
@@ -181,8 +183,8 @@ func (p *parser) expect(s string) error {
 }
 
 func (p *parser) parseExpr(depth int) (*expr, error) {
-	if depth > maxCallDepth {
-		return nil, bad("nested more than %d deep", maxCallDepth)
+	if depth > maxNesting {
+		return nil, bad("nested more than %d deep", maxNesting)
 	}
 	if p.nodes++; p.nodes > maxMarkupNodes {
 		return nil, bad("more than %d elements", maxMarkupNodes)
@@ -234,7 +236,7 @@ func (p *parser) parseExpr(depth int) (*expr, error) {
 			var items []*expr
 			p.skipNL()
 			for !p.is("]") {
-				a, err := p.parseExpr(depth)
+				a, err := p.parseExpr(depth + 1)
 				if err != nil {
 					return nil, err
 				}
@@ -265,7 +267,7 @@ func (p *parser) parseExpr(depth int) (*expr, error) {
 					return nil, err
 				}
 				p.skipNL()
-				v, err := p.parseExpr(depth)
+				v, err := p.parseExpr(depth + 1)
 				if err != nil {
 					return nil, err
 				}

@@ -89,11 +89,9 @@ func cleanSource(s Source, today time.Time) (Source, bool) {
 	if !PublicHTTPS(s.URL) {
 		return Source{}, false
 	}
+	// Refused, never trimmed or repaired: a title that does not fit is not the title the assistant meant.
 	title := collapseSpace(s.Title)
-	if r := []rune(title); len(r) > maxSourceTitle {
-		title = string(r[:maxSourceTitle])
-	}
-	if title == "" {
+	if title == "" || len([]rune(title)) > maxSourceTitle || !isPlainText(title) {
 		return Source{}, false
 	}
 	d, err := time.Parse("2006-01-02", s.RetrievedAt)

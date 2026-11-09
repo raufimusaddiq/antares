@@ -122,7 +122,7 @@ description: "Task list for Blog CMS with AI-Enriched Publishing"
 ### Implementation for User Story 2
 
 - [ ] T044 [US2] Versioned instruction `internal/blog/blog_prompt.txt` (check the writing, propose blocks, search the web, return the envelope, never rewrite the text); embed and expose its version
-- [X] T045 [US2] Server-side OpenUI validation against the read-only reader allowlist (no `@ToAssistant`, no submitting forms; `@OpenUrl` only to `https` urls listed in the block's sources) in `internal/blog/validate_openui.go`; keep the allowlist in step with `web/src/openui/validate.ts` (server side done in `openui.go`; the matching read-only library in the browser is T061)
+- [X] T045 [US2] Server-side OpenUI validation against the read-only reader allowlist (no `@ToAssistant`, no submitting forms; `@OpenUrl` only to `https` urls listed in the block's sources) in `internal/blog/validate_openui.go`; keep the allowlist in step with `web/src/openui/validate.ts` (server half done, in `openui.go` rather than `validate_openui.go`; keeping the allowlist in step with `web/src/openui/validate.ts` stays open until the read-only library, T061)
 - [X] T046 [US2] Envelope parser and validator per `contracts/check-envelope.md` in `internal/blog/envelope.go`
 - [ ] T047 [US2] Check runner in `internal/blog/check.go`: create the Hermes run through the author's backend-selected binding with `Instructions`, track run states, persist notes and proposed blocks, cancel, mark out of date; error codes carry no provider text or credential
 - [ ] T048 [US2] Block decision, publish-enriched (snapshot accepted blocks with the pinned version) and check handlers in `internal/blog/handlers.go` per `contracts/http-api.md`
