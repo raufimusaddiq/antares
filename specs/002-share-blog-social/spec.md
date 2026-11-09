@@ -42,7 +42,7 @@ A reader or author wants to post the article to an Instagram or WhatsApp story. 
 3. **Given** a very long title or summary, **When** the picture is made, **Then** the text is shortened at a word boundary with an ellipsis, never cut mid-word, never overflowing the card.
 4. **Given** a phone whose sharing sheet accepts pictures, **When** the reader confirms, **Then** the picture goes to the chosen app as an image, together with the link where the app accepts one.
 5. **Given** a device that cannot hand a picture to an app, **When** the reader confirms, **Then** the picture is saved and the link is copied, and the screen says plainly that Instagram's link sticker has to be added by hand.
-6. **Given** the picture is requested for a post that is unpublished, hidden or does not exist, **When** anyone asks, **Then** the answer is the same "not found" as for the post itself and no picture is produced.
+6. **Given** a post that is unpublished, hidden or does not exist, **When** anyone opens its address, **Then** they get the post's own "not found" and there is no Share control or picture to reach.
 
 ---
 
@@ -67,7 +67,7 @@ In the editor the author can see a preview of the story card and the link previe
 - A post's title or summary contains markup-like text: it appears as plain text on the card; nothing in it is ever interpreted.
 - A cover image that is very wide, very tall, tiny or unreadable: it is cropped or replaced by a plain background without distorting text.
 - Many readers request the card for the same post at once: they all get the same picture, and the site's responsiveness for other pages does not degrade.
-- A post is unpublished or its author is suspended after a card was made: the card address stops answering like the post; pictures already saved on devices are out of Antares's reach.
+- A post is unpublished or its author is suspended after a card was made: nothing is stored on Antares, so there is nothing left to serve; pictures already saved on devices are out of Antares's reach.
 - A reader with no JavaScript or a blocked sharing API still sees the post's plain link and a visible way to copy it.
 - The feature is not shown to someone viewing a draft they do not own (no draft is ever shareable).
 
@@ -85,15 +85,15 @@ In the editor the author can see a preview of the story card and the link previe
 - **FR-008**: Posts without a cover or summary MUST still produce a complete, good-looking picture.
 - **FR-009**: On devices that can send a picture to an app, Story image MUST send the picture (and the link where accepted) through the native sharing sheet so the person can choose Instagram Stories or WhatsApp Status; on other devices it MUST save the picture and copy the link, and say what to do next.
 - **FR-010**: The feature MUST NOT require any account, token or permission from Instagram, WhatsApp or any other social service, and MUST NOT post on a person's behalf.
-- **FR-011**: The picture MUST be available only for a post that is published and whose author is approved; for any other post the response MUST be indistinguishable from the post's own not-found answer.
+- **FR-011**: The picture and Share MUST be offered only on a post page that is published and visible; a draft, unpublished or hidden post MUST show neither, and no address MUST exist from which a picture can be requested.
 - **FR-012**: Producing the picture MUST NOT use the assistant (Hermes) or any AI service, MUST NOT read anything not already public, and MUST NOT reveal the author's account, profile, chat, run or email.
-- **FR-013**: The picture endpoint MUST be rate limited like the other public blog reads and MUST NOT let a request cause unbounded work or storage (bounded output size, bounded time, repeat requests served from what was already made).
+- **FR-013**: Making the picture MUST NOT cause any unbounded work or storage on the server (none at all is expected), and MUST NOT make any request beyond the cover image the page already shows.
 - **FR-014**: The picture MUST reflect the post's current published title, summary and cover; after the author republishes, new requests get the new picture.
 - **FR-015**: In the editor, the author MUST be able to preview the story card and the link preview for a draft from its current content, visible to the author only.
 - **FR-016**: The Share control and story flow MUST work on phone, tablet and desktop, in light and dark themes, by keyboard and with a screen reader, and MUST NOT shift the reading layout.
 - **FR-017**: A failure to make or send the picture MUST be shown in plain words with the link still copyable; it MUST NOT affect the post itself.
 - **FR-018**: Antares MUST NOT add third-party scripts, trackers or buttons that load from a social service on the post page; sharing destinations are plain links or the device's sheet.
-- **FR-019**: The new public picture surface MUST be a read-only unauthenticated surface that is added to the project's inventory of such surfaces (constitution Principle I), with the inventory's kept test updated in the same change.
+- **FR-019**: The feature MUST NOT add any new unauthenticated route; the picture is made on the reader's own device from what the post page already shows, so the project's inventory of public surfaces (constitution Principle I) is unchanged.
 
 ### Key Entities
 
