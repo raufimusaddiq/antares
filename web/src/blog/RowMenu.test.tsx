@@ -40,6 +40,13 @@ describe("the row's ⋯ menu", () => {
     expect(document.activeElement).toBe(items()[0]);
   });
 
+  it("opens onto the last item from ArrowUp on the button", () => {
+    const { button } = mount();
+    button.focus();
+    fireEvent.keyDown(button, { key: "ArrowUp" });
+    expect(document.activeElement).toBe(items()[3]);
+  });
+
   it("moves with the arrows, wraps, and jumps with Home and End", () => {
     const { button } = mount();
     fireEvent.click(button);
@@ -86,5 +93,6 @@ describe("the row's ⋯ menu", () => {
     expect(run.del).toHaveBeenCalledTimes(1);
     expect(run.open).not.toHaveBeenCalled();
     expect(screen.queryByRole("menu")).toBeNull();
+    expect(document.activeElement).toBe(button); // not left on the page body
   });
 });
