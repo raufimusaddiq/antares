@@ -2,7 +2,7 @@
 
 Prerequisites: a published post with a summary and cover, one without either, one with a right-to-left title.
 
-1. **Native share (phone)**: open the post, tap Share; the device sheet shows the title and the canonical link.
+1. **Native share (phone)**: open the post, tap Share, then "Share with your apps"; the device sheet shows the title and the canonical link. The menu also has Copy link and Story image.
 2. **Fallback share (desktop)**: open the post, Share lists the destinations; Copy link announces "Link copied";
    each destination opens the right service's compose page with title and canonical link only.
 3. **Story image (phone)**: Share → Story image; the preview shows a 9:16 picture in under 3 s; "Share to an app"

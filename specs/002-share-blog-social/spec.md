@@ -20,7 +20,7 @@ A reader (or the author) finishes a published post and wants to pass it on. A Sh
 
 **Acceptance Scenarios**:
 
-1. **Given** a published post on a phone with a native sharing sheet, **When** the reader taps Share, **Then** the device's sheet opens with the post's title and canonical link prefilled.
+1. **Given** a published post on a phone with a native sharing sheet, **When** the reader taps Share and then "Share with your apps", **Then** the device's sheet opens with the post's title and canonical link prefilled; the same menu also offers Copy link and Story image.
 2. **Given** a desktop browser with no native sheet, **When** the reader opens Share, **Then** they see copy link and the listed destinations, and copy link confirms visibly and to a screen reader that it worked.
 3. **Given** a reader closes or cancels the sheet, **When** they return to the post, **Then** nothing changed and no error is shown.
 4. **Given** the post's address contains tracking of any kind, **When** shared, **Then** the shared link is still the plain canonical address (no personal identifier of the sharer is added).
@@ -76,7 +76,7 @@ In the editor the author can see a preview of the story card and the link previe
 ### Functional Requirements
 
 - **FR-001**: Every published post MUST offer a Share control to any reader, signed in or not.
-- **FR-002**: Share MUST use the device's native sharing sheet when the device offers one, and otherwise MUST offer copy link plus at least WhatsApp, X, Facebook, LinkedIn, Telegram and email.
+- **FR-002**: Share MUST open a small menu on every device. When the device offers a native sharing sheet, the menu's first entry ("Share with your apps") MUST open that sheet with the title and canonical link; otherwise the menu MUST list at least WhatsApp, X, Facebook, LinkedIn, Telegram and email. On every device the menu MUST also offer Copy link and Story image.
 - **FR-003**: Every shared link MUST be the post's canonical address and MUST NOT carry any identifier of the sharer or the reader.
 - **FR-004**: Copy link MUST confirm success to sight and to assistive technology, and MUST work without the sharing sheet.
 - **FR-005**: Antares MUST produce a picture of exactly 9:16 (1080 × 1920 pixels) for every published post, whatever its length, from public data only: title, a short summary of the post, up to four highlights, author's display name, cover image when present, and the site name and short address. The picture is never taller, shorter, scrolled or cropped by the app; a long post is condensed, never continued.
