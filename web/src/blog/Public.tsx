@@ -27,7 +27,7 @@ function Frame({ children, title }: { children: React.ReactNode; title: string }
     <div className="blog-public">
       <header className="blog-public-head">
         <a className="blog-brand" href="/b">
-          <AntaresMark size={20} />
+          <AntaresMark />
           <span>Antares</span>
           <span className="label">Blog</span>
         </a>
