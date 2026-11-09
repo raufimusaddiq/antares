@@ -1,10 +1,11 @@
 <!--
 Sync Impact Report
-Version change: (template, unversioned) -> 1.0.0
-Modified principles: none (first adoption; all placeholders filled)
-Added sections: Core Principles I-V, Additional Constraints, Development Workflow, Governance
+Version change: 1.0.0 -> 1.1.0
+Modified principles: I (default deny now names the two session-less read surfaces instead of implying there are none)
+Added sections: none
 Removed sections: none
-Follow-up TODOs: none. Derived from AGENTS.md and docs/runbooks/security-invariants.md.
+Follow-up TODOs: none. Derived from AGENTS.md and docs/runbooks/security-invariants.md; the blog spec's Complexity
+Tracking (specs/001-blog-cms-openui-publish/plan.md) is the justification.
 -->
 # Antares Constitution
 
@@ -16,6 +17,11 @@ cached. The backend alone selects the Hermes profile; a request that carries a p
 prefix, API key, header or session id is rejected, never ignored or overridden. Every database
 query touching user resources enforces ownership in the query itself. An admin can approve, revoke
 and suspend but MUST NOT read a user's conversations, memories or files.
+The only routes that answer without a session are reads of content its owner chose to make public: a
+chat shared by link (`/api/shared/{token}`) and published blog posts (`/b`, `/b/{slug}`,
+`/api/public/blog/*`). They never reach Hermes, select exactly the published rows in one query, carry
+no account, profile, chat or run identity, are rate limited, and are listed in
+`auth.PublicRoutes` / `auth.PublicBlogRoutes`; a kept test fails if any other route is added.
 Rationale: a user-supplied profile name is a cross-tenant read; these rules make multi-user safe.
 
 ### II. Antares Is a Front End, Not an Agent
@@ -75,4 +81,4 @@ adding one or materially expanding guidance, PATCH for wording. Every plan and P
 check compliance with Principles I-V; deviations are recorded in the plan with justification. Use
 `AGENTS.md` for runtime development guidance.
 
-**Version**: 1.0.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-08
+**Version**: 1.1.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-09
