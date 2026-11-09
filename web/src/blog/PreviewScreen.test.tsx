@@ -148,10 +148,14 @@ describe("deciding block by block", () => {
     fireEvent.click(within(blockEl(0)).getByRole("button", { name: "Accept" }));
     await waitFor(() => expect(within(blockEl(0)).getByRole("button", { name: "Accepted" })).toBeTruthy());
     expect(tick().checked).toBe(true);
-    expect(tick().disabled).toBe(true);
+    expect(tick().getAttribute("aria-readonly")).toBe("true"); // read-only to assistive technology, not "unavailable"
+    fireEvent.click(tick());
+    expect(tick().checked).toBe(true); // pressing it does nothing
     fireEvent.click(within(blockEl(0)).getByRole("button", { name: "Reject" }));
     await waitFor(() => expect(within(blockEl(0)).getByRole("button", { name: "Rejected" })).toBeTruthy());
-    expect(tick().disabled).toBe(false);
+    expect(tick().getAttribute("aria-readonly")).toBeNull();
+    expect(tick().checked).toBe(false); // starting over means ticking again
+    expect((within(blockEl(0)).getByRole("button", { name: "Accept" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("with nothing accepted after deciding, there is nothing to publish but the original", async () => {

@@ -118,6 +118,7 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
     const r = await decideBlock(post.id, b.id, d, d === "accepted" && b.needsAck ? true : undefined);
     if (!r.ok) return setError(describeBlogError(r, "save that choice"));
     setCheck((c) => (c ? { ...c, blocks: c.blocks.map((x) => (x.id === b.id ? r.value : x)) } : c)); // decisions can overlap
+    if (d === "rejected") setAcks((a) => ({ ...a, [b.id]: false })); // starting over means ticking again
   };
 
   // Accept every block (each one's tick was needed to get here), then publish with them. A refusal stops it where it is.
