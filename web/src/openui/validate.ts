@@ -70,7 +70,22 @@ const TOLERATED = new Set(["type-mismatch", "excess-args"]);
 
 export type Verdict = { ok: true; degraded?: string } | { ok: false; reason: string };
 
-let parser: ReturnType<typeof createParser> | undefined;
+/** What the gate needs of a library: the chat library for chat replies, the read-only one (readerLibrary.ts) for published posts. */
+export interface GateLibrary {
+  toJSONSchema(): Parameters<typeof createParser>[0];
+  root?: string;
+  components: Record<string, unknown>;
+}
+
+const parsers = new WeakMap<object, ReturnType<typeof createParser>>();
+function parserFor(lib: GateLibrary): ReturnType<typeof createParser> {
+  let p = parsers.get(lib);
+  if (!p) {
+    p = createParser(lib.toJSONSchema(), lib.root);
+    parsers.set(lib, p);
+  }
+  return p;
+}
 
 interface Node {
   type?: unknown;
@@ -85,7 +100,7 @@ interface Node {
 // Card that has those sources and no error the original did not have; otherwise the original is returned unchanged.
 const STATEMENT = /^[A-Za-z_]\w*\s*=/m;
 
-export function attachSources(source: string): string {
+export function attachSources(source: string, lib: GateLibrary = openuiChatLibrary): string {
   const start = source.search(/^root\s*=\s*Card\(/m);
   if (start < 0) return source;
   const line = source.indexOf("\n", start) + 1 || source.length; // the next statement starts on a later line
@@ -103,7 +118,7 @@ export function attachSources(source: string): string {
   const listed = children !== inner;
   if (uses !== (listed ? 2 : 1)) return source;
   const fixed = source.slice(0, start) + `root = Card([${children}\n], ${name})\n` + source.slice(end);
-  parser ??= createParser(openuiChatLibrary.toJSONSchema(), openuiChatLibrary.root);
+  const parser = parserFor(lib);
   try {
     const was = parser.parse(source).meta.errors.length;
     const r = parser.parse(fixed);
@@ -123,10 +138,9 @@ export function attachSources(source: string): string {
 // order the model wrote it in. A step is kept only if it leaves fewer such problems and no new parse error. A fully
 // repaired program is shown as if it had been written right; what cannot be repaired is named by check(). A reply that
 // is really cut off is left alone: its missing parts were never written.
-export function repair(source: string): { program: string } {
-  let program = attachSources(source);
-  parser ??= createParser(openuiChatLibrary.toJSONSchema(), openuiChatLibrary.root);
-  const p = parser;
+export function repair(source: string, lib: GateLibrary = openuiChatLibrary): { program: string } {
+  let program = attachSources(source, lib);
+  const p = parserFor(lib);
   const read = (src: string) => {
     try {
       const m = p.parse(src).meta;
@@ -294,21 +308,20 @@ function placeInRoot(src: string, names: string[]): string | null {
   return src.slice(0, start) + kids.join(", ") + src.slice(end);
 }
 
-export function check(source: string, partial = false): Verdict {
+export function check(source: string, partial = false, lib: GateLibrary = openuiChatLibrary): Verdict {
   // Antares' own first component set (v1, before native OpenUI) had a Stack root, which this library lacks (the
   // parser drops it); such a block is shown as source, labelled as such.
   if (/^\s*root\s*=\s*Stack\s*\(/.test(source)) return { ok: false, reason: "made by an earlier version of rich replies" };
-  parser ??= createParser(openuiChatLibrary.toJSONSchema(), openuiChatLibrary.root);
   let r;
   try {
-    r = parser.parse(source);
+    r = parserFor(lib).parse(source);
   } catch {
     return { ok: false, reason: "parse error" };
   }
   const m = r.meta;
   let degraded: string | undefined;
   if (!r.root) return partial ? { ok: true } : { ok: false, reason: "no root" };
-  if (r.root.typeName !== openuiChatLibrary.root) return { ok: false, reason: `root must be ${openuiChatLibrary.root}` };
+  if (r.root.typeName !== lib.root) return { ok: false, reason: `root must be ${lib.root}` };
   if (r.rootExpression) return { ok: false, reason: "computed root" };
   // An unknown component is dropped by the parser and only reported here; more text cannot fix it.
   const unknown = m.errors.find((e) => e.code === "unknown-component");
@@ -328,7 +341,7 @@ export function check(source: string, partial = false): Verdict {
   if (r.queryStatements.length > 0 || r.mutationStatements.length > 0) return { ok: false, reason: "queries and mutations are not allowed" };
   if (Object.keys(r.stateDeclarations).length > 0) return { ok: false, reason: "state is not allowed" };
 
-  const known = new Set(Object.keys(openuiChatLibrary.components));
+  const known = new Set(Object.keys(lib.components));
   let nodes = 0;
   const visit = (v: unknown, depth: number, key = ""): string | null => {
     if (typeof v === "string") {

@@ -82,7 +82,8 @@ export function SourcesLine({ sources }: { sources: Source[] }) {
   if (sources.length === 0) return null;
   return (
     <p className="blog-sources-line">
-      <span className="label">Sources</span>{" "}
+      {/* Every source is unverified today (nothing can verify one yet), so the second wording is for the day the sources can be verified. */}
+      <span className="label">{sources.some((s) => !s.verified) ? "Sources named by the assistant, not independently checked:" : "Sources:"}</span>{" "}
       {sources.map((s, i) => (
         <span key={s.url}>
           {i > 0 && ", "}
