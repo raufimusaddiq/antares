@@ -26,6 +26,7 @@ Today the check is deliberately read-only about the author's text (spec 001: the
 - Q: Where does an accepted text change land? → A: Straight into the saved draft, as a new saved version the author can step back to; what the editor shows is what gets published.
 - Q: Where does the author review the editor's suggestions? → A: At any time while writing: a "Check with the editor" action in the editor runs the same check and shows suggestions beside the draft; Publish still runs the check on the way out, as today.
 - Q: After the author accepts one suggestion (or types elsewhere), do the remaining suggestions and data blocks stay usable? → A: Yes. Accepting changes only its own passage; every other suggestion and block stays valid unless its own passage changed (then it is "no longer applicable"). Typing elsewhere also leaves them valid.
+- Q: Do checks started from the editor count against the same limits as the check at Publish? → A: Yes, one shared limit (daily and simultaneous, as today). When it is reached the author is told and can still publish the original.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -119,6 +120,7 @@ The check no longer only adds data blocks and notes. It also proposes changes to
 - **FR-017**: The assistant MAY both edit the author's own sentences and expand a bare framework into full paragraphs built from the author's own points; expanded text MUST come from those points and MUST NOT add facts the author did not give (see FR-013).
 - **FR-018**: Accepting a suggestion MUST write the change into the saved draft as a new saved version, so the author can step back to the version before it; the editor and the published post MUST show the same text.
 - **FR-019**: The author MUST be able to run the check from the editor at any time while writing, and see its progress (FR-004 to FR-008) and its suggestions beside the draft; the check that runs on the way to Publish MUST give the same suggestions in the review screen.
+- **FR-020**: A check started from the editor MUST count against the same daily and simultaneous limits as the check at Publish; when a limit is reached the author MUST be told in plain words (and when they can try again) and MUST still be able to publish the original.
 
 ### Key Entities *(include if feature involves data)*
 
