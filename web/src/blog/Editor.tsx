@@ -3,6 +3,7 @@ import { EditorContent, useEditor } from "@tiptap/react";
 import { AssistPanel } from "./AssistPanel";
 import { makeBridge, type DraftBridge } from "./draftBridge";
 import { pressed, useFormatState, type Tri } from "./formatState";
+import { useIsPhone, useKeyboardOffset, useTypingFocus } from "./phoneDock";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import { Autosaver, loadLocalCopy, localCopyBase, type SaveState } from "./autosave";
@@ -67,7 +68,11 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
     content: (loadLocalCopy(email, post.id)?.doc ?? post.doc) as object,
     // The hint element is always there and only its text changes, so the attribute never has to be set or removed (the editor
     // re-applies these options on every render).
-    editorProps: { attributes: { "aria-label": "Post body", "aria-describedby": "blog-body-hint", class: "blog-prose" } },
+    editorProps: {
+      attributes: { "aria-label": "Post body", "aria-describedby": "blog-body-hint", class: "blog-prose" },
+      // On a phone the toolbar can sit above the keyboard: keep the caret's line clear of it when the page scrolls to the caret.
+      scrollMargin: typeof window !== "undefined" && typeof window.matchMedia === "function" && window.matchMedia("(max-width: 40rem)").matches ? { top: 8, right: 8, bottom: 96, left: 8 } : 5,
+    },
     onUpdate: ({ editor: e }) => {
       setEmpty(e.isEmpty);
       saver.current?.change({ doc: e.getJSON() as DocNode });
@@ -130,6 +135,12 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
   };
 
   const fmt = useFormatState(editor);
+  // On a phone, while typing, the toolbar docks above the keyboard (the approved design); everywhere else it stays where it was.
+  const phone = useIsPhone();
+  const typing = useTypingFocus(".blog-prose", ".blog-toolbar");
+  const docked = phone && typing;
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  useKeyboardOffset(toolbarRef, docked);
   const bridge = useMemo(() => (editor ? makeBridge(editor) : null), [editor]);
   useEffect(() => {
     onBridge?.(bridge);
@@ -146,7 +157,7 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
   const chain = () => editor!.chain().focus();
 
   return (
-    <main className={panel ? "blog-editor has-panel" : "blog-editor"}>
+    <main className={[panel ? "blog-editor has-panel" : "blog-editor", docked ? "kb-docked" : ""].join(" ").trim()}>
       <header className="blog-bar">
         <button type="button" className="quiet" onClick={onBack}>
           My posts
@@ -194,7 +205,15 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
         }}
       />
       {editor && (
-        <div className="blog-toolbar" role="toolbar" aria-label="Formatting">
+        <div
+          ref={toolbarRef}
+          className={docked ? "blog-toolbar blog-toolbar-docked" : "blog-toolbar"}
+          role="toolbar"
+          aria-label="Formatting"
+          onPointerDown={(e) => {
+            if ((e.target as HTMLElement).closest("button")) e.preventDefault(); // a tap on a button must not take the focus (and the keyboard) away from the text
+          }}
+        >
           {b("Bold", () => chain().toggleBold().run(), fmt.bold, "B")}
           {b("Italic", () => chain().toggleItalic().run(), fmt.italic, "I")}
           {b("Heading", () => chain().toggleHeading({ level: 2 }).run(), fmt.heading2, "H2")}

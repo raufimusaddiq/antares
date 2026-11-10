@@ -849,6 +849,8 @@ async function blogPages(browser, which, onlyViews) {
       }
       if (which === "blog-editor" && name.endsWith("editor") && shown) {
         await page.focus("[contenteditable=true]");
+        // On a phone the toolbar docks above the keyboard while the text has focus (the approved design): its place at the top of the draft is measured without the focus.
+        if (w <= 640) { await page.evaluate(() => document.activeElement.blur()); await page.waitForTimeout(200); }
         const g = await page.evaluate(() => {
           const title = document.querySelector(".blog-title")?.getBoundingClientRect();
           const t = document.querySelector(".blog-toolbar")?.getBoundingClientRect();
@@ -1590,10 +1592,35 @@ async function editorToolbar(browser) {
     check(`editor toolbar, ${label} ${scheme}: a partly bold selection shows Bold as mixed, with an outline and a bar`, mixed.v === "mixed" && parseFloat(mixed.border) >= 2 && mixed.bar, JSON.stringify(mixed));
     // The toolbar follows the page while writing a long post: after scrolling a long way it is still at the top of the screen.
     await page.evaluate(() => { const d = document.querySelector(".ProseMirror"); for (let i = 0; i < 40; i++) { const p = document.createElement("p"); p.textContent = "Another paragraph to make the page long, number " + i; d.appendChild(p); } });
-    await page.evaluate(() => window.scrollTo(0, 1200));
-    await page.waitForTimeout(150);
+    await page.evaluate(() => { document.querySelector(".ProseMirror").blur(); window.scrollTo(0, 1200); }); // not typing: while typing on a phone the toolbar is docked above the keyboard (checked below)
+    await page.waitForTimeout(200);
     const stick = await page.evaluate(() => { const r = document.querySelector(".blog-toolbar").getBoundingClientRect(); return { top: Math.round(r.top), scrollY: Math.round(scrollY), h: Math.round(r.height), vh: innerHeight }; });
     check(`editor toolbar, ${label} ${scheme}: after scrolling a long post the toolbar is still at the top of the screen`, stick.scrollY > 300 && stick.top >= 0 && stick.top <= 2, JSON.stringify(stick));
+    // Phone only (the approved design "Phone / Editor, keyboard open"): while typing, the toolbar is one scrolling row docked above the keyboard and follows it.
+    // A headless browser has no keyboard, so the visual viewport is given a keyboard-sized shrink.
+    await page.evaluate(() => { const t = new EventTarget(); t.height = innerHeight - 300; t.offsetTop = 0; Object.defineProperty(window, "visualViewport", { value: t, configurable: true }); window.__vv = t; document.querySelector(".ProseMirror").blur(); window.scrollTo(0, 0); });
+    await page.waitForTimeout(150);
+    await page.focus(".ProseMirror");
+    await page.waitForTimeout(200);
+    const dock = () => page.evaluate(() => { const b = document.querySelector(".blog-toolbar"); const r = b.getBoundingClientRect(); const cs = getComputedStyle(b); const btns = [...b.querySelectorAll("button")].map((x) => x.getBoundingClientRect()); return { docked: b.classList.contains("blog-toolbar-docked"), position: cs.position, bottom: Math.round(innerHeight - r.bottom), height: Math.round(r.height), oneRow: new Set(btns.map((x) => Math.round(x.top))).size === 1, short: btns.filter((x) => x.height < 43.5).length, scrolls: b.scrollWidth > b.clientWidth, left: Math.round(r.left), right: Math.round(r.right), vw: innerWidth }; });
+    const d1 = await dock();
+    if (w <= 640) {
+      check(`editor toolbar, ${label} ${scheme}: while typing on a phone the toolbar is one row docked right above the keyboard`, d1.docked && d1.position === "fixed" && Math.abs(d1.bottom - 300) <= 2 && d1.oneRow && d1.height <= 72 && d1.short === 0 && d1.left === 0 && d1.right === d1.vw, JSON.stringify(d1));
+      await page.evaluate(() => { window.__vv.height = innerHeight - 250; window.__vv.dispatchEvent(new Event("resize")); });
+      await page.waitForTimeout(100);
+      const d2 = await dock();
+      await page.getByRole("button", { name: "Bold", exact: true }).click();
+      await page.waitForTimeout(150);
+      const d3 = await dock();
+      check(`editor toolbar, ${label} ${scheme}: it follows the keyboard when it changes size, and a tap on a button keeps it docked`, Math.abs(d2.bottom - 250) <= 2 && d3.docked && Math.abs(d3.bottom - 250) <= 2, JSON.stringify({ d2, d3 }));
+      await page.screenshot({ path: path.join(outDir, `editor-toolbar-docked-${label}-${scheme}.png`), fullPage: false });
+      await page.evaluate(() => document.querySelector(".ProseMirror").blur());
+      await page.waitForTimeout(150);
+      const d4 = await dock();
+      check(`editor toolbar, ${label} ${scheme}: when the text loses focus the toolbar goes back to the top of the draft`, !d4.docked && d4.position !== "fixed", JSON.stringify(d4));
+    } else {
+      check(`editor toolbar, ${label} ${scheme}: on a wide screen the toolbar is never docked`, !d1.docked, JSON.stringify(d1));
+    }
     await page.screenshot({ path: path.join(outDir, `editor-toolbar-${label}-${scheme}.png`), fullPage: true });
     check(`editor toolbar, ${label} ${scheme}: no console error or off-origin request`, consoleErrors.length === 0 && external.length === 0, consoleErrors.join("|").slice(0, 200));
     await ctx.close();
