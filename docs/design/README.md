@@ -31,6 +31,17 @@ Spec and plan: `specs/001-blog-cms-openui-publish/`. Two pages and one Admin fra
   the story card's edge cases (no cover, no headings, very long title, right-to-left title, emoji title; the design
   renderer has no emoji font, so emoji show as boxes here and are system emoji in the app). Prototype links: menu "Story
   image" to the dialog, Close back to the menu, Try again back to ready, Copy link to the copied state.
+- **Blog discovery** (designed for spec `specs/003-blog-discovery/`, not built yet; every frame in light and dark, the dark
+  ones sit 9000 below the light ones and are the same frames switched to the Dark variable mode): Sign in with the
+  "Latest posts" strip (three clickable cards: title, author, date) and a cobalt "Read the blog" button (desktop and phone), Sign in with the
+  strip absent (empty or failed), Waiting for approval with the strip, "Read the blog" and a quiet "Sign out" (desktop
+  and phone; also the frame for suspended and revoked), all four on the faint dot grid; the public List signed in ("Back to Antares",
+  search box, "Yours" label, "Show more"), List with a search typed (count and a "Clear" button), List with no results, List error (signed out),
+  List "Show more" loading, Post signed in ("Back to Antares", "More posts" button) and Phone List and Post; Chat menu and rail
+  (a round book-icon button beside the "Blog posts" pill, and a "Read the blog" row in the account menu), the same for a user
+  without writing (a full "Read the blog" pill in the rail, no "Blog posts"), and the Phone account menu for both
+  kinds of user. All entries are buttons or rows, not text links: the secondary pill (white, ink border, hard shadow)
+  for "More posts" and "Show more" (and "Back to Antares"), the cobalt filled pill for "Read the blog" on sign-in and status screens, the quiet pill for "Sign out" and "Clear".
 - **Admin / Suspended user (posts hidden)** on the Admin page: states that posts are hidden and no content is shown.
 
 Flows are wired as prototype interactions: index to post and back, sign in to My posts, My posts to Editor, row actions
