@@ -72,5 +72,7 @@ app, Instagram Stories, WhatsApp Status), no screen reader was driven, and SC-00
 - Copy link first lost keyboard focus when its label changed to "Link copied" (React re-created the element): fixed by a
   stable item identity, with a test.
 - On a phone the public post and the editor widen the layout viewport (about 736 px on a 390 px phone) when they hold the
-  browser check's hostile content (a very long link and code line). This was already so on `main` and is not caused by sharing; it
-  hid the new Share button off screen in the check, so the share checks use a post of ordinary content. Tracked separately.
+  browser check's hostile content (a very long link and code line). This was already so on `main`. Fixed afterwards in #314: the
+  app's grid item (`#root`) could not shrink below its content; the checks now compare the layout viewport with the device width.
+  The same stricter check then found two faults of the Share work itself at 320 px (the header was too wide and the menu left the
+  screen), also fixed.

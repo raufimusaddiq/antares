@@ -604,7 +604,9 @@ async function blogPages(browser, which, onlyViews) {
       let shown = true;
       try { await page.waitForSelector(want, { timeout: 8000 }); } catch { shown = false; }
       await page.waitForTimeout(300);
-      const m = await page.evaluate(() => ({ overflowX: document.documentElement.scrollWidth - innerWidth, bodyOverflow: document.body.scrollWidth - innerWidth }));
+      // The page must fit the device: innerWidth is the layout viewport, which a mobile browser widens (and then zooms out, or scrolls
+      // sideways) when some content cannot shrink; scrollWidth minus innerWidth alone reads 0 once that has happened (#314).
+      const m = await page.evaluate((devW) => ({ overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, bodyOverflow: document.body.scrollWidth - document.documentElement.clientWidth, widened: innerWidth - devW }), w);
       // The editor's own layout: the toolbar must clear the writing area (also while it has the focus ring), and an empty body must
       // show the design's placeholder.
       let editorProblems = [];
@@ -810,7 +812,7 @@ async function blogPages(browser, which, onlyViews) {
       // Signed out means the page never asks who it is: the app shell (which calls /api/me and the chat APIs) is not mounted.
       const asked = which === "blog-public" ? state.log.slice(logFrom).filter((l) => /^\w+ \/api\/(me|chats|quota|capabilities|models)\b/.test(l)) : [];
       check(`${which} ${name}, ${label} ${w}px ${scheme}: content shown, no sideways scroll, no console error, CSP violation or off-origin request${which === "blog-public" ? ", and no signed-in API call" : ""}`,
-        shown && m.overflowX <= 0 && m.bodyOverflow <= 0 && consoleErrors.length === 0 && csp === 0 && external.length === 0 && asked.length === 0 && editorProblems.length === 0,
+        shown && m.overflowX <= 0 && m.bodyOverflow <= 0 && m.widened <= 0 && consoleErrors.length === 0 && csp === 0 && external.length === 0 && asked.length === 0 && editorProblems.length === 0,
         JSON.stringify({ shown, ...m, csp, consoleErrors: consoleErrors.slice(0, 2), external: external.slice(0, 2), asked: asked.slice(0, 3), editorProblems }));
       await ctx.close();
     }
@@ -1123,8 +1125,8 @@ async function shareImage(browser) {
 // and stays inside the viewport (no sideways scroll), Escape closes it and puts focus back on the button, Copy link says it
 // worked, the page raises no console error and makes no request to any other origin (nothing of a social service loads).
 async function shareMenu(browser) {
-  for (const [label, w, h, scheme] of [["phone", 390, 844, "light"], ["tablet", 820, 1180, "dark"], ["desktop", 1280, 800, "light"], ["desktop", 1280, 800, "dark"]]) {
-    const { ctx, page, consoleErrors, external } = await openPage(browser, { viewport: { width: w, height: h }, colorScheme: scheme, ...(label === "phone" ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}), permissions: ["clipboard-read", "clipboard-write"] });
+  for (const [label, w, h, scheme] of [["phone", 390, 844, "light"], ["narrow", 320, 640, "light"], ["tablet", 820, 1180, "dark"], ["desktop", 1280, 800, "light"], ["desktop", 1280, 800, "dark"]]) {
+    const { ctx, page, consoleErrors, external } = await openPage(browser, { viewport: { width: w, height: h }, colorScheme: scheme, ...(label === "phone" || label === "narrow" ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}), permissions: ["clipboard-read", "clipboard-write"] });
     await page.goto(base + "/b/share-post");
     await page.waitForSelector('button[aria-label="Share this post"]');
     await page.waitForTimeout(1500); // the blocks have loaded
@@ -1132,11 +1134,11 @@ async function shareMenu(browser) {
     await page.screenshot({ path: path.join(outDir, `share-button-${label}-${scheme}.png`) });
     await button.click({ timeout: 5000 });
     await page.waitForSelector('[role="menu"]');
-    const m = await page.evaluate(() => {
+    const m = await page.evaluate((devW) => {
       const menu = document.querySelector('[role="menu"]').getBoundingClientRect();
-      return { left: menu.left, right: menu.right, vw: document.documentElement.clientWidth, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, items: [...document.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent) };
-    });
-    check(`share menu, ${label} ${scheme}: opens inside the viewport with no sideways scroll`, m.left >= 0 && m.right <= m.vw && m.overflowX <= 0, JSON.stringify(m));
+      return { left: menu.left, right: menu.right, vw: document.documentElement.clientWidth, widened: innerWidth - devW, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, items: [...document.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent) };
+    }, w);
+    check(`share menu, ${label} ${scheme}: opens inside the viewport, the page fits the device, no sideways scroll`, m.left >= 0 && m.right <= m.vw && m.widened <= 0 && m.overflowX <= 0, JSON.stringify(m));
     check(`share menu, ${label} ${scheme}: Copy link and the services are in it`, m.items.includes("Copy link") && (m.items.includes("WhatsApp") || m.items.includes("Share with your apps")), m.items.join(","));
     await page.screenshot({ path: path.join(outDir, `share-menu-${label}-${scheme}.png`) });
     await page.getByRole("menuitem", { name: "Copy link" }).click();
