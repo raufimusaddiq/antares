@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { pressed, useFormatState, type Tri } from "./formatState";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
 import { Autosaver, loadLocalCopy, localCopyBase, type SaveState } from "./autosave";
@@ -119,8 +120,9 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
     else setNote("A link must start with https://, http:// or mailto:.");
   };
 
-  const b = (label: string, on: () => void, active?: boolean) => (
-    <button type="button" className="quiet" aria-pressed={active} aria-label={label} onClick={on}>
+  const fmt = useFormatState(editor);
+  const b = (label: string, on: () => void, state?: Tri) => (
+    <button type="button" className="quiet" aria-pressed={state === undefined ? undefined : pressed(state)} aria-label={label} onClick={on}>
       {label}
     </button>
   );
@@ -171,15 +173,15 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
       />
       {editor && (
         <div className="blog-toolbar" role="toolbar" aria-label="Formatting">
-          {b("Bold", () => chain().toggleBold().run(), editor.isActive("bold"))}
-          {b("Italic", () => chain().toggleItalic().run(), editor.isActive("italic"))}
-          {b("Heading", () => chain().toggleHeading({ level: 2 }).run(), editor.isActive("heading", { level: 2 }))}
-          {b("Subheading", () => chain().toggleHeading({ level: 3 }).run(), editor.isActive("heading", { level: 3 }))}
-          {b("Bullets", () => chain().toggleBulletList().run(), editor.isActive("bulletList"))}
-          {b("Numbers", () => chain().toggleOrderedList().run(), editor.isActive("orderedList"))}
-          {b("Quote", () => chain().toggleBlockquote().run(), editor.isActive("blockquote"))}
-          {b("Code", () => chain().toggleCodeBlock().run(), editor.isActive("codeBlock"))}
-          {b("Link", link, editor.isActive("link"))}
+          {b("Bold", () => chain().toggleBold().run(), fmt.bold)}
+          {b("Italic", () => chain().toggleItalic().run(), fmt.italic)}
+          {b("Heading", () => chain().toggleHeading({ level: 2 }).run(), fmt.heading2)}
+          {b("Subheading", () => chain().toggleHeading({ level: 3 }).run(), fmt.heading3)}
+          {b("Bullets", () => chain().toggleBulletList().run(), fmt.bullets)}
+          {b("Numbers", () => chain().toggleOrderedList().run(), fmt.numbers)}
+          {b("Quote", () => chain().toggleBlockquote().run(), fmt.quote)}
+          {b("Code", () => chain().toggleCodeBlock().run(), fmt.code)}
+          {b("Link", link, fmt.link)}
           {b("Image", () => fileInput.current?.click())}
           {b("Divider", () => chain().setHorizontalRule().run())}
           <input
