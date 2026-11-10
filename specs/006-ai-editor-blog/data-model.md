@@ -1,6 +1,6 @@
 # Data model: Blog Writing Feedback and the AI Editor
 
-Migration `0030_ai_editor.sql`. Every row carries `author_id` and every query filters on it (constitution I).
+Migrations `0030_check_progress.sql` (the progress columns) and `0031_post_edits.sql` (`post_edits`, `post_blocks.anchor_text`). Every row carries `author_id` and every query filters on it (constitution I).
 
 ## `post_edits` (new): a suggested change to the author's text
 

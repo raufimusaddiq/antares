@@ -23,7 +23,7 @@ Three stories on the blog editor, shipped as three increments (each its own PR, 
    draft when it is used; one whose passage is gone is shown as no longer applicable (owner decision, Q2).
 
 **No new dependency, no new service, no new route outside `/api/blog/*`, no change to `auth.PublicRoutes`/`PublicBlogRoutes`, no model call by Antares** (the assistant is
-the author's own Hermes assistant, as for today's check). One migration (`0030`). Per AGENTS.md and the owner's standing rule, the toolbar states, the editor panel,
+the author's own Hermes assistant, as for today's check). Two migrations (`0030` progress, `0031` suggestions). Per AGENTS.md and the owner's standing rule, the toolbar states, the editor panel,
 the progress steps and the suggestion cards are drawn in `docs/design/antares.figcraft` and approved before code (Stage 0).
 
 ## Technical Context
@@ -32,7 +32,7 @@ the progress steps and the suggestion cards are drawn in `docs/design/antares.fi
 
 **Primary Dependencies**: none new (`useEditorState` is in `@tiptap/react` already installed).
 
-**Storage**: SQLite. Migration `0030_ai_editor.sql`: table `post_edits`; columns `post_blocks.anchor_text`, `post_checks.stage`, `stage_at`, `last_event_at`, `lookups`. See [data-model.md](data-model.md).
+**Storage**: SQLite. Migration `0030_check_progress.sql` (US2): columns `post_checks.stage`, `stage_at`, `last_event_at`, `lookups`. Migration `0031_post_edits.sql` (US3): table `post_edits`, column `post_blocks.anchor_text`. See [data-model.md](data-model.md).
 
 **Testing**: Go (envelope v2 validation incl. figures-not-in-draft, anchors relocation with the shared fixture, progress stage derivation from fake Hermes event scripts, decisions route ownership,
 checks no longer go out of date, blocks relocate at publish, limits shared, admin-blindness guard for the new table and routes); vitest (toolbar states incl. mixed, progress component, suggestion
@@ -47,7 +47,14 @@ no overlap, 44 px); a production quality run with synthetic accounts (finished d
 
 **Constraints**: constitution I-V; the draft is written only by the editor and its autosave; a suggestion never invents a figure (validated server-side), quote or link; the existing size limit (`maxCheckInput`), spending limit and per-author check limits apply unchanged (shared, Q3).
 
-**Scale/Scope**: 1 migration, 1 table, 5 columns, 1 route, 1 prompt version, 1 envelope extension, 1 new editor panel, 1 progress component, 1 toolbar hook.
+**Scale/Scope**: 2 migrations, 1 table, 5 columns, 1 route, 1 prompt version, 1 envelope extension, 1 new editor panel, 1 progress component, 1 toolbar hook.
+
+## Decisions added after analysis (2026-11-11)
+
+- Starting a check from the editor panel flushes autosave first and refuses with the same "not saved yet" sentence as Publish; only one surface polls a check at a time (the panel pauses while the Publish screen is open).
+- The limit message says when the author can try again (`LIMIT_REACHED` with `retryAt`, the time the oldest check in the rolling 24 hours ages out; `running` when two are running now). The status is the one the code returns (422), not 429.
+- The post's status stays `ready` after a finished check through further edits; the old reset to the previous status on a save is removed with the out-of-date rule.
+- Polling goes from 2,000 to 1,500 ms in the US2 change, not in the behaviour-preserving extraction.
 
 ## Constitution Check
 
@@ -81,7 +88,7 @@ internal/blog/
 ├── edits.go               # new: DecideEdit, EditView
 ├── handlers.go            # PUT /api/blog/posts/{id}/edits/{editId}
 └── testdata/anchors.json  # one fixture read by Go and vitest
-internal/store/migrations/0030_ai_editor.sql
+internal/store/migrations/0030_check_progress.sql, 0031_post_edits.sql
 web/src/blog/
 ├── formatState.ts         # new: on/off/mixed over a selection
 ├── Editor.tsx             # toolbar from useEditorState, "Check with the editor", the panel, the bridge
@@ -103,5 +110,5 @@ docs/design/antares.figcraft  # page "AI editor"
 | Departure | Why needed | Simpler alternative rejected because |
 |-----------|-----------|--------------------------------------|
 | Checks no longer go out of date on an edit; suggestions and blocks are found again by text anchors (Go for blocks at publish, TS for edits in the editor, one shared fixture) | Owner answer Q2: accepting one suggestion edits the draft, and an author must be able to work through a list | Keeping "any edit invalidates the check" would allow one accepted change per check. Server-side application of edits was rejected: it makes a second writer of the draft and conflicts with autosave's base version. |
-| The accepted change can be stepped back by the editor's undo (and an Undo button right after accepting), not by a stored version | The post model keeps no draft history (a save starts a new version; older ones are deleted except the published one) | A snapshot per acceptance was rejected as new storage for a rare need; the spec's "new saved version to step back to" is met in spirit by undo in the session. **Flagged to the owner.** |
+| The accepted change can be stepped back by the editor's undo (and an Undo button right after accepting), not by a stored version | The post model keeps no draft history (a save starts a new version; older ones are deleted except the published one) | A snapshot per acceptance was rejected as new storage for a rare need. Owner accepted undo only (2026-11-11); FR-018 now says so. |
 | Rule "the assistant must never rewrite the author's text" (spec 001 contract) is replaced by "never changes the draft itself; may propose changes" | The owner's request | Not optional; the contract file is amended in the same change. |

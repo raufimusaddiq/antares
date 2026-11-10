@@ -23,7 +23,7 @@ Today the check is deliberately read-only about the author's text (spec 001: the
 ### Session 2026-11-11
 
 - Q: How much of the author's text may the assistant propose to write or rewrite? → A: Both: it edits what the author wrote and also expands a bare framework into full paragraphs built from the author's own points, marked as assistant-written until accepted.
-- Q: Where does an accepted text change land? → A: Straight into the saved draft, as a new saved version the author can step back to; what the editor shows is what gets published.
+- Q: Where does an accepted text change land? → A: Straight into the saved draft, undoable; what the editor shows is what gets published. (Refined at planning, owner default accepted: the post model keeps no draft history, so "step back" is the editor's undo, including an Undo right after accepting, not a stored version.)
 - Q: Where does the author review the editor's suggestions? → A: At any time while writing: a "Check with the editor" action in the editor runs the same check and shows suggestions beside the draft; Publish still runs the check on the way out, as today.
 - Q: After the author accepts one suggestion (or types elsewhere), do the remaining suggestions and data blocks stay usable? → A: Yes. Accepting changes only its own passage; every other suggestion and block stays valid unless its own passage changed (then it is "no longer applicable"). Typing elsewhere also leaves them valid.
 - Q: Do checks started from the editor count against the same limits as the check at Publish? → A: Yes, one shared limit (daily and simultaneous, as today). When it is reached the author is told and can still publish the original.
@@ -93,7 +93,7 @@ The check no longer only adds data blocks and notes. It also proposes changes to
 - A selection that spans a bold word, a link and plain text: the buttons show a mixed state and still work.
 - A very short draft (a title only): the assistant says there is too little to edit instead of inventing a whole post.
 - A very long draft: the check still refuses clearly (as today) and the progress screen never claims a step that did not run.
-- The author edits the draft while a check runs: suggestions about the passages that changed are dropped when the check finishes; the rest stay valid. No suggestion is applied to a passage that changed.
+- The author edits the draft while a check runs or after it: a suggestion about a passage that changed is shown as "no longer applicable" and is never applied; the rest stay valid.
 - A suggestion whose original passage the author has since changed: it is shown as no longer applicable, not applied.
 - A post that mixes two languages: the assistant follows the language of the passage it is about.
 - The assistant returns something unusable: the author sees which suggestions were dropped and why, never a silent gap.
@@ -112,7 +112,7 @@ The check no longer only adds data blocks and notes. It also proposes changes to
 - **FR-007**: Leaving and returning to a running check MUST show its real current step.
 - **FR-008**: Step changes MUST be announced to assistive technology once and politely; the clock MUST NOT be announced every second.
 - **FR-009**: The check MUST be able to propose changes to the author's own text as suggestions, each with the original passage, the proposed text and a one-sentence reason. The number of suggestions MUST scale with the post, about one per section, with no fixed cap on a long post (the existing limit on how long a post a check can read still applies); they MUST be ordered most important first.
-- **FR-010**: For a draft that is mostly a framework (headings and bullets with little prose), the check MUST be able to propose prose for each section built from the author's own points.
+- **FR-010**: For a draft that is mostly a framework (headings and bullets with little prose; the assistant judges this), the check MUST be able to propose prose for each section built from the author's own points.
 - **FR-011**: Nothing in the author's draft MUST change until the author accepts a suggestion; accepting MUST change only that passage and MUST be undoable; rejecting MUST change nothing.
 - **FR-012**: Notes, reasons and proposed text MUST be in the language the post (or the passage) is written in.
 - **FR-013**: Text written by the assistant MUST be marked as such in the editor and review screens until accepted (after acceptance it is the author's own text and carries no mark on the published post; data blocks keep their reader-facing "AI-added" marker), and a suggestion MUST NOT state a number, quote or source it cannot support; unsupported specifics are left out.
@@ -120,9 +120,9 @@ The check no longer only adds data blocks and notes. It also proposes changes to
 - **FR-015**: Publishing without accepting any suggestion MUST publish exactly the author's text.
 - **FR-016**: The check, the progress and the suggestions MUST stay private to the author while a draft: the administrator never sees a draft, a suggestion or a check (constitution principle I).
 - **FR-017**: The assistant MAY both edit the author's own sentences and expand a bare framework into full paragraphs built from the author's own points; expanded text MUST come from those points and MUST NOT add facts the author did not give (see FR-013).
-- **FR-018**: Accepting a suggestion MUST write the change into the saved draft as a new saved version, so the author can step back to the version before it; the editor and the published post MUST show the same text.
+- **FR-018**: Accepting a suggestion MUST write the change into the saved draft as one ordinary, undoable editor change (an Undo is offered right after accepting, and the editor's undo works); the editor and the published post MUST show the same text. The product keeps no draft history, so there is no stored version to step back to after a reload.
 - **FR-019**: The author MUST be able to run the check from the editor at any time while writing, and see its progress (FR-004 to FR-008) and its suggestions beside the draft; the check that runs on the way to Publish MUST give the same suggestions in the review screen.
-- **FR-020**: A check started from the editor MUST count against the same daily and simultaneous limits as the check at Publish; when a limit is reached the author MUST be told in plain words (and when they can try again) and MUST still be able to publish the original.
+- **FR-020**: A check started from the editor MUST count against the same daily and simultaneous limits as the check at Publish; when a limit is reached the author MUST be told in plain words and when they can try again (when the oldest check in the rolling 24 hours ages out, or that two are running now) and MUST still be able to publish the original.
 
 ### Key Entities *(include if feature involves data)*
 
@@ -136,9 +136,9 @@ The check no longer only adds data blocks and notes. It also proposes changes to
 
 - **SC-001**: In a real browser, after any of 50 cursor moves and selections across bold, italic, heading, list, quote, code and link text, the toolbar matches the text at the cursor every time (no stale state).
 - **SC-002**: During a check, the screen shows a named step within 2 seconds of starting, and the displayed step is never more than 5 seconds behind the real one.
-- **SC-003**: Authors can tell what a running check is doing: in a short trial, at least 9 of 10 can say which step it is in without help.
-- **SC-004**: On a finished draft, at least one useful text suggestion with a reason is returned in at least 8 of 10 test drafts, in under 3 minutes.
-- **SC-005**: For a bare framework of five headings with bullets, the assistant proposes prose for every heading in the post's own language in at least 8 of 10 test frameworks, with no invented figures, quotes or sources.
+- **SC-003**: Authors can tell what a running check is doing: at every moment of a running check the screen names its current step, the step shown matches the real one, and the clock and sign of life are visible (verified in a real browser; not a timed human trial).
+- **SC-004**: On a finished rough draft, at least one useful text suggestion with a reason is returned in at least 4 of 5 test drafts, in under 3 minutes.
+- **SC-005**: For a bare framework of five headings with bullets, the assistant proposes prose for every heading in the post's own language in at least 4 of 5 test frameworks, with no invented figures, quotes or sources.
 - **SC-006**: In 100% of tests, the draft is byte-for-byte unchanged until the author accepts a suggestion, and publishing without accepting publishes the original.
 - **SC-007**: In 100% of language tests (Indonesian and English), notes, reasons and proposed text are in the post's language.
 
@@ -151,3 +151,6 @@ The check no longer only adds data blocks and notes. It also proposes changes to
 - The existing rules of the check stay: same spending limits, same refusal for a very long post, the author's own assistant and model, web search only for real sources.
 - The existing data blocks (tables, charts, sources) stay as they are; text suggestions are an addition to them.
 - Mobile is in scope for all three stories (the author writes on a phone too).
+- The number of suggestions follows the post (about one per section). A technical safety bound on the size of one assistant reply (`4 x parts + 8` suggestions) exists against a runaway reply; it is not a product limit and is not shown to the author unless it drops something.
+- After a check finishes the post stays "checked" through further edits; the list chip means a check exists, and publishing is unaffected.
+- Because applicability is judged against the live draft in the browser, a part with no text (an image only) never gets a text suggestion.

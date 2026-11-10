@@ -18,7 +18,7 @@ Body `{"decision": "accepted" | "rejected"}` and nothing else (unknown field, ot
 Returns the `edit` object. Only the post's latest check can be decided on, and only while it is `ready` (409 `SUPERSEDED` otherwise, as for blocks); another author's, a missing or a malformed id is 404. One audit-free write (like blocks).
 
 ## Start a check: unchanged route, shared limits
-`POST /api/blog/posts/{id}/check` from the editor panel or from Publish. Same refusals: 409 a check is running, 429 too many (2 running, 30 per 24 hours), 402/429 the daily spending limit, 422 too long, 503 unavailable. The error words tell the author when they can try again and that Publish original still works.
+`POST /api/blog/posts/{id}/check` from the editor panel or from Publish. Same refusals: 409 a check is running, 422 `LIMIT_REACHED` (2 running, 30 per 24 hours; the body carries `retryAt`, or `running: true` when two are running now), the daily spending limit as today, 422 too long, 503 unavailable. The error words tell the author when they can try again (`retryAt`) and that Publish original still works.
 
 ## Publish
 `POST /api/blog/posts/{id}/publish` with `mode: "enriched"` no longer requires the check's version to be the draft's latest: accepted blocks are relocated against the draft at that moment; one whose place is gone is skipped and the response carries `skippedBlocks` (count) so the screen can say so. `mode: "original"` publishes exactly the author's text, as today.
