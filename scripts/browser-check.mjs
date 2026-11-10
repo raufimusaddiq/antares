@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -40,6 +40,7 @@ const PLAIN = "a".repeat(32);
 const RICH = "b".repeat(32);
 
 const BLOG_ID = "e".repeat(32);
+const BLOG_SHARE_ID = "5".repeat(32); // a draft of ordinary content, for the Share preview
 const BLOG_EMPTY_ID = "f".repeat(32);
 const BLOG_LONG_ID = "9".repeat(32); // a post too long for a check to read
 const BLOG_REVIEW_ID = "8".repeat(32); // a post whose check is ready: Review before publishing
@@ -141,6 +142,7 @@ function api(req, res, url) {
   if (url.pathname === "/api/blog/posts" && req.method === "GET")
     return send(200, [BLOG_ID, "c".repeat(32), "d".repeat(32)].map((id, i) => ({ id, title: ["A long title that has to wrap on a phone without pushing the page sideways", "", "Second post"][i], status: ["published", "draft", "unpublished"][i], slug: i === 0 ? "first-post" : "", updatedAt: "2026-11-09T01:00:00Z", publishedAt: i === 0 ? "2026-11-08T01:00:00Z" : "", interactive: false })));
   if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "GET") return send(200, blogPost());
+  if (url.pathname === `/api/blog/posts/${BLOG_SHARE_ID}` && req.method === "GET") return send(200, { ...blogPost(), id: BLOG_SHARE_ID, title: SHARE_POST.title, summary: SHARE_POST.summary, slug: "share-post", doc: SHARE_POST.doc });
   if (url.pathname === `/api/blog/posts/${BLOG_EMPTY_ID}` && req.method === "GET") return send(200, { ...blogPost(), id: BLOG_EMPTY_ID, title: "", doc: { type: "doc", content: [{ type: "paragraph" }] } });
   if (url.pathname === `/api/blog/posts/${BLOG_LONG_ID}` && req.method === "GET")
     return send(200, { ...blogPost(), id: BLOG_LONG_ID, title: "Too long to check", doc: { type: "doc", content: Array.from({ length: 130 }, () => ({ type: "paragraph", content: [{ type: "text", text: "word ".repeat(200) }] })) } });
@@ -1183,6 +1185,30 @@ async function storyCard(browser) {
   }
 }
 
+// The author's Share preview inside Post settings (spec 002): the picture of the draft appears at 9:16 inside the sheet, which
+// stays inside the viewport with no sideways scroll, with no console error and no request to another origin.
+async function shareSettings(browser) {
+  for (const [label, w, h, scheme] of [["phone", 390, 844, "light"], ["phone", 390, 844, "dark"], ["desktop", 1280, 800, "light"]]) {
+    const { ctx, page, consoleErrors, external } = await openPage(browser, { viewport: { width: w, height: h }, colorScheme: scheme, ...(label === "phone" ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) });
+    await page.goto(base + `/blog/${BLOG_SHARE_ID}`);
+    await page.waitForSelector("[contenteditable=true]");
+    await page.screenshot({ path: path.join(outDir, `share-preview-before-${label}-${scheme}.png`) });
+    await page.getByRole("button", { name: "Post settings" }).click();
+    await page.waitForSelector('[aria-label="Post settings"]');
+    await page.waitForSelector(".blog-share-preview-row img", { timeout: 15000 });
+    await page.waitForTimeout(300);
+    const m = await page.evaluate(() => {
+      const sheet = document.querySelector('[aria-label="Post settings"]').getBoundingClientRect();
+      const img = document.querySelector(".blog-share-preview-row img").getBoundingClientRect();
+      return { sheetRight: sheet.right, vw: document.documentElement.clientWidth, ratio: img.width / img.height, inside: img.left >= sheet.left - 1 && img.right <= sheet.right + 1, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, noSend: document.querySelectorAll('[aria-label="Post settings"] button').length };
+    });
+    await page.screenshot({ path: path.join(outDir, `share-preview-${label}-${scheme}.png`) });
+    check(`share preview, ${label} ${scheme}: 9:16, inside the sheet, no sideways scroll`, Math.abs(m.ratio - 9 / 16) < 0.02 && m.inside && m.sheetRight <= m.vw + 1 && m.overflowX <= 0, JSON.stringify(m));
+    check(`share preview, ${label} ${scheme}: no console error and no request to another origin`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
+    await ctx.close();
+  }
+}
+
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
@@ -1204,6 +1230,7 @@ try {
   if (only === "share-image") await shareImage(browser);
   if (!only || only === "share-menu") await shareMenu(browser);
   if (!only || only === "story-card") await storyCard(browser);
+  if (!only || only === "blog-editor" || only === "share-preview") await shareSettings(browser);
 } finally {
   await browser.close();
   server.close();

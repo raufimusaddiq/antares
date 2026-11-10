@@ -164,6 +164,11 @@ jobs:
         run: ONLY=blog-public node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
       - name: Blog pages (list and editor)
         run: ONLY=blog-editor node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
+      # Sharing a post (specs/002-share-blog-social): the menu, and the story picture of nine awkward posts, which must be exactly 1080 x 1920.
+      - name: Blog sharing (menu and story picture)
+        run: |
+          ONLY=share-menu node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
+          ONLY=story-card node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
       - name: Image attach, retry, remove, send and a touch tap on a capability reason
         run: ONLY=images node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
 

@@ -1331,6 +1331,11 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 .blog-share-note { min-width: 5.5rem; }
 .blog-share-note:empty { display: none; }
 .blog-share-manual { position: absolute; right: 0; top: calc(100% + 0.35rem); z-index: 14; width: min(22rem, calc(100vw - 2rem)); padding: 0.6rem; display: grid; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
+/* The author's Share preview inside Post settings (spec 002 FR-015). */
+.blog-share-preview { display: grid; gap: 0.4rem; }
+.blog-share-preview-row { display: flex; gap: 0.75rem; align-items: flex-start; }
+.blog-share-preview-row img { flex: none; width: 9rem; aspect-ratio: 9 / 16; height: auto; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--canvas); }
+.blog-share-preview-row p { margin: 0; }
 .blog-share-manual input { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 0.8125rem; }
 @media (max-width: 52rem) {
   .blog-shell { grid-template-columns: minmax(0, 1fr); }

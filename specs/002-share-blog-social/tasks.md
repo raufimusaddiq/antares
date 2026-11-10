@@ -121,12 +121,12 @@ description: "Task list for Share Blog Posts to Social Media and Stories"
 
 ### Tests for User Story 3 (write first, must fail)
 
-- [ ] T029 [P] [US3] `web/src/blog/PostSettings.test.tsx` (extend): the "Share preview" section shows the card made from the draft's current title, summary, headings and cover and the link preview, is labelled "Preview only", has no Share, Save or Copy control, and updates when the fields change; no preview of a post that has no title yet (empty state text)
+- [x] T029 [P] [US3] `web/src/blog/PostSettings.test.tsx` (extend): the "Share preview" section shows the card made from the draft's current title, summary, headings and cover and the link preview, is labelled "Preview only", has no Share, Save or Copy control, and updates when the fields change; no preview of a post that has no title yet (empty state text)
 
 ### Implementation for User Story 3
 
-- [ ] T030 [US3] "Share preview" section in `web/src/blog/PostSettings.tsx` built from the T005 frame: the card rendered by `postCard.ts` into an `<img>` from a blob (revoked on change and on unmount), at a size that fits the sheet, with the caption from the frame; the card's date is the draft's last-saved date; debounce rendering while the author types
-- [ ] T031 [US3] Extend `ONLY=blog-editor` in `scripts/browser-check.mjs`: with Post settings open the preview renders at 390 and 1280 px, in light and dark, without overflowing the sheet
+- [x] T030 [US3] "Share preview" section in `web/src/blog/PostSettings.tsx` built from the T005 frame: the card rendered by `postCard.ts` into an `<img>` from a blob (revoked on change and on unmount), at a size that fits the sheet, with the caption from the frame; the card's date is the draft's last-saved date; debounce rendering while the author types
+- [x] T031 [US3] Extend `ONLY=blog-editor` in `scripts/browser-check.mjs`: with Post settings open the preview renders at 390 and 1280 px, in light and dark, without overflowing the sheet
 
 **Checkpoint**: all three stories work independently.
 

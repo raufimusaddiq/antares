@@ -27,7 +27,7 @@ export function RowMenu({
   label,
   actions,
   trigger = "⋯",
-  triggerClass = "quiet blog-more",
+  triggerClass,
   triggerIcon,
 }: {
   label: string;
@@ -85,7 +85,7 @@ export function RowMenu({
       <button
         ref={button}
         type="button"
-        className={triggerClass}
+        className={triggerClass ?? "quiet blog-more"}
         data-icon={triggerIcon}
         aria-haspopup="menu"
         aria-expanded={open}
@@ -100,14 +100,13 @@ export function RowMenu({
       {open && (
         <div ref={list} className="blog-menu-list" role="menu" aria-label={label} onKeyDown={onMenuKey}>
           {actions.map((a) => {
-            const cls = [a.danger ? "danger" : "", a.done ? "done" : "", a.divider ? "divided" : ""].filter(Boolean).join(" ") || undefined;
             return a.href ? (
               <a
                 key={a.id ?? a.label}
                 role="menuitem"
                 tabIndex={-1}
                 href={a.href}
-                className={cls}
+                className={[a.danger ? "danger" : "", a.done ? "done" : "", a.divider ? "divided" : ""].filter(Boolean).join(" ") || undefined}
                 {...(a.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                 onClick={() => close(false)}
               >
@@ -119,7 +118,7 @@ export function RowMenu({
                 type="button"
                 role="menuitem"
                 tabIndex={-1}
-                className={cls}
+                className={[a.danger ? "danger" : "", a.done ? "done" : "", a.divider ? "divided" : ""].filter(Boolean).join(" ") || undefined}
                 onClick={() => {
                   if (!a.keepOpen) close(true); // focus stays on the button (a dialog the action opens returns to it); only a link leaves the page
                   a.run?.();
