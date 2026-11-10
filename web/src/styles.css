@@ -1409,6 +1409,10 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 .blog-notes h3, .blog-drawer h3 { margin: 0 0 0.5rem; font-size: 1.1rem; }
 .blog-note { margin: 0.5rem 0; padding: 0.5rem 0.75rem; background: var(--rail); border-radius: var(--r-sm); }
 .blog-note p { margin: 0; }
+.blog-note-head { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem; margin-bottom: 0.35rem !important; }
+.blog-note button { margin-top: 0.5rem; min-height: 2.75rem; }
+.blog-note { animation: fade-in 0.2s var(--ease-out) both; }
+@media (prefers-reduced-motion: reduce) { .blog-note { animation: none; } }
 .blog-note-warn { background: var(--blush); color: var(--ink); }
 .blog-drawer ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
 .blog-drawer li { display: grid; gap: 0.15rem; justify-items: start; overflow-wrap: anywhere; }
@@ -1641,3 +1645,10 @@ input.switch:focus-visible { outline: 3px solid var(--focus-halo); outline-offse
   .admin-main button, .admin-main select, .admin-main input[type="search"], .admin-main textarea, .takedown-notice button { min-height: 2.75rem; }
   .user-table tbody th a { display: inline-block; padding: 0.7rem 0; }
 }
+
+/* Admin → Capabilities → Writing rules (spec 005). The switch and the card are the ones Models uses. */
+.writing-card .switch-cell { min-height: 2.75rem; }
+.writing-counts { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; margin: 0.25rem 0 0.75rem; }
+.writing-counts div { min-width: 0; }
+.writing-counts dd { margin: 0; font-size: 1.75rem; line-height: 1.2; }
+.writing-counts dt { margin: 0; }

@@ -26,7 +26,7 @@ const (
 
 var ErrEnvelope = errors.New("the assistant's reply is not usable")
 
-var noteKinds = setOfNames("clarity", "fact", "missing-context", "unsourced")
+var noteKinds = setOfNames("clarity", "fact", "missing-context", "unsourced", "style")
 
 // blockKinds is the catalogue of what a block may be called; the kind is a label for the author, not a component.
 var blockKinds = setOfNames("table", "chart", "metric", "accordion", "sources", "list", "callout", "tabs", "steps", "summary", "timeline", "comparison")

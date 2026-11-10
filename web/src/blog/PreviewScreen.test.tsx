@@ -51,7 +51,7 @@ describe("Review before publishing", () => {
     expect(within(original).getByText("My own words, unchanged.")).toBeTruthy();
     const enriched = screen.getByRole("region", { name: "Enriched preview" });
     expect(within(enriched).getAllByText("AI-added")).toHaveLength(2);
-    const notes = screen.getByRole("region", { name: "Notes from the assistant" });
+    const notes = screen.getByRole("region", { name: /^Notes from the assistant \(\d+\)$/ });
     expect(within(notes).getByText("Clarity")).toBeTruthy();
     expect(within(notes).getByText("Unsourced")).toBeTruthy();
     expect(within(notes).getByText("No source for this claim.").closest(".blog-note")!.className).toContain("blog-note-warn");

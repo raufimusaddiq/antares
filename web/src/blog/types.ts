@@ -58,7 +58,7 @@ export interface CheckBlock {
 export type CheckState = "running" | "ready" | "failed" | "cancelled" | "timed_out" | "out_of_date";
 
 export interface CheckNote {
-  kind: "clarity" | "fact" | "missing-context" | "unsourced";
+  kind: "clarity" | "fact" | "missing-context" | "unsourced" | "style";
   text: string;
   afterNode: number;
 }

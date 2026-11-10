@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview|blog-discovery|admin-posts|admin-models|admin-a11y)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview|blog-discovery|admin-posts|admin-models|admin-a11y|writing-rules)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -51,7 +51,7 @@ const RUNNING_CHECK = { id: "d".repeat(32), state: "running", reason: "", notes:
 const reviewSource = (host) => ({ url: `https://${host}/data`, title: `About ${host} with a title long enough to wrap on a phone`, retrievedAt: "2026-11-08T10:00:00Z", verified: false });
 const REVIEW_CHECK = {
   id: "c".repeat(32), state: "ready", reason: "", notices: [],
-  notes: [{ kind: "clarity", text: "The second paragraph buries the question; consider leading with it.", afterNode: 0 }, { kind: "unsourced", text: "A claim with no public source. No figure was added.", afterNode: 1 }],
+  notes: [{ kind: "clarity", text: "The second paragraph buries the question; consider leading with it.", afterNode: 0 }, { kind: "unsourced", text: "A claim with no public source. No figure was added.", afterNode: 1 }, { kind: "style", text: "Hype wording in the opening: revolutionary, seamless, ultimate.", afterNode: 0 }],
   blocks: ["one", "two"].map((n, i) => ({ id: String(i + 1).repeat(32), kind: "summary", afterNode: i, markup: 'root = Card([t])\nt = TextContent("Block ' + n + ' as drawn")', fallback: "plain", decision: "proposed", needsAck: true, sources: [reviewSource(`${n}.example.org`)] })),
 };
 const BLOG_LIMITS = { checkBytes: 122880, docBytes: 524288, imagesPerPost: 30, imageBytes: 5242880, imageBytesTotal: 209715200, blocksPerCheck: 10, sourcesPerBlock: 10, checksPer24h: 30 };
@@ -144,6 +144,15 @@ function api(req, res, url) {
   // Spec 004: the administrator's takedown, seen by the author as a list row, a banner, and a blocked Publish.
   if (url.pathname === "/api/blog/notices" && req.method === "GET") return send(200, { notices: state.notices });
   if (/^\/api\/blog\/notices\/[^/]+\/seen$/.test(url.pathname) && req.method === "POST") { state.notices = []; res.writeHead(204); return res.end(); }
+  // Spec 005: Admin → Capabilities. The mock keeps the writing-rules switch and answers like the server (counts only, the warning when asked for).
+  if (state.admin && state.writing && url.pathname === "/api/admin/tool-policy" && req.method === "GET") return send(200, { tools: [{ name: "web", label: "Web search", description: "Search the web.", state: "on", reason: "" }], custom: false, reverifying: 0 });
+  if (state.admin && state.writing && url.pathname === "/api/admin/media-models" && req.method === "GET") return send(200, { image: { current: "", default: "img", options: [{ id: "img", name: "img", free: true }] }, video: { current: "", default: "vid", options: [{ id: "vid", name: "vid", free: false }] }, catalogue: "ok", reverifying: 0 });
+  if (state.admin && state.writing && url.pathname === "/api/admin/writing-rules") {
+    const view = () => ({ enabled: state.writing.enabled, version: "v1", source: "anti-slop (github.com/miqdadbadjuber/anti-slop)", license: "MIT, Copyright (c) 2026 Miqdad Badjuber (antislop)",
+      last24h: state.writing.enabled ? { with: 148, without: 0, notApplied: state.writing.lost } : { with: 63, without: 85, notApplied: 0 }, ...(state.writing.enabled && state.writing.lost ? { warning: "not_applied" } : {}) });
+    if (req.method === "GET") return send(200, view());
+    if (req.method === "PUT") { let raw = ""; req.on("data", (d) => (raw += d)); req.on("end", () => { if (state.writing.fail) return send(500, { error: { code: "INTERNAL", message: "x" } }); state.writing.enabled = JSON.parse(raw).enabled === true; send(200, view()); }); return; }
+  }
   // Spec 004: the Models screen. The mock keeps the switches and defaults, and refuses to switch off a default like the server does.
   if (state.admin && state.models && url.pathname === "/api/admin/models" && req.method === "GET") return send(200, modelsView());
   if (state.admin && state.models && url.pathname === "/api/admin/model-policy" && req.method === "PUT") {
@@ -775,6 +784,20 @@ async function blogPages(browser, which, onlyViews) {
         }
         const after = await page.evaluate(() => [...document.querySelectorAll("button")].find((b) => /Accept all and publish/.test(b.textContent ?? ""))?.disabled);
         if (after !== false) editorProblems.push("Accept all and publish stays disabled after every block is ticked");
+        // Style notes (specs/005-antislop-writing): shown with their chip, every Dismiss button is named and at least 44 px tall, none overlaps
+        // another control, dismissing one removes only it and moves focus, and Publish stays available.
+        const sn = await page.evaluate(() => {
+          const notes = [...document.querySelectorAll(".blog-notes .blog-note")];
+          const btns = [...document.querySelectorAll(".blog-notes button")];
+          const rects = btns.map((b) => b.getBoundingClientRect());
+          let overlap = 0;
+          for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) { const a = rects[i], b = rects[j]; if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) overlap++; }
+          return { notes: notes.length, style: notes.filter((n) => n.querySelector(".chip")?.textContent === "Style").length, names: btns.map((b) => b.textContent), tall: rects.every((r) => r.height >= 43.5), overlap, heading: document.querySelector("#notes-h")?.textContent };
+        });
+        if (sn.notes !== 3 || sn.style !== 1 || !sn.names.every((n) => n === "Dismiss this note") || !sn.tall || sn.overlap) editorProblems.push(`style notes are wrong: ${JSON.stringify(sn)}`);
+        await page.getByRole("button", { name: "Dismiss this note" }).last().click();
+        const dn = await page.evaluate(() => ({ heading: document.querySelector("#notes-h")?.textContent, shown: document.querySelectorAll(".blog-notes .blog-note").length, styleLeft: [...document.querySelectorAll(".blog-notes .chip")].some((c) => c.textContent === "Style"), status: document.querySelector(".blog-notes [role=status]")?.textContent, publish: [...document.querySelectorAll("button")].filter((b) => /publish/i.test(b.textContent ?? "") && !/Accept all/.test(b.textContent ?? "")).every((b) => !b.disabled) }));
+        if (dn.shown !== 2 || dn.styleLeft || dn.status !== "1 note dismissed." || !dn.publish) editorProblems.push(`dismissing a style note went wrong: ${JSON.stringify(dn)}`);
       }
       if (which === "blog-editor" && name.endsWith("editor") && shown) {
         await page.focus("[contenteditable=true]");
@@ -1371,6 +1394,46 @@ async function adminModels(browser) {
   }
 }
 
+// ONLY=writing-rules: the administrator's Writing rules card on Capabilities (spec 005) at 320, 390, 820 and 1280 px, light and dark: the state, the
+// version, the credit and the counts; switched off; the warning when runs were not covered; a refused save says nothing was changed. Nothing draws
+// over anything else, the switch is a named 44 px target that keeps focus while it saves, and the page fits the device.
+async function writingRules(browser) {
+  const fits = (page, w) => page.evaluate((devW) => ({ widened: innerWidth - devW, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth }), w);
+  for (const [label, w, h, scheme] of [["narrow", 320, 640, "light"], ["phone", 390, 844, "dark"], ["tablet", 820, 1180, "light"], ["desktop", 1280, 800, "dark"]]) {
+    const ctxOpts = { viewport: { width: w, height: h }, colorScheme: scheme, ...(w < 500 ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) };
+    state.admin = true; state.writing = { enabled: true, lost: 3, fail: false };
+    try {
+      const { ctx, page, consoleErrors, external } = await openPage(browser, ctxOpts);
+      await page.goto(base + "/admin/capabilities");
+      await page.waitForSelector(".writing-card", { timeout: 8000 }).catch(() => {});
+      const card = () => page.evaluate(() => { const c = document.querySelector(".writing-card"); const sw = c?.querySelector("input.switch"); const r = sw?.closest("label")?.getBoundingClientRect();
+        return { on: sw?.checked, text: c?.innerText ?? "", chip: !!c?.querySelector(".chip"), alerts: c ? [...c.querySelectorAll("[role=alert]")].map((a) => a.textContent) : [], targetH: r ? Math.round(r.height) : 0, name: sw?.closest("label")?.textContent.trim() }; });
+      let c = await card();
+      let f = await fits(page, w);
+      check(`writing rules, ${label} ${scheme}: on, with version, credit, counts and the not-applied warning; the page fits`, c.on === true && c.chip && /writing-rules v1/.test(c.text) && /Miqdad Badjuber \(antislop\)/.test(c.text) && /148/.test(c.text) && /chat and post-check runs/.test(c.text) && c.alerts.some((a) => /not applied to 3 runs/.test(a)) && f.widened <= 0 && f.overflowX <= 0, JSON.stringify({ ...c, text: c.text.slice(0, 60) }) + JSON.stringify(f));
+      check(`writing rules, ${label} ${scheme}: the switch is named and its touch target is at least 44 px`, c.targetH >= 44 && /Writing rules are on for everyone/.test(c.name), JSON.stringify(c));
+      check(`writing rules, ${label} ${scheme}: no control draws over another`, (await page.evaluate(() => { const els = [...document.querySelectorAll(".writing-card button, .writing-card a, .writing-card input, .admin-nav a, .admin-nav button")].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; }); let n = 0; for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) { if (els[i].contains(els[j]) || els[j].contains(els[i])) continue; const a = els[i].getBoundingClientRect(), b = els[j].getBoundingClientRect(); if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) n++; } return n; })) === 0);
+      await page.screenshot({ path: path.join(outDir, `writing-rules-${label}-${scheme}.png`), fullPage: true });
+      const sw = page.getByRole("switch", { name: /Writing rules are on for everyone/ });
+      await sw.focus();
+      await page.keyboard.press("Space");
+      await page.waitForTimeout(500);
+      c = await card();
+      const kept = await page.evaluate(() => document.activeElement?.classList.contains("switch"));
+      check(`writing rules, ${label} ${scheme}: the switch works from the keyboard, keeps focus, and off shows the without count`, c.on === false && kept === true && /without \(switched off\)/.test(c.text) && /85/.test(c.text) && c.alerts.length === 0, JSON.stringify({ ...c, kept, text: c.text.slice(0, 40) }));
+      await page.screenshot({ path: path.join(outDir, `writing-rules-off-${label}-${scheme}.png`), fullPage: true });
+      state.writing.fail = true;
+      await page.getByRole("switch", { name: /Writing rules are off for everyone/ }).click();
+      await page.waitForTimeout(500);
+      c = await card();
+      check(`writing rules, ${label} ${scheme}: a refused save says nothing was changed and the switch stays off`, c.on === false && c.alerts.some((a) => /Could not save\. Nothing was changed\./.test(a)), JSON.stringify(c));
+      f = await fits(page, w);
+      check(`writing rules, ${label} ${scheme}: still fits, no unexpected console error or off-origin request`, f.widened <= 0 && f.overflowX <= 0 && consoleErrors.filter((e) => !/status of 500/.test(e)).length === 0 && external.length === 0, JSON.stringify(f) + consoleErrors.join("|"));
+      await ctx.close();
+    } finally { state.admin = false; state.writing = null; }
+  }
+}
+
 // ONLY=admin-posts: the administrator's Posts screens and the author's side of a takedown (spec 004) in a real browser at 320, 390, 820 and
 // 1280 px, light and dark. The list, a post, the take-down form and the restore; a takedown seen by the author as a list row, a one-time
 // banner that goes away for good, and an editor whose Publish is blocked. Every page fits the device and raises no console error.
@@ -1623,6 +1686,7 @@ try {
   if (!only || only === "admin-posts") await adminPosts(browser);
   if (!only || only === "admin-models") await adminModels(browser);
   if (!only || only === "admin-a11y") await adminA11y(browser);
+  if (!only || only === "writing-rules") await writingRules(browser);
   if (!only || only === "blog-editor" || only === "share-preview") await shareSettings(browser);
 } finally {
   await browser.close();

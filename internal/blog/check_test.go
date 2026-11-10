@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/raufimusaddiq/antares/internal/hermes"
+	"github.com/raufimusaddiq/antares/internal/writing"
 )
 
 const goodReply = `{"version":1,
@@ -118,7 +119,7 @@ func TestACheckRunsOnTheAuthorsOwnAssistantAndShowsWhatCameBack(t *testing.T) {
 		t.Fatalf("sessions %d runs %d", sessions, len(runs))
 	}
 	r := runs[0]
-	if r.Instructions != checkPrompt || r.SessionKey != "chatui:user:"+u.id || !strings.Contains(r.Input, "TITLE: A post") ||
+	if !strings.HasPrefix(r.Instructions, checkPrompt) || r.SessionKey != "chatui:user:"+u.id || !strings.Contains(r.Input, "TITLE: A post") ||
 		!strings.Contains(r.Input, "[0] First part") || !strings.Contains(r.Input, "[2] ## A heading") {
 		t.Fatalf("run request: %+v", r)
 	}
@@ -775,7 +776,7 @@ func TestACheckRecordsWhichInstructionProducedIt(t *testing.T) {
 	u.waitCheck(post.ID, "ready")
 	var v string
 	a.db.QueryRow(`SELECT prompt_version FROM post_checks WHERE post_id = ?`, post.ID).Scan(&v)
-	if v != "blog-check v1" {
+	if v != "blog-check v2" {
 		t.Fatalf("prompt version %q", v)
 	}
 }
@@ -1063,5 +1064,70 @@ func TestTheCheckModeIsParsedStrictly(t *testing.T) {
 	u := a.active("alice")
 	if c := into[map[string]bool](t, u.do("GET", "/api/blog/capabilities", nil)); c["check"] {
 		t.Errorf("an unknown mode offered the check: %v", c)
+	}
+}
+
+// The writing rules (specs/005-antislop-writing): the check carries them and the style-note instruction when on, neither when off,
+// and still runs when the text cannot be loaded; the column says which.
+func TestACheckCarriesTheWritingRulesAndRecordsIt(t *testing.T) {
+	for name, tc := range map[string]struct {
+		off, unavailable bool
+		col              any
+	}{"on": {col: "v1"}, "off": {off: true, col: "off"}, "text unavailable": {unavailable: true, col: nil}} {
+		t.Run(name, func(t *testing.T) {
+			if tc.unavailable {
+				defer writing.SetTextForTest("")()
+			}
+			fh := newFake()
+			fh.output = goodReply
+			a := newAppWithHermes(t, fh)
+			if tc.off {
+				admin := a.user("boss", "APPROVED", "READY", true)
+				a.db.Exec(`UPDATE users SET role = 'ADMIN' WHERE id = ?`, admin.id)
+				if err := store.SetWritingRules(context.Background(), a.db, admin.id, false, "r", time.Now()); err != nil {
+					t.Fatal(err)
+				}
+			}
+			u := a.active("alice")
+			post := u.draftToCheck("Rules")
+			before := u.post(post.ID).LatestVersion
+			u.startCheck(post)
+			u.waitCheck(post.ID, "ready")
+			_, runs, _, _ := fh.snapshot()
+			ins := runs[0].Instructions
+			if !strings.HasPrefix(ins, "blog-check v2") {
+				t.Fatalf("first line: %q", ins[:20])
+			}
+			hasRules := strings.Contains(ins, "writing-rules v1") && strings.Contains(ins, `note of kind "style"`)
+			if hasRules != (tc.col == "v1") || (!hasRules && (strings.Contains(ins, "writing-rules") || strings.Contains(ins, `kind "style"`))) {
+				t.Fatalf("instructions for %s: rules %v", name, hasRules)
+			}
+			var col *string
+			a.db.QueryRow(`SELECT writing_rules FROM post_checks WHERE post_id = ?`, post.ID).Scan(&col)
+			if (tc.col == nil) != (col == nil) || (col != nil && *col != tc.col) {
+				t.Fatalf("column %v, want %v", col, tc.col)
+			}
+			if u.post(post.ID).LatestVersion != before {
+				t.Fatal("a check changed the draft's versions")
+			}
+		})
+	}
+}
+
+// A note of kind "style" is shown; a check with such notes can still be published as it is.
+func TestAStyleNoteIsShownAndDoesNotStopPublishing(t *testing.T) {
+	fh := newFake()
+	fh.output = `{"version":1,"notes":[{"kind":"style","text":"Hype words in the opening.","afterNode":0}],"blocks":[]}`
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("Styled")
+	u.startCheck(post)
+	c := u.waitCheck(post.ID, "ready")
+	if len(c.Notes) != 1 || c.Notes[0].Kind != "style" {
+		t.Fatalf("notes %+v", c.Notes)
+	}
+	u.do("PATCH", "/api/blog/posts/"+post.ID+"/settings", map[string]any{"slug": "styled-post"})
+	if w := u.do("POST", "/api/blog/posts/"+post.ID+"/publish", map[string]any{"mode": "enriched"}); w.Code != 200 {
+		t.Fatalf("publish with a style note: %d %s", w.Code, w.Body)
 	}
 }

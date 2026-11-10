@@ -26,6 +26,8 @@ import {
   loadAllAudit,
 } from "./adminApi";
 import { getCapabilities, type Inventory } from "./chatApi";
+import { WritingRulesCard } from "./AdminWriting";
+import { getWritingRules } from "./adminWritingApi";
 import { userPath, type AdminRoute } from "./route";
 import { AdminPostScreen, AdminPostsScreen } from "./AdminPosts";
 import { AdminModelsScreen } from "./AdminModels";
@@ -624,8 +626,16 @@ export function CapabilitiesScreen() {
   const [state, reload] = useLoad((s) => getCapabilities(s), "capabilities");
   const [tools, reloadTools] = useLoad((s) => getToolPolicy(s), "tool-policy");
   const [media, reloadMedia] = useLoad((s) => getMediaModels(s), "media-models");
+  const [writing, reloadWriting] = useLoad((s) => getWritingRules(s), "writing-rules");
   return (
     <>
+      {writing.kind === "loading" ? (
+        <Loading what="Writing rules" />
+      ) : writing.kind === "forbidden" ? null : writing.kind === "error" ? (
+        <Problem message={writing.message} onRetry={reloadWriting} />
+      ) : (
+        <WritingRulesCard rules={writing.value} onChanged={reloadWriting} />
+      )}
       {tools.kind === "loading" ? (
         <Loading what="Assistant tools" />
       ) : tools.kind === "forbidden" ? (
