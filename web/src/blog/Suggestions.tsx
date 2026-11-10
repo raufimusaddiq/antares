@@ -13,11 +13,13 @@ export interface SuggestionsProps {
   /** Any value that changes when the draft does (the document), so "no longer applicable" is always current. */
   doc: unknown;
   onDecided: (e: EditSuggestion) => void;
-  /** Heading level and id for the list, so the panel and the review screen can each name it. */
-  heading?: string;
+  /** The list's own heading; the editor panel names itself and leaves this out. */
+  hideHeading?: boolean;
+  /** The Publish review screen's smaller cards (the design shows each one as one line and its buttons). */
+  compact?: boolean;
 }
 
-export function Suggestions({ postId, edits, bridge, doc, onDecided, heading }: SuggestionsProps) {
+export function Suggestions({ postId, edits, bridge, doc, onDecided, hideHeading = false, compact = false }: SuggestionsProps) {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [undone, setUndone] = useState<Set<string>>(new Set());
@@ -26,13 +28,12 @@ export function Suggestions({ postId, edits, bridge, doc, onDecided, heading }: 
   const head = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     if (focusNext === null) return;
-    (focusNext === "heading" ? head.current : refs.current.get(focusNext))?.focus();
+    (focusNext === "heading" ? (head.current ?? document.getElementById("blog-panel-h")) : refs.current.get(focusNext))?.focus();
     setFocusNext(null);
   }, [focusNext, edits]);
 
   void doc; // a new value re-renders the list, and applicability is read from the editor each time
   const applicable = (e: EditSuggestion) => (bridge ? bridge.applicable(e) : true);
-  const open = edits.filter((e) => e.decision === "open");
   const next = (id: string) => {
     const rest = edits.filter((e) => e.decision === "open" && e.id !== id);
     const after = rest.find((e) => edits.indexOf(e) > edits.findIndex((x) => x.id === id)) ?? rest[0];
@@ -74,17 +75,18 @@ export function Suggestions({ postId, edits, bridge, doc, onDecided, heading }: 
 
   const n = (e: EditSuggestion) => edits.indexOf(e) + 1;
   return (
-    <section className="suggestions" aria-labelledby={`sg-h-${postId}`}>
-      <h3 id={`sg-h-${postId}`} ref={head} tabIndex={-1}>
-        {heading ?? "Suggestions"} ({open.length})
-      </h3>
-      <p className="label">Nothing changes in your draft until you accept one.</p>
+    <section className={compact ? "suggestions suggestions-compact blog-notes" : "suggestions"} aria-labelledby={hideHeading ? undefined : `sg-h-${postId}`} aria-label={hideHeading ? "Suggestions" : undefined}>
+      {!hideHeading && (
+        <h3 id={`sg-h-${postId}`} ref={head} tabIndex={-1}>
+          Suggestions ({edits.length})
+        </h3>
+      )}
+      {!compact && <p className="label">Nothing changes in your draft until you accept one.</p>}
       {error && (
         <p className="blog-error" role="alert">
           {error}
         </p>
       )}
-      {edits.length === 0 && <p>Nothing to suggest. The editor found nothing it would change.</p>}
       {edits.map((e) => {
         const here = applicable(e);
         const state = undone.has(e.id) ? "undone" : e.decision === "accepted" ? "accepted" : e.decision === "rejected" ? "rejected" : here ? "open" : "gone";
@@ -95,7 +97,12 @@ export function Suggestions({ postId, edits, bridge, doc, onDecided, heading }: 
               <span className="label">{e.kind === "insert" ? `After “${e.anchor || "this part"}”` : e.anchor.slice(0, 40)}</span>
             </p>
             {state === "gone" && <p>You changed this passage after the check, so the suggestion no longer fits. Nothing was applied.</p>}
-            {(state === "open" || state === "accepted" || state === "rejected" || state === "undone") && e.kind === "replace" && (
+            {state === "open" && compact && (
+              <p className="suggestion-line">
+                {e.kind === "replace" ? `“${e.original}” → “${e.proposed}”` : `${e.proposed.replace(/\s+/g, " ").slice(0, 140)}${e.proposed.length > 140 ? "…" : ""}`}
+              </p>
+            )}
+            {state === "open" && !compact && e.kind === "replace" && (
               <>
                 <p className="suggestion-old">
                   <span className="label">You wrote</span> <s>{e.original}</s>
@@ -105,7 +112,7 @@ export function Suggestions({ postId, edits, bridge, doc, onDecided, heading }: 
                 </p>
               </>
             )}
-            {(state === "open" || state === "accepted" || state === "rejected" || state === "undone") && e.kind === "insert" && (
+            {state === "open" && !compact && e.kind === "insert" && (
               <div className="suggestion-new">
                 <span className="label">Proposed paragraph{e.proposed.includes("\n\n") ? "s" : ""}</span>
                 {e.proposed.split(/\n\s*\n/).map((para, i) => (
@@ -113,7 +120,7 @@ export function Suggestions({ postId, edits, bridge, doc, onDecided, heading }: 
                 ))}
               </div>
             )}
-            {state === "open" && <p className="label">Why: {e.reason}</p>}
+            {state === "open" && !compact && <p className="label">Why: {e.reason}</p>}
             <div className="actions">
               {state === "open" && (
                 <>
@@ -127,7 +134,7 @@ export function Suggestions({ postId, edits, bridge, doc, onDecided, heading }: 
               )}
               {state === "accepted" && (
                 <>
-                  <span className="label">Applied to your draft as one change.</span>
+                  <span className="label">Applied to your draft as one change. Undo works until you change something else.</span>
                   {bridge?.canUndo(e.id) && (
                     <button type="button" className="quiet" aria-label={`Undo suggestion ${n(e)}`} onClick={() => void undo(e)}>
                       Undo

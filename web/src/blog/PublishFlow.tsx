@@ -170,14 +170,19 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
     return (
       <Takeover step="checking" onBack={onBackToEditing}>
         <main className="blog-flow" aria-busy="true">
-          <h1 tabIndex={-1}>Checking your writing</h1>
-          <p>Your assistant is reading your post, looking things up and writing suggestions. Nothing is changed in your draft and nothing is published.</p>
-          <CheckProgressView
-            check={phase.k === "starting" ? null : check}
-            cancelDisabled={phase.k === "starting"}
-            onCancel={() => void cancelCheck(post.id).then((r) => (r.ok ? apply(r.value) : setError(describeBlogError(r, "cancel the check"))))}
-          />
-          <p className="label">You can go back to editing; the check keeps running and its suggestions stay usable. A suggestion about a passage you change shows as no longer applicable.</p>
+          <div className="notice-card checking-card">
+            <p>
+              <span className="chip chip-ai">Checking</span>
+            </p>
+            <h1 tabIndex={-1}>Checking your writing</h1>
+            <p>Your assistant is reading your post, looking things up and writing suggestions. Nothing is changed in your draft and nothing is published.</p>
+            <CheckProgressView
+              check={phase.k === "starting" ? null : check}
+              cancelDisabled={phase.k === "starting"}
+              onCancel={() => void cancelCheck(post.id).then((r) => (r.ok ? apply(r.value) : setError(describeBlogError(r, "cancel the check"))))}
+            />
+            <p className="label">You can go back to editing; the check keeps running and its suggestions stay usable. A suggestion about a passage you change shows as no longer applicable.</p>
+          </div>
           {error && <p className="blog-error" role="alert">{error}</p>}
         </main>
       </Takeover>

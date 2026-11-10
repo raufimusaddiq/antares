@@ -62,6 +62,7 @@ function runningCheck() {
 const reviewSource = (host) => ({ url: `https://${host}/data`, title: `About ${host} with a title long enough to wrap on a phone`, retrievedAt: "2026-11-08T10:00:00Z", verified: false });
 const REVIEW_CHECK = {
   id: "c".repeat(32), state: "ready", reason: "", notices: [],
+  edits: [{ id: "a".repeat(32), kind: "replace", part: 0, anchor: "A", original: "sounds cheap", proposed: "looks cheap", reason: "Shorter.", decision: "open" }, { id: "b".repeat(32), kind: "insert", part: 0, anchor: "A", original: "", proposed: "A small server is enough for one person, but it still needs power, cooling and a spare disk.", reason: "Builds on your points.", decision: "open" }],
   notes: [{ kind: "clarity", text: "The second paragraph buries the question; consider leading with it.", afterNode: 0 }, { kind: "unsourced", text: "A claim with no public source. No figure was added.", afterNode: 1 }, { kind: "style", text: "Hype wording in the opening: revolutionary, seamless, ultimate.", afterNode: 0 }],
   blocks: ["one", "two"].map((n, i) => ({ id: String(i + 1).repeat(32), kind: "summary", afterNode: i, markup: 'root = Card([t])\nt = TextContent("Block ' + n + ' as drawn")', fallback: "plain", decision: "proposed", needsAck: true, sources: [reviewSource(`${n}.example.org`)] })),
 };
@@ -766,7 +767,7 @@ async function blogPages(browser, which, onlyViews) {
           stalled: !!document.querySelector(".step-stalled"),
           short: [...document.querySelectorAll(".blog-takeover button")].filter((b) => b.getBoundingClientRect().height > 0 && b.getBoundingClientRect().height < 43.5).length,
         }));
-        if (!/Looking things up · 3 lookups/.test(pr.cur ?? "") || pr.done.length !== 1 || pr.pending !== 1 || !/1 min \d+ s so far · last sign of life \d+ s ago/.test(pr.clock ?? "") || pr.clockHidden !== "true" || pr.live !== "Looking things up" || pr.bar || pr.stalled) editorProblems.push(`the progress steps are not as designed: ${JSON.stringify(pr)}`);
+        if (!/Looking things up · 3 lookups/.test(pr.cur ?? "") || pr.done.length !== 1 || pr.pending !== 1 || !/1 min \d+ s so far.*Last sign of life \d+ s ago/.test(pr.clock ?? "") || pr.clockHidden !== "true" || pr.live !== "Looking things up" || pr.bar || pr.stalled) editorProblems.push(`the progress steps are not as designed: ${JSON.stringify(pr)}`);
         if (w < 500 && pr.short) editorProblems.push(`${pr.short} buttons on the checking screen are under 44 px`);
         const ov = await page.evaluate(() => { const bs = [...document.querySelectorAll(".blog-takeover button, .blog-takeover a")].filter((b) => b.getBoundingClientRect().width > 0); let n = 0; for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) { const a = bs[i].getBoundingClientRect(), b = bs[j].getBoundingClientRect(); if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) n++; } return n; });
         if (ov) editorProblems.push(`${ov} controls overlap on the checking screen`);
@@ -839,6 +840,8 @@ async function blogPages(browser, which, onlyViews) {
           for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) { const a = rects[i], b = rects[j]; if (a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom) overlap++; }
           return { notes: notes.length, style: notes.filter((n) => n.querySelector(".chip")?.textContent === "Style").length, names: btns.map((b) => b.textContent), tall: rects.every((r) => r.height >= 43.5), overlap, heading: document.querySelector("#notes-h")?.textContent };
         });
+        const sgs = await page.evaluate(() => ({ cards: document.querySelectorAll(".blog-review-side .suggestions-compact .suggestion").length, inCard: !!document.querySelector(".blog-review-side .suggestions-compact.blog-notes"), heading: document.querySelector(".blog-review-side .suggestions-compact h3")?.textContent }));
+        if (sgs.cards !== 2 || !sgs.inCard || sgs.heading !== "Suggestions (2)") editorProblems.push(`the review screen's suggestions are not the design's card of one-line suggestions: ${JSON.stringify(sgs)}`);
         if (sn.notes !== 3 || sn.style !== 1 || !sn.names.every((n) => n === "Dismiss this note") || !sn.tall || sn.overlap) editorProblems.push(`style notes are wrong: ${JSON.stringify(sn)}`);
         await page.getByRole("button", { name: "Dismiss this note" }).last().click();
         const dn = await page.evaluate(() => ({ heading: document.querySelector("#notes-h")?.textContent, shown: document.querySelectorAll(".blog-notes .blog-note").length, styleLeft: [...document.querySelectorAll(".blog-notes .chip")].some((c) => c.textContent === "Style"), status: document.querySelector(".blog-notes [role=status]")?.textContent, publish: [...document.querySelectorAll("button")].filter((b) => /publish/i.test(b.textContent ?? "") && !/Accept all/.test(b.textContent ?? "")).every((b) => !b.disabled) }));
@@ -1634,7 +1637,7 @@ async function aiEditor(browser) {
         const panelBtns = [...document.querySelectorAll(".blog-panel button")].filter((e) => e.getBoundingClientRect().width > 0);
         return { panelOverBar: hit(panel, bar), panelOverToolbar: hit(panel, bar2), panelOverPublish: hit(panel, pub), overlap, short: panelBtns.filter((b) => b.getBoundingClientRect().height < 43.5).length, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, widened: innerWidth, cards: document.querySelectorAll(".suggestion").length, gone: document.querySelectorAll(".suggestion-gone").length, head: document.querySelector("#blog-panel-h")?.textContent };
       });
-      check(`ai editor, ${label} ${scheme}: three suggestions, the one about missing words says it no longer applies; the panel covers neither the bar, the toolbar nor Publish`, lay.cards === 3 && lay.gone === 1 && !lay.panelOverBar && !lay.panelOverToolbar && !lay.panelOverPublish && lay.head === "From the editor", JSON.stringify(lay));
+      check(`ai editor, ${label} ${scheme}: three suggestions, the one about missing words says it no longer applies; the panel covers neither the bar, the toolbar nor Publish`, lay.cards === 3 && lay.gone === 1 && !lay.panelOverBar && !lay.panelOverToolbar && !lay.panelOverPublish && lay.head === "Suggestions (3)", JSON.stringify(lay));
       check(`ai editor, ${label} ${scheme}: no button overlaps another, targets are at least 44 px, the page fits`, lay.overlap === 0 && lay.short === 0 && lay.overflowX <= 0 && lay.widened === w, JSON.stringify(lay));
       await page.screenshot({ path: path.join(outDir, `ai-editor-suggestions-${label}-${scheme}.png`), fullPage: false });
       check(`ai editor, ${label} ${scheme}: the draft is still exactly as written before any accept`, (await body(page)) === original);

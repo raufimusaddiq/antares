@@ -1700,3 +1700,22 @@ input.switch:focus-visible { outline: 3px solid var(--focus-halo); outline-offse
 .suggestion-accepted { border-color: var(--ink); }
 @media (prefers-reduced-motion: reduce) { .blog-panel { animation: none; } }
 @media (max-width: 74.99rem) { .blog-editor.has-panel .blog-toolbar { position: static; } } /* the panel sits below the draft: a toolbar that follows the page would lie over it */
+
+/* Spec 006/005 drift fixes: the cards and spacing the designs draw. */
+.checking-card { max-width: 45rem; display: grid; gap: 0.85rem; padding: 1.5rem; box-shadow: var(--hard); }
+.checking-card h1 { margin: 0; font-size: clamp(1.6rem, 5vw, 2.2rem); }
+.checking-card p { margin: 0; }
+.step-clock p { margin: 0; font-size: 0.9rem; font-weight: 500; }
+.step-clock .label { font-weight: 400; font-size: 0.8rem; margin-top: 0.15rem; }
+.suggestions-compact { display: grid; gap: 0.6rem; }
+.suggestions-compact .suggestion { background: var(--canvas); border: 1px solid var(--hair); border-radius: var(--r-sm); }
+.suggestion-line { font-size: 0.9rem; line-height: 1.45; }
+.notice-blush { margin: 0; padding: 0.65rem 0.8rem; background: var(--blush); border: 2px solid var(--ink); border-radius: var(--r-sm); font-size: 0.85rem; font-weight: 500; line-height: 1.45; }
+/* The Writing rules card (spec 005): the design's rhythm, and the counts as a number over its label. */
+.writing-card { display: grid; gap: 0.8rem; max-width: 40rem; }
+.writing-card h2, .writing-card p { margin: 0; }
+.writing-card .switch-cell { min-height: 2.75rem; }
+.writing-counts { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; margin: 0; }
+.writing-counts div { display: flex; flex-direction: column-reverse; min-width: 0; }
+.writing-counts dd { margin: 0; font-size: 1.9rem; line-height: 1.15; }
+.writing-counts dt { margin: 0; text-transform: none; letter-spacing: 0; font-size: 0.8rem; }

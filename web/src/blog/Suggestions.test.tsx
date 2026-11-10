@@ -113,9 +113,21 @@ describe("suggestions", () => {
     expect(e.getText()).toBe("Running your own assistant sounds cheap.");
   });
 
-  it("says so when there is nothing to suggest", () => {
-    const e = make("Fine.");
-    render(<Harness editor={e} edits={[]} />);
-    expect(screen.getByText(/Nothing to suggest/)).toBeTruthy();
+  it("an accepted card shows what was done and Undo, not the old and new text again", async () => {
+    server();
+    const e = make("Running your own assistant sounds cheap.");
+    render(<Harness editor={e} edits={[sg({})]} />);
+    fireEvent.click(screen.getByRole("button", { name: "Accept suggestion 1" }));
+    await waitFor(() => expect(screen.getByText("Accepted")).toBeTruthy());
+    expect(screen.queryByText("You wrote")).toBeNull();
+    expect(screen.getByText(/Undo works until you change something else/)).toBeTruthy();
+  });
+
+  it("the compact list (the review screen) shows each suggestion as one line with its buttons", () => {
+    const e = make("Running your own assistant sounds cheap.");
+    render(<Suggestions postId="p1" edits={[sg({})]} bridge={makeBridge(e)} doc={e.state.doc} onDecided={() => {}} compact />);
+    expect(screen.getByText("“sounds cheap” → “looks cheap”")).toBeTruthy();
+    expect(screen.queryByText("You wrote")).toBeNull();
+    expect(screen.getByRole("button", { name: "Reject suggestion 1" })).toBeTruthy();
   });
 });

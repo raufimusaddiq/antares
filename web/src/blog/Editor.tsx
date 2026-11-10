@@ -231,7 +231,7 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
         </span>
         <EditorContent editor={editor} />
       </div>
-      {panel && canCheck && <AssistPanel postId={post.id} initial={post.check} editor={editor} bridge={bridge} flush={flushNow} paused={publishing} canCheck={canCheck} onClose={() => setPanel(false)} />}
+      {panel && canCheck && <AssistPanel postId={post.id} initial={post.check} editor={editor} bridge={bridge} flush={flushNow} paused={publishing} canCheck={canCheck} />}
     </main>
   );
 }

@@ -59,9 +59,10 @@ export function CheckProgressView({ check, onCancel, cancelDisabled }: CheckProg
         {WORDS[stage]}
         {stalled ? ". Nothing new for a while" : ""}
       </p>
-      <p className="step-clock" aria-hidden="true">
-        {durationWords(elapsed)} so far{p ? ` · last sign of life ${durationWords(quiet)} ago` : ""}
-      </p>
+      <div className="step-clock" aria-hidden="true">
+        <p>{durationWords(elapsed)} so far</p>
+        {p && <p className="label">Last sign of life {durationWords(quiet)} ago. It can take a minute or two.</p>}
+      </div>
       {stalled && <p className="step-stalled">Still working. Nothing new for {durationWords(quiet)}. You can keep waiting or cancel.</p>}
       <div className="blog-actions">
         <button type="button" className="quiet" disabled={cancelDisabled} onClick={onCancel}>
