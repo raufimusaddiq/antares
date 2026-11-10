@@ -1296,11 +1296,16 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 
 .blog-title { width: 100%; box-sizing: border-box; margin: 0.75rem 0; padding: 0.4rem 0; font: inherit; font-size: clamp(1.6rem, 5vw, 2.6rem); font-weight: 700; border: 0; border-bottom: 2px solid var(--ink); background: transparent; color: var(--ink); }
 .blog-toolbar { position: sticky; top: 0; z-index: 2; margin-bottom: 1.125rem; display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.4rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
-.blog-toolbar button { min-height: 2.75rem; }
-.blog-toolbar button[aria-pressed="true"] { background: var(--ink); color: var(--canvas); }
+/* The design's toolbar (page "AI editor"): flat 44 px buttons with short labels, on = ink fill, mixed = rail fill + 2 px outline + a bar under the label. */
+.blog-toolbar { gap: 0.25rem; padding: 0.375rem; }
+.blog-toolbar button.quiet { min-height: 2.75rem; padding: 0 0.75rem; background: transparent; border: 2px solid transparent; border-radius: var(--r-sm); box-shadow: none; font-weight: 500; }
+.blog-toolbar button.quiet:hover:not(:disabled) { background: color-mix(in srgb, var(--mark) 55%, transparent); }
+.blog-toolbar button.quiet[aria-label="Bold"] { font-weight: 700; }
+.blog-toolbar button.quiet[aria-label="Italic"] { font-style: italic; }
+.blog-toolbar button.quiet[aria-pressed="true"], .blog-toolbar button.quiet[aria-pressed="true"]:hover:not(:disabled) { background: var(--ink); color: var(--canvas); border-color: var(--ink); }
 /* Mixed: part of the selection has it. A rail fill, a 2 px outline and a bar under the label, so it never relies on colour alone. */
-.blog-toolbar button[aria-pressed="mixed"] { position: relative; background-color: var(--rail); border: 2px solid var(--ink); }
-.blog-toolbar button[aria-pressed="mixed"]::after { content: ""; position: absolute; left: 50%; bottom: 6px; width: 14px; height: 3px; margin-left: -7px; border-radius: 2px; background: var(--ink); }
+.blog-toolbar button.quiet[aria-pressed="mixed"] { position: relative; background: var(--rail); border-color: var(--ink); }
+.blog-toolbar button.quiet[aria-pressed="mixed"]::after { content: ""; position: absolute; left: 50%; bottom: 6px; width: 14px; height: 3px; margin-left: -7px; border-radius: 2px; background: var(--ink); }
 
 .blog-prose { min-height: 50vh; padding: 1rem 0; font-size: 1.1rem; line-height: 1.65; outline: none; overflow-wrap: anywhere; }
 .blog-prose:focus-visible { outline: 3px solid var(--focus, var(--cobalt)); outline-offset: 2px; }
@@ -1695,3 +1700,22 @@ input.switch:focus-visible { outline: 3px solid var(--focus-halo); outline-offse
 .suggestion-accepted { border-color: var(--ink); }
 @media (prefers-reduced-motion: reduce) { .blog-panel { animation: none; } }
 @media (max-width: 74.99rem) { .blog-editor.has-panel .blog-toolbar { position: static; } } /* the panel sits below the draft: a toolbar that follows the page would lie over it */
+
+/* Spec 006/005 drift fixes: the cards and spacing the designs draw. */
+.checking-card { max-width: 45rem; display: grid; gap: 0.85rem; padding: 1.5rem; box-shadow: var(--hard); }
+.checking-card h1 { margin: 0; font-size: clamp(1.6rem, 5vw, 2.2rem); }
+.checking-card p { margin: 0; }
+.step-clock p { margin: 0; font-size: 0.9rem; font-weight: 500; }
+.step-clock .label { font-weight: 400; font-size: 0.8rem; margin-top: 0.15rem; }
+.suggestions-compact { display: grid; gap: 0.6rem; }
+.suggestions-compact .suggestion { background: var(--canvas); border: 1px solid var(--hair); border-radius: var(--r-sm); }
+.suggestion-line { font-size: 0.9rem; line-height: 1.45; }
+.notice-blush { margin: 0; padding: 0.65rem 0.8rem; background: var(--blush); border: 2px solid var(--ink); border-radius: var(--r-sm); font-size: 0.85rem; font-weight: 500; line-height: 1.45; }
+/* The Writing rules card (spec 005): the design's rhythm, and the counts as a number over its label. */
+.writing-card { display: grid; gap: 0.8rem; max-width: 40rem; }
+.writing-card h2, .writing-card p { margin: 0; }
+.writing-card .switch-cell { min-height: 2.75rem; }
+.writing-counts { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; margin: 0; }
+.writing-counts div { display: flex; flex-direction: column-reverse; min-width: 0; }
+.writing-counts dd { margin: 0; font-size: 1.9rem; line-height: 1.15; }
+.writing-counts dt { margin: 0; text-transform: none; letter-spacing: 0; font-size: 0.8rem; }

@@ -115,9 +115,9 @@ export function PreviewScreen({ post, check, acks, onAck, busy, ready, error, on
         </section>
 
         <div className="blog-review-side">
-          {(check.edits?.length ?? 0) > 0 && <Suggestions postId={post.id} edits={check.edits ?? []} bridge={bridge} doc={post.doc} onDecided={onEditDecided} />}
+          {(check.edits?.length ?? 0) > 0 && <Suggestions postId={post.id} edits={check.edits ?? []} bridge={bridge} doc={post.doc} onDecided={onEditDecided} compact />}
           {unplaced > 0 && (
-            <p className="blog-notice blog-error" role="status">
+            <p className="notice-blush" role="status">
               {unplaced} {unplaced === 1 ? "block cannot be placed" : "blocks cannot be placed"}: the part of your post {unplaced === 1 ? "it" : "they"} belonged to was changed. {unplaced === 1 ? "It" : "They"} will not be published.
             </p>
           )}

@@ -24,7 +24,7 @@ const ready = (edits: unknown[] = []): Check => ({ id: "c1", state: "ready", rea
 const edit = { id: "e1", kind: "replace", part: 0, anchor: "Running your own assistant sounds cheap.", original: "sounds cheap", proposed: "looks cheap", reason: "Shorter.", decision: "open" };
 const mount = (over: Partial<React.ComponentProps<typeof AssistPanel>> = {}) => {
   const e = editor();
-  return render(<AssistPanel postId="p1" initial={null} editor={e} bridge={makeBridge(e)} flush={async () => true} paused={false} canCheck onClose={() => {}} {...over} />);
+  return render(<AssistPanel postId="p1" initial={null} editor={e} bridge={makeBridge(e)} flush={async () => true} paused={false} canCheck {...over} />);
 };
 
 describe("the editor panel", () => {
@@ -56,7 +56,18 @@ describe("the editor panel", () => {
     expect(document.body.textContent).toContain("publish your original");
     vi.unstubAllGlobals();
     vi.stubGlobal("fetch", async () => json({ error: { code: "LIMIT_REACHED", message: "x" }, running: true }, 422));
-    fireEvent.click(screen.getByRole("button", { name: "Close the editor panel" }));
+  });
+
+  it("a check with nothing to suggest says so, and a very short draft says there is too little to edit", () => {
+    mount({ initial: ready([]) });
+    expect(screen.getByRole("heading", { name: "Too little to edit yet" })).toBeTruthy(); // the test draft has seven words
+    cleanup();
+    ed?.destroy();
+    const long = "word ".repeat(60);
+    const e = (ed = new Editor({ element: document.createElement("div"), extensions: [StarterKit], content: { type: "doc", content: [{ type: "paragraph", content: [{ type: "text", text: long }] }] } }));
+    render(<AssistPanel postId="p1" initial={ready([])} editor={e} bridge={makeBridge(e)} flush={async () => true} paused={false} canCheck />);
+    expect(screen.getByRole("heading", { name: "Nothing to suggest" })).toBeTruthy();
+    expect(document.body.textContent).toContain("Your draft is as you wrote it");
   });
 
   it("two checks running now says that instead of a time", async () => {
@@ -69,7 +80,7 @@ describe("the editor panel", () => {
   it("shows the suggestions of a finished check, and a decision does not leave the panel", async () => {
     vi.stubGlobal("fetch", async (_u: string, init: RequestInit) => json({ ...edit, decision: JSON.parse(String(init.body)).decision }));
     mount({ initial: ready([edit]) });
-    expect(screen.getByRole("heading", { name: "From the editor" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Suggestions (1)" })).toBeTruthy();
     fireEvent.click(screen.getByRole("button", { name: "Reject suggestion 1" }));
     await waitFor(() => expect(screen.getByText("Rejected")).toBeTruthy());
     expect(screen.getByRole("button", { name: "Check again" })).toBeTruthy();
@@ -90,12 +101,11 @@ describe("the editor panel", () => {
     mount({ initial: running as unknown as Check });
     await act(async () => void vi.advanceTimersByTime(1600));
     await act(async () => void vi.advanceTimersByTime(50));
-    expect(screen.getByRole("heading", { name: "From the editor" })).toBeTruthy();
+    expect(screen.getByRole("heading", { name: "Suggestions (1)" })).toBeTruthy();
   });
 
-  it("moves focus to its heading when it opens, and has a named Close", () => {
+  it("moves focus to its heading when it opens", () => {
     mount();
     expect(document.activeElement).toBe(screen.getByRole("heading", { name: "Check with the editor" }));
-    expect(screen.getByRole("button", { name: "Close the editor panel" })).toBeTruthy();
   });
 });
