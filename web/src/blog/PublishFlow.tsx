@@ -169,7 +169,7 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
             cancelDisabled={phase.k === "starting"}
             onCancel={() => void cancelCheck(post.id).then((r) => (r.ok ? apply(r.value) : setError(describeBlogError(r, "cancel the check"))))}
           />
-          <p className="label">You can go back to editing; the check keeps running.</p>
+          <p className="label">If you edit now, this check is thrown away and you can run it again.</p>
           {error && <p className="blog-error" role="alert">{error}</p>}
         </main>
       </Takeover>
