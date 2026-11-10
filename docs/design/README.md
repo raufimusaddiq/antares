@@ -108,6 +108,16 @@ Page **Writing rules**. Light frames; dark copies of the Capabilities (on, not a
 - **Check result / style notes**: "Notes from the assistant" with Style notes (pink chip, position, "Dismiss this note"); none; one dismissed. Phone: two notes.
 - New components: none.
 
+## AI editor (designed for spec `specs/006-ai-editor-blog/`, not built yet)
+
+Page **AI editor**. Light frames; dark copies of the main ones sit 3,600 to the right (Dark mode).
+- **Editor / toolbar states**: buttons on, off, mixed (rail fill, outline, bar under the label) and focused.
+- **Editor / panel, checking** and **suggestions**: the "Check with the editor" button and a 400 px panel with progress steps (reading, looking things up with a count, writing suggestions), elapsed time, last sign of life and Cancel; suggestion cards (edit, written by the assistant, accepted with Undo, no longer applicable).
+- **Panel / stopped and empty states**: stalled, timed out, limit reached (with when to try again), nothing to suggest, too little to edit.
+- **Publish / checking (steps)** and **Publish / review with suggestions**: the existing screens with the same steps (no fake progress bar) and a Suggestions card plus a skipped-block notice.
+- **Phone / Editor panel**: bottom sheets with progress and with suggestions at 390.
+- New components: step list, suggestion card, mixed toggle state, panel.
+
 Blog: where the frames and the code still differ (kept honest; each is a gap to close in the design or the code):
 - The preview frames draw two blocks and only Reject on the first one is wired as a prototype interaction; the code handles any
   number of blocks, each with Accept and Reject.
