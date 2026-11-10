@@ -1,0 +1,23 @@
+# Research: Admin Full Control
+
+**R1 — Where the takedown lives.** Decision: four columns on `posts` (`takedown_at/by/reason/seen_at`) plus an audit row per action. Rationale: `publicWhere` is already the single filter every public read and the link-preview metadata share, so one clause hides the post everywhere at once and cannot be forgotten by a new surface. History is in `audit_log`. Alternatives: separate `post_takedowns` table (a join on every public read, a second place to forget); reuse `status` (would break author's unpublish/republish and lose the published version).
+
+**R2 — Status stays `published`.** A taken-down post keeps `status`/`published_version`, so restore returns it byte-for-byte (FR-003). Publish and "update published" are refused while `takedown_at != ''` (new `ErrTakenDown`, 409 to the author). If the author unpublishes meanwhile, the mark stays; restore clears the mark and the post stays unpublished (message tells the admin).
+
+**R3 — Admin routes and the blindness guards.** Decision: `GET /api/admin/blog-posts`, `GET /api/admin/blog-posts/{postId}`, `POST …/take-down`, `POST …/restore`, with an explicit allowlist in the guard test; response fields are an allowlist struct (id, slug, title, summary, authorName, publishedAt, state, takedown). Content view returns the published version only, via the same loader as the public page without the account clause. Alternatives: neutral names (rejected: dodges the guard), link-only (rejected: cannot review account-hidden posts).
+
+**R4 — Cache.** Verified: public list/post answers carry `Cache-Control: public, max-age=60` and there is no server-side cache to purge, so a taken-down post can still be served from a browser or the edge for up to 60 s. SC-001 is "within one minute", which holds. Cloudflare is not touched (owner rule) and nothing is purged. Cover images and post assets are served with `max-age=300`; the asset route must apply the same takedown filter (a taken-down post's images answer 404 like a missing one), and the plan accepts up to 5 minutes of edge-cached images, stated in the quickstart. Copies already saved elsewhere are out of reach (spec edge case).
+
+**R5 — Author notice.** `GET /api/blog/notices` (author-only, Active guard) returns unseen takedowns; `POST /api/blog/notices/{postId}/seen` sets `takedown_seen_at`. Server-side seen mark so a second device doesn't show it again (Q1 answer). Called once when the app shell loads for an account with writing. Alternatives: localStorage (per-device, repeats), extend `/api/me` (public pages call it; keep it small).
+
+**R6 — Model switches = the block list.** Reuse `model_blocked` and `PUT /api/admin/model-policy`; add the default guard there (409 `MODEL_IS_DEFAULT` naming purposes). "On" in the UI is "not blocked". Enforcement already covers chat send, the picker and the post check; titles/summaries are added (R8).
+
+**R7 — Defaults.** `model_defaults` rows for chat, summary, blog_assistant; images/videos stay on `tenant_tool_policy` (re-verify on save). Resolution order per use: chat = the chat's own saved model, else admin default, else the profile default (unchanged); an existing chat with no saved model follows the default at its next message (Q2). Validation uses the picker's existing rules (Kenari `chat` endpoint model, not sunset, not blocked, Hermes provider usable). A default failing validation at use time falls back to the service default and the Models screen shows the warning (Q3, FR-018); the warning is computed on read, not stored.
+
+**R8 — Titles and summaries.** `TitleModel.Model` becomes a per-call lookup (`func(ctx) string`): admin summary default if valid, else the configured `TITLE_MODEL`; if the result is blocked, no model is called and the existing no-model fallback applies (first words / whole answer). Gateway helper stays a narrow helper (Principle II).
+
+**R9 — Usage totals.** Aggregate `runs.usage_model` (chat) and `post_checks.usage_model` (blog assistant) over 30 days grouped by model with SUM of tokens and COUNT, no user column selected (Q4, FR-009b). Titles and summaries are not recorded today, so totals say "chat and post-check runs" and do not claim to be complete.
+
+**R10 — Catalogue source.** Kenari `GET /v1/models` through `kenari.Catalogue` (as the media screen). Per-purpose capability: chat/summary/blog_assistant need the `chat` endpoint; images/videos as today.
+
+**R11 — Concurrency.** Take down/restore are single conditional UPDATEs (`WHERE taken_down_at = ''` / `<> ''`), so double actions are a no-op with a clear message; settings writes are last-write-wins with audit rows.
