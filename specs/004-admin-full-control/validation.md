@@ -18,5 +18,10 @@ the post's heading after a take-down; a switch works from the keyboard and keeps
 blanks it); the banner is a named landmark with a `role="status"` message and no animation under reduced motion. Quickstart: steps 1-6 ran as the Go, web and
 browser suites; step 7 ran as the two production smoke runs.
 
-Not driven: SC-002 and SC-003 (timed tasks with a person); a real screen reader (VoiceOver/TalkBack), which no script here can stand in for. Media generation cannot honour a switch at generation time (it runs in a Hermes
+SC-002 and SC-003, timed on production on 2026-11-10 with synthetic accounts, driving the real screens in a real browser (search, open, type a reason, confirm; click a
+switch). The clock is the software's and leaves out a person's thinking time, so these are floors, not a human trial: **SC-002** find a published post and take it
+down: 1.9 s, 6 interactions (limit 60 s); the public address answered 404 as soon as the screen said so. **SC-003** switch a model off and it is gone from another
+account's picker: 0.36 s (limit 30 s); switched back on, offered again; the block list was empty before and after.
+
+Not driven: a person timing the tasks, and a real screen reader (VoiceOver/TalkBack), which no script here can stand in for. Media generation cannot honour a switch at generation time (it runs in a Hermes
 plugin), so "off" for image and video models is enforced by refusing to switch off a model that is a default.
