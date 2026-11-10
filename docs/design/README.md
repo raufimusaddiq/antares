@@ -82,6 +82,25 @@ My posts as built differs from its frames in two ways, on purpose. Phone rows al
 opening a post is one control and not two tab stops). The rail's account line shows the email and has no Menu button: Settings and Sign
 out stay in the chat's account menu, one click away through Chats.
 
+## Admin control (designed for spec `specs/004-admin-full-control/`, not built yet)
+
+Page **Admin control**. Light frames; dark versions of the main ones sit 10000 below (same frames switched to the Dark
+variable mode); the minor state frames reuse the same components and are not duplicated in dark.
+
+- **Admin / Posts**: list (title, author, date, state chip: Visible mint, Hidden · account periwinkle, Taken down salmon),
+  state filters, search; no match, loading, error with Retry, empty; "restored, author had unpublished it" status note.
+- **Admin / Post** (published content only): visible, hidden by the author's account, taken down (reason card, cobalt
+  Restore); **Take down** form (required reason, 500 counter, "copies already saved elsewhere cannot be removed"; also
+  reason missing), **Restore** confirm, the "already taken down" conflict alert.
+- **Admin / Models**: five purpose pickers (Chat, Summaries and titles, Blog assistant, Images, Videos) with the
+  "not offered any more" warning, Save defaults, a models table with on/off switches, usage per model (never per person);
+  switch-off refused (names the purpose); model list unreadable.
+- **Author**: My posts with a Taken down row and its reason; the editor with a notice and Publish disabled; the one-time
+  banner after a takedown (the existing update-notice strip) on desktop and phone.
+- **Phone**: Admin Posts, Admin Models, Take down form, banner; dark Posts and Models.
+- New components: none. Switch (46 x 26, mint on / rail off, ink knob) and the state chips are drawn here for the first time;
+  both are built from existing variables.
+
 Blog: where the frames and the code still differ (kept honest; each is a gap to close in the design or the code):
 - The preview frames draw two blocks and only Reject on the first one is wired as a prototype interaction; the code handles any
   number of blocks, each with Accept and Reject.
