@@ -261,7 +261,7 @@ func (f *fakeHermes) serve(w http.ResponseWriter, r *http.Request) {
 		f.mu.Lock()
 		f.n++
 		id := fmt.Sprintf("run_%d", f.n)
-		f.runs[id] = &fakeRun{profile: profile, session: in["session_id"], input: in["input"], mode: mode, check: strings.Contains(in["instructions"], "blog-check v2")}
+		f.runs[id] = &fakeRun{profile: profile, session: in["session_id"], input: in["input"], mode: mode, check: strings.Contains(in["instructions"], "blog-check v3")}
 		f.mu.Unlock()
 		fmt.Fprintf(w, `{"run_id":%q,"status":"started"}`, id)
 	case strings.HasPrefix(path, "/v1/runs/"):

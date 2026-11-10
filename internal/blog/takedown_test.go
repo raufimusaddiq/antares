@@ -379,6 +379,8 @@ func TestAdminBlogPostRoutesReturnOnlyPublishedFields(t *testing.T) {
 	dv := into[Post](t, author.do("GET", "/api/blog/posts/"+draft.ID, nil))
 	author.do("PUT", "/api/blog/posts/"+draft.ID, map[string]any{"baseVersion": dv.LatestVersion, "title": "LEAK-draft-title", "doc": later})
 	_, _ = a.db.Exec(`INSERT INTO post_checks (id, post_id, author_id, version, state, started_at) VALUES ('chk1', ?, ?, 1, 'ready', '2026-11-09T00:00:00Z')`, post.ID, author.id)
+	// A suggested edit holds the author's own words (spec 006): no admin route may carry it.
+	_, _ = a.db.Exec(`INSERT INTO post_edits (id, check_id, post_id, author_id, position, kind, part, anchor, original, proposed, reason) VALUES ('edt1', 'chk1', ?, ?, 0, 'replace', 0, 'LEAK-anchor', 'LEAK-original', 'LEAK-proposed', 'LEAK-reason')`, post.ID, author.id)
 
 	check := func(when string) {
 		t.Helper()
@@ -387,7 +389,7 @@ func TestAdminBlogPostRoutesReturnOnlyPublishedFields(t *testing.T) {
 			if w.Code != 200 {
 				t.Errorf("%s: GET %s: %d", when, path, w.Code)
 			}
-			for _, bad := range []string{"LEAK", draft.ID, "chk1", "readers", "reads", "views"} {
+			for _, bad := range []string{"LEAK", draft.ID, "chk1", "edt1", "readers", "reads", "views"} {
 				if strings.Contains(w.Body.String(), bad) {
 					t.Errorf("%s: GET %s tells the administrator %q: %s", when, path, bad, w.Body)
 				}

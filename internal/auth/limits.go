@@ -51,7 +51,7 @@ var draftWrites = map[string]bool{
 	"POST /api/blog/posts": true, "PUT /api/blog/posts/{id}": true, "PATCH /api/blog/posts/{id}/settings": true,
 	"DELETE /api/blog/posts/{id}": true, "POST /api/blog/posts/{id}/publish": true, "POST /api/blog/posts/{id}/unpublish": true,
 	"POST /api/blog/posts/{id}/duplicate":    true,
-	"POST /api/blog/posts/{id}/check/cancel": true, "PUT /api/blog/posts/{id}/blocks/{blockId}": true,
+	"POST /api/blog/posts/{id}/check/cancel": true, "PUT /api/blog/posts/{id}/blocks/{blockId}": true, "PUT /api/blog/posts/{id}/edits/{editId}": true,
 }
 
 // blogUpload is an image upload to a post; it draws from the same per-minute allowance as a chat upload.

@@ -44,7 +44,7 @@ OWNED = {
     "assets": _own(), "run_prompts": _own(), "run_images": _own(), "search_docs": _own(), "search_state": _own(),
     "user_preferences": _own(), "push_subscriptions": _own(), "push_delivery_events": _own(),
     "chat_drafts": _own(), "new_chat_drafts": _own(), "deleted_chat_usage": _own(), "prompt_templates": _own(), "model_hidden": _own(), "chat_shares": _own(),
-    "posts": _own("author_id"), "post_assets": _own("author_id"), "post_checks": _own("author_id"), "post_blocks": _own("author_id"),
+    "posts": _own("author_id"), "post_assets": _own("author_id"), "post_checks": _own("author_id"), "post_edits": _own("author_id"), "post_blocks": _own("author_id"),
     "block_sources": f"block_id IN (SELECT id FROM post_blocks WHERE author_id IN {FX})",
     "published_blocks": f"post_id IN (SELECT id FROM posts WHERE author_id IN {FX})",
     "published_block_sources": f"post_id IN (SELECT id FROM posts WHERE author_id IN {FX})",
@@ -56,7 +56,7 @@ OWNED = {
     # Shared or the original admin's: never deleted, and a fixture appearing here is a refusal.
     "admin_bootstrap": "0", "model_blocked": "0", "model_defaults": "0", "writing_rules_setting": "0", "tenant_tool_policy": "0", "schema_migrations": "0",
 }
-DELETE_ORDER = ["published_block_sources", "published_blocks", "block_sources", "post_blocks", "post_checks", "post_assets", "post_versions", "posts", "push_delivery_events", "push_subscriptions", "run_images", "run_prompts", "messages",
+DELETE_ORDER = ["published_block_sources", "published_blocks", "block_sources", "post_blocks", "post_edits", "post_checks", "post_assets", "post_versions", "posts", "push_delivery_events", "push_subscriptions", "run_images", "run_prompts", "messages",
                 "search_docs", "search_state", "chat_drafts", "chat_shares", "queue_items", "runs", "chats", "assets", "prompt_templates",
                 "model_hidden", "new_chat_drafts", "deleted_chat_usage", "deleted_run_usage", "deleted_unreported_runs", "user_preferences", "app_sessions", "approvals",
                 "tenant_bindings", "users"]

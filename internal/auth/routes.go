@@ -121,6 +121,7 @@ var BlogRoutes = []Route{
 	{"GET", "/api/blog/posts/{id}/check"},
 	{"POST", "/api/blog/posts/{id}/check/cancel"},
 	{"PUT", "/api/blog/posts/{id}/blocks/{blockId}"},
+	{"PUT", "/api/blog/posts/{id}/edits/{editId}"},
 	{"POST", "/api/blog/posts/{id}/duplicate"},
 	{"POST", "/api/blog/posts/{id}/assets"},
 	{"GET", "/api/blog/posts/{id}/assets/{assetId}"},

@@ -1,0 +1,221 @@
+{
+ "documents": [
+  {
+   "name": "paragraph, heading, list, quote, code, image only, empty paragraph, long",
+   "doc": {
+    "type": "doc",
+    "content": [
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "Opening  line"
+       },
+       {
+        "type": "text",
+        "text": " with bold",
+        "marks": [
+         {
+          "type": "bold"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "heading",
+      "attrs": {
+       "level": 2
+      },
+      "content": [
+       {
+        "type": "text",
+        "text": "Hardware"
+       }
+      ]
+     },
+     {
+      "type": "bulletList",
+      "content": [
+       {
+        "type": "listItem",
+        "content": [
+         {
+          "type": "paragraph",
+          "content": [
+           {
+            "type": "text",
+            "text": "a small server"
+           }
+          ]
+         }
+        ]
+       },
+       {
+        "type": "listItem",
+        "content": [
+         {
+          "type": "paragraph",
+          "content": [
+           {
+            "type": "text",
+            "text": "power and cooling"
+           }
+          ]
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "blockquote",
+      "content": [
+       {
+        "type": "paragraph",
+        "content": [
+         {
+          "type": "text",
+          "text": "said"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "type": "codeBlock",
+      "content": [
+       {
+        "type": "text",
+        "text": "x = 1"
+       }
+      ]
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "image",
+        "attrs": {
+         "src": "/a.png",
+         "alt": "x"
+        }
+       }
+      ]
+     },
+     {
+      "type": "paragraph"
+     },
+     {
+      "type": "paragraph",
+      "content": [
+       {
+        "type": "text",
+        "text": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word "
+       }
+      ]
+     }
+    ]
+   },
+   "anchors": [
+    "Opening line with bold",
+    "Hardware",
+    "a small server",
+    "said",
+    "x = 1",
+    "",
+    "",
+    "word word word word word word word word word word word word word word word word word word word word word word word word"
+   ]
+  }
+ ],
+ "relocate": [
+  {
+   "name": "found at its index",
+   "anchors": [
+    "a",
+    "b",
+    "c"
+   ],
+   "anchor": "b",
+   "hint": 1,
+   "want": 1
+  },
+  {
+   "name": "found after an insertion above",
+   "anchors": [
+    "new",
+    "a",
+    "b",
+    "c"
+   ],
+   "anchor": "b",
+   "hint": 1,
+   "want": 2
+  },
+  {
+   "name": "found after a deletion above",
+   "anchors": [
+    "b",
+    "c"
+   ],
+   "anchor": "c",
+   "hint": 3,
+   "want": 1
+  },
+  {
+   "name": "same text twice: nearest to the old index",
+   "anchors": [
+    "x",
+    "a",
+    "x",
+    "b",
+    "x"
+   ],
+   "anchor": "x",
+   "hint": 3,
+   "want": 2
+  },
+  {
+   "name": "same text twice: tie goes to the earlier",
+   "anchors": [
+    "x",
+    "a",
+    "x"
+   ],
+   "anchor": "x",
+   "hint": 1,
+   "want": 0
+  },
+  {
+   "name": "gone",
+   "anchors": [
+    "a",
+    "b"
+   ],
+   "anchor": "zzz",
+   "hint": 1,
+   "want": -1
+  },
+  {
+   "name": "empty anchor keeps its index when it still exists",
+   "anchors": [
+    "a",
+    "",
+    "c"
+   ],
+   "anchor": "",
+   "hint": 1,
+   "want": 1
+  },
+  {
+   "name": "empty anchor past the end is gone",
+   "anchors": [
+    "a"
+   ],
+   "anchor": "",
+   "hint": 4,
+   "want": -1
+  }
+ ]
+}

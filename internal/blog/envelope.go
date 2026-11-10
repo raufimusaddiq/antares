@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -15,7 +16,7 @@ import (
 // nothing in it can change the author's document, address, title or account.
 
 const (
-	envelopeVersion = 1
+	envelopeVersion = 2 // 1 is accepted too: it has no edits
 	maxEnvelope     = 256 << 10
 	maxNotes        = 20
 	maxBlocks       = 10
@@ -38,6 +39,13 @@ type rawEnvelope struct {
 		Text      string `json:"text"`
 		AfterNode *int   `json:"afterNode"`
 	} `json:"notes"`
+	Edits []struct {
+		Kind     string `json:"kind"`
+		Part     *int   `json:"part"`
+		Original string `json:"original"`
+		Proposed string `json:"proposed"`
+		Reason   string `json:"reason"`
+	} `json:"edits"`
 	Blocks []struct {
 		Kind      string   `json:"kind"`
 		AfterNode *int     `json:"afterNode"`
@@ -58,6 +66,7 @@ type Note struct {
 type Block struct {
 	Kind      string
 	AfterNode int
+	Anchor    string // the anchor of that part in the version that was read (anchors.go); "" when the draft's parts are not known
 	Markup    string
 	Fallback  string
 	Sources   []Source
@@ -66,9 +75,29 @@ type Block struct {
 	NeedsAck bool
 }
 
+// Edit is one suggested change to the author's own text that passed every rule (specs/006-ai-editor-blog). Plain text throughout.
+// replace: Original is an exact span inside one line of the part; insert: Proposed holds the paragraphs to place after the part.
+type Edit struct {
+	Kind     string
+	Part     int
+	Anchor   string // the part's anchor in the version that was read (anchors.go)
+	Original string
+	Proposed string
+	Reason   string
+}
+
+// DraftInput is what the envelope is checked against: the title, the plain text of each top-level part as the assistant was shown it
+// (checkInput), and each part's anchor.
+type DraftInput struct {
+	Title   string
+	Parts   []string
+	Anchors []string
+}
+
 // Result is the validated envelope.
 type Result struct {
 	Notes  []Note
+	Edits  []Edit
 	Blocks []Block
 	// Notices has one plain sentence per note or block that was dropped. The assistant's own words are never in it.
 	Notices []string
@@ -77,6 +106,15 @@ type Result struct {
 // ParseEnvelope validates the assistant's final output against the version it checked. topNodes is the number of
 // top-level nodes of that version's document (an anchor must be one of them).
 func ParseEnvelope(raw []byte, topNodes int, now time.Time) (Result, error) {
+	return parseEnvelope(raw, topNodes, nil, now)
+}
+
+// ParseEnvelopeParts is ParseEnvelope for a draft whose parts are known, which is what allows the suggested edits to be checked against it.
+func ParseEnvelopeParts(raw []byte, d DraftInput, now time.Time) (Result, error) {
+	return parseEnvelope(raw, len(d.Parts), &d, now)
+}
+
+func parseEnvelope(raw []byte, topNodes int, draft *DraftInput, now time.Time) (Result, error) {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || len(raw) > maxEnvelope {
 		return Result{}, ErrEnvelope
@@ -84,10 +122,10 @@ func ParseEnvelope(raw []byte, topNodes int, now time.Time) (Result, error) {
 	raw = unfence(raw)
 	var env rawEnvelope
 	dec := json.NewDecoder(bytes.NewReader(raw))
-	if err := dec.Decode(&env); err != nil || dec.More() || env.Version != envelopeVersion {
+	if err := dec.Decode(&env); err != nil || dec.More() || (env.Version != 1 && env.Version != envelopeVersion) {
 		return Result{}, ErrEnvelope
 	}
-	if len(env.Notes) > maxNotes || len(env.Blocks) > maxBlocks {
+	if len(env.Notes) > maxNotes || len(env.Blocks) > maxBlocks || len(env.Edits) > maxEnvelope/16 {
 		return Result{}, ErrEnvelope
 	}
 	var res Result
@@ -105,6 +143,22 @@ func ParseEnvelope(raw []byte, topNodes int, now time.Time) (Result, error) {
 			drop("Note %d was removed: its text was empty, too long or not plain text.", i+1)
 		default:
 			res.Notes = append(res.Notes, Note{Kind: n.Kind, Text: text, AfterNode: *n.AfterNode})
+		}
+	}
+	if draft != nil {
+		limit := 4*len(draft.Parts) + 8
+		figs := draftFigures(*draft)
+		all := draftText(*draft)
+		for i, e := range env.Edits {
+			if len(res.Edits) >= limit {
+				drop("%d more suggestions were left out: that is more than this post can use.", len(env.Edits)-i)
+				break
+			}
+			if why := checkEdit(e.Kind, e.Part, e.Original, e.Proposed, e.Reason, *draft, figs, all); why != "" {
+				drop("Suggestion %d was removed: %s.", i+1, why)
+				continue
+			}
+			res.Edits = append(res.Edits, Edit{Kind: e.Kind, Part: *e.Part, Anchor: draft.Anchors[*e.Part], Original: e.Original, Proposed: strings.TrimSpace(e.Proposed), Reason: collapseSpace(e.Reason)})
 		}
 	}
 	for i, b := range env.Blocks {
@@ -154,7 +208,7 @@ func ParseEnvelope(raw []byte, topNodes int, now time.Time) (Result, error) {
 			}
 			continue
 		}
-		res.Blocks = append(res.Blocks, Block{Kind: b.Kind, AfterNode: *b.AfterNode, Markup: prog.Markup, Fallback: fallback, Sources: kept, NeedsAck: len(kept) > 0})
+		res.Blocks = append(res.Blocks, Block{Kind: b.Kind, AfterNode: *b.AfterNode, Anchor: anchorFor(draft, *b.AfterNode), Markup: prog.Markup, Fallback: fallback, Sources: kept, NeedsAck: len(kept) > 0})
 	}
 	return res, nil
 }
@@ -171,4 +225,108 @@ func unfence(b []byte) []byte {
 	}
 	body := strings.TrimSpace(s[nl+1:])
 	return []byte(strings.TrimSpace(strings.TrimSuffix(body, "```")))
+}
+
+// ---- edits ----
+
+const (
+	maxOriginal   = 1000
+	maxProposed   = 4000
+	maxInsert     = 8000
+	maxParagraphs = 12
+	maxEditReason = 300
+	maxQuoteWords = 6
+)
+
+var (
+	figureRe  = regexp.MustCompile(`\d[\d.,]*\d|\d`)
+	htmlTagRe = regexp.MustCompile(`<[A-Za-z/!][^>]*>`)
+	addressRe = regexp.MustCompile(`(?i)(https?://|www\.|\]\(|\S+@\S+\.\S+|\b[a-z0-9-]+\.(com|org|net|io|id|dev|app|co|ai|gov|edu)\b)`)
+	quoteRe   = regexp.MustCompile("[\u201c\"]([^\u201d\"]{1,600})[\u201d\"]")
+)
+
+func draftText(d DraftInput) string { return d.Title + "\n" + strings.Join(d.Parts, "\n") }
+
+// draftFigures is every number in the draft (the title included), so a suggestion may reuse one and may not bring a new one.
+func draftFigures(d DraftInput) map[string]bool {
+	out := map[string]bool{}
+	for _, f := range figureRe.FindAllString(draftText(d), -1) {
+		out[strings.TrimRight(f, ".,")] = true
+	}
+	return out
+}
+
+// partLines are the lines of a part as the assistant was shown them, without the heading and list markers.
+func partLines(part string) []string {
+	lines := strings.Split(part, "\n")
+	for i, l := range lines {
+		lines[i] = strings.TrimPrefix(strings.TrimPrefix(l, "## "), "- ")
+	}
+	return lines
+}
+
+// checkEdit says in a few words why a suggestion cannot be kept, or "" when it can.
+func checkEdit(kind string, part *int, original, proposed, reason string, d DraftInput, figs map[string]bool, all string) string {
+	if kind != "replace" && kind != "insert" {
+		return "it was not a kind of suggestion that exists"
+	}
+	if part == nil || *part < 0 || *part >= len(d.Parts) {
+		return "it pointed at a part of the post that does not exist"
+	}
+	r, p := collapseSpace(reason), strings.TrimSpace(proposed)
+	if r == "" || len([]rune(r)) > maxEditReason {
+		return "it had no usable reason"
+	}
+	if p == "" {
+		return "it proposed no text"
+	}
+	if !isPlainText(p) || !isPlainText(original) || !isPlainText(r) || htmlTagRe.MatchString(p+original+r) || addressRe.MatchString(p+" "+r) {
+		return "its text was not plain text, or held a link or an address"
+	}
+	if kind == "replace" {
+		if original == "" || len([]rune(original)) > maxOriginal || strings.ContainsAny(original, "\n\r") {
+			return "the passage it replaces was empty, too long or spanned lines"
+		}
+		found := false
+		for _, l := range partLines(d.Parts[*part]) {
+			if strings.Contains(l, original) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return "the passage it replaces is not in your post"
+		}
+		if len([]rune(p)) > maxProposed {
+			return "its proposed text was too long"
+		}
+		if p == original {
+			return "it proposed the same text"
+		}
+	} else {
+		if original != "" {
+			return "an insertion cannot replace a passage"
+		}
+		if len([]rune(p)) > maxInsert || strings.Count(p, "\n\n")+1 > maxParagraphs {
+			return "its proposed text was too long"
+		}
+	}
+	for _, f := range figureRe.FindAllString(p, -1) {
+		if !figs[strings.TrimRight(f, ".,")] {
+			return "it contained a figure that is not in your draft"
+		}
+	}
+	for _, q := range quoteRe.FindAllStringSubmatch(p, -1) {
+		if len(strings.Fields(q[1])) > maxQuoteWords && !strings.Contains(all, q[1]) {
+			return "it contained a quotation that is not in your draft"
+		}
+	}
+	return ""
+}
+
+func anchorFor(d *DraftInput, part int) string {
+	if d == nil || part < 0 || part >= len(d.Anchors) {
+		return ""
+	}
+	return d.Anchors[part]
 }
