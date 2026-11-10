@@ -11,7 +11,8 @@ applyAppearance(loadAppearance()); // before the first paint: no flash of the wr
 
 // A shared chat's address is the read-only page alone: no session is loaded and nothing of the app mounts.
 const shared = sharedToken(window.location.pathname);
-// The public blog (/b, /b/<slug>) is read the same way: no session is loaded and nothing of the app mounts.
+// The public blog (/b, /b/<slug>) is read the same way: no session is loaded and nothing of the app mounts. The one question it
+// asks is who is reading (a single GET /api/me, so a signed-in reader sees "Back to Antares"); that call writes nothing.
 const blog = publicBlogRoute(window.location.pathname);
 
 createRoot(document.getElementById("root")!).render(

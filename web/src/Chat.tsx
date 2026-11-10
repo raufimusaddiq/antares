@@ -665,7 +665,7 @@ export function Composer(props: { value: string; busy: boolean; onChange: (v: st
 
 // ---- the app --------------------------------------------------------------------
 
-export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, initialChatId = null, signOutError = "" }: { email: string; onSignOut: (everywhere?: boolean) => void; canAdmin?: boolean; onAdmin?: () => void; onBlog?: () => void; initialChatId?: string | null; signOutError?: string }) {
+export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onReadBlog, initialChatId = null, signOutError = "" }: { email: string; onSignOut: (everywhere?: boolean) => void; canAdmin?: boolean; onAdmin?: () => void; onBlog?: () => void; onReadBlog?: () => void; initialChatId?: string | null; signOutError?: string }) {
   const quota = useSharedQuota(); // the plan quota every account shares (QuotaBar.tsx)
   const [chats, setChats] = useState<ChatSummary[]>([]);
   const [listState, setListState] = useState<"loading" | "ready" | "error">("loading");
@@ -1427,6 +1427,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, init
                 Blog posts
               </button>
             )}
+            {onReadBlog && (
+              <button type="button" className="quiet" data-icon="book" onClick={() => { setMenuOpen(false); onReadBlog(); }}>
+                Read the blog
+              </button>
+            )}
             {canAdmin && onAdmin && (
               <button type="button" className="quiet" data-icon="shield" onClick={onAdmin}>
                 Admin
@@ -1444,10 +1449,23 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, init
         <button type="button" data-icon="plus" onClick={() => void startChat()}>
           New chat
         </button>
-        {onBlog && (
-          <button type="button" className="quiet rail-blog" data-icon="edit" onClick={onBlog}>
-            Blog posts
-          </button>
+        {(onBlog || onReadBlog) && (
+          <div className="rail-blogs">
+            {onBlog ? (
+              <button type="button" className="quiet rail-blog" data-icon="edit" onClick={onBlog}>
+                Blog posts
+              </button>
+            ) : (
+              onReadBlog && (
+                <button type="button" className="quiet rail-blog" data-icon="book" onClick={onReadBlog}>
+                  Read the blog
+                </button>
+              )
+            )}
+            {onBlog && onReadBlog && (
+              <button type="button" className="quiet rail-read" data-icon="book" onClick={onReadBlog} aria-label="Read the blog" title="Read the blog" />
+            )}
+          </div>
         )}
         <SearchPanel key={searchEpoch} current={current} onOpen={(r) => void openResult(r)} />
         {listState === "loading" && <p className="label">Loading…</p>}

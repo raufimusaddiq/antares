@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview|blog-discovery)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -121,7 +121,7 @@ function transcript(rich) {
 const DATA = { [PLAIN]: transcript(false), [RICH]: transcript(true) };
 const b64 = (s) => Buffer.from(s).toString("base64url");
 
-const state = { log: [], delayMs: 15, models: false, admin: false, email: "reader@example.test", budgetReached: false, emptyList: false, hold: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map(), blogCheck: false };
+const state = { manyPosts: false, visitor: false, meState: "ACTIVE", noWriting: false, log: [], delayMs: 15, models: false, admin: false, email: "reader@example.test", budgetReached: false, emptyList: false, hold: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map(), blogCheck: false };
 // A slow runner answers later than a fast one. MOCK_DELAY_MS adds that latency to the image endpoints of the mock (upload, delete, send) so
 // the ordering a slow CI runner produces can be reproduced on demand. Unset (the default) the mock answers at once.
 const MOCK_DELAY = Number(process.env.MOCK_DELAY_MS || 0);
@@ -136,10 +136,10 @@ function api(req, res, url) {
   };
   state.log.push(`${req.method} ${url.pathname}${url.search}`);
   if (req.method === "POST" && /^\/api\/chats\/[^/]+\/messages\/\d+\/summary$/.test(url.pathname)) return send(200, { summary: "# Hosting yourself costs less\n- Seats scale with headcount\n- A small server is cheap until someone patches it" });
-  if (url.pathname === "/api/me") return send(200, { email: state.email, displayName: "Reader", requestedAt: "", state: "ACTIVE", ...(state.admin ? { canAdmin: true } : {}) });
+  if (url.pathname === "/api/me") return state.visitor ? send(401, {}) : send(200, { email: state.email, displayName: "Reader", requestedAt: "", state: state.meState, ...(state.admin ? { canAdmin: true } : {}) });
   // The blog (specs/001-blog-cms-openui-publish): the same shapes the Go server documents, with text that tries to push a
   // phone sideways (a long unbroken address, a long code line).
-  if (url.pathname === "/api/blog/capabilities") return send(200, { writing: true, check: state.blogCheck === true, webSearch: state.blogCheck === true });
+  if (url.pathname === "/api/blog/capabilities") return send(200, { writing: !state.noWriting, check: state.blogCheck === true, webSearch: state.blogCheck === true });
   if (url.pathname === "/api/blog/limits") return send(200, BLOG_LIMITS);
   if (url.pathname === "/api/blog/posts" && req.method === "GET")
     return send(200, [BLOG_ID, "c".repeat(32), "d".repeat(32)].map((id, i) => ({ id, title: ["A long title that has to wrap on a phone without pushing the page sideways", "", "Second post"][i], status: ["published", "draft", "unpublished"][i], slug: i === 0 ? "first-post" : "", updatedAt: "2026-11-09T01:00:00Z", publishedAt: i === 0 ? "2026-11-08T01:00:00Z" : "", interactive: false })));
@@ -154,6 +154,14 @@ function api(req, res, url) {
     return send(200, { ...blogPost(), id: BLOG_CHECKING_ID, title: "Being checked", status: "checking", check: RUNNING_CHECK });
   if (url.pathname === `/api/blog/posts/${BLOG_CHECKING_ID}/check` && req.method === "GET") return send(200, RUNNING_CHECK);
   if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "PUT") return send(200, { ...blogPost(), latestVersion: 4 });
+  // Spec 003: the discovery checks ask for a page, a limit or a search; the older checks keep their one post.
+  if (url.pathname === "/api/public/blog/posts" && (state.manyPosts || ["page", "limit", "q"].some((k) => url.searchParams.has(k)))) {
+    const q = (url.searchParams.get("q") || "").toLowerCase();
+    const limit = Math.min(20, Number(url.searchParams.get("limit")) || 20);
+    const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
+    const all = Array.from({ length: 45 }, (_, i) => ({ slug: `disc-${i + 1}`, title: i === 0 ? "Averyveryverylongtitlewithoutanyspacesatallsoitcannotwrapnormally" : `Discovery post ${i + 1}`, summary: `Summary of discovery post ${i + 1} with some words to wrap`, coverUrl: "", authorName: i === 0 ? "Averyveryverylongdisplaynamewithoutanyspacesatall" : i % 2 ? "Dion S." : "Maya R.", publishedAt: "2026-11-08T01:00:00Z" })).filter((p) => !q || p.title.toLowerCase().includes(q));
+    return send(200, all.slice((page - 1) * limit, page * limit));
+  }
   if (url.pathname === "/api/public/blog/posts") return send(200, [{ slug: "first-post", title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary with " + "words ".repeat(30), coverUrl: "", authorName: "A Writer With A Rather Long Display Name", publishedAt: "2026-11-08T01:00:00Z" }]);
   // A post of ordinary content, for the Share checks (the first-post above carries hostile content on purpose).
   if (url.pathname === "/api/public/blog/posts/share-post") return send(200, SHARE_POST);
@@ -812,7 +820,10 @@ async function blogPages(browser, which, onlyViews) {
       await page.screenshot({ path: path.join(outDir, `${which}-${name}-${label}-${scheme}.png`), fullPage: true });
       const csp = await page.evaluate(() => window.__csp.length);
       // Signed out means the page never asks who it is: the app shell (which calls /api/me and the chat APIs) is not mounted.
-      const asked = which === "blog-public" ? state.log.slice(logFrom).filter((l) => /^\w+ \/api\/(me|chats|quota|capabilities|models)\b/.test(l)) : [];
+      // Spec 003: the one thing a public page asks is who is reading (a single GET /api/me, answered 401 for a visitor, which the browser logs as an error).
+      const meCalls = which === "blog-public" ? state.log.slice(logFrom).filter((l) => l === "GET /api/me").length : 0;
+      const asked = which === "blog-public" ? state.log.slice(logFrom).filter((l) => /^\w+ \/api\/(chats|quota|capabilities|models)\b/.test(l)).concat(meCalls > 1 ? [`GET /api/me x${meCalls}`] : []) : [];
+      if (which === "blog-public") for (let i = consoleErrors.length - 1; i >= 0; i--) if (/status of 401/.test(consoleErrors[i]) && meCalls === 1) { consoleErrors.splice(i, 1); break; }
       check(`${which} ${name}, ${label} ${w}px ${scheme}: content shown, no sideways scroll, no console error, CSP violation or off-origin request${which === "blog-public" ? ", and no signed-in API call" : ""}`,
         shown && m.overflowX <= 0 && m.bodyOverflow <= 0 && m.widened <= 0 && consoleErrors.length === 0 && csp === 0 && external.length === 0 && asked.length === 0 && editorProblems.length === 0,
         JSON.stringify({ shown, ...m, csp, consoleErrors: consoleErrors.slice(0, 2), external: external.slice(0, 2), asked: asked.slice(0, 3), editorProblems }));
@@ -1215,6 +1226,132 @@ async function shareSettings(browser) {
 
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 base = `http://127.0.0.1:${server.address().port}`;
+// ONLY=blog-discovery: the doors to the public blog (spec 003) in a real browser at 320, 390, 820 and 1280 px, light and dark. A visitor's
+// sign-in page and a pending account's waiting screen show the three latest posts as cards, the Read the blog button and keep the sign-in
+// action first; the chat rail and menu offer Read the blog (for a user with and without writing) without pushing the history down; the public
+// list searches, pages and falls back. Every page fits the device, and the only console error allowed is the visitor's one 401 from /api/me.
+async function blogDiscovery(browser) {
+  const only401 = (errs, n401) => errs.filter((e) => !(n401-- > 0 && /status of 401/.test(e)));
+  const fits = (page, w) => page.evaluate((devW) => ({ widened: innerWidth - devW, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth }), w);
+  for (const [label, w, h, scheme] of [["narrow", 320, 640, "light"], ["phone", 390, 844, "dark"], ["tablet", 820, 1180, "light"], ["desktop", 1280, 800, "dark"]]) {
+    const ctxOpts = { viewport: { width: w, height: h }, colorScheme: scheme, ...(w < 500 ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) };
+    // 1. A visitor on the sign-in page.
+    state.visitor = true;
+    try {
+      const { ctx, page, consoleErrors, external } = await openPage(browser, ctxOpts);
+      await page.goto(base + "/");
+      await page.waitForSelector(".latest-posts a", { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(500); // the cards have eased in
+      const cards = await page.locator(".latest-posts a").count();
+      const read = await page.locator('a.read-blog[href="/b"]').count();
+      const order = await page.evaluate(() => { const b = [...document.querySelectorAll("a.btn")]; return b.map((a) => a.textContent.trim()); });
+      const f = await fits(page, w);
+      check(`blog discovery sign-in, ${label} ${scheme}: three latest-post cards, the Read the blog button, the sign-in action first, and the page fits the device`,
+        cards === 3 && read === 1 && /Sign in/.test(order[0] || "") && f.widened <= 0 && f.overflowX <= 0, JSON.stringify({ cards, read, order, ...f }));
+      await page.screenshot({ path: path.join(outDir, `discovery-signin-${label}-${scheme}.png`) });
+      const href = await page.locator(".latest-posts a").first().getAttribute("href");
+      check(`blog discovery sign-in, ${label} ${scheme}: a card opens its post`, href === "/b/disc-1" || /^\/b\//.test(href || ""), String(href));
+      check(`blog discovery sign-in, ${label} ${scheme}: no console error beyond the visitor's 401, no off-origin request`, only401(consoleErrors, 1).length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
+      await ctx.close();
+    } finally { state.visitor = false; }
+    // 2. A pending account on the waiting screen.
+    state.meState = "PENDING";
+    try {
+      const { ctx, page, consoleErrors, external } = await openPage(browser, ctxOpts);
+      await page.goto(base + "/");
+      await page.waitForSelector(".latest-posts a", { timeout: 8000 }).catch(() => {});
+      const cards = await page.locator(".latest-posts a").count();
+      const read = await page.locator('a.read-blog[href="/b"]').count();
+      const chatControls = await page.locator("textarea, .composer").count();
+      const f = await fits(page, w);
+      check(`blog discovery waiting screen, ${label} ${scheme}: the cards and Read the blog show, there is no chat, the page fits`, cards === 3 && read === 1 && chatControls === 0 && f.widened <= 0 && f.overflowX <= 0, JSON.stringify({ cards, read, chatControls, ...f }));
+      await page.screenshot({ path: path.join(outDir, `discovery-waiting-${label}-${scheme}.png`) });
+      check(`blog discovery waiting screen, ${label} ${scheme}: no console error or off-origin request`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
+      await ctx.close();
+    } finally { state.meState = "ACTIVE"; }
+    // 3. The chat: Read the blog in the rail (or the menu on a phone), for a writer and for a user without writing.
+    for (const noWriting of [false, true]) {
+      state.noWriting = noWriting;
+      try {
+        const { ctx, page, consoleErrors, external } = await openPage(browser, ctxOpts);
+        await page.goto(base + "/");
+        await page.waitForSelector("nav.side", { timeout: 8000, state: "attached" });
+        await page.waitForTimeout(600);
+        if (w < 500) await page.getByRole("button", { name: "Menu" }).first().click();
+        const where = w < 500 ? "#bar-actions" : "nav.side";
+        const entry = page.locator(where).getByRole("button", { name: "Read the blog" });
+        const n = await entry.count();
+        const posts = await page.locator(where).getByRole("button", { name: "Blog posts" }).count();
+        const f = await fits(page, w);
+        check(`blog discovery chat, ${label} ${scheme}, ${noWriting ? "without" : "with"} writing: Read the blog is offered${noWriting ? ", Blog posts is not" : " beside Blog posts"}, the page fits`, n === 1 && posts === (noWriting ? 0 : 1) && f.widened <= 0 && f.overflowX <= 0, JSON.stringify({ n, posts, ...f }));
+        if (w >= 500) {
+          const top = await page.evaluate(() => { const r = document.querySelector("nav.side .search-panel, nav.side section")?.getBoundingClientRect(); return r ? Math.round(r.top) : -1; });
+          check(`blog discovery chat, ${label} ${scheme}: the rail entry adds no row (search stays at ${top}px)`, top > 0 && top < 190, String(top));
+        }
+        await page.screenshot({ path: path.join(outDir, `discovery-chat-${label}-${scheme}-${noWriting ? "nowrite" : "write"}.png`) });
+        check(`blog discovery chat, ${label} ${scheme}: no console error or off-origin request`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
+        await ctx.close();
+      } finally { state.noWriting = false; }
+    }
+    // 4. The public list for a signed-in reader: search, Show more, Back to Antares.
+    state.manyPosts = true;
+    try {
+      const { ctx, page, consoleErrors, external } = await openPage(browser, ctxOpts);
+      await page.goto(base + "/b");
+      await page.waitForSelector(".blog-cards .blog-card", { timeout: 8000 });
+      await page.waitForTimeout(500);
+      const first = await page.locator(".blog-card").count();
+      const back = await page.getByRole("link", { name: "Back to Antares" }).count();
+      await page.screenshot({ path: path.join(outDir, `discovery-list-first-${label}-${scheme}.png`), fullPage: true });
+      await page.getByRole("button", { name: "Show more" }).click();
+      await page.locator(".blog-card").nth(20).waitFor({ timeout: 5000 }).catch(() => {});
+      const more = await page.locator(".blog-card").count();
+      await page.getByRole("searchbox", { name: "Search posts" }).fill("post 7");
+      await page.waitForTimeout(700);
+      const hits = await page.locator(".blog-card").count();
+      await page.getByRole("searchbox", { name: "Search posts" }).fill("nothing like this");
+      await page.waitForTimeout(700);
+      const none = await page.getByText("No posts match").count();
+      await page.getByRole("button", { name: "Clear" }).click();
+      await page.locator(".blog-card").first().waitFor({ timeout: 5000 }).catch(() => {});
+      const f = await fits(page, w);
+      check(`blog discovery list, ${label} ${scheme}: 20 posts, Show more adds the next page, a search narrows it, no match is said, Clear restores it, Back to Antares is there`,
+        first === 20 && more === 40 && hits === 1 && none > 0 && back === 1 && f.widened <= 0 && f.overflowX <= 0, JSON.stringify({ first, more, hits, none, back, ...f }));
+      await page.screenshot({ path: path.join(outDir, `discovery-list-${label}-${scheme}.png`), fullPage: true });
+      check(`blog discovery list, ${label} ${scheme}: no console error or off-origin request`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
+      await ctx.close();
+    } finally { state.manyPosts = false; }
+  }
+}
+
+// Short and landscape screens: the sign-in and waiting pages hold a tall strip now, so on a short viewport the top must not be cut off (a
+// centred grid cannot scroll upward), the page must scroll to its last button, and an unbroken long name or title must not push it sideways.
+async function blogDiscoveryShort(browser) {
+  for (const [label, w, h] of [["short phone", 390, 520], ["very short", 320, 420], ["landscape", 568, 320], ["tablet landscape", 1024, 600]]) {
+    for (const meState of ["", "PENDING"]) {
+      state.visitor = meState === ""; state.meState = meState || "ACTIVE";
+      try {
+        const { ctx, page, consoleErrors } = await openPage(browser, { viewport: { width: w, height: h }, ...(w < 700 ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) });
+        await page.goto(base + "/");
+        await page.waitForSelector(".latest-posts a", { timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(500);
+        const m = await page.evaluate((devW) => {
+          const top = document.querySelector(".screen h1")?.getBoundingClientRect().top ?? -1;
+          const btn = document.querySelector("a.read-blog");
+          window.scrollTo(0, document.documentElement.scrollHeight);
+          const b = btn ? btn.getBoundingClientRect() : { bottom: 99999 };
+          const cards = [...document.querySelectorAll(".latest-posts a")].map((a) => { const r = a.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; });
+          return { widened: innerWidth - devW, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, top, btnBottom: Math.round(b.bottom), vh: innerHeight, cardsInside: cards.every(Boolean), cards: cards.length };
+        }, w);
+        check(`blog discovery ${meState ? "waiting" : "sign-in"}, ${label} ${w}x${h}: nothing sideways, the top is not cut off, the last button can be scrolled to, every card is inside`,
+          m.widened <= 0 && m.overflowX <= 0 && m.top >= 0 && m.btnBottom <= m.vh && m.cardsInside && m.cards === 3, JSON.stringify(m));
+        await page.screenshot({ path: path.join(outDir, `discovery-short-${meState ? "waiting" : "signin"}-${w}x${h}.png`), fullPage: true });
+        await ctx.close();
+      } finally { state.visitor = false; state.meState = "ACTIVE"; }
+    }
+  }
+}
+
 const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
 console.log(`# ${await browser.version()} (Chromium), bundle ${fs.readdirSync(path.join(dist, "assets")).filter((f) => /^(index|Block)-.*\.js$/.test(f)).join(", ")}`);
 const only = process.env.ONLY;
@@ -1224,7 +1361,7 @@ try {
   if (!only || only === "mobile-layout" || only === "desktop-layout") await modelPicker(browser);
   if (!only || only === "starting-card") await startingCard(browser);
   if (!only || only === "images") await images(browser);
-  if (!only || only === "blog-public") await blogPages(browser, "blog-public");
+  if (!only || only === "blog-public") { state.visitor = true; try { await blogPages(browser, "blog-public"); } finally { state.visitor = false; } }
   if (!only || only === "blog-editor") await blogPages(browser, "blog-editor");
   if (only === "blog-list") await blogPages(browser, "blog-editor", ["list"]); // the list alone (it is also part of blog-editor)
   if (!only || only === "mobile-layout" || only === "mobile-budget") await mobileBudget(browser);
@@ -1234,6 +1371,7 @@ try {
   if (only === "share-image") await shareImage(browser);
   if (!only || only === "share-menu") await shareMenu(browser);
   if (!only || only === "story-card") await storyCard(browser);
+  if (!only || only === "blog-discovery") { state.manyPosts = true; try { await blogDiscovery(browser); await blogDiscoveryShort(browser); } finally { state.manyPosts = false; } }
   if (!only || only === "blog-editor" || only === "share-preview") await shareSettings(browser);
 } finally {
   await browser.close();

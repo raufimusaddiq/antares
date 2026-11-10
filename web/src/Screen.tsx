@@ -1,5 +1,6 @@
 import type { Account, AccountState } from "./api";
 import { LOGIN_URL } from "./api";
+import { LatestPosts, ReadTheBlog } from "./blog/LatestPosts";
 
 /** What a screen shows. Pure data in, markup out: no fetching here. */
 export type View =
@@ -99,6 +100,9 @@ export function Screen({ view, onRefresh, onSignOut, signOutMessage = "" }: Prop
   const c = copyFor(view);
   const account = view.screen === "account" ? view.account : null;
   const showLogin = view.screen === "login" || view.screen === "login-failed";
+  // The public blog is open to everyone, so every screen a person can land on while not (yet) approved offers it: the sign-in page and the
+  // waiting, refused and suspended screens. Not the screens that mean "the service is broken": there is nothing to read from them.
+  const blog = showLogin || (account !== null && ["PENDING", "REJECTED", "SUSPENDED"].includes(account.state));
   return (
     <main className="screen">
       <h1>{c.heading}</h1>
@@ -138,6 +142,12 @@ export function Screen({ view, onRefresh, onSignOut, signOutMessage = "" }: Prop
         <button type="button" className="quiet" data-icon="regenerate" onClick={onRefresh}>
           Refresh
         </button>
+      )}
+      {blog && (
+        <div className="blog-entry">
+          <LatestPosts />
+          <ReadTheBlog />
+        </div>
       )}
       {account && (
         <button type="button" className="quiet" data-icon="logout" onClick={onSignOut}>

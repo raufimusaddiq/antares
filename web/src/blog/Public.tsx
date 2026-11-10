@@ -1,5 +1,6 @@
-import { useEffect, useState } from "react";
-import { getPublic, listPublic, mediaUrl } from "./blogApi";
+import { useEffect, useRef, useState } from "react";
+import { getCapabilities, getPublic, listMyPublishedSlugs, listPublic, mediaUrl } from "./blogApi";
+import { ReaderProvider, isActive, useReader } from "./readerSession";
 import { LOGIN_URL } from "../api";
 import { AntaresMark } from "../brand/AntaresMark";
 import { formatDay } from "./dates";
@@ -27,6 +28,15 @@ function Frame({ children, title, share }: { children: React.ReactNode; title: s
   useEffect(() => {
     document.title = title;
   }, [title]);
+  const reader = useReader();
+  const [writing, setWriting] = useState(false);
+  const active = isActive(reader);
+  useEffect(() => {
+    if (!active) return setWriting(false);
+    const ctl = new AbortController();
+    void getCapabilities(ctl.signal).then((r) => !ctl.signal.aborted && setWriting(r.ok && r.value.writing === true));
+    return () => ctl.abort();
+  }, [active]);
   return (
     <div className="blog-public">
       <header className="blog-public-head">
@@ -37,11 +47,25 @@ function Frame({ children, title, share }: { children: React.ReactNode; title: s
         </a>
         <div className="blog-public-actions">
           {share}
-          <a className="btn" href={LOGIN_URL} aria-label="Sign in with Google">
-            <span>
-              Sign in<span className="wide-only"> with Google</span>
-            </span>
-          </a>
+          {writing && (
+            <a className="btn plain" href="/blog" data-icon="edit">
+              <span>My<span className="wide-only"> blog</span> posts</span>
+            </a>
+          )}
+          {reader.kind === "anonymous" && (
+            <a className="btn" href={LOGIN_URL} aria-label="Sign in with Google">
+              <span>
+                Sign in<span className="wide-only"> with Google</span>
+              </span>
+            </a>
+          )}
+          {reader.kind === "account" && (
+            <a className="btn plain" href="/" aria-label="Back to Antares">
+              <span>
+                Back<span className="wide-only"> to Antares</span>
+              </span>
+            </a>
+          )}
         </div>
       </header>
       {children}
@@ -50,37 +74,124 @@ function Frame({ children, title, share }: { children: React.ReactNode; title: s
   );
 }
 
+const PAGE = 20; // the server's page size: a full page means there may be more
+
 export function PublicIndex() {
-  const [s, setS] = useState<PublicSummary[] | "loading" | "error">("loading");
+  return (
+    <ReaderProvider>
+      <IndexBody />
+    </ReaderProvider>
+  );
+}
+
+function IndexBody() {
+  const reader = useReader();
+  const [text, setText] = useState(""); // what is typed
+  const [q, setQ] = useState(""); // what is searched, a moment after typing stops
+  const [posts, setPosts] = useState<PublicSummary[]>([]);
+  const [page, setPage] = useState(1);
+  const [state, setState] = useState<"loading" | "ready" | "error" | "more" | "more-error">("loading");
   const [tick, setTick] = useState(0);
+  const [mine, setMine] = useState<Set<string>>(new Set());
+  // The cards ease in on the first load and when more arrive (only the new ones), never while someone is typing a search: the index of the first card to animate.
+  const [enterFrom, setEnterFrom] = useState(0);
+  // A page of an older search must never land in a newer one: each search bumps the epoch and aborts the page in flight.
+  const epoch = useRef(0);
+  const moreCtl = useRef<AbortController | null>(null);
+  const [full, setFull] = useState(false);
+  const active = isActive(reader);
+
   useEffect(() => {
+    const t = window.setTimeout(() => setQ(text.trim().replace(/\s+/g, " ")), 250);
+    return () => window.clearTimeout(t);
+  }, [text]);
+  useEffect(() => {
+    if (!active) return;
     const ctl = new AbortController();
-    setS("loading");
-    void listPublic(ctl.signal).then((r) => !ctl.signal.aborted && setS(r.ok ? r.value : "error"));
+    void listMyPublishedSlugs(ctl.signal).then((s) => !ctl.signal.aborted && setMine(s));
     return () => ctl.abort();
-  }, [tick]);
+  }, [active]);
+  // A new search (or a retry of the first page) starts again from page 1.
+  useEffect(() => {
+    epoch.current += 1;
+    moreCtl.current?.abort();
+    const ctl = new AbortController();
+    setState("loading");
+    void listPublic({ q }, ctl.signal).then((r) => {
+      if (ctl.signal.aborted) return;
+      if (!r.ok) return setState("error");
+      setPosts(r.value);
+      setPage(1);
+      setFull(r.value.length >= PAGE);
+      setEnterFrom(q === "" ? 0 : Infinity);
+      setState("ready");
+    });
+    return () => ctl.abort();
+  }, [q, tick]);
+
+  const more = () => {
+    setState("more");
+    const mine = epoch.current;
+    const ctl = new AbortController();
+    moreCtl.current = ctl;
+    void listPublic({ q, page: page + 1 }, ctl.signal).then((r) => {
+      if (ctl.signal.aborted || mine !== epoch.current) return; // the search changed while this page was coming
+      if (!r.ok) return setState("more-error");
+      // A post published while reading shifts the next page by one: a slug already shown is never shown twice.
+      setPosts((cur) => {
+        const seen = new Set(cur.map((p) => p.slug));
+        return [...cur, ...r.value.filter((p) => !seen.has(p.slug))];
+      });
+      setPage(page + 1);
+      setFull(r.value.length >= PAGE);
+      setEnterFrom(posts.length);
+      setState("ready");
+    });
+  };
+
+  const first = state === "loading" || state === "error";
+  const shown = first && state === "error" ? [] : posts;
   return (
     <Frame title="Blog · Antares">
       <main className="blog-index">
         <h1>Writing from Antares users</h1>
-        {s === "loading" && <p aria-busy="true">Loading posts…</p>}
-        {s === "error" && (
+        <p className="blog-lede">Posts by people who use the assistant, some with live tables and charts.</p>
+        <div className="blog-search">
+          <input type="search" value={text} onChange={(e) => setText(e.target.value)} placeholder="Search posts" aria-label="Search posts" maxLength={80} autoComplete="off" />
+          {text !== "" && (
+            <button type="button" className="quiet" onClick={() => { setText(""); setQ(""); }}>
+              Clear
+            </button>
+          )}
+        </div>
+        <p className="label blog-count" role="status" aria-live="polite">
+          {state === "ready" || state === "more" || state === "more-error" ? (posts.length === 0 ? (q ? "No posts match" : "") : `${posts.length} post${posts.length === 1 ? "" : "s"}${full ? "+" : ""}`) : ""}
+        </p>
+        {state === "loading" && <p aria-busy="true">Loading posts…</p>}
+        {state === "error" && (
           <div role="alert" className="blog-empty">
             <h2>We could not load the posts</h2>
             <p>The blog did not answer. Nothing is lost; try again in a moment.</p>
             <button type="button" className="btn" onClick={() => setTick(tick + 1)}>Try again</button>
           </div>
         )}
-        {Array.isArray(s) && s.length === 0 && (
-          <div className="blog-empty"><h2>Nothing published yet</h2><p>When someone publishes a post it appears here.</p></div>
+        {state !== "loading" && state !== "error" && posts.length === 0 && (
+          q ? (
+            <div className="blog-empty"><h2>No posts match</h2><p>Try another word, or clear the search to see every post.</p></div>
+          ) : (
+            <div className="blog-empty"><h2>Nothing published yet</h2><p>When someone publishes a post it appears here.</p></div>
+          )
         )}
-        {Array.isArray(s) && s.length > 0 && (
+        {shown.length > 0 && (
           <ul className="blog-cards">
-            {s.map((p) => (
-              <li key={p.slug} className="blog-card">
+            {shown.map((p, i) => (
+              <li key={p.slug} className="blog-card" data-enter={i >= enterFrom ? "" : undefined} style={{ "--i": Math.min(Math.max(i - enterFrom, 0), 8) } as React.CSSProperties}>
                 <a href={`/b/${p.slug}`}>
                   {mediaUrl(p.coverUrl) && <img src={mediaUrl(p.coverUrl)} alt="" loading="lazy" />}
-                  <span className="label">{formatDay(p.publishedAt)}</span>
+                  <span className="label">
+                    {formatDay(p.publishedAt)}
+                    {mine.has(p.slug) && <span className="chip chip-yours">Yours</span>}
+                  </span>
                   <h2>{p.title}</h2>
                   <p>{p.summary}</p>
                   <span className="blog-by"><span className="avatar" aria-hidden="true">{initials(p.authorName)}</span> {p.authorName}</span>
@@ -88,6 +199,16 @@ export function PublicIndex() {
               </li>
             ))}
           </ul>
+        )}
+        {state === "more-error" && (
+          <p role="alert" className="blog-more-error">We could not load more posts.</p>
+        )}
+        {(state === "ready" || state === "more" || state === "more-error") && full && (
+          <div className="blog-pager">
+            <button type="button" className="quiet" onClick={more} disabled={state === "more"} aria-busy={state === "more"}>
+              {state === "more" ? "Loading more…" : state === "more-error" ? "Try again" : "Show more"}
+            </button>
+          </div>
         )}
       </main>
     </Frame>
@@ -103,6 +224,14 @@ export function publicImageUrl(slug: string): (src: string) => string {
 }
 
 export function PublicPostPage({ slug }: { slug: string }) {
+  return (
+    <ReaderProvider>
+      <PostBody slug={slug} />
+    </ReaderProvider>
+  );
+}
+
+function PostBody({ slug }: { slug: string }) {
   const [p, setP] = useState<PublicPost | "loading" | "gone" | "error">("loading");
   useEffect(() => {
     const ctl = new AbortController();
@@ -142,6 +271,9 @@ export function PublicPostPage({ slug }: { slug: string }) {
           </p>
           {mediaUrl(p.coverUrl) && <img className="blog-cover" src={mediaUrl(p.coverUrl)} alt="" />}
           <DocView doc={p.doc} blocks={p.blocks} imageUrl={publicImageUrl(slug)} />
+          <p className="blog-more-posts">
+            <a className="btn plain" href="/b" data-icon="arrow-left">More posts</a>
+          </p>
         </article>
       )}
       {post && story && (

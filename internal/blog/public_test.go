@@ -2,6 +2,7 @@ package blog
 
 import (
 	"encoding/json"
+	"net/url"
 	"strings"
 	"testing"
 )
@@ -213,5 +214,157 @@ func TestAnApprovedAuthorStaysReadableWhileTheirWorkspaceIsReverified(t *testing
 		if w := a.anon("GET", "/api/public/blog/posts/stays-up"); w.Code != 200 {
 			t.Errorf("workspace %s took a published post offline: %d", st, w.Code)
 		}
+	}
+}
+
+// publicTitles is the list of titles a public list answered with, in order.
+func publicTitles(t *testing.T, a *app, query string) []string {
+	t.Helper()
+	w := a.anon("GET", "/api/public/blog/posts"+query)
+	if w.Code != 200 {
+		t.Fatalf("%s: %d %s", query, w.Code, w.Body)
+	}
+	var l []PublicSummary
+	if err := json.Unmarshal(w.Body.Bytes(), &l); err != nil {
+		t.Fatalf("%s: not JSON: %s", query, w.Body)
+	}
+	out := []string{}
+	for _, p := range l {
+		out = append(out, p.Title)
+	}
+	return out
+}
+
+func TestPublicListLimitIsBoundedAndPagesNeverRepeatOrSkip(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	for i := 0; i < 5; i++ {
+		u.publish("Post number "+string(rune('A'+i)), "post-number-"+string(rune('a'+i)), "text")
+	}
+	if got := publicTitles(t, a, "?limit=3"); len(got) != 3 {
+		t.Errorf("limit=3 gave %d posts", len(got))
+	}
+	for _, bad := range []string{"", "?limit=0", "?limit=21", "?limit=-1", "?limit=x", "?limit=1e3"} {
+		if got := publicTitles(t, a, bad); len(got) != 5 {
+			t.Errorf("%q should fall back to the default page and show all 5, got %d", bad, len(got))
+		}
+	}
+	seen := map[string]bool{}
+	for _, q := range []string{"?limit=2&page=1", "?limit=2&page=2", "?limit=2&page=3"} {
+		for _, title := range publicTitles(t, a, q) {
+			if seen[title] {
+				t.Errorf("%q repeated %q", q, title)
+			}
+			seen[title] = true
+		}
+	}
+	if len(seen) != 5 {
+		t.Errorf("paging skipped posts: saw %d of 5", len(seen))
+	}
+}
+
+func TestPublicSearchMatchesTitleSummaryAndAuthorAndTreatsTheTextAsPlain(t *testing.T) {
+	a := newApp(t)
+	alice, bob := a.active("alice"), a.active("bob")
+	alice.publish("Alpha cats", "alpha-cats", "text")
+	bob.publish("Beta dogs", "beta-dogs", "text")
+	bob.publish("100% sure_thing", "sure-thing", "text")
+	one := func(q, want string) {
+		t.Helper()
+		got := publicTitles(t, a, "?q="+url.QueryEscape(q))
+		if len(got) != 1 || got[0] != want {
+			t.Errorf("q=%q: got %v, want [%s]", q, got, want)
+		}
+	}
+	one("cats", "Alpha cats")
+	one("BETA", "Beta dogs")               // case does not matter
+	one("  alpha    cats  ", "Alpha cats") // spaces collapse
+	if got := publicTitles(t, a, "?q="+url.QueryEscape("Author bob")); len(got) != 2 {
+		t.Errorf("an author's name should find both their posts, got %v", got)
+	}
+	if got := publicTitles(t, a, "?q="+url.QueryEscape("About Beta")); len(got) != 1 || got[0] != "Beta dogs" {
+		t.Errorf("the summary should be searched, got %v", got)
+	}
+	// % and _ are plain characters, not wildcards.
+	one("100%", "100% sure_thing")
+	one("sure_thing", "100% sure_thing")
+	for _, q := range []string{"%", "_", `\`, "%%%", "a_a"} {
+		if got := publicTitles(t, a, "?q="+url.QueryEscape(q)); len(got) > 1 {
+			t.Errorf("q=%q acted as a wildcard: %v", q, got)
+		}
+	}
+	// Blank means no filter; too long means nothing, not an error.
+	if got := publicTitles(t, a, "?q=%20%20"); len(got) != 3 {
+		t.Errorf("a blank search should show everything, got %v", got)
+	}
+	if got := publicTitles(t, a, "?q="+strings.Repeat("a", 81)); len(got) != 0 {
+		t.Errorf("an over-long search should be empty, got %v", got)
+	}
+	if got := publicTitles(t, a, "?q=%3Cscript%3E"); len(got) != 0 {
+		t.Errorf("markup should be plain text, got %v", got)
+	}
+}
+
+func TestPublicListIsTheSameForEveryCallerAndReadingWritesNothing(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	u.publish("First", "first-post", "text")
+	reader := a.active("carol")
+	for _, path := range []string{"/api/public/blog/posts", "/api/public/blog/posts?q=first&limit=3", "/api/public/blog/posts/first-post"} {
+		anon, signed := a.anon("GET", path), reader.do("GET", path, nil)
+		if anon.Code != 200 || anon.Body.String() != signed.Body.String() {
+			t.Errorf("%s differs for a signed-in reader:\n%s\n%s", path, anon.Body, signed.Body)
+		}
+	}
+	rows := func() map[string]int {
+		out := map[string]int{}
+		names, err := a.db.Query(`SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'`)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer names.Close()
+		var tables []string
+		for names.Next() {
+			var n string
+			_ = names.Scan(&n)
+			tables = append(tables, n)
+		}
+		for _, n := range tables {
+			var c int
+			if err := a.db.QueryRow(`SELECT COUNT(*) FROM "` + n + `"`).Scan(&c); err != nil {
+				t.Fatal(err)
+			}
+			out[n] = c
+		}
+		return out
+	}
+	before := rows()
+	for _, path := range []string{"/api/public/blog/posts", "/api/public/blog/posts?q=first", "/api/public/blog/posts/first-post", "/b", "/b/first-post"} {
+		a.anon("GET", path)
+	}
+	after := rows()
+	for n, c := range before {
+		if after[n] != c {
+			t.Errorf("reading changed %s: %d -> %d", n, c, after[n])
+		}
+	}
+}
+
+// A pending or suspended reader can read the public blog like anyone, and gets nothing more from the author routes
+// that mark a reader's own posts: those stay refused until the account is approved.
+func TestAReaderWhoIsNotApprovedStillCannotUseTheAuthorRoutes(t *testing.T) {
+	a := newApp(t)
+	a.active("alice").publish("Open post", "open-post", "text")
+	for _, state := range []string{"PENDING", "SUSPENDED", "REJECTED"} {
+		p := a.user("reader-"+strings.ToLower(state), state, "READY", false)
+		if w := p.do("GET", "/api/blog/posts", nil); w.Code != 401 && w.Code != 403 {
+			t.Errorf("%s reader got the author list: %d %s", state, w.Code, w.Body)
+		}
+		if w := a.anon("GET", "/api/public/blog/posts/open-post"); w.Code != 200 {
+			t.Errorf("%s: the public post should stay readable: %d", state, w.Code)
+		}
+	}
+	if w := a.anon("GET", "/api/blog/posts"); w.Code != 401 {
+		t.Errorf("a visitor got the author list: %d", w.Code)
 	}
 }
