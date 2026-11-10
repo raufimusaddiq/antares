@@ -40,6 +40,10 @@ Weighting: a productivity tool, so restraint. The sign-in strip and list cards e
 
 ## Not driven
 
-- A production run (visitor, pending account through the smoke fixtures, approved user): done at deploy time (T034).
+- A pending account on production: the synthetic accounts are approved, so the waiting screen was checked in the browser view only, not on the live site.
 - A real phone, a screen reader, and a person timing SC-001/SC-002.
 - Dark mode was checked by the browser view and by eye on screenshots; contrast was not measured with a tool.
+
+## Production (deployed 2026-11-10 as 81c71ee3, backup taken first)
+
+Smoke fixtures with a synthetic approved account and a synthetic published post, desktop and phone (dark): a visitor's sign-in page shows the newest post as a card and Read the blog and fits the device; the card opens the post (Sign in, More posts); the approved account's chat offers Read the blog; the list shows Back to Antares, the post marked Yours and finds it by its words; Back to Antares returns to the chat; no off-origin request. Verdict PASS, cleanup clean, the post deleted (public 404), run directories removed. The first run failed only because the check allowed one `/api/me` 401 and a visitor's two pages produce two (the sign-in page's own session call and the post page's); both are expected and the check now says so.
