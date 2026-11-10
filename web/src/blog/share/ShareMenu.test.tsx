@@ -54,7 +54,8 @@ describe("Share on a post", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "Copy link" }));
     expect(writeText).toHaveBeenCalledWith(URL_OF);
     await waitFor(() => expect(screen.getByRole("status").textContent).toBe("Link copied"));
-    expect(screen.getByRole("menuitem", { name: "Link copied" })).toBeTruthy(); // the menu stays open, the item reads as done
+    // The menu stays open and the item reads as done, but its name stays "Copy link": the status line announces the result once.
+    expect(screen.getByRole("menuitem", { name: "Copy link" }).textContent).toBe("Link copied");
   });
 
   it("keeps keyboard focus on the item when Copy link turns into Link copied", async () => {
@@ -64,8 +65,8 @@ describe("Share on a post", () => {
     const item = screen.getByRole("menuitem", { name: "Copy link" });
     item.focus();
     fireEvent.click(item);
-    const done = await screen.findByRole("menuitem", { name: "Link copied" });
-    expect(document.activeElement).toBe(done);
+    await waitFor(() => expect(screen.getByRole("menuitem", { name: "Copy link" }).textContent).toBe("Link copied"));
+    expect(document.activeElement).toBe(screen.getByRole("menuitem", { name: "Copy link" }));
   });
 
   it("when the Clipboard API refuses, the address is shown to copy by hand", async () => {

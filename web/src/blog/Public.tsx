@@ -154,7 +154,6 @@ export function PublicPostPage({ slug }: { slug: string }) {
             summary: summaryText(post.summary, post.doc),
             highlights: highlights(post.doc),
             authorName: post.authorName,
-            hasCover: false,
             coverUrl: mediaUrl(post.coverUrl),
             date: new Date(post.publishedAt),
             address: `${window.location.host}/b/${slug}`,

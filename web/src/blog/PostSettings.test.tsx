@@ -28,6 +28,16 @@ describe("Share preview in Post settings", () => {
     expect(arg).toMatchObject({ title: "Self-hosting", summary: "What it costs.", highlights: ["The three options"], authorName: "Maya R.", address: `${window.location.host}/b/self-hosting` });
   });
 
+  it("shows the link preview another app would show: the host, the title and the summary", async () => {
+    open();
+    const box = await screen.findByRole("group", { name: "Link preview" });
+    expect(box.textContent).toContain(window.location.host);
+    expect(box.textContent).toContain("Self-hosting");
+    expect(box.textContent).toContain("What it costs.");
+    fireEvent.change(screen.getByRole("textbox", { name: "Summary" }), { target: { value: "A different summary." } });
+    expect(screen.getByRole("group", { name: "Link preview" }).textContent).toContain("A different summary.");
+  });
+
   it("offers no way to send, save or copy it", async () => {
     open();
     await screen.findByRole("img", { name: /Preview of the story picture/ });
@@ -46,6 +56,7 @@ describe("Share preview in Post settings", () => {
     open({ ...POST, title: "  " });
     expect(screen.getByText(/Give the post a title/)).toBeTruthy();
     expect(screen.queryByRole("img")).toBeNull();
+    expect(screen.queryByRole("group", { name: "Link preview" })).toBeNull();
     expect(drawn).not.toHaveBeenCalled();
   });
 });

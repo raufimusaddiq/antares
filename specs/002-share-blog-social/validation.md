@@ -36,6 +36,20 @@ pinned. Before: full `45edc7ca4cb4e452474e065cfc3ebf862912f05d2e182f938c3d55b1b1
 | SC-007 | `ONLY=share-menu` (keyboard: Escape and focus return) and `ShareMenu.test.tsx`; contrast of the picture's colours in `palette.test.ts`. A screen reader was not driven. |
 | SC-008 | Looked at beside the chat picture; `palette.test.ts` (differs from the chat palette, AA contrast). |
 
+## Coverage (web, `vitest --coverage`, all of `web/src`)
+
+| | lines | statements | branches | functions | tests |
+|---|---|---|---|---|---|
+| `main` before | 79.7% | 77.2% | 73.8% | 77.0% | 791 |
+| this branch | 78.9% | 76.8% | 74.3% | 77.8% | 838 |
+
+Branches and functions rose; lines and statements fell by under one point. The cause is the canvas drawing code
+(`cardKit.ts`, `postCard.ts`, and the part of `shareImage.ts` that draws), about 600 lines that a unit-test environment
+cannot execute: they are covered by the real-browser checks instead (`share-image`: the chat picture pixel for pixel;
+`story-card`: nine posts). The pure parts are covered: `planPostCard.ts` 99%, `postContent.ts` 97%, `shareLinks.ts` 100%,
+`ShareMenu.tsx` 96%, `StoryDialog.tsx` 95%, `RowMenu.tsx` 97%. `PostSettings.tsx` rose from 6% to 75% and `Public.tsx` from
+28% to 88%. No test was removed. (`@vitest/coverage-v8` is not a dependency of `web/`; it was installed with `--no-save`.)
+
 ## Things found on the way
 
 - Copy link first lost keyboard focus when its label changed to "Link copied" (React re-created the element): fixed by a

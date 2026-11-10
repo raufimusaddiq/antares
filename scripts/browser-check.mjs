@@ -1200,10 +1200,10 @@ async function shareSettings(browser) {
     const m = await page.evaluate(() => {
       const sheet = document.querySelector('[aria-label="Post settings"]').getBoundingClientRect();
       const img = document.querySelector(".blog-share-preview-row img").getBoundingClientRect();
-      return { sheetRight: sheet.right, vw: document.documentElement.clientWidth, ratio: img.width / img.height, inside: img.left >= sheet.left - 1 && img.right <= sheet.right + 1, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, noSend: document.querySelectorAll('[aria-label="Post settings"] button').length };
+      return { sheetRight: sheet.right, vw: document.documentElement.clientWidth, ratio: img.width / img.height, inside: img.left >= sheet.left - 1 && img.right <= sheet.right + 1, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, link: !!document.querySelector('[aria-label="Post settings"] .blog-link-preview'), noSend: document.querySelectorAll('[aria-label="Post settings"] button').length };
     });
     await page.screenshot({ path: path.join(outDir, `share-preview-${label}-${scheme}.png`) });
-    check(`share preview, ${label} ${scheme}: 9:16, inside the sheet, no sideways scroll`, Math.abs(m.ratio - 9 / 16) < 0.02 && m.inside && m.sheetRight <= m.vw + 1 && m.overflowX <= 0, JSON.stringify(m));
+    check(`share preview, ${label} ${scheme}: the link preview and a 9:16 picture, inside the sheet, no sideways scroll`, m.link && Math.abs(m.ratio - 9 / 16) < 0.02 && m.inside && m.sheetRight <= m.vw + 1 && m.overflowX <= 0, JSON.stringify(m));
     check(`share preview, ${label} ${scheme}: no console error and no request to another origin`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
     await ctx.close();
   }

@@ -9,7 +9,7 @@ vi.mock("../../exportChat", () => ({ saveBlob: vi.fn() }));
 import { saveBlob } from "../../exportChat";
 
 const drawn = vi.mocked(renderPostCard);
-const DATA: PostCardData = { title: "Self-hosting", summary: "What it costs.", highlights: ["One"], authorName: "Maya R.", hasCover: false, coverUrl: "", date: new Date(2026, 10, 9), address: "antares.example/b/self-hosting" };
+const DATA: PostCardData = { title: "Self-hosting", summary: "What it costs.", highlights: ["One"], authorName: "Maya R.", coverUrl: "", date: new Date(2026, 10, 9), address: "antares.example/b/self-hosting" };
 const URL_OF = "https://antares.example/b/self-hosting";
 URL.createObjectURL = () => "blob:x";
 URL.revokeObjectURL = () => {};

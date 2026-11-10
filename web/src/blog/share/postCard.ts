@@ -4,7 +4,7 @@ import { COVER_H, INNER_W, INNER_X, PANEL_W, PANEL_X, SANS_FAMILY, STRIP, TITLE_
 // A post as a 9:16 picture (spec 002): drawn in the reader's own browser from what the post page already shows, in the
 // chat picture's style (cardKit) and the blog palette. Nothing is sent anywhere and nothing is stored.
 
-export interface PostCardData extends PostCardInput {
+export interface PostCardData extends Omit<PostCardInput, "hasCover"> {
   /** The cover's address (this site's own), or empty. */
   coverUrl: string;
   date: Date;

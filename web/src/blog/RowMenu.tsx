@@ -15,6 +15,8 @@ export interface RowAction {
   keepOpen?: boolean;
   /** Shown as done (the item has just done what it says). */
   done?: boolean;
+  /** The item's accessible name when it differs from what is drawn (Copy link keeps its name while it reads "Link copied", so a status line announces the result once). */
+  ariaLabel?: string;
   run?: () => void;
 }
 
@@ -118,6 +120,7 @@ export function RowMenu({
                 type="button"
                 role="menuitem"
                 tabIndex={-1}
+                aria-label={a.ariaLabel}
                 className={[a.danger ? "danger" : "", a.done ? "done" : "", a.divider ? "divided" : ""].filter(Boolean).join(" ") || undefined}
                 onClick={() => {
                   if (!a.keepOpen) close(true); // focus stays on the button (a dialog the action opens returns to it); only a link leaves the page

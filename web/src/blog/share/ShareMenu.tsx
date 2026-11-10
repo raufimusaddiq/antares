@@ -39,7 +39,7 @@ export function ShareMenu({ title, slug, onStory }: { title: string; slug: strin
       run: () => void navigator.share({ title, url }).catch(() => {}), // a cancelled sheet is not an error
     });
   }
-  actions.push({ id: "copy", label: copied ? "Link copied" : "Copy link", keepOpen: true, done: copied, run: copy });
+  actions.push({ id: "copy", label: copied ? "Link copied" : "Copy link", ariaLabel: "Copy link", keepOpen: true, done: copied, run: copy });
   if (!native) for (const d of destinations(title, url)) actions.push({ label: d.label, href: d.href, external: true });
   if (onStory) actions.push({ label: "Story image", divider: true, run: onStory });
 
