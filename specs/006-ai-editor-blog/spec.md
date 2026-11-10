@@ -28,6 +28,7 @@ Today the check is deliberately read-only about the author's text (spec 001: the
 - Q: After the author accepts one suggestion (or types elsewhere), do the remaining suggestions and data blocks stay usable? → A: Yes. Accepting changes only its own passage; every other suggestion and block stays valid unless its own passage changed (then it is "no longer applicable"). Typing elsewhere also leaves them valid.
 - Q: Do checks started from the editor count against the same limits as the check at Publish? → A: Yes, one shared limit (daily and simultaneous, as today). When it is reached the author is told and can still publish the original.
 - Q: Should the published post tell readers that accepted text was assistant-written? → A: No. Once accepted, the text is the author's own; the "written by the assistant" mark exists only in the editor and review screens until acceptance. Data blocks keep their "AI-added" marker for readers, as today.
+- Q: How many text suggestions may one check return? → A: Scaled to the post: about one per section, with no fixed cap on a long post. The existing limit on how long a post a check can read still applies.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -110,7 +111,7 @@ The check no longer only adds data blocks and notes. It also proposes changes to
 - **FR-006**: A stalled, failed, timed-out or cancelled check MUST say which of these happened, that nothing was published, and what the author can do next.
 - **FR-007**: Leaving and returning to a running check MUST show its real current step.
 - **FR-008**: Step changes MUST be announced to assistive technology once and politely; the clock MUST NOT be announced every second.
-- **FR-009**: The check MUST be able to propose changes to the author's own text as suggestions, each with the original passage, the proposed text and a one-sentence reason.
+- **FR-009**: The check MUST be able to propose changes to the author's own text as suggestions, each with the original passage, the proposed text and a one-sentence reason. The number of suggestions MUST scale with the post, about one per section, with no fixed cap on a long post (the existing limit on how long a post a check can read still applies); they MUST be ordered most important first.
 - **FR-010**: For a draft that is mostly a framework (headings and bullets with little prose), the check MUST be able to propose prose for each section built from the author's own points.
 - **FR-011**: Nothing in the author's draft MUST change until the author accepts a suggestion; accepting MUST change only that passage and MUST be undoable; rejecting MUST change nothing.
 - **FR-012**: Notes, reasons and proposed text MUST be in the language the post (or the passage) is written in.
