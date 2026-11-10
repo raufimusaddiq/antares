@@ -137,9 +137,10 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
     // eslint-disable-next-line react-hooks/exhaustive-deps -- the bridge follows the editor
   }, [bridge]);
   const flushNow = useCallback(() => saver.current?.flush() ?? Promise.resolve(false), []);
-  const b = (label: string, on: () => void, state?: Tri) => (
+  // The design draws short labels (B, I, H2, • List); the accessible name stays the full word.
+  const b = (label: string, on: () => void, state?: Tri, shown?: string) => (
     <button type="button" className="quiet" aria-pressed={state === undefined ? undefined : pressed(state)} aria-label={label} onClick={on}>
-      {label}
+      {shown ?? label}
     </button>
   );
   const chain = () => editor!.chain().focus();
@@ -194,12 +195,12 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
       />
       {editor && (
         <div className="blog-toolbar" role="toolbar" aria-label="Formatting">
-          {b("Bold", () => chain().toggleBold().run(), fmt.bold)}
-          {b("Italic", () => chain().toggleItalic().run(), fmt.italic)}
-          {b("Heading", () => chain().toggleHeading({ level: 2 }).run(), fmt.heading2)}
-          {b("Subheading", () => chain().toggleHeading({ level: 3 }).run(), fmt.heading3)}
-          {b("Bullets", () => chain().toggleBulletList().run(), fmt.bullets)}
-          {b("Numbers", () => chain().toggleOrderedList().run(), fmt.numbers)}
+          {b("Bold", () => chain().toggleBold().run(), fmt.bold, "B")}
+          {b("Italic", () => chain().toggleItalic().run(), fmt.italic, "I")}
+          {b("Heading", () => chain().toggleHeading({ level: 2 }).run(), fmt.heading2, "H2")}
+          {b("Subheading", () => chain().toggleHeading({ level: 3 }).run(), fmt.heading3, "H3")}
+          {b("Bullets", () => chain().toggleBulletList().run(), fmt.bullets, "\u2022 List")}
+          {b("Numbers", () => chain().toggleOrderedList().run(), fmt.numbers, "1. List")}
           {b("Quote", () => chain().toggleBlockquote().run(), fmt.quote)}
           {b("Code", () => chain().toggleCodeBlock().run(), fmt.code)}
           {b("Link", link, fmt.link)}
