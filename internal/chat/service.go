@@ -17,6 +17,7 @@ import (
 	"github.com/raufimusaddiq/antares/internal/kenari"
 	"github.com/raufimusaddiq/antares/internal/secrets"
 	"github.com/raufimusaddiq/antares/internal/store"
+	"github.com/raufimusaddiq/antares/internal/writing"
 )
 
 const (
@@ -238,10 +239,27 @@ func (s *Service) runNew(ctx context.Context, l *liveRun, run store.Run, input s
 		return
 	}
 	visualize := chat.Visualize
+	// The built-in writing rules go to every account's run (specs/005-antislop-writing). A failing read of the switch never
+	// turns them off; a text that cannot be loaded leaves the run without them and records NULL (the admin card warns).
+	rules, rulesState := "", store.RulesOff
+	if on, err := store.WritingRulesEnabled(ctx, s.db); on {
+		if err != nil {
+			log.Printf("chat: writing rules switch unreadable, rules stay on: %v", err)
+		}
+		if rules = writing.Text(); rules != "" {
+			rulesState = store.RulesAttached
+		} else {
+			rulesState = ""
+			log.Printf("chat: writing rules text unavailable: %v", writing.Check())
+		}
+	}
+	if err := store.SetRunWritingRules(ctx, s.db, run.UserID, run.ID, rulesState); err != nil {
+		log.Printf("chat: record writing rules: %v", err)
+	}
 	req := hermes.RunRequest{
 		SessionID: run.HermesSession, Input: input, SessionKey: sessionKey(run.UserID), IdempotencyKey: "antares-" + run.ID,
 		Provider: choice.Provider, Model: choice.Model, Reasoning: choice.Reasoning, ServiceTier: choice.ServiceTier,
-		Instructions: runInstructions(personality, visualize),
+		Instructions: runInstructions(rules, personality, visualize),
 	}
 	if imgs != nil {
 		// The model that was checked for image input is the model that runs: named explicitly,

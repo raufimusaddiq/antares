@@ -48,6 +48,8 @@ type TitleModel struct {
 	// the configured Model. It answers false when the model is switched off: then no call is made (the chat's title is its first
 	// words, a shared picture is the whole answer).
 	Pick func(ctx context.Context, configured string) (string, bool)
+	// Rules, if set, returns the built-in writing rules text for a summary ("" when switched off or unavailable). Titles do not use it.
+	Rules func(ctx context.Context) string
 }
 
 func (m *TitleModel) Title(ctx context.Context, first string) (string, error) {

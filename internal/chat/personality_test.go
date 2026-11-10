@@ -4,7 +4,21 @@ import (
 	"encoding/json"
 	"strings"
 	"testing"
+
+	"github.com/raufimusaddiq/antares/internal/writing"
 )
+
+// ownInstructions are a run's instructions without the built-in writing rules every run carries first (specs/005-antislop-writing;
+// writing_rules_test.go tests those): what the chat's own settings and the person's preferences added. "" when nothing.
+func ownInstructions(t *testing.T, body map[string]any) string {
+	t.Helper()
+	instr, _ := body["instructions"].(string)
+	rules := writing.Text()
+	if instr != rules && !strings.HasPrefix(instr, rules+"\n\n") {
+		t.Fatalf("a run without the writing rules first: %q", instr)
+	}
+	return strings.TrimPrefix(strings.TrimPrefix(instr, rules), "\n\n")
+}
 
 // runBodyFor is the POST /v1/runs body Hermes received for the run with this input.
 func runBodyFor(t *testing.T, a *app, input string) map[string]any {
@@ -41,18 +55,18 @@ func TestPersonalityAppliesToTheOwnersNextRunOnly(t *testing.T) {
 	}
 	alice.send(alice.newPlainChat(), "alice asks")
 	body := runBodyFor(t, a, "alice asks")
-	instr, _ := body["instructions"].(string)
+	instr := ownInstructions(t, body)
 	if !strings.HasPrefix(instr, personalityPrefix) || !strings.HasSuffix(instr, "Answer in Indonesian. Be brief.") {
 		t.Errorf("alice's run instructions: %q", instr)
 	}
 	bob.send(bob.newPlainChat(), "bob asks")
-	if b := runBodyFor(t, a, "bob asks"); b["instructions"] != nil {
-		t.Errorf("bob's run carries instructions: %v", b["instructions"])
+	if i := ownInstructions(t, runBodyFor(t, a, "bob asks")); i != "" {
+		t.Errorf("bob's run carries instructions: %v", i)
 	}
 	alice.do("PUT", "/api/me/personality", nil, map[string]string{"text": ""})
 	alice.send(alice.newPlainChat(), "alice again")
-	if b := runBodyFor(t, a, "alice again"); b["instructions"] != nil {
-		t.Errorf("cleared personality still sent: %v", b["instructions"])
+	if i := ownInstructions(t, runBodyFor(t, a, "alice again")); i != "" {
+		t.Errorf("cleared personality still sent: %v", i)
 	}
 }
 

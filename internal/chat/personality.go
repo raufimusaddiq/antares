@@ -36,9 +36,13 @@ const openUIMedia = "Delivering generated media: when a tool generated an image,
 	"as MEDIA:<the exact path the tool returned> inside a TextContent string, for example TextContent(\"MEDIA:/path/from/the/tool.png\"). " +
 	"That path is a real file, not a fabricated URL: never leave it out because of the rule about image URLs."
 
-// runInstructions are a run's per-run instructions: the chat's Visualize instruction, then the user's preferences.
-func runInstructions(personality string, visualize bool) string {
+// runInstructions are a run's per-run instructions: the built-in writing rules (when they go out), the chat's Visualize
+// instruction, then the user's preferences, so the person's own words about tone come last and win.
+func runInstructions(rules, personality string, visualize bool) string {
 	var parts []string
+	if rules != "" {
+		parts = append(parts, rules)
+	}
 	if visualize {
 		parts = append(parts, openUIInstruction)
 	}
