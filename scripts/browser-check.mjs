@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview|blog-discovery|admin-posts|admin-models|admin-a11y|writing-rules)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview|blog-discovery|admin-posts|admin-models|admin-a11y|writing-rules|editor-toolbar)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -1434,6 +1434,118 @@ async function writingRules(browser) {
   }
 }
 
+// ONLY=editor-toolbar: the formatting buttons show the truth (spec 006, US1). In a real browser: write a post with bold, italic, a link, headings,
+// lists, a quote and a code block; then make 50 cursor moves and selections (arrow keys, clicks, shift-selection, a partly bold range) and, after each,
+// every button's aria-pressed must equal what the DOM says is at the caret or in the selection (on, off, or mixed for part of a range). Nothing
+// overlaps, and every button is at least 44 px tall.
+async function editorToolbar(browser) {
+  const LABELS = { Bold: "bold", Italic: "italic", Heading: "heading2", Subheading: "heading3", Bullets: "bullets", Numbers: "numbers", Quote: "quote", Code: "code", Link: "link" };
+  const read = (page) => page.evaluate((labels) => {
+    const root = document.querySelector(".ProseMirror");
+    const sel = getSelection();
+    if (!root || !sel || sel.rangeCount === 0) return null;
+    const range = sel.getRangeAt(0);
+    const css = { bold: "strong, b", italic: "em, i", heading2: "h2", heading3: "h3", bullets: "ul li", numbers: "ol li", quote: "blockquote", code: "pre", link: "a" };
+    const targets = [];
+    if (range.collapsed) {
+      let n = range.startContainer;
+      if (n.nodeType !== 3 && n.childNodes[range.startOffset]) n = n.childNodes[range.startOffset];
+      if (n.nodeType !== 3 && range.startOffset > 0 && n.childNodes[range.startOffset - 1]) n = n.childNodes[range.startOffset - 1];
+      targets.push(n);
+    } else {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+        if (!range.intersectsNode(n)) continue;
+        const from = n === range.startContainer ? range.startOffset : 0;
+        const to = n === range.endContainer ? range.endOffset : n.length;
+        if (to > from) targets.push(n);
+      }
+    }
+    const el = (n) => (n.nodeType === 3 ? n.parentElement : n);
+    const truth = {};
+    // A caret on the edge of a mark, or of two blocks, is a matter of which side typing would continue; the editor knows, the DOM cannot say. So at a caret the
+    // truth is the editor's own answer at that moment (the thing the toolbar used to read only while rendering), and over a range it is the text in the range.
+    const ed = root.editor;
+    if (range.collapsed && ed) {
+      const q = { bold: ["bold"], italic: ["italic"], link: ["link"], heading2: ["heading", { level: 2 }], heading3: ["heading", { level: 3 }], bullets: ["bulletList"], numbers: ["orderedList"], quote: ["blockquote"], code: ["codeBlock"] };
+      for (const [k, a] of Object.entries(q)) truth[k] = ed.isActive(...a) ? "on" : "off";
+    } else for (const [label, key] of Object.entries(labels)) {
+      const have = targets.filter((n) => { const e = el(n); return e && root.contains(e) && !!e.closest(css[key]); }).length;
+      truth[key] = targets.length === 0 || have === 0 ? "off" : have === targets.length ? "on" : "mixed";
+    }
+    const shown = {};
+    for (const [label, key] of Object.entries(labels)) {
+      const b = [...document.querySelectorAll(".blog-toolbar button")].find((x) => x.getAttribute("aria-label") === label);
+      const v = b?.getAttribute("aria-pressed");
+      shown[key] = v === "true" ? "on" : v === "mixed" ? "mixed" : v === "false" ? "off" : "missing";
+    }
+    return { truth, shown, collapsed: range.collapsed, text: range.toString().slice(0, 20) };
+  }, LABELS);
+  for (const [label, w, h, scheme] of [["narrow", 320, 640, "light"], ["phone", 390, 844, "dark"], ["tablet", 820, 1180, "light"], ["desktop", 1280, 800, "dark"]]) {
+    const ctxOpts = { viewport: { width: w, height: h }, colorScheme: scheme, ...(w < 500 ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) };
+    const { ctx, page, consoleErrors, external } = await openPage(browser, ctxOpts);
+    page.on("dialog", (d) => d.accept("https://example.org/page"));
+    await page.goto(base + `/blog/${BLOG_ID}`);
+    await page.waitForSelector("[contenteditable=true]", { timeout: 8000 });
+    await page.focus("[contenteditable=true]");
+    const kb = page.keyboard;
+    await kb.press("Control+a"); await kb.press("Backspace");
+    const type = async (t) => { await kb.type(t, { delay: 2 }); };
+    await type("## Heading two\n");
+    await type("plain "); await kb.press("Control+b"); await type("bold"); await kb.press("Control+b"); await type(" and "); await kb.press("Control+i"); await type("italic"); await kb.press("Control+i"); await type(" tail\n");
+    await type("see the link here");
+    for (let i = 0; i < 5; i++) await kb.press("ArrowLeft");
+    for (let i = 0; i < 4; i++) await kb.press("Shift+ArrowLeft");
+    await page.getByRole("button", { name: "Link", exact: true }).click();
+    await kb.press("End"); await type("\n");
+    await type("- first item\nsecond item\n\n");
+    await type("1. step one\nstep two\n\n");
+    await type("> quoted words\n\n");
+    await type("### Sub three\n");
+    await type("``` code line");
+    await page.waitForTimeout(300);
+    const bad = [];
+    let moves = 0;
+    const record = async (what) => {
+      await page.waitForTimeout(what.startsWith("click") ? 150 : 60);
+      const r = await read(page);
+      moves++;
+      if (!r) { bad.push(`${what}: no selection`); return; }
+      for (const key of Object.keys(r.truth)) if (r.truth[key] !== r.shown[key]) bad.push(`${what} [${r.collapsed ? "caret" : "range \"" + r.text + "\""}]: ${key} should be ${r.truth[key]}, button shows ${r.shown[key]}`);
+    };
+    await kb.press("Control+Home");
+    const acts = ["ArrowRight", "ArrowRight", "ArrowRight", "ArrowDown", "End", "Shift+ArrowLeft", "Shift+ArrowLeft", "ArrowLeft", "Home", "Shift+ArrowRight", "Shift+ArrowRight", "Shift+ArrowRight", "Shift+ArrowRight", "ArrowDown", "ArrowDown", "Shift+End", "ArrowRight", "ArrowUp", "ArrowUp", "Shift+ArrowDown", "Shift+ArrowDown", "ArrowLeft", "End", "ArrowDown", "Home", "Shift+ArrowRight"];
+    for (let i = 0; moves < 40; i++) { const a = acts[i % acts.length]; await kb.press(a); await record(a); }
+    const box = await page.locator(".ProseMirror").boundingBox();
+    const lines = await page.locator(".ProseMirror > *").evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return [r.left + Math.min(40, r.width / 2), r.top + Math.min(r.height / 2, 14)]; }));
+    for (const [x, y] of [...lines, ...lines].slice(0, 14)) { await page.mouse.click(x, y); await record(`click at ${Math.round(x)},${Math.round(y)}`); }
+    await page.mouse.click(lines[1][0] + 2, lines[1][1]); await kb.press("Shift+End"); await record("range over the line with bold and italic");
+    await kb.press("Control+Home"); await kb.press("Shift+ArrowDown"); await kb.press("Shift+ArrowDown"); await record("range over a heading and a paragraph");
+    check(`editor toolbar, ${label} ${scheme}: after ${moves} cursor moves and selections every button matches the text at the caret`, bad.length === 0 && moves >= 50, `${moves} moves; ${bad.slice(0, 4).join(" | ")}`);
+    const lay = await page.evaluate(() => {
+      const bs = [...document.querySelectorAll(".blog-toolbar button")].filter((b) => { const r = b.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+      let overlap = 0;
+      for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) { const a = bs[i].getBoundingClientRect(), b = bs[j].getBoundingClientRect(); if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) overlap++; }
+      return { overlap, short: bs.filter((b) => b.getBoundingClientRect().height < 43.5).length, count: bs.length, widened: innerWidth, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+    });
+    check(`editor toolbar, ${label} ${scheme}: no button overlaps another, every target is at least 44 px, the page fits`, lay.overlap === 0 && lay.short === 0 && lay.count >= 11 && lay.widened === w && lay.overflowX <= 0, JSON.stringify(lay));
+    // a partly bold range shows the mixed state with its outline and bar (not colour alone)
+    await page.evaluate(() => {
+      const root = document.querySelector(".ProseMirror");
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+      let first = null, strong = null;
+      for (let n = walker.nextNode(); n; n = walker.nextNode()) { if (n.textContent.startsWith("plain ")) first = n; if (n.parentElement.closest("strong") && !strong) strong = n; }
+      getSelection().setBaseAndExtent(first, 2, strong, 2);
+    });
+    await page.waitForTimeout(150);
+    const mixed = await page.evaluate(() => { const b = [...document.querySelectorAll(".blog-toolbar button")].find((x) => x.getAttribute("aria-label") === "Bold"); const cs = getComputedStyle(b); return { v: b.getAttribute("aria-pressed"), border: cs.borderTopWidth, bar: getComputedStyle(b, "::after").content !== "none" }; });
+    check(`editor toolbar, ${label} ${scheme}: a partly bold selection shows Bold as mixed, with an outline and a bar`, mixed.v === "mixed" && parseFloat(mixed.border) >= 2 && mixed.bar, JSON.stringify(mixed));
+    await page.screenshot({ path: path.join(outDir, `editor-toolbar-${label}-${scheme}.png`), fullPage: true });
+    check(`editor toolbar, ${label} ${scheme}: no console error or off-origin request`, consoleErrors.length === 0 && external.length === 0, consoleErrors.join("|").slice(0, 200));
+    await ctx.close();
+  }
+}
+
 // ONLY=admin-posts: the administrator's Posts screens and the author's side of a takedown (spec 004) in a real browser at 320, 390, 820 and
 // 1280 px, light and dark. The list, a post, the take-down form and the restore; a takedown seen by the author as a list row, a one-time
 // banner that goes away for good, and an editor whose Publish is blocked. Every page fits the device and raises no console error.
@@ -1687,6 +1799,7 @@ try {
   if (!only || only === "admin-models") await adminModels(browser);
   if (!only || only === "admin-a11y") await adminA11y(browser);
   if (!only || only === "writing-rules") await writingRules(browser);
+  if (!only || only === "editor-toolbar") await editorToolbar(browser);
   if (!only || only === "blog-editor" || only === "share-preview") await shareSettings(browser);
 } finally {
   await browser.close();

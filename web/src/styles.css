@@ -1296,7 +1296,11 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 
 .blog-title { width: 100%; box-sizing: border-box; margin: 0.75rem 0; padding: 0.4rem 0; font: inherit; font-size: clamp(1.6rem, 5vw, 2.6rem); font-weight: 700; border: 0; border-bottom: 2px solid var(--ink); background: transparent; color: var(--ink); }
 .blog-toolbar { position: sticky; top: 0; z-index: 2; margin-bottom: 1.125rem; display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.4rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
+.blog-toolbar button { min-height: 2.75rem; }
 .blog-toolbar button[aria-pressed="true"] { background: var(--ink); color: var(--canvas); }
+/* Mixed: part of the selection has it. A rail fill, a 2 px outline and a bar under the label, so it never relies on colour alone. */
+.blog-toolbar button[aria-pressed="mixed"] { position: relative; background-color: var(--rail); border: 2px solid var(--ink); }
+.blog-toolbar button[aria-pressed="mixed"]::after { content: ""; position: absolute; left: 50%; bottom: 6px; width: 14px; height: 3px; margin-left: -7px; border-radius: 2px; background: var(--ink); }
 
 .blog-prose { min-height: 50vh; padding: 1rem 0; font-size: 1.1rem; line-height: 1.65; outline: none; overflow-wrap: anywhere; }
 .blog-prose:focus-visible { outline: 3px solid var(--focus, var(--cobalt)); outline-offset: 2px; }
