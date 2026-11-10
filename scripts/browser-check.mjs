@@ -1588,6 +1588,12 @@ async function editorToolbar(browser) {
     await page.waitForTimeout(150);
     const mixed = await page.evaluate(() => { const b = [...document.querySelectorAll(".blog-toolbar button")].find((x) => x.getAttribute("aria-label") === "Bold"); const cs = getComputedStyle(b); return { v: b.getAttribute("aria-pressed"), border: cs.borderTopWidth, bar: getComputedStyle(b, "::after").content !== "none" }; });
     check(`editor toolbar, ${label} ${scheme}: a partly bold selection shows Bold as mixed, with an outline and a bar`, mixed.v === "mixed" && parseFloat(mixed.border) >= 2 && mixed.bar, JSON.stringify(mixed));
+    // The toolbar follows the page while writing a long post: after scrolling a long way it is still at the top of the screen.
+    await page.evaluate(() => { const d = document.querySelector(".ProseMirror"); for (let i = 0; i < 40; i++) { const p = document.createElement("p"); p.textContent = "Another paragraph to make the page long, number " + i; d.appendChild(p); } });
+    await page.evaluate(() => window.scrollTo(0, 1200));
+    await page.waitForTimeout(150);
+    const stick = await page.evaluate(() => { const r = document.querySelector(".blog-toolbar").getBoundingClientRect(); return { top: Math.round(r.top), scrollY: Math.round(scrollY), h: Math.round(r.height), vh: innerHeight }; });
+    check(`editor toolbar, ${label} ${scheme}: after scrolling a long post the toolbar is still at the top of the screen`, stick.scrollY > 300 && stick.top >= 0 && stick.top <= 2, JSON.stringify(stick));
     await page.screenshot({ path: path.join(outDir, `editor-toolbar-${label}-${scheme}.png`), fullPage: true });
     check(`editor toolbar, ${label} ${scheme}: no console error or off-origin request`, consoleErrors.length === 0 && external.length === 0, consoleErrors.join("|").slice(0, 200));
     await ctx.close();
