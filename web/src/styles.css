@@ -1627,11 +1627,17 @@ img.ProseMirror-separator {
 .purpose-note { font-size: 0.85rem; color: var(--ink-2); overflow-wrap: anywhere; }
 .purpose-note.warn { color: var(--chart-4); font-weight: 600; }
 @media (max-width: 40rem) { .purpose-row { grid-template-columns: minmax(0, 1fr); } }
-.switch-cell { display: inline-flex; align-items: center; gap: 0.6rem; }
+.switch-cell { display: inline-flex; align-items: center; gap: 0.6rem; min-height: 2.75rem; min-width: 2.75rem; cursor: pointer; }
 input.switch { appearance: none; position: relative; flex: 0 0 auto; width: 2.9rem; height: 1.65rem; margin: 0; border: 2px solid var(--ink); border-radius: var(--r-pill); background: var(--rail); cursor: pointer; }
 input.switch::after { content: ""; position: absolute; top: 0.2rem; left: 0.2rem; width: 1rem; height: 1rem; border-radius: 50%; background: var(--ink); }
 input.switch:checked { background: var(--mint); }
 input.switch:checked::after { left: 1.45rem; }
-input.switch:disabled { opacity: 0.55; cursor: progress; }
+input.switch[aria-disabled="true"] { opacity: 0.55; cursor: progress; }
 input.switch:focus-visible { outline: 3px solid var(--focus-halo); outline-offset: 2px; }
 @media (prefers-reduced-motion: no-preference) { input.switch::after { transition: left 160ms var(--ease-out); } }
+
+/* Touch targets on the admin screens (WCAG 2.2, 44 px on a phone): buttons, fields, selects and the post links in the card layout. */
+@media (max-width: 40rem), (pointer: coarse) {
+  .admin-main button, .admin-main select, .admin-main input[type="search"], .admin-main textarea, .takedown-notice button { min-height: 2.75rem; }
+  .user-table tbody th a { display: inline-block; padding: 0.7rem 0; }
+}

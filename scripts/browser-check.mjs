@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview|blog-discovery|admin-posts|admin-models)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview|blog-discovery|admin-posts|admin-models|admin-a11y)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -1274,6 +1274,67 @@ function modelsView() {
   const st = (p) => ({ current: m.current[p], effective: m.current[p] === "kimi-k2" ? "" : m.current[p], warning: m.current[p] === "kimi-k2" ? "not_listed" : "" });
   return { catalogue: "ok", models: m.rows, purposes: { chat: st("chat"), summary: st("summary"), blog_assistant: st("blog_assistant"), image: st("image"), video: st("video") } };
 }
+// ONLY=admin-a11y: the new admin and author screens for keyboard and screen-reader users (spec 004, T044), on a phone and a desktop: every control has
+// a name, every touch target on a phone is at least 44 px, a switch works from the keyboard and keeps focus when the screen reloads, focus lands somewhere
+// sensible after a take-down, the banner is announced, and reduced motion removes the entrance animation.
+async function adminA11y(browser) {
+  const names = (page, sel) => page.evaluate((s) => [...document.querySelectorAll(s)].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && !e.closest("[hidden]"); }).filter((e) => {
+    const label = e.getAttribute("aria-label") || e.getAttribute("aria-labelledby") || (e.labels && e.labels.length) || e.textContent.trim() || e.getAttribute("title");
+    return !label;
+  }).map((e) => e.outerHTML.slice(0, 80)), sel);
+  const small = (page, sel, min) => page.evaluate(([s, m]) => [...document.querySelectorAll(s)].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0 && !e.closest(".blog-doc, .admin-post-content, .sr") && (r.height < m || r.width < m); }).map((e) => `${(e.textContent || e.getAttribute("aria-label") || e.tagName).trim().slice(0, 24)} ${Math.round(e.getBoundingClientRect().width)}x${Math.round(e.getBoundingClientRect().height)}`), [sel, min]);
+  const controls = "button, a[href], input:not([type=hidden]), select, textarea";
+  for (const [label, w, h, mobile] of [["phone", 390, 844, true], ["desktop", 1280, 800, false]]) {
+    const ctxOpts = { viewport: { width: w, height: h }, colorScheme: "light", ...(mobile ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) };
+    state.admin = true; state.posts = freshPosts(); state.models = freshModels();
+    try {
+      const { ctx, page } = await openPage(browser, ctxOpts);
+      await page.goto(base + "/admin/posts");
+      await page.waitForSelector(".admin-table tbody tr", { timeout: 8000 });
+      let bad = await names(page, controls);
+      check(`a11y posts list, ${label}: every control has a name`, bad.length === 0, JSON.stringify(bad));
+      if (mobile) { bad = await small(page, ".admin-main " + controls.split(", ").join(", .admin-main "), 44); check(`a11y posts list, ${label}: every touch target is at least 44 px`, bad.length === 0, JSON.stringify(bad)); }
+      await page.goto(base + `/admin/posts/${pid(1)}`);
+      await page.waitForSelector(".admin-post-content", { timeout: 8000 });
+      await page.getByRole("button", { name: "Take down" }).click();
+      const focused = await page.evaluate(() => document.activeElement?.getAttribute("aria-label") || document.activeElement?.tagName);
+      check(`a11y take-down form, ${label}: focus moves into the form that opened`, focused === "Confirm: Take down", String(focused));
+      bad = await names(page, controls);
+      check(`a11y take-down form, ${label}: every control has a name`, bad.length === 0, JSON.stringify(bad));
+      if (mobile) { bad = await small(page, ".confirm button, .confirm textarea, .admin-post .actions button", 44); check(`a11y take-down form, ${label}: touch targets are at least 44 px`, bad.length === 0, JSON.stringify(bad)); }
+      await page.getByLabel("Reason (required, shown to the author)").fill("Spam");
+      await page.keyboard.press("Tab");
+      await page.getByRole("button", { name: "Confirm take down" }).press("Enter");
+      await page.waitForSelector(".notice-card.taken", { timeout: 8000 });
+      const after = await page.evaluate(() => document.activeElement?.tagName);
+      check(`a11y take-down, ${label}: after it, focus is on the post's heading, not lost to the page`, after === "H1", String(after));
+      await page.goto(base + "/admin/models");
+      await page.waitForSelector(".purpose-row", { timeout: 8000 });
+      bad = await names(page, controls);
+      check(`a11y models, ${label}: every control has a name (switches, selects)`, bad.length === 0, JSON.stringify(bad));
+      if (mobile) { bad = await small(page, ".purpose-row select, .admin-main button, .switch-cell", 44); check(`a11y models, ${label}: touch targets are at least 44 px (the switch included)`, bad.length === 0, JSON.stringify(bad)); }
+      const sw = page.getByLabel("glm-4.6 for everyone");
+      await sw.focus();
+      await page.keyboard.press("Space");
+      await page.waitForTimeout(500);
+      const kept = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+      check(`a11y models, ${label}: a switch works from the keyboard and keeps focus when the screen reloads`, (await sw.isChecked()) && kept === "glm-4.6 for everyone", String(kept));
+      await ctx.close();
+    } finally { state.admin = false; state.posts = null; state.models = null; }
+    // The banner is announced, and reduced motion removes its entrance animation.
+    state.takedown = true; state.notices = [{ postId: BLOG_ID, title: "Self-hosting an assistant", reason: "Advertising", at: "2026-11-09T00:00:00Z" }];
+    try {
+      const { ctx, page } = await openPage(browser, { ...ctxOpts, reducedMotion: "reduce" });
+      await page.goto(base + "/");
+      await page.waitForSelector(".takedown-notice", { timeout: 8000 });
+      const m = await page.evaluate(() => ({ status: !!document.querySelector(".takedown-notice p[role=status]"), anim: getComputedStyle(document.querySelector(".takedown-notice")).animationName, label: document.querySelector(".takedown-notice").getAttribute("aria-label") }));
+      check(`a11y banner, ${label}: announced as a status with a landmark name, and no animation under reduced motion`, m.status && m.anim === "none" && !!m.label, JSON.stringify(m));
+      if (mobile) { const bad = await small(page, ".takedown-notice button", 44); check(`a11y banner, ${label}: touch targets are at least 44 px`, bad.length === 0, JSON.stringify(bad)); }
+      await ctx.close();
+    } finally { state.takedown = false; state.notices = []; }
+  }
+}
+
 // ONLY=admin-models: the administrator's Models screen (spec 004) at 320, 390, 820 and 1280 px, light and dark: a switch per model, a default per
 // purpose with the warning for a default that is no longer offered, a refused switch-off that names the purpose, a save. Nothing draws over
 // anything else and the page fits the device.
@@ -1561,6 +1622,7 @@ try {
   if (!only || only === "blog-discovery") { state.manyPosts = true; try { await blogDiscovery(browser); await blogDiscoveryShort(browser); } finally { state.manyPosts = false; } }
   if (!only || only === "admin-posts") await adminPosts(browser);
   if (!only || only === "admin-models") await adminModels(browser);
+  if (!only || only === "admin-a11y") await adminA11y(browser);
   if (!only || only === "blog-editor" || only === "share-preview") await shareSettings(browser);
 } finally {
   await browser.close();

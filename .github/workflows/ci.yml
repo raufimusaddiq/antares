@@ -177,6 +177,8 @@ jobs:
         run: ONLY=admin-posts node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
       - name: Admin models (switches, defaults, refusal)
         run: ONLY=admin-models node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
+      - name: Admin a11y (names, 44 px targets, keyboard switch, focus, reduced motion)
+        run: ONLY=admin-a11y node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
       - name: Image attach, retry, remove, send and a touch tap on a capability reason
         run: ONLY=images node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
 

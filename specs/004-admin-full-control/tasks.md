@@ -142,8 +142,8 @@ description: "Task list for Admin Full Control of Models and Public Posts"
 
 - [x] T043 [P] Documentation: `docs/PRD.md` (new "Admin control" paragraph), `specs/004-admin-full-control/validation.md` (results and what was not driven: SC-002 and SC-003 were not timed with a person; media "off" is guard-enforced), tick every task above
 - [x] T044 [P] Accessibility pass on the new screens (switch names, focus return after confirm, banner announcement, 44 px targets, reduced motion) and the full browser suite (`mobile-layout`, `blog-public`, `blog-editor`, `blog-discovery`, `admin-*`) at 320/390/820/1280, light and dark
-- [ ] T045 Run `quickstart.md` end to end against the dev stack; confirm SC-001…SC-007 (including admin-blindness scan)
-- [ ] T046 PR(s), Hermes Review passes, merge commit; backup, deploy, `/api/version` and `/readyz`; production smoke with a fixture author and post (take down, public 404, restore, models screen reads), then clean up fixtures; close the issue; real accounts untouched
+- [x] T045 Run `quickstart.md` end to end against the dev stack; confirm SC-001…SC-007 (including admin-blindness scan)
+- [x] T046 PR(s), Hermes Review passes, merge commit; backup, deploy, `/api/version` and `/readyz`; production smoke with a fixture author and post (take down, public 404, restore, models screen reads), then clean up fixtures; close the issue; real accounts untouched
 
 ---
 
