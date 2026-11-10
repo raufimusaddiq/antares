@@ -1738,7 +1738,7 @@ validated against an allowlist and rebuilt from what passed; no raw HTML is stor
 no chat row; it needs an assistant that confirms web search. The recorded events carry the search query but not what a search
 returned, so no source can be marked verified: every source is shown as unverified and every block with sources needs the
 author's explicit "I have checked these sources myself" before it can be accepted. The author accepts or rejects each proposed
-block; any later edit makes the check out of date. It is billed like a chat reply and obeys the same spending limit, blocked-model
+block, and each suggested edit to their own text (blog-check v3: `replace` a span of one line, or `insert` paragraphs after a part, each with a reason, in the draft's language; a figure, quotation or link that is not in the draft is dropped). Accepting a suggestion is applied by the editor in the browser as one undoable change and autosave saves it; the server records only the decision and never changes the draft. A later edit no longer ends a check: each suggestion and block keeps the anchor of its part and is found again in the draft as it is; one whose part is gone is shown as no longer applicable and is never published. While a check runs the screen shows its real step (reading, looking things up, writing), read from the run's own events, with a clock and the last sign of life, never a percentage. It is billed like a chat reply and obeys the same spending limit, blocked-model
 list and run allowance; on top, two running checks per author and 30 per rolling 24 hours. `ANTARES_BLOG_CHECK` (`on`, `smoke`,
 `off`) switches it; with `off`, `GET /api/blog/capabilities` reports `check` false and publishing offers the original only
 (`docs/runbooks/blog-check.md`).

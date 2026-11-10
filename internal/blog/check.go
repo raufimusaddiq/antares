@@ -63,11 +63,35 @@ type Spend interface {
 	HardLimitReached(ctx context.Context, userID string) (bool, error)
 }
 
-// checkPromptVersion is the first line of the instruction ("blog-check v2"), kept with every check so a result can be
+// checkPromptVersion is the first line of the instruction ("blog-check v3"), kept with every check so a result can be
 // traced to the instruction that produced it.
 func checkPromptVersion() string {
 	line, _, _ := strings.Cut(checkPrompt, "\n")
 	return strings.TrimSpace(line)
+}
+
+// TooManyChecksError is ErrTooMany with what the author needs to know: two checks are running now (Running), or the rolling 24 hours are used up and
+// the oldest check in them ages out at RetryAt.
+type TooManyChecksError struct {
+	Running bool
+	RetryAt string
+}
+
+func (e TooManyChecksError) Error() string        { return ErrTooMany.Error() }
+func (e TooManyChecksError) Is(target error) bool { return target == ErrTooMany }
+
+func (s *Service) tooManyChecks(ctx context.Context, q querier, author, since string) error {
+	var running int
+	_ = q.QueryRowContext(ctx, `SELECT COUNT(*) FROM post_checks WHERE author_id = ? AND state = 'running'`, author).Scan(&running)
+	if running >= maxChecksPerUser {
+		return TooManyChecksError{Running: true}
+	}
+	var oldest string
+	_ = q.QueryRowContext(ctx, `SELECT COALESCE(MIN(started_at), '') FROM post_checks WHERE author_id = ? AND started_at >= ?`, author, since).Scan(&oldest)
+	if t, err := time.Parse("2006-01-02T15:04:05.000000000Z", oldest); err == nil {
+		return TooManyChecksError{RetryAt: t.Add(24 * time.Hour).UTC().Format(time.RFC3339)}
+	}
+	return ErrTooMany
 }
 
 // styleAddendum follows the shared writing rules in a check's instructions (specs/005-antislop-writing, contracts/rules-text.md).
@@ -110,6 +134,7 @@ type CheckView struct {
 	Notes    []Note      `json:"notes"`
 	Notices  []string    `json:"notices"`
 	Blocks   []BlockView `json:"blocks"`
+	Edits    []EditView  `json:"edits"`
 }
 
 // Progress is where a check is (specs/006-ai-editor-blog): the step its run is in, read from the run's own events, when that step began, when
@@ -364,7 +389,7 @@ func readCheck(ctx context.Context, q querier, query string, args ...any) (*Chec
 	}
 	pr.Now = time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z")
 	c.Progress = &pr
-	c.Notes, c.Notices, c.Blocks = []Note{}, []string{}, []BlockView{}
+	c.Notes, c.Notices, c.Blocks, c.Edits = []Note{}, []string{}, []BlockView{}, []EditView{}
 	_ = json.Unmarshal([]byte(notes), &c.Notes)
 	_ = json.Unmarshal([]byte(notices), &c.Notices)
 	if c.Notes == nil {
@@ -373,21 +398,32 @@ func readCheck(ctx context.Context, q querier, query string, args ...any) (*Chec
 	if c.Notices == nil {
 		c.Notices = []string{}
 	}
-	rows, err := q.QueryContext(ctx, `SELECT id, kind, anchor, markup, fallback, decision, needs_ack FROM post_blocks WHERE check_id = ? ORDER BY position`, c.ID)
+	anchors, err := currentAnchors(ctx, q, c.ID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := q.QueryContext(ctx, `SELECT id, kind, anchor, anchor_text, markup, fallback, decision, needs_ack FROM post_blocks WHERE check_id = ? ORDER BY position`, c.ID)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var b BlockView
 		var ack int
-		if err := rows.Scan(&b.ID, &b.Kind, &b.AfterNode, &b.Markup, &b.Fallback, &b.Decision, &ack); err != nil {
+		var anchorText string
+		if err := rows.Scan(&b.ID, &b.Kind, &b.AfterNode, &anchorText, &b.Markup, &b.Fallback, &b.Decision, &ack); err != nil {
 			rows.Close()
 			return nil, err
+		}
+		if anchorText != "" && anchors != nil { // placed again in the draft as it is now; -1 when its part is gone
+			b.AfterNode = relocate(anchors, anchorText, b.AfterNode)
 		}
 		b.NeedsAck, b.Sources = ack == 1, []Source{}
 		c.Blocks = append(c.Blocks, b)
 	}
 	rows.Close()
+	if c.Edits, err = readEdits(ctx, q, c.ID); err != nil {
+		return nil, err
+	}
 	for i := range c.Blocks {
 		srows, err := q.QueryContext(ctx, `SELECT url, title, retrieved_at, verified FROM block_sources WHERE block_id = ? ORDER BY position`, c.Blocks[i].ID)
 		if err != nil {
@@ -451,7 +487,7 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 	if err != nil {
 		return nil, err
 	}
-	input, topNodes, err := checkInput(cur.Title, cur.Doc)
+	input, draft, err := checkInput(cur.Title, cur.Doc)
 	if err != nil {
 		return nil, err
 	}
@@ -463,9 +499,6 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 		return nil, ErrCheckRunning
 	}
 	id, now := store.NewID(), s.stamp()
-	if _, err := tx.ExecContext(ctx, `UPDATE post_versions SET pinned = 1 WHERE post_id = ? AND version = ?`, postID, cur.LatestVersion); err != nil {
-		return nil, err
-	}
 	// One statement counts and inserts, so two starts cannot both pass the per-author cap.
 	since := s.now().UTC().Add(-24 * time.Hour).Format("2006-01-02T15:04:05.000000000Z")
 	ins, err := tx.ExecContext(ctx, `INSERT INTO post_checks (id, post_id, author_id, version, state, prev_status, started_at, prompt_version, stage_at, last_event_at)
@@ -479,7 +512,7 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 		return nil, err
 	}
 	if n, _ := ins.RowsAffected(); n == 0 {
-		return nil, ErrTooMany
+		return nil, s.tooManyChecks(ctx, tx, author, since)
 	}
 	if cur.Status == "draft" || cur.Status == "unpublished" || cur.Status == "ready" {
 		if _, err := tx.ExecContext(ctx, `UPDATE posts SET status = 'checking' WHERE id = ? AND author_id = ?`, postID, author); err != nil {
@@ -506,32 +539,34 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 			delete(s.rt.cancel, id)
 			s.rt.mu.Unlock()
 		}()
-		s.runCheck(wctx, id, author, postID, input, topNodes, b)
+		s.runCheck(wctx, id, author, postID, input, draft, b)
 	}()
 	return view, nil
 }
 
 // checkInput numbers the draft's top-level parts so the assistant can point at them, and counts them.
-func checkInput(title string, doc json.RawMessage) (string, int, error) {
+func checkInput(title string, doc json.RawMessage) (string, DraftInput, error) {
 	var root node
 	if err := json.Unmarshal(doc, &root); err != nil {
-		return "", 0, ErrInvalid
+		return "", DraftInput{}, ErrInvalid
 	}
+	d := DraftInput{Title: strings.TrimSpace(title)}
 	var b strings.Builder
-	b.WriteString("TITLE: " + strings.TrimSpace(title) + "\n\n")
+	b.WriteString("TITLE: " + d.Title + "\n\n")
 	words := 0
 	for i, n := range root.Content {
 		t := strings.TrimSpace(nodeText(n))
 		words += len(strings.Fields(t))
 		fmt.Fprintf(&b, "[%d] %s\n\n", i, t)
+		d.Parts, d.Anchors = append(d.Parts, t), append(d.Anchors, anchorOf(n))
 	}
 	if words == 0 || len(root.Content) == 0 {
-		return "", 0, ErrInvalid // nothing to check
+		return "", DraftInput{}, ErrInvalid // nothing to check
 	}
 	if b.Len() > maxCheckInput {
-		return "", 0, ErrTooLong
+		return "", DraftInput{}, ErrTooLong
 	}
-	return b.String(), len(root.Content), nil
+	return b.String(), d, nil
 }
 
 func nodeText(n node) string {
@@ -585,8 +620,8 @@ type outcome struct {
 	usage     *hermes.Usage
 }
 
-func (s *Service) runCheck(ctx context.Context, id, author, postID, input string, topNodes int, b hermes.Binding) {
-	out := s.driveRun(ctx, id, author, input, topNodes, b)
+func (s *Service) runCheck(ctx context.Context, id, author, postID, input string, draft DraftInput, b hermes.Binding) {
+	out := s.driveRun(ctx, id, author, input, draft, b)
 	bg, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
 	defer cancel()
 	if out.sessionID != "" { // the session is single-use: it must not pile up in the author's workspace
@@ -615,7 +650,7 @@ func (s *Service) runCheck(ctx context.Context, id, author, postID, input string
 	}
 }
 
-func (s *Service) driveRun(ctx context.Context, id, author, input string, topNodes int, b hermes.Binding) (out outcome) {
+func (s *Service) driveRun(ctx context.Context, id, author, input string, draft DraftInput, b hermes.Binding) (out outcome) {
 	var sid string
 	var usage *hermes.Usage
 	defer func() { out.sessionID, out.usage = sid, usage }()
@@ -748,7 +783,7 @@ func (s *Service) driveRun(ctx context.Context, id, author, input string, topNod
 			output = st.Output
 		}
 	}
-	res, err := ParseEnvelope([]byte(output), topNodes, s.now())
+	res, err := ParseEnvelopeParts([]byte(output), draft, s.now())
 	if err != nil {
 		return failed("unusable")
 	}
@@ -784,14 +819,22 @@ func (s *Service) finishCheck(ctx context.Context, id, author, postID string, ou
 			if bl.NeedsAck {
 				ack = 1
 			}
-			if _, err := tx.ExecContext(ctx, `INSERT INTO post_blocks (id, check_id, post_id, author_id, position, anchor, kind, markup, fallback, needs_ack) VALUES (?,?,?,?,?,?,?,?,?,?)`,
-				bid, id, postID, author, i, bl.AfterNode, bl.Kind, bl.Markup, bl.Fallback, ack); err != nil {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO post_blocks (id, check_id, post_id, author_id, position, anchor, anchor_text, kind, markup, fallback, needs_ack) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+				bid, id, postID, author, i, bl.AfterNode, bl.Anchor, bl.Kind, bl.Markup, bl.Fallback, ack); err != nil {
 				return err
 			}
 			for j, src := range bl.Sources {
 				if _, err := tx.ExecContext(ctx, `INSERT INTO block_sources (block_id, position, url, title, retrieved_at, verified) VALUES (?,?,?,?,?,0)`, bid, j, src.URL, src.Title, src.RetrievedAt); err != nil {
 					return err
 				}
+			}
+		}
+	}
+	if out.result != nil {
+		for i, e := range out.result.Edits {
+			if _, err := tx.ExecContext(ctx, `INSERT INTO post_edits (id, check_id, post_id, author_id, position, kind, part, anchor, original, proposed, reason) VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
+				store.NewID(), id, postID, author, i, e.Kind, e.Part, e.Anchor, e.Original, e.Proposed, e.Reason); err != nil {
+				return err
 			}
 		}
 	}
@@ -906,7 +949,9 @@ func (s *Service) DecideBlock(ctx context.Context, author, postID, blockID, deci
 	if err != nil {
 		return nil, err
 	}
-	if state != "ready" || version != cur.LatestVersion {
+	_ = version // a check no longer goes out of date when the draft changes: a block is found again by its anchor (anchors.go)
+	_ = cur
+	if state != "ready" {
 		return nil, ErrStale
 	}
 	// Only the post's latest check can be decided on: what the author sees, and what is published, is that one.
@@ -968,7 +1013,8 @@ func (s *Service) PublishEnriched(ctx context.Context, author, postID string) (P
 	if err != nil {
 		return Post{}, err
 	}
-	if checkState != "ready" || checkVersion != cur.LatestVersion {
+	_ = checkVersion // the check need not have read this exact version: its blocks are placed against the draft as it is now
+	if checkState != "ready" {
 		return Post{}, ErrNoReadyCheck
 	}
 	now := s.stamp()
@@ -987,37 +1033,69 @@ func (s *Service) PublishEnriched(ctx context.Context, author, postID string) (P
 			return Post{}, err
 		}
 	}
-	rows, err := tx.QueryContext(ctx, `SELECT id, anchor, kind, markup, fallback FROM post_blocks WHERE check_id = ? AND post_id = ? AND author_id = ? AND decision = 'accepted' ORDER BY position`, checkID, postID, author)
+	rows, err := tx.QueryContext(ctx, `SELECT id, anchor, anchor_text, kind, markup, fallback FROM post_blocks WHERE check_id = ? AND post_id = ? AND author_id = ? AND decision = 'accepted' ORDER BY position`, checkID, postID, author)
 	if err != nil {
 		return Post{}, err
 	}
 	type acc struct {
-		id, kind, markup, fallback string
-		anchor                     int
+		id, kind, markup, fallback, anchorText string
+		anchor                                 int
 	}
 	var accepted []acc
 	for rows.Next() {
 		var a acc
-		if err := rows.Scan(&a.id, &a.anchor, &a.kind, &a.markup, &a.fallback); err != nil {
+		if err := rows.Scan(&a.id, &a.anchor, &a.anchorText, &a.kind, &a.markup, &a.fallback); err != nil {
 			rows.Close()
 			return Post{}, err
 		}
 		accepted = append(accepted, a)
 	}
 	rows.Close()
-	for i, a := range accepted {
+	// Each accepted block is placed against the draft as it is published, found again by its anchor; one whose part is gone is left out.
+	anchors, err := partAnchors(cur.Doc)
+	if err != nil {
+		return Post{}, err
+	}
+	skipped, pos := 0, 0
+	for _, a := range accepted {
+		if a.anchorText != "" {
+			if a.anchor = relocate(anchors, a.anchorText, a.anchor); a.anchor < 0 {
+				skipped++
+				continue
+			}
+		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO published_blocks (post_id, version, position, anchor, kind, markup, fallback) VALUES (?,?,?,?,?,?,?)`,
-			postID, cur.LatestVersion, i, a.anchor, a.kind, a.markup, a.fallback); err != nil {
+			postID, cur.LatestVersion, pos, a.anchor, a.kind, a.markup, a.fallback); err != nil {
 			return Post{}, err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO published_block_sources (post_id, version, block, position, url, title, retrieved_at)
-			SELECT ?, ?, ?, position, url, title, retrieved_at FROM block_sources WHERE block_id = ?`, postID, cur.LatestVersion, i, a.id); err != nil {
+			SELECT ?, ?, ?, position, url, title, retrieved_at FROM block_sources WHERE block_id = ?`, postID, cur.LatestVersion, pos, a.id); err != nil {
 			return Post{}, err
 		}
+		pos++
 	}
 	p, err := loadPost(ctx, tx, author, postID)
 	if err != nil {
 		return Post{}, err
 	}
+	p.SkippedBlocks = skipped
 	return p, tx.Commit()
+}
+
+// currentAnchors are the anchors of the parts of the post's draft as it is now, for the check with this id; nil when the draft cannot be read.
+func currentAnchors(ctx context.Context, q querier, checkID string) ([]string, error) {
+	var doc string
+	err := q.QueryRowContext(ctx, `SELECT v.doc FROM post_checks c JOIN posts p ON p.id = c.post_id AND p.author_id = c.author_id
+		JOIN post_versions v ON v.post_id = p.id AND v.version = p.latest_version WHERE c.id = ?`, checkID).Scan(&doc)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	a, err := partAnchors([]byte(doc))
+	if err != nil {
+		return nil, nil
+	}
+	return a, nil
 }

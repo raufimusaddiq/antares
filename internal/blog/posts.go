@@ -82,6 +82,8 @@ func (s *Service) stamp() string { return s.now().UTC().Format("2006-01-02T15:04
 
 // Post is what the author sees of a post: the head version.
 type Post struct {
+	// SkippedBlocks is set only by a publish with the enriched version: accepted blocks whose place in the draft is gone are not published.
+	SkippedBlocks    int             `json:"skippedBlocks,omitempty"`
 	ID               string          `json:"id"`
 	Title            string          `json:"title"`
 	Summary          string          `json:"summary"`
@@ -264,9 +266,6 @@ func (s *Service) Autosave(ctx context.Context, author, id string, base int, c C
 	if _, err := tx.ExecContext(ctx, `UPDATE posts SET title = ?, summary = ?, latest_version = ?, updated_at = ? WHERE id = ? AND author_id = ?`, title, summary, next, now, id, author); err != nil {
 		return Post{}, err
 	}
-	if err := outOfDate(ctx, tx, author, id, now); err != nil {
-		return Post{}, err
-	}
 	p, err := loadPost(ctx, tx, author, id)
 	if err != nil {
 		return Post{}, err
@@ -274,7 +273,6 @@ func (s *Service) Autosave(ctx context.Context, author, id string, base int, c C
 	if err := tx.Commit(); err != nil {
 		return Post{}, err
 	}
-	s.stopStale(ctx, id) // a check of the version just replaced has nothing left to say
 	return p, nil
 }
 

@@ -233,7 +233,9 @@ func TestCancellingStopsTheRunAndALateAnswerChangesNothing(t *testing.T) {
 	}
 }
 
-func TestEditingTheDraftMakesTheCheckOutOfDate(t *testing.T) {
+// Spec 006 (owner answer Q2): a check no longer goes out of date when the draft changes. Suggestions and blocks are found again in the draft as it is; the
+// two tests that stood here asserted the old rule ("an edit marks the check out of date") and are rewritten, not removed.
+func TestEditingTheDraftNoLongerEndsTheCheck(t *testing.T) {
 	fh := newFake()
 	fh.output = goodReply
 	a := newAppWithHermes(t, fh)
@@ -247,23 +249,19 @@ func TestEditingTheDraftMakesTheCheckOutOfDate(t *testing.T) {
 		t.Fatal(w.Body)
 	}
 	got := u.post(post.ID)
-	if got.Check == nil || got.Check.State != "out_of_date" || got.Status != "draft" {
+	if got.Check == nil || got.Check.State != "ready" || got.Status != "ready" {
 		t.Fatalf("after an edit: status %q, check %+v", got.Status, got.Check)
 	}
-	if w := u.do("PUT", "/api/blog/posts/"+post.ID+"/blocks/"+c.Blocks[0].ID, map[string]any{"decision": "rejected"}); w.Code != 409 {
-		t.Fatalf("deciding on a block of an out-of-date check: %d", w.Code)
+	if w := u.do("PUT", "/api/blog/posts/"+post.ID+"/blocks/"+c.Blocks[0].ID, map[string]any{"decision": "accepted", "ack": true}); w.Code != 200 {
+		t.Fatalf("deciding on a block after an edit: %d %s", w.Code, w.Body)
 	}
 	u.do("PATCH", "/api/blog/posts/"+post.ID+"/settings", map[string]any{"slug": "edit-me-post"})
-	if w := u.do("POST", "/api/blog/posts/"+post.ID+"/publish", map[string]any{"mode": "enriched"}); w.Code != 409 {
-		t.Fatalf("publishing enriched from an out-of-date check: %d", w.Code)
-	}
-	// The original can still be published, and a new check can be started.
-	if w := u.do("POST", "/api/blog/posts/"+post.ID+"/publish", map[string]any{"mode": "original"}); w.Code != 200 {
-		t.Fatalf("publish original: %d %s", w.Code, w.Body)
+	if w := u.do("POST", "/api/blog/posts/"+post.ID+"/publish", map[string]any{"mode": "enriched"}); w.Code != 200 {
+		t.Fatalf("publishing enriched after an edit: %d %s", w.Code, w.Body)
 	}
 }
 
-func TestEditingWhileItRunsDiscardsTheAnswer(t *testing.T) {
+func TestEditingWhileItRunsKeepsTheAnswer(t *testing.T) {
 	fh := newFake()
 	release := make(chan struct{})
 	fh.script = func(ctx context.Context, emit func(string, map[string]any) error) error {
@@ -277,13 +275,154 @@ func TestEditingWhileItRunsDiscardsTheAnswer(t *testing.T) {
 	cur := u.post(post.ID)
 	u.do("PUT", "/api/blog/posts/"+post.ID, map[string]any{"baseVersion": cur.LatestVersion, "title": "Changed under it"})
 	close(release)
-	time.Sleep(80 * time.Millisecond)
-	c := u.waitCheck(post.ID, "out_of_date")
-	if len(c.Blocks) != 0 {
-		t.Fatalf("an answer about an older draft was kept: %+v", c)
+	c := u.waitCheck(post.ID, "ready")
+	if len(c.Blocks) != 2 {
+		t.Fatalf("an answer about a draft that changed elsewhere was thrown away: %+v", c)
 	}
 }
 
+func (p *person) saveDoc(postID string, parts ...string) {
+	p.a.t.Helper()
+	var content []any
+	for _, t := range parts {
+		content = append(content, map[string]any{"type": "paragraph", "content": []any{map[string]any{"type": "text", "text": t}}})
+	}
+	cur := p.post(postID)
+	if w := p.do("PUT", "/api/blog/posts/"+postID, map[string]any{"baseVersion": cur.LatestVersion, "doc": map[string]any{"type": "doc", "content": content}}); w.Code != 200 {
+		p.a.t.Fatalf("save: %d %s", w.Code, w.Body)
+	}
+}
+
+// A block follows its part when the author edits above it, and is skipped at publish when its part is gone.
+func TestABlockMovesWithItsPartAndIsLeftOutWhenItsPartIsGone(t *testing.T) {
+	fh := newFake()
+	fh.output = goodReply
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("Moving")
+	u.startCheck(post)
+	c := u.waitCheck(post.ID, "ready")
+	if c.Blocks[0].AfterNode != 1 {
+		t.Fatalf("at the start: %d", c.Blocks[0].AfterNode)
+	}
+	u.saveDoc(post.ID, "A new first paragraph.", "First part of the draft.", "Second part, with a claim.", "A heading")
+	if got := u.waitCheck(post.ID, "ready").Blocks[0].AfterNode; got != 2 {
+		t.Fatalf("after a paragraph was added above it, the block is after part %d, want 2", got)
+	}
+	u.do("PUT", "/api/blog/posts/"+post.ID+"/blocks/"+c.Blocks[0].ID, map[string]any{"decision": "accepted", "ack": true})
+	u.do("PATCH", "/api/blog/posts/"+post.ID+"/settings", map[string]any{"slug": "moving-post"})
+	u.saveDoc(post.ID, "A new first paragraph.", "First part of the draft.", "A heading")
+	if got := u.waitCheck(post.ID, "ready").Blocks[0].AfterNode; got != -1 {
+		t.Fatalf("its part is gone: %d", got)
+	}
+	w := u.do("POST", "/api/blog/posts/"+post.ID+"/publish", map[string]any{"mode": "enriched"})
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"skippedBlocks":1`) {
+		t.Fatalf("publish: %d %s", w.Code, w.Body)
+	}
+	var n int
+	a.db.QueryRow(`SELECT COUNT(*) FROM published_blocks WHERE post_id = ?`, post.ID).Scan(&n)
+	if n != 0 {
+		t.Fatalf("a block whose place is gone was published: %d", n)
+	}
+}
+
+const editsReply = `{"version":2,"notes":[],"blocks":[],"edits":[
+ {"kind":"replace","part":0,"original":"First part","proposed":"The first part","reason":"Clearer."},
+ {"kind":"insert","part":2,"proposed":"A new paragraph under the heading.","reason":"Fills the section."},
+ {"kind":"replace","part":1,"original":"with a claim","proposed":"with 99 claims","reason":"A figure that is not in the draft."}
+]}`
+
+func TestACheckStoresItsEditsAndTheAuthorDecidesEachOne(t *testing.T) {
+	fh := newFake()
+	fh.output = editsReply
+	a := newAppWithHermes(t, fh)
+	u, other := a.active("alice"), a.active("bobby")
+	post := u.draftToCheck("Edits")
+	u.startCheck(post)
+	c := u.waitCheck(post.ID, "ready")
+	if len(c.Edits) != 2 || len(c.Notices) != 1 || c.Edits[0].Decision != "open" || c.Edits[0].Anchor != "First part of the draft." || c.Edits[1].Kind != "insert" {
+		t.Fatalf("edits %+v notices %v (the invented figure is dropped, the rest stay)", c.Edits, c.Notices)
+	}
+	before := u.post(post.ID)
+	put := func(p *person, id string, body any) int {
+		return p.do("PUT", "/api/blog/posts/"+post.ID+"/edits/"+id, body).Code
+	}
+	for name, want := range map[string]int{"other value": 422, "unknown field": 400, "empty": 422} {
+		body := map[string]map[string]any{"other value": {"decision": "maybe"}, "unknown field": {"decision": "accepted", "text": "x"}, "empty": {}}[name]
+		if code := put(u, c.Edits[0].ID, body); code != want {
+			t.Errorf("%s: %d, want %d", name, code, want)
+		}
+	}
+	if code := put(other, c.Edits[0].ID, map[string]string{"decision": "accepted"}); code != 404 {
+		t.Errorf("another author's decision: %d", code)
+	}
+	if code := put(u, "00000000000000000000000000000000", map[string]string{"decision": "accepted"}); code != 404 {
+		t.Errorf("a missing edit: %d", code)
+	}
+	if code := put(u, "not-an-id", map[string]string{"decision": "accepted"}); code != 404 {
+		t.Errorf("a malformed id: %d", code)
+	}
+	if code := put(u, c.Edits[0].ID, map[string]string{"decision": "accepted"}); code != 200 {
+		t.Fatalf("accept: %d", code)
+	}
+	if code := put(u, c.Edits[1].ID, map[string]string{"decision": "rejected"}); code != 200 {
+		t.Fatalf("reject: %d", code)
+	}
+	after := u.post(post.ID)
+	if string(after.Doc) != string(before.Doc) || after.LatestVersion != before.LatestVersion || after.Title != before.Title {
+		t.Fatal("deciding a suggestion changed the draft: only the editor in the browser changes the draft")
+	}
+	got := u.waitCheck(post.ID, "ready")
+	if got.Edits[0].Decision != "accepted" || got.Edits[1].Decision != "rejected" {
+		t.Fatalf("decisions %+v", got.Edits)
+	}
+	// Running a check left the draft exactly as it was written.
+	if string(before.Doc) != string(post.Doc) && before.LatestVersion != post.LatestVersion {
+		t.Fatalf("the check changed the draft")
+	}
+	// An older check's edit cannot be decided once a newer check exists.
+	u.startCheck(u.post(post.ID))
+	u.waitCheck(post.ID, "ready")
+	if code := put(u, c.Edits[0].ID, map[string]string{"decision": "rejected"}); code != 409 {
+		t.Errorf("an edit of a superseded check: %d", code)
+	}
+}
+
+func TestChecksFromTheEditorAndFromPublishShareOneLimitAndSayWhenToTryAgain(t *testing.T) {
+	fh := newFake()
+	release := make(chan struct{})
+	fh.script = func(ctx context.Context, emit func(string, map[string]any) error) error {
+		select {
+		case <-release:
+			return emit("run.completed", map[string]any{"output": goodReply})
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	p1, p2, p3 := u.draftToCheck("One"), u.draftToCheck("Two"), u.draftToCheck("Three")
+	u.startCheck(p1)
+	u.startCheck(p2)
+	w := u.do("POST", "/api/blog/posts/"+p3.ID+"/check", nil)
+	if w.Code != 422 || !strings.Contains(w.Body.String(), `"LIMIT_REACHED"`) || !strings.Contains(w.Body.String(), `"running":true`) {
+		t.Fatalf("a third at once: %d %s", w.Code, w.Body)
+	}
+	close(release)
+	u.waitCheck(p1.ID, "ready")
+	u.waitCheck(p2.ID, "ready")
+	// The rolling 24 hours: fill them, then the answer says when the oldest ages out.
+	for i := 0; i < maxChecksPer24h; i++ {
+		a.db.Exec(`INSERT INTO post_checks (id, post_id, author_id, version, state, prev_status, started_at) SELECT ?, ?, author_id, 1, 'ready', 'draft', ? FROM posts WHERE id = ?`, "fill"+string(rune('a'+i%26))+string(rune('a'+i/26)), p1.ID, time.Now().UTC().Add(-time.Duration(i+1)*time.Minute).Format("2006-01-02T15:04:05.000000000Z"), p1.ID)
+	}
+	w = u.do("POST", "/api/blog/posts/"+p3.ID+"/check", nil)
+	if w.Code != 422 || !strings.Contains(w.Body.String(), `"retryAt"`) {
+		t.Fatalf("the day's limit: %d %s", w.Code, w.Body)
+	}
+	if w := u.do("POST", "/api/blog/posts/"+p3.ID+"/publish", map[string]any{"mode": "original"}); w.Code != 200 && w.Code != 422 {
+		t.Fatalf("the original can still be published (or is refused for its own reasons): %d", w.Code)
+	}
+}
 func TestAnotherUsersCheckIsA404AndEachUsesTheirOwnAssistant(t *testing.T) {
 	fh := newFake()
 	fh.output = goodReply
@@ -577,31 +716,32 @@ func TestOnlyTheLatestChecksBlocksCanBeDecidedOn(t *testing.T) {
 	}
 }
 
-func TestEditingStopsTheWorkerOfTheCheckItMadeStale(t *testing.T) {
+// Spec 006: an edit no longer makes a check stale, so it no longer stops the check's run; the answer still comes in and is kept.
+func TestEditingDoesNotStopTheRunOfAChecking(t *testing.T) {
 	fh := newFake()
-	started := make(chan struct{})
+	started, release := make(chan struct{}), make(chan struct{})
 	fh.script = func(ctx context.Context, emit func(string, map[string]any) error) error {
 		close(started)
-		<-ctx.Done()
-		return ctx.Err()
+		select {
+		case <-release:
+			return emit("run.completed", map[string]any{"output": goodReply})
+		case <-ctx.Done():
+			return ctx.Err()
+		}
 	}
 	a := newAppWithHermes(t, fh)
 	u := a.active("alice")
-	post := u.draftToCheck("Stale")
+	post := u.draftToCheck("Not stale")
 	u.startCheck(post)
 	<-started
 	cur := u.post(post.ID)
 	u.do("PUT", "/api/blog/posts/"+post.ID, map[string]any{"baseVersion": cur.LatestVersion, "title": "Edited"})
-	deadline := time.Now().Add(3 * time.Second)
-	for {
-		if _, _, _, stopped := fh.snapshot(); len(stopped) == 1 {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("the upstream run of the stale check was not stopped")
-		}
-		time.Sleep(10 * time.Millisecond)
+	time.Sleep(150 * time.Millisecond)
+	if _, _, _, stopped := fh.snapshot(); len(stopped) != 0 {
+		t.Fatalf("an edit stopped the run: %v", stopped)
 	}
+	close(release)
+	u.waitCheck(post.ID, "ready")
 }
 
 // A newer check that did not finish must not leave the author deciding on one check while another is published.
@@ -776,7 +916,7 @@ func TestACheckRecordsWhichInstructionProducedIt(t *testing.T) {
 	u.waitCheck(post.ID, "ready")
 	var v string
 	a.db.QueryRow(`SELECT prompt_version FROM post_checks WHERE post_id = ?`, post.ID).Scan(&v)
-	if v != "blog-check v2" {
+	if v != "blog-check v3" {
 		t.Fatalf("prompt version %q", v)
 	}
 }
@@ -1095,7 +1235,7 @@ func TestACheckCarriesTheWritingRulesAndRecordsIt(t *testing.T) {
 			u.waitCheck(post.ID, "ready")
 			_, runs, _, _ := fh.snapshot()
 			ins := runs[0].Instructions
-			if !strings.HasPrefix(ins, "blog-check v2") {
+			if !strings.HasPrefix(ins, "blog-check v3") {
 				t.Fatalf("first line: %q", ins[:20])
 			}
 			hasRules := strings.Contains(ins, "writing-rules v1") && strings.Contains(ins, `note of kind "style"`)
@@ -1129,5 +1269,16 @@ func TestAStyleNoteIsShownAndDoesNotStopPublishing(t *testing.T) {
 	u.do("PATCH", "/api/blog/posts/"+post.ID+"/settings", map[string]any{"slug": "styled-post"})
 	if w := u.do("POST", "/api/blog/posts/"+post.ID+"/publish", map[string]any{"mode": "enriched"}); w.Code != 200 {
 		t.Fatalf("publish with a style note: %d %s", w.Code, w.Body)
+	}
+}
+
+func TestTheCheckPromptTellsTheAssistantToWriteInTheLanguageOfTheDraft(t *testing.T) {
+	for _, want := range []string{"language of the draft", "Never switch to English for an Indonesian draft", `"edits"`, "You never change the draft yourself"} {
+		if !strings.Contains(checkPrompt, want) {
+			t.Errorf("the prompt lacks %q", want)
+		}
+	}
+	if strings.Contains(checkPrompt, "NEVER rewrite") {
+		t.Error("the prompt still forbids proposing edits")
 	}
 }

@@ -1,7 +1,9 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { DocView, SourcesLine } from "./DocView";
 import { AckGate, SourceDrawer } from "./Sources";
-import type { Check, CheckBlock, CheckNote, Post } from "./types";
+import type { DraftBridge } from "./draftBridge";
+import { Suggestions } from "./Suggestions";
+import type { Check, CheckBlock, CheckNote, EditSuggestion, Post } from "./types";
 
 const ReaderBlock = lazy(() => import("./ReaderBlock"));
 
@@ -19,6 +21,9 @@ export interface PreviewProps {
   onAcceptAll: () => void;
   onPublishAccepted: () => void;
   onOriginal: () => void;
+  /** The editor behind this screen, so a suggestion can be applied from here; null when it is not there. */
+  bridge?: DraftBridge | null;
+  onEditDecided?: (e: EditSuggestion) => void;
 }
 
 /**
@@ -27,7 +32,7 @@ export interface PreviewProps {
  * "Accept all and publish" is the way through when nothing has been decided; once the author decides a block it becomes
  * "Publish with N blocks" (the design only draws the first state).
  */
-export function PreviewScreen({ post, check, acks, onAck, busy, ready, error, onDecide, onAcceptAll, onPublishAccepted, onOriginal }: PreviewProps) {
+export function PreviewScreen({ post, check, acks, onAck, busy, ready, error, onDecide, onAcceptAll, onPublishAccepted, onOriginal, bridge = null, onEditDecided = () => {} }: PreviewProps) {
   const [selected, setSelected] = useState<string | null>(null);
   const blocks = check.blocks;
   const focus = blocks.find((b) => b.id === selected) ?? blocks[0];
@@ -36,6 +41,7 @@ export function PreviewScreen({ post, check, acks, onAck, busy, ready, error, on
   // Blocks that still need the author's tick before they can be accepted (one already accepted had it when it was).
   const waiting = blocks.filter((b) => b.needsAck && b.decision !== "accepted" && acks[b.id] !== true).length;
   const none = blocks.length === 0;
+  const unplaced = blocks.filter((b) => b.afterNode < 0).length; // the part of the post a block belonged to is gone
 
   return (
     <main className="blog-flow blog-review">
@@ -94,7 +100,7 @@ export function PreviewScreen({ post, check, acks, onAck, busy, ready, error, on
                   <button type="button" className="quiet" aria-pressed={b.decision === "rejected"} disabled={busy} onClick={() => onDecide(b, "rejected")}>
                     {b.decision === "rejected" ? "Rejected" : "Reject"}
                   </button>
-                  <button type="button" className="btn" aria-pressed={b.decision === "accepted"} disabled={busy || (b.needsAck && acks[b.id] !== true && b.decision !== "accepted")} onClick={() => onDecide(b, "accepted")}>
+                  <button type="button" className="btn" aria-pressed={b.decision === "accepted"} disabled={busy || b.afterNode < 0 || (b.needsAck && acks[b.id] !== true && b.decision !== "accepted")} onClick={() => onDecide(b, "accepted")}>
                     {b.decision === "accepted" ? "Accepted" : "Accept"}
                   </button>
                 </span>
@@ -109,6 +115,12 @@ export function PreviewScreen({ post, check, acks, onAck, busy, ready, error, on
         </section>
 
         <div className="blog-review-side">
+          {(check.edits?.length ?? 0) > 0 && <Suggestions postId={post.id} edits={check.edits ?? []} bridge={bridge} doc={post.doc} onDecided={onEditDecided} />}
+          {unplaced > 0 && (
+            <p className="blog-notice blog-error" role="status">
+              {unplaced} {unplaced === 1 ? "block cannot be placed" : "blocks cannot be placed"}: the part of your post {unplaced === 1 ? "it" : "they"} belonged to was changed. {unplaced === 1 ? "It" : "They"} will not be published.
+            </p>
+          )}
           <Notes notes={check.notes} />
           {focus && <SourceDrawer sources={focus.sources} />}
         </div>

@@ -48,4 +48,4 @@ dropped, never repaired by guessing.
 | Connection lost | `failed` (disconnected) | "Connection to the assistant was lost." |
 | Reply not parseable | `failed` | "The assistant's reply could not be used." Nothing is published |
 | Some blocks rejected | `ready` | Preview with a notice per rejected block |
-| Draft edited meanwhile | `out_of_date` | "The draft changed. Run the check again." |
+| Draft edited meanwhile | `ready` (spec 006: no longer `out_of_date`) | suggestions and blocks about a part that is gone show as no longer applicable |

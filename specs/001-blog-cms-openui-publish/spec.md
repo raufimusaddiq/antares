@@ -102,7 +102,7 @@ The author has a CMS list of their own posts with status (draft, checking, ready
 - The assistant is unavailable or the author's assistant binding is unhealthy: publishing the original remains possible only if the author chooses it explicitly; nothing is enriched, and the failure is shown plainly.
 - The assistant returns malformed or oversized block markup: those blocks are dropped with a notice; the author's text is never lost.
 - The assistant returns markup containing script, raw HTML, unknown components or links to unapproved destinations: rejected, shown as a rejected block to the author, never published.
-- The author changes the draft while a check is running: the running check is marked out of date and results are not applied to the changed text without a rerun.
+- The author changes the draft while a check is running or after it (changed by spec 006): the check stays usable; a suggestion or block about a part that is gone is shown as no longer applicable and is not applied or published.
 - Web search returns conflicting or low-quality sources: the author is told, and the block is not added unless the author accepts it explicitly.
 - Two browser tabs edit the same draft: the later save does not silently overwrite the earlier one; the author is told about the conflict.
 - Very long posts, many images, or many blocks: limits are stated to the author before publishing, not after a failure.

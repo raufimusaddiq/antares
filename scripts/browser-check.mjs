@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview|blog-discovery|admin-posts|admin-models|admin-a11y|writing-rules|editor-toolbar)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview|blog-discovery|admin-posts|admin-models|admin-a11y|writing-rules|editor-toolbar|ai-editor)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -47,6 +47,10 @@ const BLOG_EMPTY_ID = "f".repeat(32);
 const BLOG_LONG_ID = "9".repeat(32); // a post too long for a check to read
 const BLOG_REVIEW_ID = "8".repeat(32); // a post whose check is ready: Review before publishing
 const BLOG_CHECKING_ID = "7".repeat(32); // a post whose check is running
+const eid = (n) => String(n).repeat(32);
+function readyCheck() {
+  return { ...runningCheck(), state: "ready", progress: { ...runningCheck().progress, stage: "writing" }, edits: state.ai.edits };
+}
 // The progress is the server's: its own clock, the step and the last sign of life (specs/006-ai-editor-blog). state.progress picks what the mock reports.
 function runningCheck() {
   const now = Date.now();
@@ -128,7 +132,7 @@ function transcript(rich) {
 const DATA = { [PLAIN]: transcript(false), [RICH]: transcript(true) };
 const b64 = (s) => Buffer.from(s).toString("base64url");
 
-const state = { manyPosts: false, visitor: false, meState: "ACTIVE", noWriting: false, log: [], delayMs: 15, models: false, admin: false, email: "reader@example.test", budgetReached: false, emptyList: false, hold: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map(), blogCheck: false, takedown: false, notices: [], posts: null, models: null };
+const state = { manyPosts: false, visitor: false, meState: "ACTIVE", noWriting: false, log: [], delayMs: 15, models: false, admin: false, email: "reader@example.test", budgetReached: false, emptyList: false, hold: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map(), blogCheck: false, takedown: false, notices: [], posts: null, models: null, ai: null, progress: null, progressAnchor: null };
 // A slow runner answers later than a fast one. MOCK_DELAY_MS adds that latency to the image endpoints of the mock (upload, delete, send) so
 // the ordering a slow CI runner produces can be reproduced on demand. Unset (the default) the mock answers at once.
 const MOCK_DELAY = Number(process.env.MOCK_DELAY_MS || 0);
@@ -159,6 +163,12 @@ function api(req, res, url) {
       last24h: state.writing.enabled ? { with: 148, without: 0, notApplied: state.writing.lost } : { with: 63, without: 85, notApplied: 0 }, ...(state.writing.enabled && state.writing.lost ? { warning: "not_applied" } : {}) });
     if (req.method === "GET") return send(200, view());
     if (req.method === "PUT") { let raw = ""; req.on("data", (d) => (raw += d)); req.on("end", () => { if (state.writing.fail) return send(500, { error: { code: "INTERNAL", message: "x" } }); state.writing.enabled = JSON.parse(raw).enabled === true; send(200, view()); }); return; }
+  }
+  // Spec 006, US3: the editor panel. state.ai picks what the mock reports for the post's check; the decision route records and answers like the server.
+  if (state.ai && url.pathname === `/api/blog/posts/${BLOG_ID}/check` && req.method === "POST") { state.ai.phase = "running"; return send(202, runningCheck()); }
+  if (state.ai && url.pathname === `/api/blog/posts/${BLOG_ID}/check` && req.method === "GET") return send(200, state.ai.phase === "ready" ? readyCheck() : runningCheck());
+  if (state.ai && new RegExp(`^/api/blog/posts/${BLOG_ID}/edits/[0-9a-f]{32}$`).test(url.pathname) && req.method === "PUT") {
+    let raw = ""; req.on("data", (d) => (raw += d)); req.on("end", () => { const id = url.pathname.split("/").pop(); const e = state.ai.edits.find((x) => x.id === id); e.decision = JSON.parse(raw).decision; state.ai.decisions.push(`${id.slice(0, 2)}:${e.decision}`); send(200, e); }); return;
   }
   // Spec 004: the Models screen. The mock keeps the switches and defaults, and refuses to switch off a default like the server does.
   if (state.admin && state.models && url.pathname === "/api/admin/models" && req.method === "GET") return send(200, modelsView());
@@ -1581,6 +1591,71 @@ async function editorToolbar(browser) {
   }
 }
 
+// ONLY=ai-editor: "Check with the editor" (spec 006, US3) in a real browser at 320, 390, 820 and 1280 px, light and dark: the button and the panel, the
+// progress, the suggestions beside (or below) the draft; accepting changes only that passage and can be undone, rejecting changes nothing, a passage that
+// no longer fits says so; the draft is unchanged until an accept; nothing overlaps; every target is at least 44 px on a phone.
+async function aiEditor(browser) {
+  const body = (page) => page.evaluate(() => document.querySelector(".ProseMirror").innerText.replace(/\s+/g, " ").trim());
+  for (const [label, w, h, scheme] of [["narrow", 320, 640, "light"], ["phone", 390, 844, "dark"], ["tablet", 820, 1180, "light"], ["desktop", 1280, 800, "dark"]]) {
+    const ctxOpts = { viewport: { width: w, height: h }, colorScheme: scheme, ...(w < 500 ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) };
+    state.blogCheck = true;
+    state.ai = { phase: "idle", decisions: [], edits: [
+      { id: eid(1), kind: "replace", part: 1, anchor: "Running your own assistant sounds cheap until the bill arrives.", original: "sounds cheap until the bill arrives", proposed: "looks cheap until the first bill", reason: "Shorter.", decision: "open" },
+      { id: eid(2), kind: "insert", part: 0, anchor: "Hardware", original: "", proposed: "A small server is enough for one person.\n\nIt still needs power and cooling.", reason: "Builds on your points.", decision: "open" },
+      { id: eid(3), kind: "replace", part: 2, anchor: "A closing paragraph about the hosting costs.", original: "words that are not there", proposed: "x", reason: "Never applies.", decision: "open" },
+    ] };
+    try {
+      const { ctx, page, consoleErrors, external } = await openPage(browser, ctxOpts);
+      await page.goto(base + `/blog/${BLOG_ID}`);
+      await page.waitForSelector("[contenteditable=true]", { timeout: 8000 });
+      await page.focus("[contenteditable=true]");
+      await page.keyboard.press("Control+a"); await page.keyboard.press("Backspace");
+      await page.keyboard.type("## Hardware\nRunning your own assistant sounds cheap until the bill arrives.\nA closing paragraph about the hosting costs.", { delay: 2 });
+      const original = await body(page);
+      const open = page.getByRole("button", { name: "Check with the editor" });
+      check(`ai editor, ${label} ${scheme}: the editor offers "Check with the editor" when checking is available`, (await open.count()) === 1);
+      await open.click();
+      await page.waitForSelector(".blog-panel", { timeout: 5000 });
+      await page.getByRole("button", { name: "Check my post" }).click();
+      await page.locator(".step-current", { hasText: "Looking things up" }).waitFor({ timeout: 5000 }); // (the first moment, before the server answers, shows reading)
+      const steps = await page.evaluate(() => ({ cur: document.querySelector(".step-current")?.textContent, live: document.querySelector(".blog-panel [aria-live=polite]")?.textContent }));
+      check(`ai editor, ${label} ${scheme}: the panel shows the step the check is in`, /Looking things up/.test(steps.cur ?? "") && steps.live === "Looking things up", JSON.stringify(steps));
+      check(`ai editor, ${label} ${scheme}: nothing in the draft changed while the check ran`, (await body(page)) === original);
+      await page.screenshot({ path: path.join(outDir, `ai-editor-progress-${label}-${scheme}.png`), fullPage: false });
+      state.ai.phase = "ready";
+      await page.waitForSelector(".suggestion", { timeout: 6000 });
+      const lay = await page.evaluate(() => {
+        const r = (sel) => document.querySelector(sel)?.getBoundingClientRect();
+        const panel = r(".blog-panel"), bar = r(".blog-bar"), bar2 = r(".blog-toolbar"), pub = r("[data-publish]");
+        const hit = (a, b) => !!a && !!b && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+        const els = [...document.querySelectorAll(".blog-panel button, .blog-bar button, .blog-toolbar button")].filter((e) => { const q = e.getBoundingClientRect(); return q.width > 0 && q.height > 0; });
+        let overlap = 0;
+        for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) if (hit(els[i].getBoundingClientRect(), els[j].getBoundingClientRect())) overlap++;
+        const panelBtns = [...document.querySelectorAll(".blog-panel button")].filter((e) => e.getBoundingClientRect().width > 0);
+        return { panelOverBar: hit(panel, bar), panelOverToolbar: hit(panel, bar2), panelOverPublish: hit(panel, pub), overlap, short: panelBtns.filter((b) => b.getBoundingClientRect().height < 43.5).length, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, widened: innerWidth, cards: document.querySelectorAll(".suggestion").length, gone: document.querySelectorAll(".suggestion-gone").length, head: document.querySelector("#blog-panel-h")?.textContent };
+      });
+      check(`ai editor, ${label} ${scheme}: three suggestions, the one about missing words says it no longer applies; the panel covers neither the bar, the toolbar nor Publish`, lay.cards === 3 && lay.gone === 1 && !lay.panelOverBar && !lay.panelOverToolbar && !lay.panelOverPublish && lay.head === "From the editor", JSON.stringify(lay));
+      check(`ai editor, ${label} ${scheme}: no button overlaps another, targets are at least 44 px, the page fits`, lay.overlap === 0 && lay.short === 0 && lay.overflowX <= 0 && lay.widened === w, JSON.stringify(lay));
+      await page.screenshot({ path: path.join(outDir, `ai-editor-suggestions-${label}-${scheme}.png`), fullPage: false });
+      check(`ai editor, ${label} ${scheme}: the draft is still exactly as written before any accept`, (await body(page)) === original);
+      await page.getByRole("button", { name: "Accept suggestion 1" }).click();
+      await page.waitForSelector(".suggestion-accepted", { timeout: 5000 });
+      const afterAccept = await body(page);
+      check(`ai editor, ${label} ${scheme}: accepting changed only that passage`, afterAccept === original.replace("sounds cheap until the bill arrives", "looks cheap until the first bill"), afterAccept);
+      await page.getByRole("button", { name: "Undo suggestion 1" }).click();
+      await page.waitForSelector(".suggestion-undone", { timeout: 5000 });
+      check(`ai editor, ${label} ${scheme}: Undo brought the passage back`, (await body(page)) === original);
+      await page.getByRole("button", { name: "Reject suggestion 2" }).click();
+      await page.waitForSelector(".suggestion-rejected", { timeout: 5000 });
+      check(`ai editor, ${label} ${scheme}: rejecting changed nothing, and the server heard both choices`, (await body(page)) === original && state.ai.decisions.includes("22:rejected"), JSON.stringify(state.ai.decisions));
+      const insertAt = page.getByRole("button", { name: /Accept suggestion/ });
+      check(`ai editor, ${label} ${scheme}: no console error or off-origin request`, consoleErrors.length === 0 && external.length === 0, consoleErrors.join("|").slice(0, 200));
+      void insertAt;
+      await ctx.close();
+    } finally { state.ai = null; state.blogCheck = false; }
+  }
+}
+
 // ONLY=admin-posts: the administrator's Posts screens and the author's side of a takedown (spec 004) in a real browser at 320, 390, 820 and
 // 1280 px, light and dark. The list, a post, the take-down form and the restore; a takedown seen by the author as a list row, a one-time
 // banner that goes away for good, and an editor whose Publish is blocked. Every page fits the device and raises no console error.
@@ -1835,6 +1910,7 @@ try {
   if (!only || only === "admin-a11y") await adminA11y(browser);
   if (!only || only === "writing-rules") await writingRules(browser);
   if (!only || only === "editor-toolbar") await editorToolbar(browser);
+  if (!only || only === "ai-editor") await aiEditor(browser);
   if (!only || only === "blog-editor" || only === "share-preview") await shareSettings(browser);
 } finally {
   await browser.close();

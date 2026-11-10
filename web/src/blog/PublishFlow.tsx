@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState, type ReactNode } from "react"
 import { cancelCheck, decideBlock, describeBlogError, getCheck, getLimits, publish, startCheck } from "./blogApi";
 import { checkBytes, imageCount, sizeWords, type Limits } from "./limits";
 import { CheckProgressView } from "./CheckProgress";
+import type { DraftBridge } from "./draftBridge";
 import { PreviewScreen } from "./PreviewScreen";
 import { useDialog } from "./useDialog";
 import type { Capabilities, Check, CheckBlock, Post } from "./types";
@@ -26,7 +27,7 @@ export function failureWords(c: Check): string {
   }
 }
 
-type Phase = { k: "choose" } | { k: "starting" } | { k: "checking" } | { k: "preview" } | { k: "published"; slug: string } | { k: "stopped" };
+type Phase = { k: "choose" } | { k: "starting" } | { k: "checking" } | { k: "preview" } | { k: "published"; slug: string; skipped: number } | { k: "stopped" };
 
 export interface PublishFlowProps {
   post: Post;
@@ -35,9 +36,11 @@ export interface PublishFlowProps {
   onPost: (p: Post) => void;
   onBackToEditing: () => void;
   onMyPosts: () => void;
+  /** The editor behind this screen (suggestions are applied there). */
+  bridge?: DraftBridge | null;
 }
 
-export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPosts }: PublishFlowProps) {
+export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPosts, bridge = null }: PublishFlowProps) {
   const [phase, setPhase] = useState<Phase>(() => (!post.check ? { k: "choose" } : post.check.state === "running" ? { k: "checking" } : post.check.state === "ready" ? { k: "preview" } : { k: "stopped" }));
   const [check, setCheck] = useState<Check | null>(post.check);
   const [error, setError] = useState("");
@@ -109,7 +112,7 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
     setBusy(false);
     if (r.ok) {
       onPost(r.value);
-      return setPhase({ k: "published", slug: r.value.slug });
+      return setPhase({ k: "published", slug: r.value.slug, skipped: r.value.skippedBlocks ?? 0 });
     }
     setError(r.status === 409 ? "The address is taken by another published post, or the draft changed. Open Post settings." : r.status === 422 || r.status === 400 ? "Add a title and an address before publishing." : describeBlogError(r, "publish"));
   };
@@ -146,6 +149,11 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
         <main className="blog-flow">
           <h1 tabIndex={-1}>Your post is live</h1>
           <p>Anyone can read it, without an account.</p>
+          {phase.skipped > 0 && (
+            <p className="blog-notice" role="status">
+              {phase.skipped} {phase.skipped === 1 ? "block was" : "blocks were"} left out: the part of your post {phase.skipped === 1 ? "it" : "they"} belonged to was changed.
+            </p>
+          )}
           <div className="blog-actions">
             <a className="btn" href={`/b/${phase.slug}`}>
               View post
@@ -169,7 +177,7 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
             cancelDisabled={phase.k === "starting"}
             onCancel={() => void cancelCheck(post.id).then((r) => (r.ok ? apply(r.value) : setError(describeBlogError(r, "cancel the check"))))}
           />
-          <p className="label">If you edit now, this check is thrown away and you can run it again.</p>
+          <p className="label">You can go back to editing; the check keeps running and its suggestions stay usable. A suggestion about a passage you change shows as no longer applicable.</p>
           {error && <p className="blog-error" role="alert">{error}</p>}
         </main>
       </Takeover>
@@ -215,6 +223,8 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
           onAcceptAll={() => void acceptAll()}
           onPublishAccepted={() => void go("enriched")}
           onOriginal={() => void go("original")}
+          bridge={bridge}
+          onEditDecided={(e) => setCheck((c) => (c ? { ...c, edits: (c.edits ?? []).map((x) => (x.id === e.id ? e : x)) } : c))}
         />
       </Takeover>
     );

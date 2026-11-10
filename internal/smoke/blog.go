@@ -335,7 +335,7 @@ func (s *scn) blogCheck(ctx context.Context) (string, error) {
 	if regexp.MustCompile(`\b(?:run|sess)_[A-Za-z0-9]{6,}`).Match(pub.Body) {
 		return "", fmt.Errorf("the public post carries what looks like a run or session id")
 	}
-	// An edit after the check makes it out of date, and the published post keeps what was published.
+	// An edit after the check no longer ends it (spec 006): its suggestions and blocks are found again in the draft as it is.
 	var cur blogPost
 	if g, err := call(200, "GET", path, nil); err != nil || g.JSON(&cur) != nil {
 		return "", fmt.Errorf("read post: %v", err)
@@ -344,8 +344,8 @@ func (s *scn) blogCheck(ctx context.Context) (string, error) {
 		return "", err
 	}
 	var after checkView
-	if g, err := call(200, "GET", path+"/check", nil); err != nil || g.JSON(&after) != nil || after.State != "out_of_date" {
-		return "", fmt.Errorf("after an edit the check must be out of date (got %q, %v)", after.State, err)
+	if g, err := call(200, "GET", path+"/check", nil); err != nil || g.JSON(&after) != nil || after.State != "ready" {
+		return "", fmt.Errorf("after an edit the check must stay ready (got %q, %v)", after.State, err)
 	}
 	if _, err := call(200, "POST", path+"/unpublish", map[string]any{}); err != nil {
 		return "", err

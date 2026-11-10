@@ -3,6 +3,7 @@ import { describeBlogError, getPost } from "./blogApi";
 import { loadLocalCopy } from "./autosave";
 import { PostList } from "./PostList";
 import { PostSettings } from "./PostSettings";
+import type { DraftBridge } from "./draftBridge";
 import { PublishFlow } from "./PublishFlow";
 import type { Capabilities, Post } from "./types";
 
@@ -42,6 +43,7 @@ export function BlogApp({ caps, email, name, route, onNavigate, onChats }: { cap
 function PostScreen({ id, email, name, publishing, caps, onNavigate }: { id: string; email: string; name?: string; publishing: boolean; caps: Capabilities | null; onNavigate: (to: string) => void }) {
   const [post, setPost] = useState<Post | "loading" | string>("loading");
   const [settings, setSettings] = useState(false);
+  const [bridge, setBridge] = useState<DraftBridge | null>(null);
   // Without an open editor, "saved" means this browser holds nothing the server has not confirmed.
   const flush = useRef<() => Promise<boolean>>(() => Promise.resolve(loadLocalCopy(email, id) === null));
   // The editor is mounted behind Publish and stays through it; when Publish closes it is opened again on the latest post this
@@ -90,6 +92,9 @@ function PostScreen({ id, email, name, publishing, caps, onNavigate }: { id: str
               void f().then((saved) => saved && onNavigate(publishPath(id))); // a failed save stays in the editor, where its state shows
             }}
             onBack={() => onNavigate("/blog")}
+            onBridge={setBridge}
+            publishing={publishing}
+            canCheck={caps?.check === true}
           />
         </div>
         {settings && !publishing && <PostSettings post={post} onSaved={setPost} onClose={() => setSettings(false)} authorName={name} />}
@@ -99,6 +104,7 @@ function PostScreen({ id, email, name, publishing, caps, onNavigate }: { id: str
           post={post}
           caps={caps}
           flush={() => flush.current()}
+          bridge={bridge}
           onPost={setPost}
           onBackToEditing={() => onNavigate(editPath(id))}
           onMyPosts={() => onNavigate("/blog")}

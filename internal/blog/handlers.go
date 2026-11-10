@@ -152,7 +152,14 @@ func reply(w http.ResponseWriter, p Post, err error) {
 	case errors.Is(err, ErrNotPublished):
 		apiError(w, http.StatusConflict, "NOT_PUBLISHED", "That post is not published", nil)
 	case errors.Is(err, ErrTooMany):
-		apiError(w, http.StatusUnprocessableEntity, "LIMIT_REACHED", "A limit was reached", nil)
+		var many TooManyChecksError
+		if errors.As(err, &many) && many.Running {
+			apiError(w, http.StatusUnprocessableEntity, "LIMIT_REACHED", "Two checks are already running. Wait for one to finish, or publish your original.", map[string]any{"running": true})
+		} else if errors.As(err, &many) {
+			apiError(w, http.StatusUnprocessableEntity, "LIMIT_REACHED", "You have used your checks of the last 24 hours. You can check again at the time shown, and you can still publish your original.", map[string]any{"retryAt": many.RetryAt})
+		} else {
+			apiError(w, http.StatusUnprocessableEntity, "LIMIT_REACHED", "A limit was reached", nil)
+		}
 	default:
 		fail(w, "request", err)
 	}
@@ -316,6 +323,25 @@ func (s *Service) postHandlers() map[string]http.Handler {
 				return
 			}
 			v, err := s.DecideBlock(r.Context(), uid, id, bid, b.Decision, b.Ack)
+			if err != nil {
+				reply(w, Post{}, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, v)
+		}),
+		"PUT /api/blog/posts/{id}/edits/{editId}": own(func(w http.ResponseWriter, r *http.Request, uid, id string) {
+			eid := r.PathValue("editId")
+			if !idRE.MatchString(eid) {
+				notFound(w)
+				return
+			}
+			var b struct {
+				Decision string `json:"decision"`
+			}
+			if !decode(w, r, 1<<10, &b) {
+				return
+			}
+			v, err := s.DecideEdit(r.Context(), uid, id, eid, b.Decision)
 			if err != nil {
 				reply(w, Post{}, err)
 				return
