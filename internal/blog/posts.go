@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/raufimusaddiq/antares/internal/modelpolicy"
 	"github.com/raufimusaddiq/antares/internal/secrets"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
@@ -32,6 +33,7 @@ const (
 
 // Service is the blog's store and handlers.
 type Service struct {
+	catalogue modelpolicy.Catalogue
 	db        *sql.DB
 	now       func() time.Time
 	hx        Runner       // nil: checking is not offered
@@ -53,6 +55,8 @@ type Options struct {
 	Spend  Spend // checks are refused while the author is over their daily hard limit; nil applies none
 	// CheckMode is "on" (the default when empty), "smoke" (synthetic test accounts only) or "off"; a value that is none of them turns the check off (New logs it).
 	CheckMode string
+	// Catalogue, if set, lets the administrator's default model for the post check be validated against Kenari's list; nil trusts a default that is switched on.
+	Catalogue modelpolicy.Catalogue
 }
 
 func New(o Options) (*Service, error) {
@@ -69,7 +73,7 @@ func New(o Options) (*Service, error) {
 		log.Printf("blog: %v: the AI check is OFF until this is fixed", err)
 		mode = CheckOff
 	}
-	s := &Service{db: o.DB, now: o.Now, hx: o.Hermes, box: o.Box, spend: o.Spend, checkMode: mode}
+	s := &Service{db: o.DB, now: o.Now, hx: o.Hermes, box: o.Box, spend: o.Spend, checkMode: mode, catalogue: o.Catalogue}
 	s.initChecks()
 	return s, nil
 }

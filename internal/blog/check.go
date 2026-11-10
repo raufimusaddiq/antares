@@ -8,11 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/raufimusaddiq/antares/internal/hermes"
+	"github.com/raufimusaddiq/antares/internal/modelpolicy"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -559,7 +561,19 @@ func (s *Service) driveRun(ctx context.Context, id, author, input string, topNod
 	// Policy applies to the model that will actually run, as for a chat: with a block list, the profile default is resolved and
 	// named explicitly, so a blocked model cannot run and a default changed since cannot be swapped in.
 	var provider, model string
-	if blocked, err := store.BlockedModels(ctx, s.db); err != nil {
+	// The administrator's default for the assistant that checks posts, when it can run; else the profile default as before.
+	if def := modelpolicy.Default(ctx, s.db, s.catalogue, "blog_assistant", s.now()); def != "" {
+		cat, err := s.hx.ModelOptions(ctx, b, false)
+		if ctx.Err() != nil {
+			return ended("")
+		}
+		if err == nil && cat.Provider != "" {
+			provider, model = cat.Provider, def
+		}
+	}
+	if blocked, err := store.BlockedModels(ctx, s.db); model != "" && err == nil && !slices.Contains(blocked, model) {
+		// the default chosen above is on (modelpolicy.Default never returns a switched-off model): nothing more to resolve
+	} else if err != nil {
 		if ctx.Err() != nil {
 			return ended("")
 		}

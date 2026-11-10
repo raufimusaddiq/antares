@@ -28,6 +28,7 @@ import {
 import { getCapabilities, type Inventory } from "./chatApi";
 import { userPath, type AdminRoute } from "./route";
 import { AdminPostScreen, AdminPostsScreen } from "./AdminPosts";
+import { AdminModelsScreen } from "./AdminModels";
 import { Forbidden, Loading, Problem, useLoad, when } from "./adminLoad";
 export { Forbidden, when } from "./adminLoad";
 export type { Load } from "./adminLoad";
@@ -77,6 +78,7 @@ export function AdminShell({ email, route, onNavigate, onSignOut, children }: { 
         <nav className="admin-nav" aria-label="Admin">
           {link("/admin/users", "Users", route.kind === "users" || route.kind === "user")}
           {link("/admin/posts", "Posts", route.kind === "posts" || route.kind === "post")}
+          {link("/admin/models", "Models", route.kind === "models")}
           {link("/admin/capabilities", "Capabilities", route.kind === "capabilities")}
           {link("/admin/usage", "Provider usage", route.kind === "usage")}
           {link("/admin/audit", "Audit log", route.kind === "audit")}
@@ -997,6 +999,8 @@ export function AdminScreens({ route, onNavigate }: { route: AdminRoute; onNavig
       return <AdminPostsScreen onOpen={onNavigate} />;
     case "post":
       return <AdminPostScreen key={route.id} id={route.id} onBack={() => onNavigate("/admin/posts")} />;
+    case "models":
+      return <AdminModelsScreen />;
     case "audit":
       return <AuditScreen />;
     case "capabilities":

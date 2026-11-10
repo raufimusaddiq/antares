@@ -19,6 +19,7 @@ import (
 	"github.com/raufimusaddiq/antares/internal/config"
 	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/kenari"
+	"github.com/raufimusaddiq/antares/internal/modelpolicy"
 	"github.com/raufimusaddiq/antares/internal/push"
 	"github.com/raufimusaddiq/antares/internal/redact"
 	"github.com/raufimusaddiq/antares/internal/secrets"
@@ -158,18 +159,23 @@ func run() error {
 	defer pusher.Close()           // after chats.Close below has stopped the workers that call it
 	var titler chat.Titler         // without a key, a chat's title is its first words
 	var summarizer chat.Summarizer // and a shared picture is the whole answer
+	kenariCat := kenari.New(kenari.DefaultURL, nil)
 	if len(cfg.TitleAPIKey) > 0 {
-		m := &chat.TitleModel{URL: cfg.TitleBaseURL, Key: string(cfg.TitleAPIKey), Model: cfg.TitleModel}
+		m := &chat.TitleModel{URL: cfg.TitleBaseURL, Key: string(cfg.TitleAPIKey), Model: cfg.TitleModel,
+			// The administrator's default for summaries and titles, when usable; a switched-off model makes no call.
+			Pick: func(ctx context.Context, configured string) (string, bool) {
+				return modelpolicy.Pick(ctx, db, kenariCat, "summary", configured, time.Now())
+			}}
 		titler, summarizer = m, m
 	}
-	chats, err := chat.New(chat.Options{DB: db, Box: box, Hermes: hermesClient, Kenari: kenari.New(kenari.DefaultURL, nil), Notifier: pusher,
+	chats, err := chat.New(chat.Options{DB: db, Box: box, Hermes: hermesClient, Kenari: kenariCat, Notifier: pusher,
 		Jobs: os.Getenv("ANTARES_JOBS") == "on", Media: helper, Titler: titler, Summarizer: summarizer, Skills: helper, Memory: helper}) // scheduled tasks: off until proven on the deployed Hermes (docs/runbooks/jobs.md)
 	if err != nil {
 		return err
 	}
 	defer chats.Close() // after the server drains (serve returns first), before db.Close
 
-	blogs, err := blog.New(blog.Options{DB: db, Hermes: hermesClient, Box: box, Spend: chats, CheckMode: os.Getenv("ANTARES_BLOG_CHECK")}) // the AI check is on by default; off or smoke narrow it (docs/runbooks/blog-check.md)
+	blogs, err := blog.New(blog.Options{DB: db, Hermes: hermesClient, Box: box, Spend: chats, Catalogue: kenariCat, CheckMode: os.Getenv("ANTARES_BLOG_CHECK")}) // the AI check is on by default; off or smoke narrow it (docs/runbooks/blog-check.md)
 	if err != nil {
 		return err
 	}

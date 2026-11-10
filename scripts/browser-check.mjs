@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview|blog-discovery|admin-posts)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview|blog-discovery|admin-posts|admin-models)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -121,7 +121,7 @@ function transcript(rich) {
 const DATA = { [PLAIN]: transcript(false), [RICH]: transcript(true) };
 const b64 = (s) => Buffer.from(s).toString("base64url");
 
-const state = { manyPosts: false, visitor: false, meState: "ACTIVE", noWriting: false, log: [], delayMs: 15, models: false, admin: false, email: "reader@example.test", budgetReached: false, emptyList: false, hold: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map(), blogCheck: false, takedown: false, notices: [], posts: null };
+const state = { manyPosts: false, visitor: false, meState: "ACTIVE", noWriting: false, log: [], delayMs: 15, models: false, admin: false, email: "reader@example.test", budgetReached: false, emptyList: false, hold: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map(), blogCheck: false, takedown: false, notices: [], posts: null, models: null };
 // A slow runner answers later than a fast one. MOCK_DELAY_MS adds that latency to the image endpoints of the mock (upload, delete, send) so
 // the ordering a slow CI runner produces can be reproduced on demand. Unset (the default) the mock answers at once.
 const MOCK_DELAY = Number(process.env.MOCK_DELAY_MS || 0);
@@ -144,6 +144,23 @@ function api(req, res, url) {
   // Spec 004: the administrator's takedown, seen by the author as a list row, a banner, and a blocked Publish.
   if (url.pathname === "/api/blog/notices" && req.method === "GET") return send(200, { notices: state.notices });
   if (/^\/api\/blog\/notices\/[^/]+\/seen$/.test(url.pathname) && req.method === "POST") { state.notices = []; res.writeHead(204); return res.end(); }
+  // Spec 004: the Models screen. The mock keeps the switches and defaults, and refuses to switch off a default like the server does.
+  if (state.admin && state.models && url.pathname === "/api/admin/models" && req.method === "GET") return send(200, modelsView());
+  if (state.admin && state.models && url.pathname === "/api/admin/model-policy" && req.method === "PUT") {
+    let raw = ""; req.on("data", (d) => (raw += d)); req.on("end", () => {
+      const blocked = JSON.parse(raw).blocked;
+      const hit = state.models.rows.filter((m) => blocked.includes(m.id) && m.defaultFor.length > 0 && m.on);
+      if (hit.length) return send(409, { error: { code: "MODEL_IS_DEFAULT", message: "x", requestId: "r", purposes: hit[0].defaultFor } });
+      state.models.rows.forEach((m) => (m.on = !blocked.includes(m.id)));
+      send(200, { blocked });
+    });
+    return;
+  }
+  if (state.admin && state.models && url.pathname === "/api/admin/model-defaults" && req.method === "PUT") {
+    let raw = ""; req.on("data", (d) => (raw += d)); req.on("end", () => { Object.assign(state.models.current, JSON.parse(raw)); send(200, modelsView()); });
+    return;
+  }
+  if (state.admin && state.models && url.pathname === "/api/admin/media-models" && req.method === "PUT") { send(200, {}); return; }
   if (state.admin && url.pathname === "/api/admin/blog-posts" && req.method === "GET") {
     const f = url.searchParams.get("state");
     const items = state.posts.filter((p) => !f || p.state === f);
@@ -1242,6 +1259,57 @@ async function shareSettings(browser) {
 
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 base = `http://127.0.0.1:${server.address().port}`;
+const freshModels = () => ({
+  current: { chat: "", summary: "gpt-oss-20b", blog_assistant: "kimi-k2", image: "", video: "" },
+  rows: [
+    { id: "deepseek-v3.2", name: "deepseek-v3.2", on: true, purposes: ["chat", "summary", "blog_assistant"], defaultFor: [], usage: { calls: 812, tokens: 9400000 } },
+    { id: "gpt-oss-20b", name: "gpt-oss-20b", on: true, purposes: ["chat", "summary", "blog_assistant"], defaultFor: ["summary"], usage: null },
+    { id: "glm-4.6", name: "glm-4.6", on: false, purposes: ["chat", "summary", "blog_assistant"], defaultFor: [], usage: { calls: 96, tokens: 1100000 } },
+    { id: "agnes-image-2-5-flash:free", name: "agnes-image-2-5-flash:free", on: true, purposes: ["image"], defaultFor: ["image"], usage: null },
+    { id: "veo-3.1-lite", name: "veo-3.1-lite", on: true, purposes: ["video"], defaultFor: ["video"], usage: null },
+  ],
+});
+function modelsView() {
+  const m = state.models;
+  const st = (p) => ({ current: m.current[p], effective: m.current[p] === "kimi-k2" ? "" : m.current[p], warning: m.current[p] === "kimi-k2" ? "not_listed" : "" });
+  return { catalogue: "ok", models: m.rows, purposes: { chat: st("chat"), summary: st("summary"), blog_assistant: st("blog_assistant"), image: st("image"), video: st("video") } };
+}
+// ONLY=admin-models: the administrator's Models screen (spec 004) at 320, 390, 820 and 1280 px, light and dark: a switch per model, a default per
+// purpose with the warning for a default that is no longer offered, a refused switch-off that names the purpose, a save. Nothing draws over
+// anything else and the page fits the device.
+async function adminModels(browser) {
+  const fits = (page, w) => page.evaluate((devW) => ({ widened: innerWidth - devW, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth }), w);
+  for (const [label, w, h, scheme] of [["narrow", 320, 640, "light"], ["phone", 390, 844, "dark"], ["tablet", 820, 1180, "light"], ["desktop", 1280, 800, "dark"]]) {
+    const ctxOpts = { viewport: { width: w, height: h }, colorScheme: scheme, ...(w < 500 ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) };
+    state.admin = true; state.models = freshModels();
+    try {
+      const { ctx, page, consoleErrors, external } = await openPage(browser, ctxOpts);
+      await page.goto(base + "/admin/models");
+      await page.waitForSelector(".purpose-row", { timeout: 8000 }).catch(() => {});
+      const m = await page.evaluate(() => ({ purposes: document.querySelectorAll(".purpose-row").length, switches: document.querySelectorAll("input.switch").length, warn: document.querySelectorAll(".purpose-note.warn").length, nav: [...document.querySelectorAll(".admin-nav a")].filter((a) => { const r = document.createRange(); r.selectNodeContents(a); return new Set([...r.getClientRects()].map((b) => Math.round(b.top))).size > 1; }).length }));
+      let f = await fits(page, w);
+      check(`admin models, ${label} ${scheme}: five purposes, a switch per model, the warning for the dropped default, nav intact, the page fits`, m.purposes === 5 && m.switches === 5 && m.warn === 1 && m.nav === 0 && f.widened <= 0 && f.overflowX <= 0, JSON.stringify({ ...m, ...f }));
+      check(`admin models, ${label} ${scheme}: no control draws over another`, (await overlaps(page)).length === 0, JSON.stringify(await overlaps(page)));
+      await page.screenshot({ path: path.join(outDir, `admin-models-${label}-${scheme}.png`), fullPage: true });
+      await page.getByLabel("gpt-oss-20b for everyone").click();
+      await page.waitForSelector(".notice-card.taken", { timeout: 5000 }).catch(() => {});
+      const refused = await page.locator(".notice-card.taken").textContent().catch(() => "");
+      check(`admin models, ${label} ${scheme}: switching off a default is refused and names the purpose`, /was not switched off/.test(refused) && /Summaries and titles/.test(refused), refused);
+      await page.screenshot({ path: path.join(outDir, `admin-models-refused-${label}-${scheme}.png`), fullPage: true });
+      await page.getByLabel("glm-4.6 for everyone").click();
+      await page.waitForTimeout(400);
+      check(`admin models, ${label} ${scheme}: a model that is not a default switches on`, await page.getByLabel("glm-4.6 for everyone").isChecked());
+      await page.getByLabel("Chat", { exact: true }).selectOption("deepseek-v3.2");
+      await page.getByRole("button", { name: "Save defaults" }).click();
+      await page.waitForTimeout(500);
+      check(`admin models, ${label} ${scheme}: Save defaults saves and says so`, (await page.getByText("Saved.").count()) === 1 || (await page.getByText("A chat with a model of its own keeps it").count()) === 1);
+      f = await fits(page, w);
+      check(`admin models, ${label} ${scheme}: still fits, no console error or off-origin request`, f.widened <= 0 && f.overflowX <= 0 && consoleErrors.filter((e) => !/status of 409/.test(e)).length === 0 && external.length === 0, JSON.stringify(f) + consoleErrors.concat(external).join(" | ")); // the one 409 is the refused switch-off, on purpose
+      await ctx.close();
+    } finally { state.admin = false; state.models = null; }
+  }
+}
+
 // ONLY=admin-posts: the administrator's Posts screens and the author's side of a takedown (spec 004) in a real browser at 320, 390, 820 and
 // 1280 px, light and dark. The list, a post, the take-down form and the restore; a takedown seen by the author as a list row, a one-time
 // banner that goes away for good, and an editor whose Publish is blocked. Every page fits the device and raises no console error.
@@ -1492,6 +1560,7 @@ try {
   if (!only || only === "story-card") await storyCard(browser);
   if (!only || only === "blog-discovery") { state.manyPosts = true; try { await blogDiscovery(browser); await blogDiscoveryShort(browser); } finally { state.manyPosts = false; } }
   if (!only || only === "admin-posts") await adminPosts(browser);
+  if (!only || only === "admin-models") await adminModels(browser);
   if (!only || only === "blog-editor" || only === "share-preview") await shareSettings(browser);
 } finally {
   await browser.close();

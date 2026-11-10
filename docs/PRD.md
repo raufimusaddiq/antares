@@ -1763,6 +1763,13 @@ list searches (`q`, at most 80 characters, over title, summary and author name, 
 parameters of the existing `GET /api/public/blog/posts`; no route, table or dependency is added and the response is
 identical for every caller. Reads are not recorded and no admin route names posts, readers or reads.
 
+**Admin control (added 2026-11-10; spec `specs/004-admin-full-control/`).** An administrator can take a published post down (with a reason, reversible,
+audited; the author sees the state and reason, never who, and gets a one-time banner) and read its published version only, never a draft, a later
+version, a check or who reads it. Admin → Models gives every Kenari model an on/off switch (off = nobody can choose or use it, for chat, titles and
+summaries, the blog assistant, images and videos), a default per purpose (chat, summaries and titles, blog assistant, images, videos), and usage per
+model (never per account). A model that is a purpose's default cannot be switched off; a saved default that stops working falls back to the service
+default with a visible warning. A chat with its own model keeps it; other chats follow the default at their next message.
+
 **Acceptance.** Two-user ownership (a foreign id is the missing id, body included), the public surface leaks no
 identity, suspending or rejecting an author hides their posts and reinstating restores them, the route inventory fails
 on any unlisted unauthenticated route, and the production smoke's `blog.lifecycle` step (`smoke-test.md`).

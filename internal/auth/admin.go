@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -105,6 +106,8 @@ func (a *Auth) registerAdmin(mux *http.ServeMux) {
 	mux.Handle("GET /api/admin/audit", a.adminRoute(false, a.adminAudit))
 	mux.Handle("GET /api/admin/model-policy", a.adminRoute(false, a.adminModelPolicy))
 	mux.Handle("PUT /api/admin/model-policy", a.adminRoute(true, a.adminSetModelPolicy))
+	mux.Handle("GET /api/admin/models", a.adminRoute(false, a.adminModels))
+	mux.Handle("PUT /api/admin/model-defaults", a.adminRoute(true, a.adminSetModelDefaults))
 	mux.Handle("GET /api/admin/tool-policy", a.adminRoute(false, a.adminToolPolicy))
 	mux.Handle("PUT /api/admin/tool-policy", a.adminRoute(true, a.adminSetToolPolicy))
 	mux.Handle("GET /api/admin/media-models", a.adminRoute(false, a.adminMediaModels))
@@ -443,6 +446,21 @@ func (a *Auth) adminSetModelPolicy(w http.ResponseWriter, r *http.Request) {
 			a.apiError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "blocked carries an invalid model id")
 			return
 		}
+	}
+	// A model that is the default of a purpose cannot be newly switched off: that purpose would be left without a working model.
+	was, err := store.BlockedModels(r.Context(), a.db)
+	if err != nil {
+		a.apiError(w, r, http.StatusInternalServerError, "INTERNAL", "Something went wrong")
+		return
+	}
+	added := []string{}
+	for _, id := range body.Blocked {
+		if !slices.Contains(was, id) {
+			added = append(added, id)
+		}
+	}
+	if len(added) > 0 && a.refuseDefaults(w, r, added) {
+		return
 	}
 	actor, _ := UserFrom(r.Context())
 	if err := store.SetBlockedModels(r.Context(), a.db, actor.ID, body.Blocked, newRequestID(), a.now()); err != nil {

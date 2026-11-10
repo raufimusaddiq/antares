@@ -175,6 +175,8 @@ jobs:
       # Admin control (specs/004-admin-full-control): the Posts screens, take down and restore, and the author's side of a takedown.
       - name: Admin posts and takedown (admin screens, banner, editor)
         run: ONLY=admin-posts node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
+      - name: Admin models (switches, defaults, refusal)
+        run: ONLY=admin-models node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
       - name: Image attach, retry, remove, send and a touch tap on a capability reason
         run: ONLY=images node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
 

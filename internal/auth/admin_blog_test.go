@@ -15,7 +15,7 @@ import (
 func scanned(writer string) []string {
 	paths := []string{
 		"/api/admin/users", "/api/admin/users/" + writer, "/api/admin/audit",
-		"/api/admin/model-policy", "/api/admin/tool-policy", "/api/admin/media-models", "/api/admin/kenari-usage", "/api/admin/metrics",
+		"/api/admin/model-policy", "/api/admin/models", "/api/admin/tool-policy", "/api/admin/media-models", "/api/admin/kenari-usage", "/api/admin/metrics",
 	}
 	for _, st := range []string{"PENDING", "APPROVED", "REJECTED", "SUSPENDED"} {
 		paths = append(paths, "/api/admin/users?status="+st)
