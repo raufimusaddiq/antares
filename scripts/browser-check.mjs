@@ -1407,7 +1407,7 @@ async function writingRules(browser) {
       await page.goto(base + "/admin/capabilities");
       await page.waitForSelector(".writing-card", { timeout: 8000 }).catch(() => {});
       const card = () => page.evaluate(() => { const c = document.querySelector(".writing-card"); const sw = c?.querySelector("input.switch"); const r = sw?.closest("label")?.getBoundingClientRect();
-        return { on: sw?.checked, text: c?.innerText ?? "", chip: !!c?.querySelector(".chip"), alerts: c ? [...c.querySelectorAll("[role=alert]")].map((a) => a.textContent) : [], targetH: r ? Math.round(r.height) : 0, name: sw?.closest("label")?.textContent.trim() }; });
+        return { on: sw?.checked, text: c?.textContent ?? "", chip: !!c?.querySelector(".chip"), alerts: c ? [...c.querySelectorAll("[role=alert]")].map((a) => a.textContent) : [], targetH: r ? Math.round(r.height) : 0, name: sw?.closest("label")?.textContent.trim() }; });
       let c = await card();
       let f = await fits(page, w);
       check(`writing rules, ${label} ${scheme}: on, with version, credit, counts and the not-applied warning; the page fits`, c.on === true && c.chip && /writing-rules v1/.test(c.text) && /Miqdad Badjuber \(antislop\)/.test(c.text) && /148/.test(c.text) && /chat and post-check runs/.test(c.text) && c.alerts.some((a) => /not applied to 3 runs/.test(a)) && f.widened <= 0 && f.overflowX <= 0, JSON.stringify({ ...c, text: c.text.slice(0, 60) }) + JSON.stringify(f));
