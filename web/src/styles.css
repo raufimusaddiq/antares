@@ -1323,6 +1323,15 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 .blog-menu-list [role="menuitem"] { display: block; box-sizing: border-box; width: 100%; padding: 0.5rem 0.75rem; text-align: left; font: inherit; color: var(--ink); text-decoration: none; background: transparent; border: 0; border-radius: var(--r-sm); box-shadow: none; cursor: pointer; }
 .blog-menu-list [role="menuitem"]:hover, .blog-menu-list [role="menuitem"]:focus-visible { background: color-mix(in srgb, var(--ink) 10%, var(--card)); }
 .blog-menu-list [role="menuitem"].danger { background: var(--blush); color: var(--ink); }
+.blog-menu-list [role="menuitem"].done { background: var(--mint); color: var(--ink); }
+.blog-menu-list [role="menuitem"].divided { margin-top: 0.3rem; border-top: 2px solid var(--hair); border-radius: 0 0 var(--r-sm) var(--r-sm); font-weight: 700; }
+/* Share on a post (spec 002): the menu hangs from the button at the right of the header; the confirmation and the by-hand address sit under it. */
+.blog-share { position: relative; display: flex; align-items: center; gap: 0.6rem; }
+.blog-share .blog-menu-list { right: 0; min-width: 15rem; }
+.blog-share-note { min-width: 5.5rem; }
+.blog-share-note:empty { display: none; }
+.blog-share-manual { position: absolute; right: 0; top: calc(100% + 0.35rem); z-index: 14; width: min(22rem, calc(100vw - 2rem)); padding: 0.6rem; display: grid; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
+.blog-share-manual input { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 0.8125rem; }
 @media (max-width: 52rem) {
   .blog-shell { grid-template-columns: minmax(0, 1fr); }
   .blog-rail { position: static; height: auto; flex-direction: row; flex-wrap: wrap; align-items: center; border-right: 0; border-bottom: var(--line) solid var(--ink); padding: 0.6rem 0.9rem; }
@@ -1399,6 +1408,13 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 .blog-ack { display: flex; gap: 0.5rem; align-items: center; margin-top: 0.5rem; font-weight: 700; }
 
 /* Public pages */
+.blog-public-actions { display: flex; align-items: center; gap: 0.6rem; min-width: 0; }
+@media (max-width: 30rem) {
+  .blog-public-head { gap: 0.5rem; padding-inline: 0.75rem; }
+  .blog-public-head .blog-brand .label { display: none; }
+  .blog-public-actions { gap: 0.4rem; }
+  .wide-only { display: none; }
+}
 .blog-public-head { display: flex; align-items: center; justify-content: space-between; padding: 1rem; border-bottom: 3px solid var(--ink); background: var(--card); }
 .blog-brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; font-size: 1.5rem; letter-spacing: -0.04em; color: var(--ink); text-decoration: none; }
 .blog-brand svg { width: 2rem; height: 2rem; padding: 0.3rem; background: var(--mark); color: var(--mark-ink); border: 2px solid var(--ink); border-radius: 10px; box-shadow: var(--hard-sm); }

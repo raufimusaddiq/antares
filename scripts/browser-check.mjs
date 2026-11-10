@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -71,6 +71,17 @@ const BLOG_BLOCKS = [
   { anchor: 4, markup: 'root = Card([c])\nc = BarChart(["Seats", "Server", "Container"], [Series("Monthly cost", [85, 10, 24])])', fallback: "Monthly cost: seats 85, server 10, container 24.", sources: [] },
   { anchor: 3, markup: 'root = Card([b])\nb = Buttons([Button("Go", @OpenUrl("https://example.org/"))])', fallback: "This block could not be run; its plain text is shown instead.", sources: [] },
 ];
+const SHARE_POST = {
+  title: "Self-hosting an assistant: what it really costs", summary: "A small team asked whether running its own assistant beats paying per seat. Here is what we found.",
+  coverUrl: "", authorName: "Maya R.", publishedAt: "2026-11-08T01:00:00Z", blocks: [],
+  doc: { type: "doc", content: [
+    { type: "paragraph", content: [text("Most teams start by comparing sticker prices. That misses the two costs that decide the answer.")] },
+    { type: "heading", attrs: { level: 2 }, content: [text("The three options")] },
+    { type: "paragraph", content: [text("Hosted seats are predictable but scale with headcount. A single small server is cheap until someone has to patch it.")] },
+    { type: "heading", attrs: { level: 2 }, content: [text("What drives the difference")] },
+    { type: "paragraph", content: [text("Seats scale with headcount. A server scales with how careful you are.")] },
+  ] },
+};
 const blogPost = () => ({ id: BLOG_ID, title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", slug: "first-post", coverUrl: "", status: "draft", latestVersion: 3, publishedVersion: 0, doc: BLOG_DOC, check: null, updatedAt: "2026-11-09T01:00:00Z" });
 
 const TABLE = 'root = Card([hdr, txt, tbl, chart, btns])\nhdr = CardHeader("Compare", "Three plans side by side")\ntxt = TextContent("**A** is cheapest; **C** has the most storage.")\ntbl = Table([Col("Plan", ["A", "B", "C"]), Col("Cost ($)", [1, 2, 3])])\nchart = BarChart(["A", "B", "C"], [Series("Cost", [1, 2, 3])])\nbtns = Buttons([Button("Tell me more", @ToAssistant("Tell me more about plan A"))])';
@@ -126,6 +137,8 @@ function api(req, res, url) {
   if (url.pathname === `/api/blog/posts/${BLOG_CHECKING_ID}/check` && req.method === "GET") return send(200, RUNNING_CHECK);
   if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "PUT") return send(200, { ...blogPost(), latestVersion: 4 });
   if (url.pathname === "/api/public/blog/posts") return send(200, [{ slug: "first-post", title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary with " + "words ".repeat(30), coverUrl: "", authorName: "A Writer With A Rather Long Display Name", publishedAt: "2026-11-08T01:00:00Z" }]);
+  // A post of ordinary content, for the Share checks (the first-post above carries hostile content on purpose).
+  if (url.pathname === "/api/public/blog/posts/share-post") return send(200, SHARE_POST);
   if (url.pathname === "/api/public/blog/posts/first-post") return send(200, { title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", coverUrl: "", doc: BLOG_DOC, blocks: BLOG_BLOCKS, authorName: "A Writer", publishedAt: "2026-11-08T01:00:00Z" });
   // The shared plan quota every account sees in the chat (GET /api/quota): shares and reset times, no amounts.
   if (url.pathname === "/api/quota")
@@ -1083,6 +1096,38 @@ async function shareImage(browser) {
   await ctx.close();
 }
 
+// ONLY=share-menu: Share on a published post (spec 002) at 390, 820 and 1280 px, light and dark. The menu opens from the button
+// and stays inside the viewport (no sideways scroll), Escape closes it and puts focus back on the button, Copy link says it
+// worked, the page raises no console error and makes no request to any other origin (nothing of a social service loads).
+async function shareMenu(browser) {
+  for (const [label, w, h, scheme] of [["phone", 390, 844, "light"], ["tablet", 820, 1180, "dark"], ["desktop", 1280, 800, "light"], ["desktop", 1280, 800, "dark"]]) {
+    const { ctx, page, consoleErrors, external } = await openPage(browser, { viewport: { width: w, height: h }, colorScheme: scheme, ...(label === "phone" ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}), permissions: ["clipboard-read", "clipboard-write"] });
+    await page.goto(base + "/b/share-post");
+    await page.waitForSelector('button[aria-label="Share this post"]');
+    await page.waitForTimeout(1500); // the blocks have loaded
+    const button = page.getByRole("button", { name: "Share this post" });
+    await page.screenshot({ path: path.join(outDir, `share-button-${label}-${scheme}.png`) });
+    await button.click({ timeout: 5000 });
+    await page.waitForSelector('[role="menu"]');
+    const m = await page.evaluate(() => {
+      const menu = document.querySelector('[role="menu"]').getBoundingClientRect();
+      return { left: menu.left, right: menu.right, vw: document.documentElement.clientWidth, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, items: [...document.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent) };
+    });
+    check(`share menu, ${label} ${scheme}: opens inside the viewport with no sideways scroll`, m.left >= 0 && m.right <= m.vw && m.overflowX <= 0, JSON.stringify(m));
+    check(`share menu, ${label} ${scheme}: Copy link and the services are in it`, m.items.includes("Copy link") && (m.items.includes("WhatsApp") || m.items.includes("Share with your apps")), m.items.join(","));
+    await page.screenshot({ path: path.join(outDir, `share-menu-${label}-${scheme}.png`) });
+    await page.getByRole("menuitem", { name: "Copy link" }).click();
+    await page.locator('[role="status"]').filter({ hasText: "Link copied" }).waitFor({ timeout: 4000 }).then(() => check(`share menu, ${label} ${scheme}: Copy link says "Link copied"`, true), () => check(`share menu, ${label} ${scheme}: Copy link says "Link copied"`, false));
+    const copied = await page.evaluate(() => navigator.clipboard.readText()).catch(() => "");
+    check(`share menu, ${label} ${scheme}: the copied text is the canonical address`, copied === `${base}/b/share-post`, copied);
+    await page.keyboard.press("Escape");
+    const back = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+    check(`share menu, ${label} ${scheme}: Escape closes it and focus returns to the Share button`, back === "Share this post" && (await page.locator('[role="menu"]').count()) === 0, String(back));
+    check(`share menu, ${label} ${scheme}: no console error and no request to another origin`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
+    await ctx.close();
+  }
+}
+
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
@@ -1102,6 +1147,7 @@ try {
   if (only === "shots") await shots(browser);
   if (only === "phone-shots") await phoneShots(browser);
   if (only === "share-image") await shareImage(browser);
+  if (!only || only === "share-menu") await shareMenu(browser);
 } finally {
   await browser.close();
   server.close();

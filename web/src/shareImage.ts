@@ -4,6 +4,7 @@
 
 import { splitMedia } from "./mediaTags";
 import { splitSegments } from "./openui/segments";
+import { CHAT_PALETTE, W, PAD, STORY_H, SANS, MONO, gap, layout, makeKit, spaced, type Ctx, type Unit } from "./cardKit";
 import type { Block, Item, Run } from "./shareBlocks";
 
 /** Markdown read as plain text: the words stay, the markup goes, and a link keeps its address in brackets. */
@@ -62,170 +63,9 @@ export async function answerBlocks(answer: string): Promise<Block[]> {
   return segments.flatMap((s) => (s.kind === "md" ? mdBlocks(s.text) : (ou?.openuiBlocks(s.source) ?? [{ kind: "code", text: s.source }])));
 }
 
-const W = 1080;
-const PAD = 72;
 const MAX_H = 5400; // well inside every browser's canvas limit
-const SANS = '"Space Grotesk Variable", "Space Grotesk Fallback", system-ui, sans-serif';
-const MONO = 'ui-monospace, "SF Mono", Menlo, Consolas, monospace';
-const C = {
-  paper: "#f4f1e8",
-  card: "#ffffff",
-  ink: "#0b0b0b",
-  ink2: "#4f4a40",
-  hair: "#8f8878",
-  cobalt: "#2d4bff",
-  mark: "#ff6fae",
-  peri: "#b3c1ff",
-  tint: "#e6eaff",
-  mint: "#8ef0c0",
-  blush: "#ffb199",
-};
-const LOGO = "M28 5h8l24 54H49L32 20 15 59H4z"; // the A of public/icons/mark-light.svg; its dot is drawn as an arc
-
-type Ctx = CanvasRenderingContext2D;
-type Piece = Run & { w: number };
-/** One slice of the answer: a line of text, a row of a table, a band of a code block. The picture is cut between slices. */
-type Unit = { h: number; draw: (y: number) => void; gap?: boolean };
-
-function spaced(ctx: Ctx, px: number) {
-  if ("letterSpacing" in ctx) ctx.letterSpacing = `${px}px`;
-}
-
-const runFont = (r: Run, size: number, weight: number) => (r.code ? `500 ${Math.round(size * 0.84)}px ${MONO}` : `${r.bold ? 700 : weight} ${size}px ${SANS}`);
-const same = (a: Run, b: Run) => !!a.bold === !!b.bold && !!a.code === !!b.code && !!a.link === !!b.link;
-
-/** Styled text broken into lines of at most `width`, at spaces and, for a word wider than a line, inside it. */
-function layout(ctx: Ctx, runs: Run[], width: number, size: number, weight: number): Piece[][] {
-  const lines: Piece[][] = [[]];
-  let x = 0;
-  const add = (r: Run, text: string, w: number) => {
-    const line = lines[lines.length - 1];
-    const last = line[line.length - 1];
-    if (last && same(last, r)) {
-      last.text += text;
-      last.w += w;
-    } else line.push({ ...r, text, w });
-    x += w;
-  };
-  const breakLine = () => {
-    const line = lines[lines.length - 1];
-    const last = line[line.length - 1];
-    if (last?.text.endsWith(" ")) {
-      ctx.font = runFont(last, size, weight);
-      last.text = last.text.trimEnd();
-      last.w = ctx.measureText(last.text).width;
-    }
-    lines.push([]);
-    x = 0;
-  };
-  for (const r of runs) {
-    ctx.font = runFont(r, size, weight);
-    for (const tok of r.text.split(/(\n| +)/)) {
-      if (!tok) continue;
-      if (tok === "\n") breakLine();
-      else if (tok.trim() === "") {
-        if (x > 0) add(r, " ", ctx.measureText(" ").width);
-      } else {
-        let word = tok;
-        if (x > 0 && x + ctx.measureText(word).width > width) breakLine();
-        while (ctx.measureText(word).width > width - x) {
-          let n = 1;
-          while (n < word.length && ctx.measureText(word.slice(0, n + 1)).width <= width - x) n++;
-          add(r, word.slice(0, n), ctx.measureText(word.slice(0, n)).width);
-          breakLine();
-          word = word.slice(n);
-        }
-        if (word) add(r, word, ctx.measureText(word).width);
-      }
-    }
-  }
-  breakLine();
-  lines.pop();
-  return lines.filter((l, i) => l.length > 0 || (i > 0 && i < lines.length - 1));
-}
-
-function drawLine(ctx: Ctx, line: Piece[], x: number, base: number, size: number, weight: number, color: string) {
-  for (const p of line) {
-    ctx.font = runFont(p, size, weight);
-    if (p.code) {
-      ctx.fillStyle = C.tint;
-      ctx.beginPath();
-      ctx.roundRect(x - 5, base - size * 0.8, ctx.measureText(p.text.trimEnd()).width + 10, size * 1.04, 7);
-      ctx.fill();
-    }
-    ctx.fillStyle = p.link ? C.cobalt : color;
-    ctx.fillText(p.text, x, base);
-    if (p.link) ctx.fillRect(x, base + 5, p.w, 2.5);
-    x += p.w;
-  }
-}
-
-/** Text as one unit per line. */
-function textUnits(ctx: Ctx, runs: Run[], x: number, width: number, size: number, lh: number, weight = 400, color = C.ink): Unit[] {
-  return layout(ctx, runs, width, size, weight).map((line) => ({ h: lh, draw: (y) => drawLine(ctx, line, x, y + lh * 0.5 + size * 0.36, size, weight, color) }));
-}
-
-function pill(ctx: Ctx, x: number, y: number, h: number, text: string, font: string, bg: string, fg: string, shadow = 3): number {
-  ctx.font = font;
-  const w = ctx.measureText(text).width + h * 0.9;
-  if (shadow) {
-    ctx.fillStyle = C.ink;
-    ctx.beginPath();
-    ctx.roundRect(x + shadow, y + shadow, w, h, h / 2);
-    ctx.fill();
-  }
-  ctx.beginPath();
-  ctx.roundRect(x, y, w, h, h / 2);
-  ctx.fillStyle = bg;
-  ctx.fill();
-  ctx.lineWidth = 2.5;
-  ctx.strokeStyle = C.ink;
-  ctx.stroke();
-  ctx.fillStyle = fg;
-  ctx.textBaseline = "middle";
-  ctx.fillText(text, x + h * 0.45, y + h / 2 + 1);
-  ctx.textBaseline = "alphabetic";
-  return w;
-}
-
-/** The app's mark: a white A on a cobalt tile with a hard shadow. */
-function badge(ctx: Ctx, x: number, y: number, size: number) {
-  const r = size * 0.25;
-  ctx.fillStyle = C.ink;
-  ctx.beginPath();
-  ctx.roundRect(x + 4, y + 4, size, size, r);
-  ctx.fill();
-  ctx.fillStyle = C.cobalt;
-  ctx.beginPath();
-  ctx.roundRect(x, y, size, size, r);
-  ctx.fill();
-  ctx.lineWidth = 3;
-  ctx.strokeStyle = C.ink;
-  ctx.stroke();
-  ctx.save();
-  ctx.translate(x + size * 0.19, y + size * 0.17);
-  ctx.scale((size * 0.62) / 64, (size * 0.62) / 64);
-  ctx.fillStyle = "#ffffff";
-  ctx.fill(new Path2D(LOGO));
-  ctx.beginPath();
-  ctx.arc(32, 45, 6.5, 0, Math.PI * 2);
-  ctx.fill();
-  ctx.restore();
-}
-
-function dots(ctx: Ctx, x: number, y: number, w: number, h: number, step: number, alpha: number) {
-  ctx.fillStyle = `rgba(11, 11, 11, ${alpha})`;
-  ctx.beginPath();
-  for (let i = x + step / 2; i < x + w; i += step) {
-    for (let j = y + step / 2; j < y + h; j += step) {
-      ctx.moveTo(i + 1.6, j);
-      ctx.arc(i, j, 1.6, 0, Math.PI * 2);
-    }
-  }
-  ctx.fill();
-}
-
-const gap = (h: number): Unit => ({ h, draw: () => {}, gap: true });
+const C = CHAT_PALETTE;
+const { drawLine, textUnits, pill, badge, dots } = makeKit(C);
 
 /** A label: a cobalt square, the words in spaced capitals over as many lines as they need, and a hairline to the edge. */
 function labelUnits(ctx: Ctx, text: string, x: number, width: number): Unit[] {
@@ -548,7 +388,6 @@ function blockUnits(ctx: Ctx, b: Block, x: number, width: number): Unit[] {
   }
 }
 
-const STORY_H = 1920; // 9:16, the shape a phone shows whole
 
 /** A summary in type of `size`: its headline large with the pink bar, each point after a cobalt diamond. */
 function summaryUnits(ctx: Ctx, blocks: Block[], x: number, width: number, size: number): Unit[] {

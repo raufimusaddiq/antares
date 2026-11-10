@@ -5,6 +5,7 @@ import { AntaresMark } from "../brand/AntaresMark";
 import { formatDay } from "./dates";
 import { DocView } from "./DocView";
 import type { PublicPost, PublicSummary } from "./types";
+import { ShareMenu } from "./share/ShareMenu";
 
 // The signed-out blog (the Blog public frames). No session is loaded and nothing of the app mounts: the server
 // answers these routes without looking at a session, and every field shown is one the public API returns.
@@ -19,7 +20,7 @@ export function publicBlogRoute(path: string): { kind: "index" } | { kind: "post
 
 const initials = (n: string) => n.split(/\s+/).map((w) => w[0] ?? "").join("").slice(0, 2).toUpperCase();
 
-function Frame({ children, title }: { children: React.ReactNode; title: string }) {
+function Frame({ children, title, share }: { children: React.ReactNode; title: string; share?: React.ReactNode }) {
   useEffect(() => {
     document.title = title;
   }, [title]);
@@ -31,7 +32,14 @@ function Frame({ children, title }: { children: React.ReactNode; title: string }
           <span>Antares</span>
           <span className="label">Blog</span>
         </a>
-        <a className="btn" href={LOGIN_URL}>Sign in with Google</a>
+        <div className="blog-public-actions">
+          {share}
+          <a className="btn" href={LOGIN_URL} aria-label="Sign in with Google">
+            <span>
+              Sign in<span className="wide-only"> with Google</span>
+            </span>
+          </a>
+        </div>
       </header>
       {children}
       <footer className="blog-public-foot label">Written by Antares users. Blocks marked AI-added were proposed by an assistant and approved by the author.</footer>
@@ -101,7 +109,7 @@ export function PublicPostPage({ slug }: { slug: string }) {
   }, [slug]);
   const title = typeof p === "object" ? `${p.title} · Antares Blog` : "Blog · Antares";
   return (
-    <Frame title={title}>
+    <Frame title={title} share={typeof p === "object" ? <ShareMenu title={p.title} slug={slug} /> : undefined}>
       {p === "loading" && <main aria-busy="true"><p>Loading…</p></main>}
       {p === "gone" && (
         <main className="blog-empty">
