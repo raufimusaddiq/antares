@@ -395,6 +395,7 @@ These are **Chat UI's normalized event names**, not claims that all Hermes endpo
 - Model overrides are allowed only for admin-approved provider/model choices; user-supplied arbitrary `provider`, `base_url`, or key is blocked.
 - Tool approval requests must identify the real upstream pending approval; only the owning user may approve/deny their own run, using validated exact prompt/generation IDs where required.
 - Revoked accounts may not approve already pending tool actions; try to cancel the upstream run and log failure if cancellation cannot be completed.
+- Writing rules (#331): one built-in, versioned text (`writing-rules v1`, condensed from the MIT-licensed anti-slop rules, credit included) goes to every account's chat run as the first part of the run `instructions`, before OpenUI and the person's own preferences (which win on tone), and to the post check, which may add notes of kind `style`. Summaries use the same text. It shapes only prose written for the person, never answers, code or quotations. The administrator can switch it off for everyone (audited) and sees counts, never content. It is run instructions, not a Hermes skill, so Antares writes nothing to Hermes data directories.
 - Support model/provider defaults at tenant/profile level, without changing Hermes global config from chat input. Sharing the approved inference credential (#132) does not synchronize model selections or restrict the existing independently validated per-chat choices.
 
 ---
