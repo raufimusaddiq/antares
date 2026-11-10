@@ -103,12 +103,56 @@ func rulesArg(state string) any {
 
 // CheckView is a check as the author sees it.
 type CheckView struct {
-	ID      string      `json:"id"`
-	State   string      `json:"state"`
-	Reason  string      `json:"reason"`
-	Notes   []Note      `json:"notes"`
-	Notices []string    `json:"notices"`
-	Blocks  []BlockView `json:"blocks"`
+	ID       string      `json:"id"`
+	Progress *Progress   `json:"progress,omitempty"`
+	State    string      `json:"state"`
+	Reason   string      `json:"reason"`
+	Notes    []Note      `json:"notes"`
+	Notices  []string    `json:"notices"`
+	Blocks   []BlockView `json:"blocks"`
+}
+
+// Progress is where a check is (specs/006-ai-editor-blog): the step its run is in, read from the run's own events, when that step began, when
+// the last event arrived, how many lookups were started, and the server's time so the browser can tick its own clock without trusting it.
+type Progress struct {
+	Stage       string `json:"stage"` // reading, searching, writing
+	StageSince  string `json:"stageSince"`
+	LastEventAt string `json:"lastEventAt"`
+	Lookups     int    `json:"lookups"`
+	StartedAt   string `json:"startedAt"`
+	Now         string `json:"now"`
+}
+
+// progressWriteGap is how often a sign of life is written when the step has not changed.
+const progressWriteGap = 2 * time.Second
+
+type progressState struct {
+	stage   string
+	lookups int
+	wrote   time.Time
+}
+
+// noteProgress records what an upstream event says about the step. A step change (or a new lookup) is written at once; anything else only
+// refreshes the last sign of life, at most once every progressWriteGap.
+func (s *Service) noteProgress(ctx context.Context, id, author string, st *progressState, kind hermes.Kind) {
+	next, count := st.stage, st.lookups
+	switch kind {
+	case hermes.KindToolStarted:
+		next, count = "searching", count+1
+	case hermes.KindDelta:
+		next = "writing"
+	}
+	changed := next != st.stage || count != st.lookups
+	if !changed && time.Since(st.wrote) < progressWriteGap {
+		return
+	}
+	now := s.stamp()
+	_, err := s.db.ExecContext(ctx, `UPDATE post_checks SET stage = ?, stage_at = CASE WHEN stage = ? THEN stage_at ELSE ? END, lookups = ?, last_event_at = ?
+		WHERE id = ? AND author_id = ? AND state = 'running'`, next, next, now, count, now, id, author)
+	if err != nil {
+		return // progress is a courtesy: a failed write must not fail the check
+	}
+	st.stage, st.lookups, st.wrote = next, count, time.Now()
 }
 
 // BlockView is one proposed block.
@@ -308,6 +352,18 @@ func readCheck(ctx context.Context, q querier, query string, args ...any) (*Chec
 	if err != nil {
 		return nil, err
 	}
+	var pr Progress
+	if err := q.QueryRowContext(ctx, `SELECT stage, stage_at, last_event_at, lookups, started_at FROM post_checks WHERE id = ?`, c.ID).Scan(&pr.Stage, &pr.StageSince, &pr.LastEventAt, &pr.Lookups, &pr.StartedAt); err != nil {
+		return nil, err
+	}
+	if pr.StageSince == "" { // a check from before progress was kept
+		pr.StageSince = pr.StartedAt
+	}
+	if pr.LastEventAt == "" {
+		pr.LastEventAt = pr.StartedAt
+	}
+	pr.Now = time.Now().UTC().Format("2006-01-02T15:04:05.000000000Z")
+	c.Progress = &pr
 	c.Notes, c.Notices, c.Blocks = []Note{}, []string{}, []BlockView{}
 	_ = json.Unmarshal([]byte(notes), &c.Notes)
 	_ = json.Unmarshal([]byte(notices), &c.Notices)
@@ -412,10 +468,10 @@ func (s *Service) StartCheck(ctx context.Context, author, postID string) (*Check
 	}
 	// One statement counts and inserts, so two starts cannot both pass the per-author cap.
 	since := s.now().UTC().Add(-24 * time.Hour).Format("2006-01-02T15:04:05.000000000Z")
-	ins, err := tx.ExecContext(ctx, `INSERT INTO post_checks (id, post_id, author_id, version, state, prev_status, started_at, prompt_version)
-		SELECT ?, ?, ?, ?, 'running', ?, ?, ? WHERE (SELECT COUNT(*) FROM post_checks WHERE author_id = ? AND state = 'running') < ?
+	ins, err := tx.ExecContext(ctx, `INSERT INTO post_checks (id, post_id, author_id, version, state, prev_status, started_at, prompt_version, stage_at, last_event_at)
+		SELECT ?, ?, ?, ?, 'running', ?, ?, ?, ?, ? WHERE (SELECT COUNT(*) FROM post_checks WHERE author_id = ? AND state = 'running') < ?
 		AND (SELECT COUNT(*) FROM post_checks WHERE author_id = ? AND started_at >= ?) < ?`,
-		id, postID, author, cur.LatestVersion, cur.Status, now, checkPromptVersion(), author, maxChecksPerUser, author, since, maxChecksPer24h)
+		id, postID, author, cur.LatestVersion, cur.Status, now, checkPromptVersion(), now, now, author, maxChecksPerUser, author, since, maxChecksPer24h)
 	if err != nil {
 		if isUnique(err) { // another start won the race for this post
 			return nil, ErrCheckRunning
@@ -643,8 +699,12 @@ func (s *Service) driveRun(ctx context.Context, id, author, input string, topNod
 	_, _ = s.db.ExecContext(context.WithoutCancel(ctx), `UPDATE post_checks SET hermes_session = ?, hermes_run = ? WHERE id = ? AND state = 'running'`, sid, runID, id)
 
 	var terminal *hermes.Normalized
+	prog := progressState{stage: "reading"}
 	err = s.hx.StreamEvents(ctx, b, runID, func(ev hermes.Event) error {
 		n := hermes.Normalize(ev)
+		if n.Kind != hermes.KindTerminal {
+			s.noteProgress(ctx, id, author, &prog, n.Kind)
+		}
 		switch n.Kind {
 		case hermes.KindApproval, hermes.KindClarify:
 			return errPrompt

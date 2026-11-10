@@ -5,7 +5,7 @@
 import { purgeDrafts } from "../drafts";
 import { purgeUserState } from "../pwa";
 import type { Limits } from "./limits";
-import { EMPTY_DOC, type Capabilities, type Check, type CheckBlock, type CheckNote, type Decision, type DocNode, type Post, type PostStatus, type PostSummary, type PublicBlock, type PublicPost, type PublicSummary, type Source, type Takedown, type TakedownNotice } from "./types";
+import { EMPTY_DOC, type Capabilities, type Check, type CheckBlock, type CheckNote, type CheckProgress, type CheckStage, type Decision, type DocNode, type Post, type PostStatus, type PostSummary, type PublicBlock, type PublicPost, type PublicSummary, type Source, type Takedown, type TakedownNotice } from "./types";
 
 export type BlogResult<T> = { ok: true; value: T } | { ok: false; status: number; code: string; latest?: Post };
 
@@ -67,12 +67,27 @@ export function parseBlock(v: unknown): CheckBlock | null {
 
 const NOTE_KINDS = ["clarity", "fact", "missing-context", "unsourced", "style"];
 
+function parseProgress(v: unknown): CheckProgress | null {
+  const o = obj(v);
+  if (!o || !str(o.startedAt)) return null;
+  const stage = str(o.stage);
+  return {
+    stage: (stage === "searching" || stage === "writing" ? stage : "reading") as CheckStage,
+    stageSince: str(o.stageSince) || str(o.startedAt),
+    lastEventAt: str(o.lastEventAt) || str(o.startedAt),
+    lookups: Math.max(0, Math.floor(num(o.lookups))),
+    startedAt: str(o.startedAt),
+    now: str(o.now),
+  };
+}
+
 export function parseCheck(v: unknown): Check | null {
   const o = obj(v);
   if (!o || !str(o.id) || !CHECK_STATES.includes(str(o.state))) return null;
   const r = str(o.reason);
   return {
     id: str(o.id),
+    progress: parseProgress(o.progress),
     state: str(o.state) as Check["state"],
     reason: r === "disconnected" || r === "unusable" || r === "error" ? r : "",
     notes: arr(o.notes)

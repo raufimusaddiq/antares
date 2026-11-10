@@ -1656,3 +1656,16 @@ input.switch:focus-visible { outline: 3px solid var(--focus-halo); outline-offse
 .writing-counts div { min-width: 0; }
 .writing-counts dd { margin: 0; font-size: 1.75rem; line-height: 1.2; }
 .writing-counts dt { margin: 0; }
+
+/* Check progress (spec 006, US2): steps from the run's own events, a clock, a sign of life. No bar, no percentage. */
+.check-progress { display: grid; gap: 0.75rem; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
+.step { display: flex; align-items: center; gap: 0.65rem; font-size: 1rem; color: var(--ink-2); }
+.step-mark { flex: 0 0 1.5rem; width: 1.5rem; height: 1.5rem; display: inline-flex; align-items: center; justify-content: center; border: 2px solid var(--hair); border-radius: 50%; font-size: 0.8rem; font-weight: 700; color: var(--ink); }
+.step-done .step-mark { background: var(--mint); border-color: var(--ink); }
+.step-current { padding: 0.5rem 0.65rem; background: var(--rail); border: 2px solid var(--ink); border-radius: var(--r-sm); color: var(--ink); font-weight: 500; animation: fade-in 0.2s var(--ease-out) both; }
+.step-current .step-mark { background: var(--mark); border-color: var(--ink); color: var(--mark-ink); }
+.step-clock { margin: 0; font-size: 0.9rem; font-weight: 500; }
+.step-stalled { margin: 0; padding: 0.6rem 0.75rem; background: var(--blush); border: 2px solid var(--ink); border-radius: var(--r-sm); font-weight: 500; }
+@media (prefers-reduced-motion: reduce) { .step-current { animation: none; } }
+.blog-takeover button, .blog-takeover a.btn { min-height: 2.75rem; }

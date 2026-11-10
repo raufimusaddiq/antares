@@ -47,7 +47,14 @@ const BLOG_EMPTY_ID = "f".repeat(32);
 const BLOG_LONG_ID = "9".repeat(32); // a post too long for a check to read
 const BLOG_REVIEW_ID = "8".repeat(32); // a post whose check is ready: Review before publishing
 const BLOG_CHECKING_ID = "7".repeat(32); // a post whose check is running
-const RUNNING_CHECK = { id: "d".repeat(32), state: "running", reason: "", notes: [], notices: [], blocks: [] };
+// The progress is the server's: its own clock, the step and the last sign of life (specs/006-ai-editor-blog). state.progress picks what the mock reports.
+function runningCheck() {
+  const now = Date.now();
+  if (!state.progressAnchor) state.progressAnchor = now; // the run's times stay put while the real clock moves on, as they do on the server
+  const at = state.progressAnchor, ago = (ms) => new Date(at - ms).toISOString();
+  const pr = state.progress ?? { stage: "searching", lookups: 3, quietMs: 4000 };
+  return { id: "d".repeat(32), state: "running", reason: "", notes: [], notices: [], blocks: [], progress: { stage: pr.stage, stageSince: ago(20000), lastEventAt: ago(pr.quietMs), lookups: pr.lookups, startedAt: ago(72000), now: new Date(now).toISOString() } };
+}
 const reviewSource = (host) => ({ url: `https://${host}/data`, title: `About ${host} with a title long enough to wrap on a phone`, retrievedAt: "2026-11-08T10:00:00Z", verified: false });
 const REVIEW_CHECK = {
   id: "c".repeat(32), state: "ready", reason: "", notices: [],
@@ -193,8 +200,8 @@ function api(req, res, url) {
   if (url.pathname === `/api/blog/posts/${BLOG_REVIEW_ID}` && req.method === "GET")
     return send(200, { ...blogPost(), id: BLOG_REVIEW_ID, title: "Self-hosting an assistant", status: "ready", check: REVIEW_CHECK });
   if (url.pathname === `/api/blog/posts/${BLOG_CHECKING_ID}` && req.method === "GET")
-    return send(200, { ...blogPost(), id: BLOG_CHECKING_ID, title: "Being checked", status: "checking", check: RUNNING_CHECK });
-  if (url.pathname === `/api/blog/posts/${BLOG_CHECKING_ID}/check` && req.method === "GET") return send(200, RUNNING_CHECK);
+    return send(200, { ...blogPost(), id: BLOG_CHECKING_ID, title: "Being checked", status: "checking", check: runningCheck() });
+  if (url.pathname === `/api/blog/posts/${BLOG_CHECKING_ID}/check` && req.method === "GET") return send(200, runningCheck());
   if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "PUT") return send(200, { ...blogPost(), latestVersion: 4 });
   // Spec 003: the discovery checks ask for a page, a limit or a search; the older checks keep their one post.
   if (url.pathname === "/api/public/blog/posts" && (state.manyPosts || ["page", "limit", "q"].some((k) => url.searchParams.has(k)))) {
@@ -737,6 +744,34 @@ async function blogPages(browser, which, onlyViews) {
           innerWidth,
         }));
         if (c.h1 !== "Checking your writing" || !c.cancel || !c.back || !c.editorHidden || !c.focused || c.innerWidth !== w) editorProblems.push(`the checking step is not as it should be: ${JSON.stringify(c)}`);
+        // Spec 006, US2: the steps, the clock and the sign of life; no bar or percentage; the live region names the step; Cancel and Back never overlap.
+        const pr = await page.evaluate(() => ({
+          cur: document.querySelector(".step-current")?.textContent,
+          done: [...document.querySelectorAll(".step-done")].map((e) => e.textContent),
+          pending: document.querySelectorAll(".step-pending").length,
+          clock: document.querySelector(".step-clock")?.textContent,
+          clockHidden: document.querySelector(".step-clock")?.getAttribute("aria-hidden"),
+          live: document.querySelector("[aria-live=polite]")?.textContent,
+          bar: !!document.querySelector("progress, [role=progressbar]") || /\d+\s?%/.test(document.body.innerText),
+          stalled: !!document.querySelector(".step-stalled"),
+          short: [...document.querySelectorAll(".blog-takeover button")].filter((b) => b.getBoundingClientRect().height > 0 && b.getBoundingClientRect().height < 43.5).length,
+        }));
+        if (!/Looking things up · 3 lookups/.test(pr.cur ?? "") || pr.done.length !== 1 || pr.pending !== 1 || !/1 min \d+ s so far · last sign of life \d+ s ago/.test(pr.clock ?? "") || pr.clockHidden !== "true" || pr.live !== "Looking things up" || pr.bar || pr.stalled) editorProblems.push(`the progress steps are not as designed: ${JSON.stringify(pr)}`);
+        if (w < 500 && pr.short) editorProblems.push(`${pr.short} buttons on the checking screen are under 44 px`);
+        const ov = await page.evaluate(() => { const bs = [...document.querySelectorAll(".blog-takeover button, .blog-takeover a")].filter((b) => b.getBoundingClientRect().width > 0); let n = 0; for (let i = 0; i < bs.length; i++) for (let j = i + 1; j < bs.length; j++) { const a = bs[i].getBoundingClientRect(), b = bs[j].getBoundingClientRect(); if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) n++; } return n; });
+        if (ov) editorProblems.push(`${ov} controls overlap on the checking screen`);
+        await page.screenshot({ path: path.join(outDir, `checking-steps-${label}-${scheme}.png`), fullPage: true });
+        // The clock ticks on its own, and a reload shows the real step (the mock reports writing), and a quiet run says it is still working.
+        const t0 = await page.locator(".step-clock").textContent();
+        await page.waitForTimeout(2200);
+        const t1 = await page.locator(".step-clock").textContent();
+        if (t0 === t1) editorProblems.push(`the clock did not tick: ${t0}`);
+        state.progress = { stage: "writing", lookups: 3, quietMs: 52000 }; state.progressAnchor = null;
+        await page.reload();
+        await page.waitForSelector(".step-current", { timeout: 8000 });
+        const re = await page.evaluate(() => ({ cur: document.querySelector(".step-current")?.textContent, done: document.querySelectorAll(".step-done").length, stalled: document.querySelector(".step-stalled")?.textContent, live: document.querySelector("[aria-live=polite]")?.textContent }));
+        state.progress = null; state.progressAnchor = null;
+        if (!/Writing suggestions/.test(re.cur ?? "") || re.done !== 2 || !/Still working\. Nothing new for 5\d s/.test(re.stalled ?? "") || !/Nothing new for a while/.test(re.live ?? "")) editorProblems.push(`a reload did not show the real step, or a quiet run did not say so: ${JSON.stringify(re)}`);
       }
       // Review before publishing: the design's parts in the design's order, inside the viewport, and the way through is gated on the ticks.
       if (which === "blog-editor" && name === "review" && shown) {
