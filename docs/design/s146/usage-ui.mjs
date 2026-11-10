@@ -8,7 +8,7 @@ const root = new URL("../../..", import.meta.url).pathname;
 const dist = root + "/internal/webui/dist";
 const serverGo = fs.readFileSync(root + "/internal/server/server.go", "utf8");
 const styleHash = /const openUIStyleHash = "([^"]+)"/.exec(serverGo)[1];
-const CSP = /h\.Set\("Content-Security-Policy", (.*)\)\n/.exec(serverGo)[1].replace('"+openUIStyleHash+"', styleHash).slice(1, -1);
+const CSP = /h\.Set\("Content-Security-Policy", (.*)\)\n/.exec(serverGo)[1].replace('"+openUIStyleHash+"', styleHash).replace('"+cloudflareBeaconScript+"', /cloudflareBeaconScript\s*=\s*"([^"]+)"/.exec(serverGo)[1]).replace('"+cloudflareBeaconConnect+"', /cloudflareBeaconConnect\s*=\s*"([^"]+)"/.exec(serverGo)[1]).slice(1, -1);
 const row = (o) => ({ requests: 120, promptTokens: 480000, completionTokens: 96000, cachedPromptTokens: 0, cacheWritePromptTokens: 0, costMicroIdr: 15400000, catalogMicroIdr: 15400000, ...o });
 const ok = (over = {}) => ({ state: "OK", source: "kenari.id: GET /v1/account/balance, /v1/account/quota, /v1/usage (30 days)", scope: "shared-account", fetchedAt: "2026-10-25T10:00:00Z", stale: false,
   balance: { state: "OK", data: { balanceMicroIdr: 25000000000, reservedMicroIdr: 1500000, availableMicroIdr: 24998500000, currency: "IDR" } },

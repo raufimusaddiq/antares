@@ -33,7 +33,9 @@ const { chromium } = require(process.env.PLAYWRIGHT_CORE || "playwright-core");
 // The Go server's own policy, read from its source so this check cannot drift from it.
 const serverGo = fs.readFileSync(path.join(here, "..", "internal", "server", "server.go"), "utf8");
 const styleHash = /const openUIStyleHash = "([^"]+)"/.exec(serverGo)[1];
-const CSP = /h\.Set\("Content-Security-Policy", (.*)\)\n/.exec(serverGo)[1].replace('"+openUIStyleHash+"', styleHash).slice(1, -1);
+const beaconScript = /cloudflareBeaconScript\s*=\s*"([^"]+)"/.exec(serverGo)[1];
+const beaconConnect = /cloudflareBeaconConnect\s*=\s*"([^"]+)"/.exec(serverGo)[1];
+const CSP = /h\.Set\("Content-Security-Policy", (.*)\)\n/.exec(serverGo)[1].replace('"+openUIStyleHash+"', styleHash).replace('"+cloudflareBeaconScript+"', beaconScript).replace('"+cloudflareBeaconConnect+"', beaconConnect).slice(1, -1);
 const TURNS = 500;
 const PAGE = 50;
 const PLAIN = "a".repeat(32);

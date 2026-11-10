@@ -57,7 +57,7 @@ under the smoke fixtures (synthetic accounts, approved and removed by the tool):
 signed-out browser opened it, used Share, Copy link and Story image on a desktop (1280 px) and a phone (390 px), and the post
 was deleted. Results: Copy link put exactly `https://antares.musaddiqr.com/b/<slug>` on the clipboard; the story picture was
 exactly 1080 x 1920 and drawn, on both. The one failed check is not from this feature: Cloudflare injects its analytics beacon
-(`static.cloudflareinsights.com`) at the edge and the page's CSP (`script-src 'self'`) refuses it, which my check counts as a
+(`static.cloudflareinsights.com`) at the edge and the page's CSP (then `script-src 'self'`) refused it, which my check counted as a
 console error and an off-origin request; Antares itself loaded nothing from another origin. The fixtures were removed
 (`cleanup=clean`), the post is gone (404), and the four real accounts are untouched.
 

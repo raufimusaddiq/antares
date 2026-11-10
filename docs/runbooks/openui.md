@@ -60,7 +60,7 @@ Antares-specific component set to keep in step with the prompt.
 
 ## CSP and the OpenUI runtime
 
-The shell's CSP is `default-src 'none'; script-src 'self'; style-src 'self' 'sha256-…'; connect-src 'self'; …`.
+The shell's CSP is `default-src 'none'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' 'sha256-…'; connect-src 'self' https://cloudflareinsights.com; …`. The two named hosts are the edge's (Cloudflare) web-analytics beacon, which the edge injects into every page; nothing else may be added (`TestShellCSPAllowsOnlyTheEdgeBeacon`).
 Two things in the OpenUI stack had to be handled rather than relaxed:
 
 1. `Renderer` injects one inline `<style>` (spinner keyframes) when it mounts. It is allowed **by hash of that exact
