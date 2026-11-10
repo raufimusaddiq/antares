@@ -232,6 +232,9 @@ a.btn:hover { background: var(--ink); color: var(--canvas); }
 
 /* ---- status screens: a headline with a marker, one account card ------------------- */
 body:not(.chat):not(.admin) { display: grid; align-items: center; background-color: var(--canvas); background-image: var(--dots); }
+/* The grid item that holds the app may shrink below its content (a long link, a wide code line): without this its automatic minimum width
+   is the content's, the track grows to it and a phone widens its layout viewport and zooms out or scrolls sideways (#314). */
+body:not(.chat):not(.admin) > #root { min-width: 0; }
 .screen { width: min(34rem, 100% - 2rem); margin: 2rem 1rem 2rem clamp(1rem, 9vw, 8rem); padding: 0; }
 .screen p { color: var(--ink-2); margin: 0 0 1rem; max-width: 32rem; }
 .screen h1 { color: var(--ink); }
@@ -1422,8 +1425,12 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
   .blog-public-head .blog-brand .label { display: none; }
   .blog-public-actions { gap: 0.4rem; }
   .wide-only { display: none; }
+  /* The menu hangs from the header's right edge, not from the button: on a narrow phone the button can sit anywhere on a wrapped row
+     and a menu 15rem wide anchored to it would leave the screen. */
+  .blog-public-head { position: relative; }
+  .blog-share, .blog-share .blog-menu { position: static; }
 }
-.blog-public-head { display: flex; align-items: center; justify-content: space-between; padding: 1rem; border-bottom: 3px solid var(--ink); background: var(--card); }
+.blog-public-head { flex-wrap: wrap; row-gap: 0.5rem; display: flex; align-items: center; justify-content: space-between; padding: 1rem; border-bottom: 3px solid var(--ink); background: var(--card); }
 .blog-brand { display: flex; align-items: center; gap: 0.6rem; font-weight: 700; font-size: 1.5rem; letter-spacing: -0.04em; color: var(--ink); text-decoration: none; }
 .blog-brand svg { width: 2rem; height: 2rem; padding: 0.3rem; background: var(--mark); color: var(--mark-ink); border: 2px solid var(--ink); border-radius: 10px; box-shadow: var(--hard-sm); }
 .blog-brand .label { font-size: 0.7rem; font-weight: 400; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink-2); }
