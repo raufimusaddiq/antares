@@ -50,6 +50,23 @@ cannot execute: they are covered by the real-browser checks instead (`share-imag
 `ShareMenu.tsx` 96%, `StoryDialog.tsx` 95%, `RowMenu.tsx` 97%. `PostSettings.tsx` rose from 6% to 75% and `Public.tsx` from
 28% to 88%. No test was removed. (`@vitest/coverage-v8` is not a dependency of `web/`; it was installed with `--no-save`.)
 
+## Production (2026-11-10, release `a724e6bb`)
+
+Deployed after a backup; `/api/version` and `/readyz` answered. A real-browser run against `https://antares.musaddiqr.com`
+under the smoke fixtures (synthetic accounts, approved and removed by the tool): account A published a synthetic post, a
+signed-out browser opened it, used Share, Copy link and Story image on a desktop (1280 px) and a phone (390 px), and the post
+was deleted. Results: Copy link put exactly `https://antares.musaddiqr.com/b/<slug>` on the clipboard; the story picture was
+exactly 1080 x 1920 and drawn, on both. The one failed check is not from this feature: Cloudflare injects its analytics beacon
+(`static.cloudflareinsights.com`) at the edge and the page's CSP (`script-src 'self'`) refuses it, which my check counts as a
+console error and an off-origin request; Antares itself loaded nothing from another origin. The fixtures were removed
+(`cleanup=clean`), the post is gone (404), and the four real accounts are untouched.
+
+## Analysis against the finished code
+
+Every requirement FR-001 to FR-022 maps to code and a test above. Left open, not hidden: no real phone was driven (Share to an
+app, Instagram Stories, WhatsApp Status), no screen reader was driven, and SC-001, SC-002 and SC-007 were not measured. FR-018
+(no third-party script) holds for Antares; the Cloudflare beacon is the host's. The spec needed no change.
+
 ## Things found on the way
 
 - Copy link first lost keyboard focus when its label changed to "Link copied" (React re-created the element): fixed by a
