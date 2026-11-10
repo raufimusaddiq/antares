@@ -24,6 +24,7 @@ Today the check is deliberately read-only about the author's text (spec 001: the
 
 - Q: How much of the author's text may the assistant propose to write or rewrite? → A: Both: it edits what the author wrote and also expands a bare framework into full paragraphs built from the author's own points, marked as assistant-written until accepted.
 - Q: Where does an accepted text change land? → A: Straight into the saved draft, as a new saved version the author can step back to; what the editor shows is what gets published.
+- Q: Where does the author review the editor's suggestions? → A: At any time while writing: a "Check with the editor" action in the editor runs the same check and shows suggestions beside the draft; Publish still runs the check on the way out, as today.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -66,7 +67,7 @@ When the author starts a check, the screen shows where the check is: which step 
 
 ### User Story 3 - The assistant works as the author's editor and fills out a bare framework (Priority: P1)
 
-The check no longer only adds data blocks and notes. It also proposes changes to the author's own text, as visible suggestions: a passage with the improvement beside it (clearer wording, a tighter sentence, a missing transition, a claim to soften or support), each with a short reason. For a bare framework (a title, headings and bullet points with little prose) the assistant proposes a fuller text under each heading, built from the author's own points. The author reviews every suggestion, accepts or rejects it one at a time, and nothing in the post changes until they accept. Suggestions and any written text are in the language the post is written in, and keep the author's voice. Text the assistant wrote is marked as such until the author has accepted it.
+The check no longer only adds data blocks and notes. It also proposes changes to the author's own text, as visible suggestions: a passage with the improvement beside it (clearer wording, a tighter sentence, a missing transition, a claim to soften or support), each with a short reason. For a bare framework (a title, headings and bullet points with little prose) the assistant proposes a fuller text under each heading, built from the author's own points. The author can ask for this at any time while writing (a "Check with the editor" action in the editor, with the suggestions shown beside the draft), and it also runs on the way to Publish as today. The author reviews every suggestion, accepts or rejects it one at a time, and nothing in the post changes until they accept. Suggestions and any written text are in the language the post is written in, and keep the author's voice. Text the assistant wrote is marked as such until the author has accepted it.
 
 **Why this priority**: This is the author's main ask and the biggest change in value, from "extra data" to "an editor". It builds on the review screen that exists, so it ships after Stories 1 and 2, which are small and independent.
 
@@ -116,6 +117,7 @@ The check no longer only adds data blocks and notes. It also proposes changes to
 - **FR-016**: The check, the progress and the suggestions MUST stay private to the author while a draft: the administrator never sees a draft, a suggestion or a check (constitution principle I).
 - **FR-017**: The assistant MAY both edit the author's own sentences and expand a bare framework into full paragraphs built from the author's own points; expanded text MUST come from those points and MUST NOT add facts the author did not give (see FR-013).
 - **FR-018**: Accepting a suggestion MUST write the change into the saved draft as a new saved version, so the author can step back to the version before it; the editor and the published post MUST show the same text.
+- **FR-019**: The author MUST be able to run the check from the editor at any time while writing, and see its progress (FR-004 to FR-008) and its suggestions beside the draft; the check that runs on the way to Publish MUST give the same suggestions in the review screen.
 
 ### Key Entities *(include if feature involves data)*
 
