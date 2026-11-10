@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -82,6 +82,20 @@ const SHARE_POST = {
     { type: "paragraph", content: [text("Seats scale with headcount. A server scales with how careful you are.")] },
   ] },
 };
+const para = (t) => ({ type: "paragraph", content: [text(t)] });
+const head = (t) => ({ type: "heading", attrs: { level: 2 }, content: [text(t)] });
+const storyPost = (o) => ({ title: "Self-hosting an assistant: what it really costs", summary: "A small team asked whether running its own assistant beats paying per seat. Here is what we found, with the numbers and where they come from.", coverUrl: "", authorName: "Maya R.", publishedAt: "2026-11-08T01:00:00Z", blocks: [], doc: { type: "doc", content: [para("Most teams start by comparing sticker prices."), head("The three options"), para("Hosted seats scale with headcount."), head("What drives the difference"), para("A server scales with how careful you are.")] }, ...o });
+const STORY_SAMPLES = {
+  "story-ordinary": () => storyPost({ coverUrl: "/api/public/blog/posts/story-ordinary/assets/cover" }),
+  "story-nocover": () => storyPost({}),
+  "story-nosummary": () => storyPost({ summary: "" }),
+  "story-noheadings": () => storyPost({ doc: { type: "doc", content: [para("Only paragraphs here."), para("Nothing that is a heading.")] } }),
+  "story-twelve": () => storyPost({ coverUrl: "/api/public/blog/posts/story-twelve/assets/cover", doc: { type: "doc", content: Array.from({ length: 12 }, (_, i) => head(`Section number ${i + 1} of the post with a heading`)) } }),
+  "story-huge": () => storyPost({ coverUrl: "/api/public/blog/posts/story-huge/assets/cover", summary: "A very long summary. ".repeat(200), doc: { type: "doc", content: [para("word ".repeat(20000)), head("One"), head("Two"), head("Three"), head("Four")] } }),
+  "story-longtitle": () => storyPost({ coverUrl: "/api/public/blog/posts/story-longtitle/assets/cover", title: "Self-hosting an assistant for a small team: what it really costs once you count the hours, the tokens and the patching nobody planned for" }),
+  "story-rtl": () => storyPost({ coverUrl: "/api/public/blog/posts/story-rtl/assets/cover", title: "\u0627\u0633\u062a\u0636\u0627\u0641\u0629 \u0645\u0633\u0627\u0639\u062f \u0628\u0646\u0641\u0633\u0643: \u0643\u0645 \u062a\u0643\u0644\u0641 \u0641\u0639\u0644\u0627\u064b", summary: "\u0633\u0623\u0644\u0646\u0627 \u0641\u0631\u064a\u0642\u0627\u064b \u0635\u063a\u064a\u0631\u0627\u064b \u0647\u0644 \u064a\u063a\u0646\u064a \u062a\u0634\u063a\u064a\u0644 \u0645\u0633\u0627\u0639\u062f\u0647 \u0627\u0644\u062e\u0627\u0635 \u0639\u0646 \u0627\u0644\u062f\u0641\u0639 \u0644\u0643\u0644 \u0645\u0642\u0639\u062f.", doc: { type: "doc", content: [head("\u0627\u0644\u062e\u064a\u0627\u0631\u0627\u062a \u0627\u0644\u062b\u0644\u0627\u062b\u0629"), head("\u0645\u0627 \u0627\u0644\u0630\u064a \u064a\u062d\u062f\u062f \u0627\u0644\u0641\u0631\u0642")] } }),
+  "story-emoji": () => storyPost({ title: "Self-hosting an assistant \ud83d\ude80: what it really costs \ud83d\udcb8" }),
+};
 const blogPost = () => ({ id: BLOG_ID, title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", slug: "first-post", coverUrl: "", status: "draft", latestVersion: 3, publishedVersion: 0, doc: BLOG_DOC, check: null, updatedAt: "2026-11-09T01:00:00Z" });
 
 const TABLE = 'root = Card([hdr, txt, tbl, chart, btns])\nhdr = CardHeader("Compare", "Three plans side by side")\ntxt = TextContent("**A** is cheapest; **C** has the most storage.")\ntbl = Table([Col("Plan", ["A", "B", "C"]), Col("Cost ($)", [1, 2, 3])])\nchart = BarChart(["A", "B", "C"], [Series("Cost", [1, 2, 3])])\nbtns = Buttons([Button("Tell me more", @ToAssistant("Tell me more about plan A"))])';
@@ -139,6 +153,13 @@ function api(req, res, url) {
   if (url.pathname === "/api/public/blog/posts") return send(200, [{ slug: "first-post", title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary with " + "words ".repeat(30), coverUrl: "", authorName: "A Writer With A Rather Long Display Name", publishedAt: "2026-11-08T01:00:00Z" }]);
   // A post of ordinary content, for the Share checks (the first-post above carries hostile content on purpose).
   if (url.pathname === "/api/public/blog/posts/share-post") return send(200, SHARE_POST);
+  // The story picture's samples (spec 002 quickstart step 6): one post per awkward case.
+  const sample = /^\/api\/public\/blog\/posts\/(story-[a-z]+)$/.exec(url.pathname);
+  if (sample && STORY_SAMPLES[sample[1]]) return send(200, STORY_SAMPLES[sample[1]]());
+  if (/^\/api\/public\/blog\/posts\/story-[a-z]+\/assets\/cover$/.test(url.pathname)) {
+    res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-store" });
+    return res.end('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600"><rect width="1200" height="600" fill="#b3c1ff"/><circle cx="800" cy="220" r="150" fill="#ff6fae" stroke="#0b0b0b" stroke-width="6"/><rect y="420" width="1200" height="180" fill="#0b0b0b"/></svg>');
+  }
   if (url.pathname === "/api/public/blog/posts/first-post") return send(200, { title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", coverUrl: "", doc: BLOG_DOC, blocks: BLOG_BLOCKS, authorName: "A Writer", publishedAt: "2026-11-08T01:00:00Z" });
   // The shared plan quota every account sees in the chat (GET /api/quota): shares and reset times, no amounts.
   if (url.pathname === "/api/quota")
@@ -1128,6 +1149,40 @@ async function shareMenu(browser) {
   }
 }
 
+// ONLY=story-card: the story picture of a post (spec 002) in a real browser, for each awkward case of the quickstart: it must
+// be exactly 1080 x 1920, not blank, and carry no ink in the outer 24 px of the card. The PNGs are saved for a look.
+async function storyCard(browser) {
+  const slugs = Object.keys(STORY_SAMPLES);
+  for (const slug of slugs) {
+    const { ctx, page, consoleErrors, external } = await openPage(browser, { viewport: { width: 1280, height: 800 } });
+    await page.goto(base + "/b/" + slug);
+    await page.waitForSelector('button[aria-label="Share this post"]');
+    await page.getByRole("button", { name: "Share this post" }).click();
+    await page.getByRole("menuitem", { name: "Story image" }).click();
+    await page.waitForSelector("dialog.share-image img", { timeout: 20000 });
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(async () => {
+      const img = document.querySelector("dialog.share-image img");
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      const x = c.getContext("2d");
+      x.drawImage(img, 0, 0);
+      const d = x.getImageData(0, 0, c.width, c.height).data;
+      let dark = 0, edge = 0;
+      for (let yy = 0; yy < c.height; yy++) for (let xx = 0; xx < c.width; xx++) {
+        const i = (yy * c.width + xx) * 4;
+        if (d[i] < 70 && d[i + 1] < 70 && d[i + 2] < 70) { dark++; if (xx < 24 || xx >= c.width - 24 || yy < 24 || yy >= c.height - 24) edge++; }
+      }
+      return { w: c.width, h: c.height, dark, edge, png: c.toDataURL("image/png").split(",")[1] };
+    });
+    fs.writeFileSync(path.join(outDir, `story-card-${slug}.png`), Buffer.from(r.png, "base64"));
+    check(`story card, ${slug}: exactly 1080 x 1920, drawn (not blank) and no ink in the outer 24 px`, r.w === 1080 && r.h === 1920 && r.dark > 5000 && r.edge === 0, `${r.w} x ${r.h}, ${r.dark} dark px, ${r.edge} at the edge`);
+    check(`story card, ${slug}: no console error and no request to another origin`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
+    await ctx.close();
+  }
+}
+
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
@@ -1148,6 +1203,7 @@ try {
   if (only === "phone-shots") await phoneShots(browser);
   if (only === "share-image") await shareImage(browser);
   if (!only || only === "share-menu") await shareMenu(browser);
+  if (!only || only === "story-card") await storyCard(browser);
 } finally {
   await browser.close();
   server.close();

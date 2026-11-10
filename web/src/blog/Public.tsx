@@ -6,6 +6,9 @@ import { formatDay } from "./dates";
 import { DocView } from "./DocView";
 import type { PublicPost, PublicSummary } from "./types";
 import { ShareMenu } from "./share/ShareMenu";
+import { StoryDialog } from "./share/StoryDialog";
+import { highlights, summaryText } from "./share/postContent";
+import { canonicalUrl } from "./share/shareLinks";
 
 // The signed-out blog (the Blog public frames). No session is loaded and nothing of the app mounts: the server
 // answers these routes without looking at a session, and every field shown is one the public API returns.
@@ -108,8 +111,10 @@ export function PublicPostPage({ slug }: { slug: string }) {
     return () => ctl.abort();
   }, [slug]);
   const title = typeof p === "object" ? `${p.title} · Antares Blog` : "Blog · Antares";
+  const [story, setStory] = useState(false);
+  const post = typeof p === "object" ? p : null;
   return (
-    <Frame title={title} share={typeof p === "object" ? <ShareMenu title={p.title} slug={slug} /> : undefined}>
+    <Frame title={title} share={post ? <ShareMenu title={post.title} slug={slug} onStory={() => setStory(true)} /> : undefined}>
       {p === "loading" && <main aria-busy="true"><p>Loading…</p></main>}
       {p === "gone" && (
         <main className="blog-empty">
@@ -138,6 +143,23 @@ export function PublicPostPage({ slug }: { slug: string }) {
           {mediaUrl(p.coverUrl) && <img className="blog-cover" src={mediaUrl(p.coverUrl)} alt="" />}
           <DocView doc={p.doc} blocks={p.blocks} imageUrl={publicImageUrl(slug)} />
         </article>
+      )}
+      {post && story && (
+        <StoryDialog
+          slug={slug}
+          url={canonicalUrl(window.location.origin, slug)}
+          onClose={() => setStory(false)}
+          data={{
+            title: post.title,
+            summary: summaryText(post.summary, post.doc),
+            highlights: highlights(post.doc),
+            authorName: post.authorName,
+            hasCover: false,
+            coverUrl: mediaUrl(post.coverUrl),
+            date: new Date(post.publishedAt),
+            address: `${window.location.host}/b/${slug}`,
+          }}
+        />
       )}
     </Frame>
   );
