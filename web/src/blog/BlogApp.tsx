@@ -25,7 +25,7 @@ export const editPath = (id: string) => `/blog/${id}`;
 export const publishPath = (id: string) => `/blog/${id}/publish`;
 
 /** `caps` is what the server said about the blog (null until it has answered); the app asks once and passes it down. */
-export function BlogApp({ caps, email, route, onNavigate, onChats }: { caps: Capabilities | null; email: string; route: BlogRoute; onNavigate: (to: string) => void; onChats: () => void }) {
+export function BlogApp({ caps, email, name, route, onNavigate, onChats }: { caps: Capabilities | null; email: string; name?: string; route: BlogRoute; onNavigate: (to: string) => void; onChats: () => void }) {
   if (caps === null) return <main className="blog-flow" aria-busy="true"><p>Loading…</p></main>;
   if (!caps.writing)
     return (
@@ -36,10 +36,10 @@ export function BlogApp({ caps, email, route, onNavigate, onChats }: { caps: Cap
       </main>
     );
   if (route.kind === "list") return <PostList email={email} onOpen={(id) => onNavigate(editPath(id))} onChats={onChats} />;
-  return <PostScreen key={route.id} id={route.id} email={email} publishing={route.kind === "publish"} caps={caps} onNavigate={onNavigate} />;
+  return <PostScreen key={route.id} id={route.id} email={email} name={name} publishing={route.kind === "publish"} caps={caps} onNavigate={onNavigate} />;
 }
 
-function PostScreen({ id, email, publishing, caps, onNavigate }: { id: string; email: string; publishing: boolean; caps: Capabilities | null; onNavigate: (to: string) => void }) {
+function PostScreen({ id, email, name, publishing, caps, onNavigate }: { id: string; email: string; name?: string; publishing: boolean; caps: Capabilities | null; onNavigate: (to: string) => void }) {
   const [post, setPost] = useState<Post | "loading" | string>("loading");
   const [settings, setSettings] = useState(false);
   // Without an open editor, "saved" means this browser holds nothing the server has not confirmed.
@@ -92,7 +92,7 @@ function PostScreen({ id, email, publishing, caps, onNavigate }: { id: string; e
             onBack={() => onNavigate("/blog")}
           />
         </div>
-        {settings && !publishing && <PostSettings post={post} onSaved={setPost} onClose={() => setSettings(false)} />}
+        {settings && !publishing && <PostSettings post={post} onSaved={setPost} onClose={() => setSettings(false)} authorName={name} />}
       </Suspense>
       {publishing && (
         <PublishFlow

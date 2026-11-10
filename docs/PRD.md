@@ -1742,6 +1742,17 @@ list and run allowance; on top, two running checks per author and 30 per rolling
 `off`) switches it; with `off`, `GET /api/blog/capabilities` reports `check` false and publishing offers the original only
 (`docs/runbooks/blog-check.md`).
 
+**Sharing (added 2026-11-10; spec `specs/002-share-blog-social/`).** A published post has a Share menu for any reader: on a
+device with a native sharing sheet its first entry hands the sheet the title and the canonical address (`/b/{slug}`, no
+query, no sharer identifier); elsewhere the menu lists WhatsApp, X, Facebook, LinkedIn, Telegram and Email as plain links. Copy
+link and Story image are in every menu. Story image is a 1080 x 1920 (9:16) picture drawn **in the reader's own browser** from
+what the post page already shows (title, the author's summary or the opening text, up to four of the post's own headings, the
+author's display name, the cover), in the chat share picture's style and its own blog colours. It uses no assistant and no AI,
+adds no server route, table or dependency and stores nothing; the public-route inventory is unchanged. A website cannot post
+a story or attach a link sticker on Instagram or WhatsApp: the picture goes to the device's sharing sheet where it takes
+images, and otherwise it is saved and the link copied with an instruction. The author sees the same picture as a preview in
+Post settings, only to look at.
+
 **Acceptance.** Two-user ownership (a foreign id is the missing id, body included), the public surface leaks no
 identity, suspending or rejecting an author hides their posts and reinstating restores them, the route inventory fails
 on any unlisted unauthenticated route, and the production smoke's `blog.lifecycle` step (`smoke-test.md`).

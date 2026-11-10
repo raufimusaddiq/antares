@@ -2,9 +2,21 @@ import { useEffect, useRef, useState } from "react";
 
 export interface RowAction {
   label: string;
+  /** A stable identity when the label changes while the menu is open (Copy link becomes "Link copied"), so focus stays on the item. */
+  id?: string;
   /** A link item (View post) goes to an address instead of running something. */
   href?: string;
+  /** A link that leaves the site opens in a new tab and tells the destination nothing about us. */
+  external?: boolean;
   danger?: boolean;
+  /** A rule is drawn above this item. */
+  divider?: boolean;
+  /** The menu stays open after this item runs (Copy link turns into "Link copied" in place). */
+  keepOpen?: boolean;
+  /** Shown as done (the item has just done what it says). */
+  done?: boolean;
+  /** The item's accessible name when it differs from what is drawn (Copy link keeps its name while it reads "Link copied", so a status line announces the result once). */
+  ariaLabel?: string;
   run?: () => void;
 }
 
@@ -13,7 +25,20 @@ export interface RowAction {
  * a menu button pattern: Enter, Space or the arrow keys open it onto its first item, the arrows, Home and End move, Escape
  * closes it and returns to the button, Tab leaves it; a press outside closes it.
  */
-export function RowMenu({ label, actions }: { label: string; actions: RowAction[] }) {
+export function RowMenu({
+  label,
+  actions,
+  trigger = "⋯",
+  triggerClass,
+  triggerIcon,
+}: {
+  label: string;
+  actions: RowAction[];
+  /** What the button shows (default the dots), its class and an optional icon name (data-icon). */
+  trigger?: React.ReactNode;
+  triggerClass?: string;
+  triggerIcon?: string;
+}) {
   const [open, setOpen] = useState(false);
   const [at, setAt] = useState<"first" | "last">("first"); // ArrowUp on the closed button opens onto the last item
   const button = useRef<HTMLButtonElement>(null);
@@ -62,7 +87,8 @@ export function RowMenu({ label, actions }: { label: string; actions: RowAction[
       <button
         ref={button}
         type="button"
-        className="quiet blog-more"
+        className={triggerClass ?? "quiet blog-more"}
+        data-icon={triggerIcon}
         aria-haspopup="menu"
         aria-expanded={open}
         aria-label={label}
@@ -71,31 +97,40 @@ export function RowMenu({ label, actions }: { label: string; actions: RowAction[
           if (!open && (e.key === "ArrowDown" || e.key === "ArrowUp")) (e.preventDefault(), setAt(e.key === "ArrowUp" ? "last" : "first"), setOpen(true));
         }}
       >
-        ⋯
+        {trigger}
       </button>
       {open && (
         <div ref={list} className="blog-menu-list" role="menu" aria-label={label} onKeyDown={onMenuKey}>
-          {actions.map((a) =>
-            a.href ? (
-              <a key={a.label} role="menuitem" tabIndex={-1} href={a.href} className={a.danger ? "danger" : undefined} onClick={() => close(false)}>
+          {actions.map((a) => {
+            return a.href ? (
+              <a
+                key={a.id ?? a.label}
+                role="menuitem"
+                tabIndex={-1}
+                href={a.href}
+                className={[a.danger ? "danger" : "", a.done ? "done" : "", a.divider ? "divided" : ""].filter(Boolean).join(" ") || undefined}
+                {...(a.external ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                onClick={() => close(false)}
+              >
                 {a.label}
               </a>
             ) : (
               <button
-                key={a.label}
+                key={a.id ?? a.label}
                 type="button"
                 role="menuitem"
                 tabIndex={-1}
-                className={a.danger ? "danger" : undefined}
+                aria-label={a.ariaLabel}
+                className={[a.danger ? "danger" : "", a.done ? "done" : "", a.divider ? "divided" : ""].filter(Boolean).join(" ") || undefined}
                 onClick={() => {
-                  close(true); // focus stays on the button (a dialog the action opens returns to it); only a link leaves the page
+                  if (!a.keepOpen) close(true); // focus stays on the button (a dialog the action opens returns to it); only a link leaves the page
                   a.run?.();
                 }}
               >
                 {a.label}
               </button>
-            ),
-          )}
+            );
+          })}
         </div>
       )}
     </div>

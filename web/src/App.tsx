@@ -145,7 +145,7 @@ export function App() {
         </AdminShell>
       );
     }
-    if (isBlogPath(path)) return <BlogApp caps={blogCaps} email={session.account.email} route={parseBlogPath(path)} onNavigate={navigate} onChats={() => navigate("/")} />;
+    if (isBlogPath(path)) return <BlogApp caps={blogCaps} email={session.account.email} name={session.account.displayName} route={parseBlogPath(path)} onNavigate={navigate} onChats={() => navigate("/")} />;
     return <Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onBlog={blogWriting ? () => navigate("/blog") : undefined} onSignOut={onSignOut} signOutError={signOutMessage} />;
   }
   return (

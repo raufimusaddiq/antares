@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -40,6 +40,7 @@ const PLAIN = "a".repeat(32);
 const RICH = "b".repeat(32);
 
 const BLOG_ID = "e".repeat(32);
+const BLOG_SHARE_ID = "5".repeat(32); // a draft of ordinary content, for the Share preview
 const BLOG_EMPTY_ID = "f".repeat(32);
 const BLOG_LONG_ID = "9".repeat(32); // a post too long for a check to read
 const BLOG_REVIEW_ID = "8".repeat(32); // a post whose check is ready: Review before publishing
@@ -71,6 +72,31 @@ const BLOG_BLOCKS = [
   { anchor: 4, markup: 'root = Card([c])\nc = BarChart(["Seats", "Server", "Container"], [Series("Monthly cost", [85, 10, 24])])', fallback: "Monthly cost: seats 85, server 10, container 24.", sources: [] },
   { anchor: 3, markup: 'root = Card([b])\nb = Buttons([Button("Go", @OpenUrl("https://example.org/"))])', fallback: "This block could not be run; its plain text is shown instead.", sources: [] },
 ];
+const SHARE_POST = {
+  title: "Self-hosting an assistant: what it really costs", summary: "A small team asked whether running its own assistant beats paying per seat. Here is what we found.",
+  coverUrl: "", authorName: "Maya R.", publishedAt: "2026-11-08T01:00:00Z", blocks: [],
+  doc: { type: "doc", content: [
+    { type: "paragraph", content: [text("Most teams start by comparing sticker prices. That misses the two costs that decide the answer.")] },
+    { type: "heading", attrs: { level: 2 }, content: [text("The three options")] },
+    { type: "paragraph", content: [text("Hosted seats are predictable but scale with headcount. A single small server is cheap until someone has to patch it.")] },
+    { type: "heading", attrs: { level: 2 }, content: [text("What drives the difference")] },
+    { type: "paragraph", content: [text("Seats scale with headcount. A server scales with how careful you are.")] },
+  ] },
+};
+const para = (t) => ({ type: "paragraph", content: [text(t)] });
+const head = (t) => ({ type: "heading", attrs: { level: 2 }, content: [text(t)] });
+const storyPost = (o) => ({ title: "Self-hosting an assistant: what it really costs", summary: "A small team asked whether running its own assistant beats paying per seat. Here is what we found, with the numbers and where they come from.", coverUrl: "", authorName: "Maya R.", publishedAt: "2026-11-08T01:00:00Z", blocks: [], doc: { type: "doc", content: [para("Most teams start by comparing sticker prices."), head("The three options"), para("Hosted seats scale with headcount."), head("What drives the difference"), para("A server scales with how careful you are.")] }, ...o });
+const STORY_SAMPLES = {
+  "story-ordinary": () => storyPost({ coverUrl: "/api/public/blog/posts/story-ordinary/assets/cover" }),
+  "story-nocover": () => storyPost({}),
+  "story-nosummary": () => storyPost({ summary: "" }),
+  "story-noheadings": () => storyPost({ doc: { type: "doc", content: [para("Only paragraphs here."), para("Nothing that is a heading.")] } }),
+  "story-twelve": () => storyPost({ coverUrl: "/api/public/blog/posts/story-twelve/assets/cover", doc: { type: "doc", content: Array.from({ length: 12 }, (_, i) => head(`Section number ${i + 1} of the post with a heading`)) } }),
+  "story-huge": () => storyPost({ coverUrl: "/api/public/blog/posts/story-huge/assets/cover", summary: "A very long summary. ".repeat(200), doc: { type: "doc", content: [para("word ".repeat(20000)), head("One"), head("Two"), head("Three"), head("Four")] } }),
+  "story-longtitle": () => storyPost({ coverUrl: "/api/public/blog/posts/story-longtitle/assets/cover", title: "Self-hosting an assistant for a small team: what it really costs once you count the hours, the tokens and the patching nobody planned for" }),
+  "story-rtl": () => storyPost({ coverUrl: "/api/public/blog/posts/story-rtl/assets/cover", title: "\u0627\u0633\u062a\u0636\u0627\u0641\u0629 \u0645\u0633\u0627\u0639\u062f \u0628\u0646\u0641\u0633\u0643: \u0643\u0645 \u062a\u0643\u0644\u0641 \u0641\u0639\u0644\u0627\u064b", summary: "\u0633\u0623\u0644\u0646\u0627 \u0641\u0631\u064a\u0642\u0627\u064b \u0635\u063a\u064a\u0631\u0627\u064b \u0647\u0644 \u064a\u063a\u0646\u064a \u062a\u0634\u063a\u064a\u0644 \u0645\u0633\u0627\u0639\u062f\u0647 \u0627\u0644\u062e\u0627\u0635 \u0639\u0646 \u0627\u0644\u062f\u0641\u0639 \u0644\u0643\u0644 \u0645\u0642\u0639\u062f.", doc: { type: "doc", content: [head("\u0627\u0644\u062e\u064a\u0627\u0631\u0627\u062a \u0627\u0644\u062b\u0644\u0627\u062b\u0629"), head("\u0645\u0627 \u0627\u0644\u0630\u064a \u064a\u062d\u062f\u062f \u0627\u0644\u0641\u0631\u0642")] } }),
+  "story-emoji": () => storyPost({ title: "Self-hosting an assistant \ud83d\ude80: what it really costs \ud83d\udcb8" }),
+};
 const blogPost = () => ({ id: BLOG_ID, title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", slug: "first-post", coverUrl: "", status: "draft", latestVersion: 3, publishedVersion: 0, doc: BLOG_DOC, check: null, updatedAt: "2026-11-09T01:00:00Z" });
 
 const TABLE = 'root = Card([hdr, txt, tbl, chart, btns])\nhdr = CardHeader("Compare", "Three plans side by side")\ntxt = TextContent("**A** is cheapest; **C** has the most storage.")\ntbl = Table([Col("Plan", ["A", "B", "C"]), Col("Cost ($)", [1, 2, 3])])\nchart = BarChart(["A", "B", "C"], [Series("Cost", [1, 2, 3])])\nbtns = Buttons([Button("Tell me more", @ToAssistant("Tell me more about plan A"))])';
@@ -107,6 +133,7 @@ function api(req, res, url) {
     res.end(JSON.stringify(body));
   };
   state.log.push(`${req.method} ${url.pathname}${url.search}`);
+  if (req.method === "POST" && /^\/api\/chats\/[^/]+\/messages\/\d+\/summary$/.test(url.pathname)) return send(200, { summary: "# Hosting yourself costs less\n- Seats scale with headcount\n- A small server is cheap until someone patches it" });
   if (url.pathname === "/api/me") return send(200, { email: state.email, displayName: "Reader", requestedAt: "", state: "ACTIVE", ...(state.admin ? { canAdmin: true } : {}) });
   // The blog (specs/001-blog-cms-openui-publish): the same shapes the Go server documents, with text that tries to push a
   // phone sideways (a long unbroken address, a long code line).
@@ -115,6 +142,7 @@ function api(req, res, url) {
   if (url.pathname === "/api/blog/posts" && req.method === "GET")
     return send(200, [BLOG_ID, "c".repeat(32), "d".repeat(32)].map((id, i) => ({ id, title: ["A long title that has to wrap on a phone without pushing the page sideways", "", "Second post"][i], status: ["published", "draft", "unpublished"][i], slug: i === 0 ? "first-post" : "", updatedAt: "2026-11-09T01:00:00Z", publishedAt: i === 0 ? "2026-11-08T01:00:00Z" : "", interactive: false })));
   if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "GET") return send(200, blogPost());
+  if (url.pathname === `/api/blog/posts/${BLOG_SHARE_ID}` && req.method === "GET") return send(200, { ...blogPost(), id: BLOG_SHARE_ID, title: SHARE_POST.title, summary: SHARE_POST.summary, slug: "share-post", doc: SHARE_POST.doc });
   if (url.pathname === `/api/blog/posts/${BLOG_EMPTY_ID}` && req.method === "GET") return send(200, { ...blogPost(), id: BLOG_EMPTY_ID, title: "", doc: { type: "doc", content: [{ type: "paragraph" }] } });
   if (url.pathname === `/api/blog/posts/${BLOG_LONG_ID}` && req.method === "GET")
     return send(200, { ...blogPost(), id: BLOG_LONG_ID, title: "Too long to check", doc: { type: "doc", content: Array.from({ length: 130 }, () => ({ type: "paragraph", content: [{ type: "text", text: "word ".repeat(200) }] })) } });
@@ -125,6 +153,15 @@ function api(req, res, url) {
   if (url.pathname === `/api/blog/posts/${BLOG_CHECKING_ID}/check` && req.method === "GET") return send(200, RUNNING_CHECK);
   if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "PUT") return send(200, { ...blogPost(), latestVersion: 4 });
   if (url.pathname === "/api/public/blog/posts") return send(200, [{ slug: "first-post", title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary with " + "words ".repeat(30), coverUrl: "", authorName: "A Writer With A Rather Long Display Name", publishedAt: "2026-11-08T01:00:00Z" }]);
+  // A post of ordinary content, for the Share checks (the first-post above carries hostile content on purpose).
+  if (url.pathname === "/api/public/blog/posts/share-post") return send(200, SHARE_POST);
+  // The story picture's samples (spec 002 quickstart step 6): one post per awkward case.
+  const sample = /^\/api\/public\/blog\/posts\/(story-[a-z]+)$/.exec(url.pathname);
+  if (sample && STORY_SAMPLES[sample[1]]) return send(200, STORY_SAMPLES[sample[1]]());
+  if (/^\/api\/public\/blog\/posts\/story-[a-z]+\/assets\/cover$/.test(url.pathname)) {
+    res.writeHead(200, { "content-type": "image/svg+xml", "cache-control": "no-store" });
+    return res.end('<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="600" viewBox="0 0 1200 600"><rect width="1200" height="600" fill="#b3c1ff"/><circle cx="800" cy="220" r="150" fill="#ff6fae" stroke="#0b0b0b" stroke-width="6"/><rect y="420" width="1200" height="180" fill="#0b0b0b"/></svg>');
+  }
   if (url.pathname === "/api/public/blog/posts/first-post") return send(200, { title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary", coverUrl: "", doc: BLOG_DOC, blocks: BLOG_BLOCKS, authorName: "A Writer", publishedAt: "2026-11-08T01:00:00Z" });
   // The shared plan quota every account sees in the chat (GET /api/quota): shares and reset times, no amounts.
   if (url.pathname === "/api/quota")
@@ -1032,6 +1069,146 @@ async function phoneShots(browser) {
   }
 }
 
+// ONLY=share-image: the chat's "Share image" picture, drawn by the real app in a real browser, whole answer and summary. It
+// prints the SHA-256 of each PNG (the SHA-256 of the decoded pixels; the date is pinned, so the same code on the same browser gives the same pixels): run it on
+// the code before and after a change to the drawing code and compare. EXPECT_SHARE_IMAGE=hashFull,hashSummary makes the check
+// fail when either differs. The summary picture must be exactly 1080 x 1920 (9:16).
+async function shareImage(browser) {
+  const { ctx, page, consoleErrors } = await openPage(browser, { viewport: { width: 1280, height: 800 } });
+  await page.addInitScript(() => {
+    const Real = Date;
+    const fixed = Date.UTC(2026, 10, 9, 12, 0, 0);
+    globalThis.Date = class extends Real {
+      constructor(...a) { super(...(a.length ? a : [fixed])); }
+      static now() { return fixed; }
+    };
+  });
+  DATA[PLAIN].at(-1).ref = "c".repeat(32); // a turn with a reference can be summarised
+  await page.goto(base + "/");
+  await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
+  const hashes = [];
+  for (const mode of ["Full answer", "Summary"]) {
+    await page.locator('button[data-control="image"]').last().click();
+    await page.waitForSelector("dialog.share-image");
+    if (mode === "Summary") await page.getByRole("button", { name: "Summary", exact: true }).click();
+    await page.waitForSelector("dialog.share-image img", { timeout: 15000 });
+    await page.waitForTimeout(300);
+    // The blob: address cannot be fetched (the page's connect-src is 'self'), but it can be drawn: the hash is of the decoded pixels.
+    const r = await page.evaluate(async () => {
+      const img = document.querySelector("dialog.share-image img");
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      const x = c.getContext("2d");
+      x.drawImage(img, 0, 0);
+      const px = x.getImageData(0, 0, c.width, c.height).data;
+      const h = await crypto.subtle.digest("SHA-256", px);
+      return { w: c.width, h: c.height, sha: [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0")).join(""), png: c.toDataURL("image/png").split(",")[1] };
+    });
+    hashes.push(r.sha);
+    fs.writeFileSync(path.join(outDir, `share-image-${mode === "Summary" ? "summary" : "full"}.png`), Buffer.from(r.png, "base64"));
+    console.log(`  share image (${mode}): ${r.w} x ${r.h} sha256 ${r.sha}`);
+    check(`share image, ${mode}: drawn at 1080 px wide${mode === "Summary" ? " and exactly 9:16 (1080 x 1920)" : ""}`, r.w === 1080 && (mode !== "Summary" || r.h === 1920), `${r.w} x ${r.h}`);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("dialog.share-image", { state: "detached" });
+  }
+  const want = process.env.EXPECT_SHARE_IMAGE;
+  if (want) check("share image: both pictures are pixel for pixel the expected ones", want === hashes.join(","), hashes.join(","));
+  check("share image: no console error", consoleErrors.length === 0, consoleErrors.join(" | "));
+  delete DATA[PLAIN].at(-1).ref;
+  await ctx.close();
+}
+
+// ONLY=share-menu: Share on a published post (spec 002) at 390, 820 and 1280 px, light and dark. The menu opens from the button
+// and stays inside the viewport (no sideways scroll), Escape closes it and puts focus back on the button, Copy link says it
+// worked, the page raises no console error and makes no request to any other origin (nothing of a social service loads).
+async function shareMenu(browser) {
+  for (const [label, w, h, scheme] of [["phone", 390, 844, "light"], ["tablet", 820, 1180, "dark"], ["desktop", 1280, 800, "light"], ["desktop", 1280, 800, "dark"]]) {
+    const { ctx, page, consoleErrors, external } = await openPage(browser, { viewport: { width: w, height: h }, colorScheme: scheme, ...(label === "phone" ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}), permissions: ["clipboard-read", "clipboard-write"] });
+    await page.goto(base + "/b/share-post");
+    await page.waitForSelector('button[aria-label="Share this post"]');
+    await page.waitForTimeout(1500); // the blocks have loaded
+    const button = page.getByRole("button", { name: "Share this post" });
+    await page.screenshot({ path: path.join(outDir, `share-button-${label}-${scheme}.png`) });
+    await button.click({ timeout: 5000 });
+    await page.waitForSelector('[role="menu"]');
+    const m = await page.evaluate(() => {
+      const menu = document.querySelector('[role="menu"]').getBoundingClientRect();
+      return { left: menu.left, right: menu.right, vw: document.documentElement.clientWidth, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, items: [...document.querySelectorAll('[role="menuitem"]')].map((e) => e.textContent) };
+    });
+    check(`share menu, ${label} ${scheme}: opens inside the viewport with no sideways scroll`, m.left >= 0 && m.right <= m.vw && m.overflowX <= 0, JSON.stringify(m));
+    check(`share menu, ${label} ${scheme}: Copy link and the services are in it`, m.items.includes("Copy link") && (m.items.includes("WhatsApp") || m.items.includes("Share with your apps")), m.items.join(","));
+    await page.screenshot({ path: path.join(outDir, `share-menu-${label}-${scheme}.png`) });
+    await page.getByRole("menuitem", { name: "Copy link" }).click();
+    await page.locator('[role="status"]').filter({ hasText: "Link copied" }).waitFor({ timeout: 4000 }).then(() => check(`share menu, ${label} ${scheme}: Copy link says "Link copied"`, true), () => check(`share menu, ${label} ${scheme}: Copy link says "Link copied"`, false));
+    const copied = await page.evaluate(() => navigator.clipboard.readText()).catch(() => "");
+    check(`share menu, ${label} ${scheme}: the copied text is the canonical address`, copied === `${base}/b/share-post`, copied);
+    await page.keyboard.press("Escape");
+    const back = await page.evaluate(() => document.activeElement?.getAttribute("aria-label"));
+    check(`share menu, ${label} ${scheme}: Escape closes it and focus returns to the Share button`, back === "Share this post" && (await page.locator('[role="menu"]').count()) === 0, String(back));
+    check(`share menu, ${label} ${scheme}: no console error and no request to another origin`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
+    await ctx.close();
+  }
+}
+
+// ONLY=story-card: the story picture of a post (spec 002) in a real browser, for each awkward case of the quickstart: it must
+// be exactly 1080 x 1920, not blank, and carry no ink in the outer 24 px of the card. The PNGs are saved for a look.
+async function storyCard(browser) {
+  const slugs = Object.keys(STORY_SAMPLES);
+  for (const slug of slugs) {
+    const { ctx, page, consoleErrors, external } = await openPage(browser, { viewport: { width: 1280, height: 800 } });
+    await page.goto(base + "/b/" + slug);
+    await page.waitForSelector('button[aria-label="Share this post"]');
+    await page.getByRole("button", { name: "Share this post" }).click();
+    await page.getByRole("menuitem", { name: "Story image" }).click();
+    await page.waitForSelector("dialog.share-image img", { timeout: 20000 });
+    await page.waitForTimeout(300);
+    const r = await page.evaluate(async () => {
+      const img = document.querySelector("dialog.share-image img");
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      const x = c.getContext("2d");
+      x.drawImage(img, 0, 0);
+      const d = x.getImageData(0, 0, c.width, c.height).data;
+      let dark = 0, edge = 0;
+      for (let yy = 0; yy < c.height; yy++) for (let xx = 0; xx < c.width; xx++) {
+        const i = (yy * c.width + xx) * 4;
+        if (d[i] < 70 && d[i + 1] < 70 && d[i + 2] < 70) { dark++; if (xx < 24 || xx >= c.width - 24 || yy < 24 || yy >= c.height - 24) edge++; }
+      }
+      return { w: c.width, h: c.height, dark, edge, png: c.toDataURL("image/png").split(",")[1] };
+    });
+    fs.writeFileSync(path.join(outDir, `story-card-${slug}.png`), Buffer.from(r.png, "base64"));
+    check(`story card, ${slug}: exactly 1080 x 1920, drawn (not blank) and no ink in the outer 24 px`, r.w === 1080 && r.h === 1920 && r.dark > 5000 && r.edge === 0, `${r.w} x ${r.h}, ${r.dark} dark px, ${r.edge} at the edge`);
+    check(`story card, ${slug}: no console error and no request to another origin`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
+    await ctx.close();
+  }
+}
+
+// The author's Share preview inside Post settings (spec 002): the picture of the draft appears at 9:16 inside the sheet, which
+// stays inside the viewport with no sideways scroll, with no console error and no request to another origin.
+async function shareSettings(browser) {
+  for (const [label, w, h, scheme] of [["phone", 390, 844, "light"], ["phone", 390, 844, "dark"], ["desktop", 1280, 800, "light"]]) {
+    const { ctx, page, consoleErrors, external } = await openPage(browser, { viewport: { width: w, height: h }, colorScheme: scheme, ...(label === "phone" ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) });
+    await page.goto(base + `/blog/${BLOG_SHARE_ID}`);
+    await page.waitForSelector("[contenteditable=true]");
+    await page.screenshot({ path: path.join(outDir, `share-preview-before-${label}-${scheme}.png`) });
+    await page.getByRole("button", { name: "Post settings" }).click();
+    await page.waitForSelector('[aria-label="Post settings"]');
+    await page.waitForSelector(".blog-share-preview-row img", { timeout: 15000 });
+    await page.waitForTimeout(300);
+    const m = await page.evaluate(() => {
+      const sheet = document.querySelector('[aria-label="Post settings"]').getBoundingClientRect();
+      const img = document.querySelector(".blog-share-preview-row img").getBoundingClientRect();
+      return { sheetRight: sheet.right, vw: document.documentElement.clientWidth, ratio: img.width / img.height, inside: img.left >= sheet.left - 1 && img.right <= sheet.right + 1, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, link: !!document.querySelector('[aria-label="Post settings"] .blog-link-preview'), noSend: document.querySelectorAll('[aria-label="Post settings"] button').length };
+    });
+    await page.screenshot({ path: path.join(outDir, `share-preview-${label}-${scheme}.png`) });
+    check(`share preview, ${label} ${scheme}: the link preview and a 9:16 picture, inside the sheet, no sideways scroll`, m.link && Math.abs(m.ratio - 9 / 16) < 0.02 && m.inside && m.sheetRight <= m.vw + 1 && m.overflowX <= 0, JSON.stringify(m));
+    check(`share preview, ${label} ${scheme}: no console error and no request to another origin`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
+    await ctx.close();
+  }
+}
+
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
@@ -1050,6 +1227,10 @@ try {
   if (!only || only === "mobile-layout") await adminPhone(browser);
   if (only === "shots") await shots(browser);
   if (only === "phone-shots") await phoneShots(browser);
+  if (only === "share-image") await shareImage(browser);
+  if (!only || only === "share-menu") await shareMenu(browser);
+  if (!only || only === "story-card") await storyCard(browser);
+  if (!only || only === "blog-editor" || only === "share-preview") await shareSettings(browser);
 } finally {
   await browser.close();
   server.close();
