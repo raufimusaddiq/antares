@@ -9,6 +9,7 @@ import (
 
 	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/kenari"
+	"github.com/raufimusaddiq/antares/internal/modelpolicy"
 	"github.com/raufimusaddiq/antares/internal/store"
 )
 
@@ -84,6 +85,30 @@ func (s *Service) effectiveDefault(ctx context.Context, b hermes.Binding) (provi
 
 var errNoDefault = errors.New("chat: the assistant did not report a default model")
 
+// adminChatDefault is the model the administrator chose for chats that have no model of their own, when it can run now: Kenari
+// lists it for chat, it has not been sunset, it is switched on, and the assistant has a working provider for it. Otherwise ok
+// is false and the chat runs on the profile default, as it did before an administrator chose one (the Models screen shows the
+// warning). A chat with its own saved model never comes here.
+func (s *Service) adminChatDefault(ctx context.Context, b hermes.Binding) (provider, model string, ok bool) {
+	var cat modelpolicy.Catalogue
+	if s.kenari != nil {
+		cat = s.kenari
+	}
+	model = modelpolicy.Default(ctx, s.db, cat, "chat", s.now())
+	if model == "" {
+		return "", "", false
+	}
+	inv, err := s.hx.ModelOptions(ctx, b, false)
+	if err != nil {
+		return "", "", false
+	}
+	p, usable := transport(inv)
+	if !usable {
+		return "", "", false
+	}
+	return p.Slug, model, true
+}
+
 // refuseUnrunnableChoice answers 422 MODEL_UNAVAILABLE, before a run is admitted, when the model
 // the next run would use is blocked by policy or (for a saved choice) gone. That is the chat's
 // saved model, else the profile default: a default-model chat is not exempt. When a block list
@@ -96,6 +121,11 @@ func (s *Service) refuseUnrunnableChoice(w http.ResponseWriter, r *http.Request,
 		return true
 	}
 	const gone = "This chat's model is no longer available. Choose another model; nothing was sent"
+	if m.Model == "" {
+		if _, _, ok := s.adminChatDefault(r.Context(), b); ok {
+			return false // the administrator's default runs, and it is on and listed: the profile default does not matter
+		}
+	}
 	if m.Model != "" {
 		if state, _ := s.savedChoiceState(r, m.Model); state == "BLOCKED" || state == "NOT_LISTED" {
 			apiError(w, http.StatusUnprocessableEntity, "MODEL_UNAVAILABLE", gone)

@@ -121,6 +121,14 @@ func (a *Auth) adminSetMediaModels(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	if blocked, err := store.BlockedModels(r.Context(), a.db); err == nil {
+		for _, want := range []string{*body.Image, *body.Video} {
+			if want != "" && slices.Contains(blocked, want) {
+				a.apiError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "That model is switched off")
+				return
+			}
+		}
+	}
 	actor, _ := UserFrom(r.Context())
 	ids, err := store.SetTenantMediaModels(r.Context(), a.db, actor.ID, *body.Image, *body.Video, newRequestID(), a.now())
 	if err != nil {

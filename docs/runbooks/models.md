@@ -24,6 +24,17 @@ resolved one is refused; `reasoningEffort` must be a level Kenari publishes for 
 saved model is later blocked or delisted answers `422 MODEL_UNAVAILABLE` on send (nothing is sent, nothing is substituted);
 `GET …/settings` reports `state` `AVAILABLE|BLOCKED|NOT_LISTED|UNKNOWN`. Hiding is a per-account view preference only: no Hermes call.
 
+### Admin → Models (spec 004)
+
+`GET /api/admin/models` (one read for the screen), `PUT /api/admin/model-policy` (switches, with the default guard), `PUT /api/admin/model-defaults`
+(`chat`, `summary`, `blog_assistant`; `""` = the service default; table `model_defaults`) and the existing `PUT /api/admin/media-models` (images, videos).
+Resolution lives in `internal/modelpolicy`, shared by the screen's warning and the runs: a saved default is used only if Kenari lists it for chat,
+it is not past its sunset and it is switched on; otherwise the purpose falls back to the service default and the screen shows the warning (never a
+failed send). Chat: a chat with its own saved model keeps it; any other chat uses the default at its next message. Titles and summaries: the default
+else `TITLE_MODEL`; a switched-off model makes no call (title = first words, picture = the whole answer). Post check: the default is named on the
+run. Media "off" is enforced by the default guard, not at generation time (the plugin runs inside Hermes). Usage totals cover chat and post-check
+runs per model, never per account; titles and summaries are not recorded.
+
 ### UPSTREAM_BLOCKED (#115)
 | Item | Status | Evidence |
 |---|---|---|
@@ -31,7 +42,7 @@ saved model is later blocked or delisted answers `422 MODEL_UNAVAILABLE` on send
 | Reasoning level `none` | **UPSTREAM_BLOCKED (Hermes ladder)** | Kenari lists `none` for some models; Hermes' effort ladder has no `none`. Dropped, not mapped. Hermes also has `reasoning.enabled`; no Kenari field says it is honoured, so Antares does not send `enabled:false`. |
 | Effort levels for models Kenari marks `reasoning` without `supported_reasoning_levels` (e.g. `gemma-4-31b-it`) | **Unknown** | No levels are offered; the UI says they are not published. |
 | Whether Kenari honours `provider`/`model`/effort sent by Hermes end to end | **Not probed** | A credentialed run is the owner's (AGENTS.md); the contract is read from Hermes source and asserted on the wire at the Antares→Hermes boundary only. |
-| Admin UI for the block list | Not built | API only (`/api/admin/model-policy`). |
+| Admin UI for the block list | Built (spec 004) | Admin → Models: a switch per model (the block list), usage per model, defaults per purpose. A model that is the default of a purpose cannot be switched off (`409 MODEL_IS_DEFAULT`). |
 | Prices | Kenari's currency/unit, unconverted | `micro_idr_per_1m_tokens`; shown "Price (Kenari)". Not a bill. |
 
 ---

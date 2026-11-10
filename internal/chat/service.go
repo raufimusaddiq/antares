@@ -222,6 +222,11 @@ func (s *Service) runNew(ctx context.Context, l *liveRun, run store.Run, input s
 		s.finish(l, store.RunFailed, hermes.CodeHermesUnavailable, "")
 		return
 	}
+	if choice.Model == "" { // no model of the chat's own: the administrator's default for chat, when it can run; else the profile default
+		if p, m, ok := s.adminChatDefault(ctx, b); ok {
+			choice.Provider, choice.Model = p, m
+		}
+	}
 	personality, err := store.Personality(ctx, s.db, run.UserID)
 	if err != nil {
 		s.finish(l, store.RunFailed, hermes.CodeHermesUnavailable, "")

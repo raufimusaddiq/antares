@@ -920,6 +920,34 @@ func TestACheckNeverRunsOnABlockedModel(t *testing.T) {
 	}
 }
 
+// The administrator's default for the post check (specs/004-admin-full-control): it is named on the run when it can be used; one that
+// is switched off, or that the assistant has no provider for, is never sent and the check runs as before.
+func TestACheckRunsOnTheAdministratorsDefaultWhenItCanAndNeverOnASwitchedOffOne(t *testing.T) {
+	fh := newFake()
+	fh.output = goodReply
+	fh.defaultModel = hermes.ModelCatalog{Provider: "p", Model: "profile-default"}
+	a := newAppWithHermes(t, fh)
+	u := a.active("alice")
+	post := u.draftToCheck("Policy")
+	if _, err := a.db.Exec(`INSERT INTO model_defaults (purpose, model_id, set_by, set_at) VALUES ('blog_assistant', 'chosen-model', ?, 'x')`, u.id); err != nil {
+		t.Fatal(err)
+	}
+	u.startCheck(post)
+	u.waitCheck(post.ID, "ready")
+	if _, runs, _, _ := fh.snapshot(); len(runs) != 1 || runs[0].Model != "chosen-model" || runs[0].Provider != "p" {
+		t.Fatalf("the administrator's default must be named on the run: %+v", runs)
+	}
+	// Switched off by another route: not sent; the profile default is resolved and named, as for any block list.
+	if _, err := a.db.Exec(`INSERT INTO model_blocked (model_id, blocked_by, created_at) VALUES ('chosen-model', ?, 'x')`, u.id); err != nil {
+		t.Fatal(err)
+	}
+	u.startCheck(post)
+	u.waitCheck(post.ID, "ready")
+	if _, runs, _, _ := fh.snapshot(); len(runs) != 2 || runs[1].Model != "profile-default" {
+		t.Fatalf("a switched-off default must not run: %+v", runs)
+	}
+}
+
 func TestAnAccountSuspendedDuringACheckGetsNoResult(t *testing.T) {
 	fh := newFake()
 	release := make(chan struct{})

@@ -44,6 +44,10 @@ type TitleModel struct {
 	Key    string
 	Model  string
 	Client *http.Client
+	// Pick, if set, chooses the model for each call: the administrator's default for summaries and titles when it can be used, else
+	// the configured Model. It answers false when the model is switched off: then no call is made (the chat's title is its first
+	// words, a shared picture is the whole answer).
+	Pick func(ctx context.Context, configured string) (string, bool)
 }
 
 func (m *TitleModel) Title(ctx context.Context, first string) (string, error) {
@@ -55,8 +59,15 @@ func (m *TitleModel) Title(ctx context.Context, first string) (string, error) {
 
 // complete sends one system and one user message and returns the reply's text.
 func (m *TitleModel) complete(ctx context.Context, system, prompt string, maxTokens int) (string, error) {
+	model := m.Model
+	if m.Pick != nil {
+		var ok bool
+		if model, ok = m.Pick(ctx, m.Model); !ok {
+			return "", errors.New("title model is switched off")
+		}
+	}
 	body, _ := json.Marshal(map[string]any{
-		"model": m.Model, "max_tokens": maxTokens, "temperature": 0.2, "reasoning_effort": "low",
+		"model": model, "max_tokens": maxTokens, "temperature": 0.2, "reasoning_effort": "low",
 		"messages": []map[string]string{
 			{"role": "system", "content": system},
 			{"role": "user", "content": prompt},

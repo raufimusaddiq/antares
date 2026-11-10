@@ -35,7 +35,7 @@ export interface AuditEntry {
   createdAt: string;
 }
 
-export type AdminResult<T> = { ok: true; value: T } | { ok: false; code: string; status: number };
+export type AdminResult<T> = { ok: true; value: T } | { ok: false; code: string; status: number; /** The purposes named by a MODEL_IS_DEFAULT refusal. */ purposes?: string[] };
 
 export type Decision = "approve" | "reject" | "suspend" | "reactivate";
 export type Requeue = "tenant-binding" | "tenant-verify" | "revoke-sessions";
@@ -121,7 +121,8 @@ export async function call<T>(method: "GET" | "POST" | "PUT", path: string, pars
   }
   if (!res.ok) {
     const e = obj(obj(json)?.error);
-    return { ok: false, code: str(e?.code) || "INTERNAL", status: res.status };
+    const purposes = Array.isArray(e?.purposes) ? (e.purposes as unknown[]).filter((x): x is string => typeof x === "string") : undefined;
+    return { ok: false, code: str(e?.code) || "INTERNAL", status: res.status, ...(purposes ? { purposes } : {}) };
   }
   const value = parse(json);
   return value === null ? { ok: false, code: "INTERNAL", status: res.status } : { ok: true, value };
