@@ -26,8 +26,11 @@ Spec and plan: `specs/001-blog-cms-openui-publish/`. Two pages and one Admin fra
   blog's story card (1080 × 1920, warm beige `#e9e4d4` background, mint strip, white card, pink mark and bullets, cobalt
   "POST" sticker and highlighter bar; same layout language as the chat picture, different colours), the Share menu on
   the post page (desktop: Copy link, WhatsApp, X, Facebook, LinkedIn, Telegram, Email, Story image; phones open the
-  device's own sheet instead), the Story dialog (ready, saved with no share sheet, failed; Phone ready), and the editor's
-  Share preview in Post settings.
+  device's own sheet instead), the Story dialog (ready, preparing, saved with no share sheet, failed; Phone ready), the Share menu "Link copied" state, the
+  Phone Share menu ("Share with your apps", Copy link, Story image), the editor's Share preview in Post settings, and
+  the story card's edge cases (no cover, no headings, very long title, right-to-left title, emoji title; the design
+  renderer has no emoji font, so emoji show as boxes here and are system emoji in the app). Prototype links: menu "Story
+  image" to the dialog, Close back to the menu, Try again back to ready, Copy link to the copied state.
 - **Admin / Suspended user (posts hidden)** on the Admin page: states that posts are hidden and no content is shown.
 
 Flows are wired as prototype interactions: index to post and back, sign in to My posts, My posts to Editor, row actions
