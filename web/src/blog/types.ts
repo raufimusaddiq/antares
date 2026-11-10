@@ -63,8 +63,22 @@ export interface CheckNote {
   afterNode: number;
 }
 
+export type CheckStage = "reading" | "searching" | "writing";
+
+/** Where a running check is, read by the server from the assistant's own events; times are the server's. */
+export interface CheckProgress {
+  stage: CheckStage;
+  stageSince: string;
+  lastEventAt: string;
+  lookups: number;
+  startedAt: string;
+  /** The server's clock when this was read, so the browser can tick without trusting its own. */
+  now: string;
+}
+
 export interface Check {
   id: string;
+  progress?: CheckProgress | null;
   state: CheckState;
   /** failed only: "disconnected" and "unusable" are told apart from a plain failure. */
   reason: "" | "error" | "disconnected" | "unusable";

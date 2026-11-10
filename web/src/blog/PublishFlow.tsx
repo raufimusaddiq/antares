@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { cancelCheck, decideBlock, describeBlogError, getCheck, getLimits, publish, startCheck } from "./blogApi";
 import { checkBytes, imageCount, sizeWords, type Limits } from "./limits";
+import { CheckProgressView } from "./CheckProgress";
 import { PreviewScreen } from "./PreviewScreen";
 import { useDialog } from "./useDialog";
 import type { Capabilities, Check, CheckBlock, Post } from "./types";
@@ -9,7 +10,7 @@ import type { Capabilities, Check, CheckBlock, Post } from "./types";
 // never as completed, and nothing is published until the author says so (FR-012, FR-013). The wording follows
 // specs/001-blog-cms-openui-publish/contracts/check-envelope.md (Failure mapping).
 
-const POLL_MS = 2000;
+const POLL_MS = 1500;
 const UNSAVED = "Your latest changes are not saved yet, so the check would read an older version. Go back to editing and wait for “Saved”.";
 
 export function failureWords(c: Check): string {
@@ -162,18 +163,13 @@ export function PublishFlow({ post, caps, flush, onPost, onBackToEditing, onMyPo
       <Takeover step="checking" onBack={onBackToEditing}>
         <main className="blog-flow" aria-busy="true">
           <h1 tabIndex={-1}>Checking your writing</h1>
-          <p role="status">Your assistant is reading the post, looking for data to add and finding sources. This can take a minute or two.</p>
-          <p className="label">Nothing is published yet. Your original is unchanged.</p>
-          <div className="blog-actions">
-            <button
-              type="button"
-              className="quiet"
-              disabled={phase.k === "starting"}
-              onClick={() => void cancelCheck(post.id).then((r) => (r.ok ? apply(r.value) : setError(describeBlogError(r, "cancel the check"))))}
-            >
-              Cancel
-            </button>
-          </div>
+          <p>Your assistant is reading your post, looking things up and writing suggestions. Nothing is changed in your draft and nothing is published.</p>
+          <CheckProgressView
+            check={phase.k === "starting" ? null : check}
+            cancelDisabled={phase.k === "starting"}
+            onCancel={() => void cancelCheck(post.id).then((r) => (r.ok ? apply(r.value) : setError(describeBlogError(r, "cancel the check"))))}
+          />
+          <p className="label">If you edit now, this check is thrown away and you can run it again.</p>
           {error && <p className="blog-error" role="alert">{error}</p>}
         </main>
       </Takeover>
