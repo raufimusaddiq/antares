@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -107,6 +107,7 @@ function api(req, res, url) {
     res.end(JSON.stringify(body));
   };
   state.log.push(`${req.method} ${url.pathname}${url.search}`);
+  if (req.method === "POST" && /^\/api\/chats\/[^/]+\/messages\/\d+\/summary$/.test(url.pathname)) return send(200, { summary: "# Hosting yourself costs less\n- Seats scale with headcount\n- A small server is cheap until someone patches it" });
   if (url.pathname === "/api/me") return send(200, { email: state.email, displayName: "Reader", requestedAt: "", state: "ACTIVE", ...(state.admin ? { canAdmin: true } : {}) });
   // The blog (specs/001-blog-cms-openui-publish): the same shapes the Go server documents, with text that tries to push a
   // phone sideways (a long unbroken address, a long code line).
@@ -1032,6 +1033,56 @@ async function phoneShots(browser) {
   }
 }
 
+// ONLY=share-image: the chat's "Share image" picture, drawn by the real app in a real browser, whole answer and summary. It
+// prints the SHA-256 of each PNG (the SHA-256 of the decoded pixels; the date is pinned, so the same code on the same browser gives the same pixels): run it on
+// the code before and after a change to the drawing code and compare. EXPECT_SHARE_IMAGE=hashFull,hashSummary makes the check
+// fail when either differs. The summary picture must be exactly 1080 x 1920 (9:16).
+async function shareImage(browser) {
+  const { ctx, page, consoleErrors } = await openPage(browser, { viewport: { width: 1280, height: 800 } });
+  await page.addInitScript(() => {
+    const Real = Date;
+    const fixed = Date.UTC(2026, 10, 9, 12, 0, 0);
+    globalThis.Date = class extends Real {
+      constructor(...a) { super(...(a.length ? a : [fixed])); }
+      static now() { return fixed; }
+    };
+  });
+  DATA[PLAIN].at(-1).ref = "c".repeat(32); // a turn with a reference can be summarised
+  await page.goto(base + "/");
+  await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
+  const hashes = [];
+  for (const mode of ["Full answer", "Summary"]) {
+    await page.locator('button[data-control="image"]').last().click();
+    await page.waitForSelector("dialog.share-image");
+    if (mode === "Summary") await page.getByRole("button", { name: "Summary", exact: true }).click();
+    await page.waitForSelector("dialog.share-image img", { timeout: 15000 });
+    await page.waitForTimeout(300);
+    // The blob: address cannot be fetched (the page's connect-src is 'self'), but it can be drawn: the hash is of the decoded pixels.
+    const r = await page.evaluate(async () => {
+      const img = document.querySelector("dialog.share-image img");
+      await img.decode();
+      const c = document.createElement("canvas");
+      c.width = img.naturalWidth; c.height = img.naturalHeight;
+      const x = c.getContext("2d");
+      x.drawImage(img, 0, 0);
+      const px = x.getImageData(0, 0, c.width, c.height).data;
+      const h = await crypto.subtle.digest("SHA-256", px);
+      return { w: c.width, h: c.height, sha: [...new Uint8Array(h)].map((b) => b.toString(16).padStart(2, "0")).join(""), png: c.toDataURL("image/png").split(",")[1] };
+    });
+    hashes.push(r.sha);
+    fs.writeFileSync(path.join(outDir, `share-image-${mode === "Summary" ? "summary" : "full"}.png`), Buffer.from(r.png, "base64"));
+    console.log(`  share image (${mode}): ${r.w} x ${r.h} sha256 ${r.sha}`);
+    check(`share image, ${mode}: drawn at 1080 px wide${mode === "Summary" ? " and exactly 9:16 (1080 x 1920)" : ""}`, r.w === 1080 && (mode !== "Summary" || r.h === 1920), `${r.w} x ${r.h}`);
+    await page.keyboard.press("Escape");
+    await page.waitForSelector("dialog.share-image", { state: "detached" });
+  }
+  const want = process.env.EXPECT_SHARE_IMAGE;
+  if (want) check("share image: both pictures are pixel for pixel the expected ones", want === hashes.join(","), hashes.join(","));
+  check("share image: no console error", consoleErrors.length === 0, consoleErrors.join(" | "));
+  delete DATA[PLAIN].at(-1).ref;
+  await ctx.close();
+}
+
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 base = `http://127.0.0.1:${server.address().port}`;
 const browser = await chromium.launch({ executablePath: process.env.CHROME || undefined });
@@ -1050,6 +1101,7 @@ try {
   if (!only || only === "mobile-layout") await adminPhone(browser);
   if (only === "shots") await shots(browser);
   if (only === "phone-shots") await phoneShots(browser);
+  if (only === "share-image") await shareImage(browser);
 } finally {
   await browser.close();
   server.close();
