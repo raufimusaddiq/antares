@@ -119,7 +119,9 @@ export function PreviewScreen({ post, check, acks, onAck, busy, ready, error, on
 
 /** The assistant's notes. Style notes (the built-in writing rules) and the others can be dismissed; a dismissal lives in this screen only and changes nothing on the server. */
 function Notes({ notes }: { notes: CheckNote[] }) {
-  const [gone, setGone] = useState<Set<number>>(new Set());
+  // Dismissals are kept by what a note says, not by its place, so a different check in the same screen cannot lose notes to them.
+  const [gone, setGone] = useState<Set<string>>(new Set());
+  const idOf = (n: CheckNote) => `${n.kind}|${n.afterNode}|${n.text}`;
   const [focusNext, setFocusNext] = useState<number | "heading" | null>(null);
   const buttons = useRef<Map<number, HTMLButtonElement>>(new Map());
   const heading = useRef<HTMLHeadingElement>(null);
@@ -129,12 +131,13 @@ function Notes({ notes }: { notes: CheckNote[] }) {
     setFocusNext(null);
   }, [focusNext, gone]);
   if (notes.length === 0) return null;
-  const shown = notes.map((n, i) => ({ n, i })).filter(({ i }) => !gone.has(i));
+  const shown = notes.map((n, i) => ({ n, i })).filter(({ n }) => !gone.has(idOf(n)));
+  const dismissed = notes.length - shown.length;
   const dismiss = (i: number) => {
     const after = shown.filter((x) => x.i !== i);
     const next = after.find((x) => x.i > i) ?? after[0];
     setFocusNext(next ? next.i : "heading");
-    setGone(new Set(gone).add(i));
+    setGone(new Set(gone).add(idOf(notes[i])));
   };
   return (
     <section className="blog-notes" aria-labelledby="notes-h">
@@ -153,9 +156,9 @@ function Notes({ notes }: { notes: CheckNote[] }) {
           </button>
         </div>
       ))}
-      {gone.size > 0 && (
+      {dismissed > 0 && (
         <p className="label" role="status">
-          {gone.size} {gone.size === 1 ? "note" : "notes"} dismissed.
+          {dismissed} {dismissed === 1 ? "note" : "notes"} dismissed.
         </p>
       )}
     </section>

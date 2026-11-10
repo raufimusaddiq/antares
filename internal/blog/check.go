@@ -72,7 +72,8 @@ func checkPromptVersion() string {
 
 // styleAddendum follows the shared writing rules in a check's instructions (specs/005-antislop-writing, contracts/rules-text.md).
 const styleAddendum = "These rules apply to the text you write in notes and block titles and fallbacks. Where the author's own draft breaks them, " +
-	"add a note of kind \"style\" (what kind of problem, where). Never rewrite the draft."
+	"add a note of kind \"style\" (what kind of problem, where). For this check only, the allowed note kinds are \"clarity\", \"fact\", \"missing-context\", \"unsourced\" and \"style\", " +
+	"which overrides the list in the reply format above. Never rewrite the draft."
 
 // checkInstructions is the check's instruction text and what it carried: the versioned prompt, then (when the administrator has not
 // switched them off) the built-in writing rules and the style-note paragraph. The state is store.RulesAttached, store.RulesOff or ""
@@ -625,7 +626,7 @@ func (s *Service) driveRun(ctx context.Context, id, author, input string, topNod
 		provider, model = cat.Provider, cat.Model
 	}
 	instructions, rulesState := s.checkInstructions(ctx)
-	if _, err := s.db.ExecContext(context.WithoutCancel(ctx), `UPDATE post_checks SET writing_rules = ? WHERE id = ?`, rulesArg(rulesState), id); err != nil {
+	if _, err := s.db.ExecContext(context.WithoutCancel(ctx), `UPDATE post_checks SET writing_rules = ? WHERE id = ? AND author_id = ?`, rulesArg(rulesState), id, author); err != nil {
 		log.Printf("blog: record writing rules: %v", err)
 	}
 	req := hermes.RunRequest{SessionID: sid, Provider: provider, Model: model, Input: input, SessionKey: "chatui:user:" + author, IdempotencyKey: "antares-blog-" + id, Instructions: instructions}
