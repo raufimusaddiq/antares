@@ -95,16 +95,49 @@ func authorName(n sql.NullString) string {
 	return "Author"
 }
 
-func (s *Service) PublicList(ctx context.Context, page int) ([]PublicSummary, error) {
+// maxPublicSearch is the longest search text answered. A longer one finds nothing (an empty list, not an error): no
+// post's title or summary is that long to match by accident, and a caller must not make the database scan for a huge pattern.
+const maxPublicSearch = 80
+
+// searchPattern turns a reader's search text into a LIKE pattern. Spaces collapse, and %, _ and \ are plain characters.
+// ok is false when the text is too long to be answered.
+func searchPattern(q string) (pattern string, ok bool) {
+	q = strings.Join(strings.Fields(q), " ")
+	if q == "" {
+		return "", true
+	}
+	if len([]rune(q)) > maxPublicSearch {
+		return "", false
+	}
+	return "%" + strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(q) + "%", true
+}
+
+// PublicList is one page of the published posts, newest first. limit is the page size (1..publicPageSize; anything else
+// is the full page) and q an optional search over title, summary and author name. The row filter is the same for every
+// caller and for every parameter.
+func (s *Service) PublicList(ctx context.Context, page, limit int, q string) ([]PublicSummary, error) {
 	if page < 1 {
 		page = 1
 	}
 	if page > maxPublicPage { // an unauthenticated caller must not make the database walk a huge offset
 		return []PublicSummary{}, nil
 	}
+	if limit < 1 || limit > publicPageSize {
+		limit = publicPageSize
+	}
+	pattern, ok := searchPattern(q)
+	if !ok {
+		return []PublicSummary{}, nil
+	}
+	where, args := publicWhere, []any{}
+	if pattern != "" {
+		where += ` AND (v.title LIKE ? ESCAPE '\' OR v.summary LIKE ? ESCAPE '\' OR u.display_name LIKE ? ESCAPE '\')`
+		args = append(args, pattern, pattern, pattern)
+	}
+	args = append(args, limit, (page-1)*limit)
 	rows, err := s.db.QueryContext(ctx, `SELECT p.slug, v.title, v.summary, p.cover_asset_id, u.display_name, p.published_at
 		FROM posts p JOIN users u ON u.id = p.author_id JOIN post_versions v ON v.post_id = p.id AND v.version = p.published_version
-		WHERE `+publicWhere+` ORDER BY p.published_at DESC, p.id LIMIT ? OFFSET ?`, publicPageSize, (page-1)*publicPageSize)
+		WHERE `+where+` ORDER BY p.published_at DESC, p.id LIMIT ? OFFSET ?`, args...)
 	if err != nil {
 		return nil, err
 	}
@@ -194,7 +227,8 @@ func (s *Service) PublicHandlers() map[string]http.Handler {
 	return map[string]http.Handler{
 		"GET /api/public/blog/posts": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-			l, err := s.PublicList(r.Context(), page)
+			limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+			l, err := s.PublicList(r.Context(), page, limit, r.URL.Query().Get("q"))
 			if err != nil {
 				fail(w, "public list", err)
 				return

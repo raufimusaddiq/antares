@@ -210,7 +210,22 @@ export async function uploadImage(id: string, file: File): Promise<BlogResult<{ 
 
 // Public: no session, nothing but the published post.
 const PUB = "/api/public/blog/posts";
-export const listPublic = (signal?: AbortSignal) => request("GET", PUB, list(parsePublicSummary), undefined, signal);
+/** One page of the public list: `limit` is the page size (the server allows 1-20), `q` an optional search over title, summary and author. */
+export const listPublic = (opts: { page?: number; limit?: number; q?: string } = {}, signal?: AbortSignal) => {
+  const q = new URLSearchParams();
+  if (opts.page && opts.page > 1) q.set("page", String(opts.page));
+  if (opts.limit) q.set("limit", String(opts.limit));
+  const text = (opts.q ?? "").trim();
+  if (text) q.set("q", text);
+  const qs = q.toString();
+  return request("GET", qs ? `${PUB}?${qs}` : PUB, list(parsePublicSummary), undefined, signal);
+};
+
+/** The addresses of the signed-in reader's own published posts, for the "Yours" label. Any failure (a visitor, a pending account, a network error) is an empty set: no label, nothing else changes. */
+export async function listMyPublishedSlugs(signal?: AbortSignal): Promise<Set<string>> {
+  const r = await listPosts(signal);
+  return new Set(r.ok ? r.value.filter((p) => p.status === "published" && p.slug).map((p) => p.slug) : []);
+}
 export const getPublic = (slug: string, signal?: AbortSignal) => request("GET", `${PUB}/${enc(slug)}`, parsePublicPost, undefined, signal);
 
 /** Words shown for a failed call. The server's own message is never displayed. */

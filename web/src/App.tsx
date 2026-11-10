@@ -146,7 +146,7 @@ export function App() {
       );
     }
     if (isBlogPath(path)) return <BlogApp caps={blogCaps} email={session.account.email} name={session.account.displayName} route={parseBlogPath(path)} onNavigate={navigate} onChats={() => navigate("/")} />;
-    return <Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onBlog={blogWriting ? () => navigate("/blog") : undefined} onSignOut={onSignOut} signOutError={signOutMessage} />;
+    return <Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onBlog={blogWriting ? () => navigate("/blog") : undefined} onReadBlog={() => window.location.assign("/b")} onSignOut={onSignOut} signOutError={signOutMessage} />;
   }
   return (
     <Screen

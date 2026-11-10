@@ -1753,6 +1753,16 @@ a story or attach a link sticker on Instagram or WhatsApp: the picture goes to t
 images, and otherwise it is saved and the link copied with an instruction. The author sees the same picture as a preview in
 Post settings, only to look at.
 
+**Discovery (added 2026-11-10; spec `specs/003-blog-discovery/`).** The public list had no door. The sign-in page and the
+waiting, refused and suspended screens now show the three latest posts as cards and a "Read the blog" button; the chat has
+"Read the blog" in the account menu and a book-icon button in the side rail (a full pill for a user without writing). The
+public pages show "Back to Antares" (the address `/`, which sends each reader to their own screen) to a signed-in reader and
+"Sign in" to a visitor, from one `GET /api/me`; that is the only thing they ask about the reader, and it writes nothing. The
+list searches (`q`, at most 80 characters, over title, summary and author name, `%` `_` `\` plain), pages (`page`, and `limit`
+1 to 20 for the sign-in strip) and marks the reader's own posts "Yours" from the author-only list. These are optional
+parameters of the existing `GET /api/public/blog/posts`; no route, table or dependency is added and the response is
+identical for every caller. Reads are not recorded and no admin route names posts, readers or reads.
+
 **Acceptance.** Two-user ownership (a foreign id is the missing id, body included), the public surface leaks no
 identity, suspending or rejecting an author hides their posts and reinstating restores them, the route inventory fails
 on any unlisted unauthenticated route, and the production smoke's `blog.lifecycle` step (`smoke-test.md`).

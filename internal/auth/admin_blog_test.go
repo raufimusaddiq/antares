@@ -90,3 +90,19 @@ func TestAdminSeesNoPostOrDraftContent(t *testing.T) {
 	}
 	scan("a suspended writer")
 }
+
+// Reading the public blog leaves no record an admin can see (blog discovery FR-014, FR-015): the admin API has no route that
+// names posts, readers or read counts, so there is nothing to list who read what.
+func TestNoAdminRouteNamesPostsReadersOrReads(t *testing.T) {
+	src, err := os.ReadFile("admin.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range regexp.MustCompile(`mux\.Handle\("[A-Z]+ (/api/admin/[^"]+)"`).FindAllStringSubmatch(string(src), -1) {
+		for _, word := range []string{"blog", "post", "reader", "reads", "views"} {
+			if strings.Contains(strings.ToLower(m[1]), word) {
+				t.Errorf("admin route %s names %q: an admin must not see what people read", m[1], word)
+			}
+		}
+	}
+}

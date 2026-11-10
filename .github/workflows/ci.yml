@@ -169,6 +169,9 @@ jobs:
         run: |
           ONLY=share-menu node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
           ONLY=story-card node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
+      # Blog discovery (specs/003-blog-discovery): the sign-in and waiting screens, the chat entries, and the public list's search and paging.
+      - name: Blog discovery (entries, list, search)
+        run: ONLY=blog-discovery node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
       - name: Image attach, retry, remove, send and a touch tap on a capability reason
         run: ONLY=images node scripts/browser-check.mjs --out "$RUNNER_TEMP/shots"
 
