@@ -246,6 +246,7 @@ export function RestoreForm({ busy, error, onCancel, onConfirm }: { busy: boolea
 }
 
 export function PostView({ post, onChanged }: { post: AdminPostView; onChanged: (outcome: { note?: string }) => void }) {
+  const heading = useRef<HTMLHeadingElement>(null);
   const [pick, setPick] = useState<"takedown" | "restore" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -257,11 +258,12 @@ export function PostView({ post, onChanged }: { post: AdminPostView; onChanged: 
     setBusy(false);
     if (!r.ok) return setError(describeAdminCode(r.code, r.status));
     setPick(null);
+    heading.current?.focus(); // the form that had focus is gone: land on the post, whose state has just changed
     onChanged(what === "restore" && "note" in r.value ? { note: r.value.note } : {});
   };
   return (
     <article className="admin-post">
-      <h1>{post.title || "Untitled"}</h1>
+      <h1 ref={heading} tabIndex={-1}>{post.title || "Untitled"}</h1>
       <p className="facts-row">
         <strong>{post.authorName || "—"}</strong>
         <span className="label">Published {day(post.publishedAt)}</span>

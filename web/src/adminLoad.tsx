@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { describeAdminCode, isForbidden, type AdminResult } from "./adminApi";
 
 // ---- load state: every admin screen renders all four of these ----------------------
@@ -8,9 +8,13 @@ export type Load<T> = { kind: "loading" } | { kind: "ready"; value: T } | { kind
 export function useLoad<T>(fetcher: (signal: AbortSignal) => Promise<AdminResult<T>>, key: string): [Load<T>, () => void] {
   const [state, setState] = useState<Load<T>>({ kind: "loading" });
   const [tick, setTick] = useState(0);
+  const lastKey = useRef(key);
   useEffect(() => {
     const ctl = new AbortController();
-    setState({ kind: "loading" });
+    // A reload of the same thing keeps what is on screen (focus, scroll and the person's place stay); a different thing starts from "loading".
+    const same = lastKey.current === key;
+    lastKey.current = key;
+    setState((s) => (same && s.kind === "ready" ? s : { kind: "loading" }));
     void fetcher(ctl.signal).then((r) => {
       if (ctl.signal.aborted) return;
       if (r.ok) setState({ kind: "ready", value: r.value });

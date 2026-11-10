@@ -12,5 +12,11 @@ restore, with synthetic fixtures (cleanup clean, real accounts untouched).
 | SC-006 audit rows | `TestOnlyAnActiveAdministratorCanListTakeDownOrRestore`, `TestDefaultsPerPurposeAreSavedAuditedAndOnlyFittingModelsAreAccepted` |
 | SC-007 admin never sees drafts, versions, checks, readers | `TestAdminBlogPostRoutesReturnOnlyPublishedFields`, `TestAdminSeesNoPostOrDraftContent`, `TestTheModelsReadListsEveryModelWithItsPurposesAndNoAccountField` |
 
-Not driven: SC-002 and SC-003 (timed tasks with a person); a real screen reader. Media generation cannot honour a switch at generation time (it runs in a Hermes
+Accessibility (T044), checked in a real browser by `ONLY=admin-a11y` (phone and desktop): every control on the new screens has an accessible name; every touch target
+on a phone is at least 44 px (buttons, fields, selects, the switches as one label-wide target, the post links); focus moves into a form when it opens and onto
+the post's heading after a take-down; a switch works from the keyboard and keeps focus while the screen reloads (a reload of the same screen no longer
+blanks it); the banner is a named landmark with a `role="status"` message and no animation under reduced motion. Quickstart: steps 1-6 ran as the Go, web and
+browser suites; step 7 ran as the two production smoke runs.
+
+Not driven: SC-002 and SC-003 (timed tasks with a person); a real screen reader (VoiceOver/TalkBack), which no script here can stand in for. Media generation cannot honour a switch at generation time (it runs in a Hermes
 plugin), so "off" for image and video models is enforced by refusing to switch off a model that is a default.

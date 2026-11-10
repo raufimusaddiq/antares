@@ -100,10 +100,12 @@ function Defaults({ view, onSaved }: { view: ModelsView; onSaved: () => void }) 
 
 function Switch({ model, busy, onToggle }: { model: ModelRow; busy: boolean; onToggle: () => void }) {
   return (
-    <span className="switch-cell">
-      <input type="checkbox" role="switch" className="switch" checked={model.on} disabled={busy} aria-label={`${model.name} for everyone`} onChange={onToggle} />
+    // A label around the switch and its word, so the whole thing is one touch target (44 px). aria-disabled, not disabled: a disabled
+    // control loses keyboard focus, and the switch must keep it while the change is being saved.
+    <label className="switch-cell">
+      <input type="checkbox" role="switch" className="switch" checked={model.on} aria-disabled={busy} aria-label={`${model.name} for everyone`} onChange={() => !busy && onToggle()} />
       <span className={model.on ? undefined : "label"}>{model.on ? "On" : "Off"}</span>
-    </span>
+    </label>
   );
 }
 
