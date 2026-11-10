@@ -5,9 +5,11 @@ There is **no new HTTP route**. This contract is the behaviour the design frames
 ## Share control (post page)
 
 - Button "Share" in the post's header area, keyboard reachable, with a visible focus ring.
-- If `navigator.share` exists: opens the native sheet with `{ title, url }` where `url` is the canonical address.
-- Otherwise opens a menu: Copy link, WhatsApp, X, Facebook, LinkedIn, Telegram, Email. Each destination is a plain link
-  that opens in a new tab with `rel="noopener noreferrer"`; none loads a third-party script.
+- Always opens a menu. If `navigator.share` exists its first entry is "Share with your apps", which opens the native
+  sheet with `{ title, url }` where `url` is the canonical address, and the named destinations are left out (the sheet
+  already lists the person's apps); otherwise the menu lists WhatsApp, X, Facebook, LinkedIn, Telegram and Email. Each
+  destination is a plain link that opens in a new tab with `rel="noopener noreferrer"`; none loads a third-party script.
+- Copy link and Story image are always in the menu.
 - Copy link: writes the canonical address; announces "Link copied" in a polite live region; falls back to selecting a
   read-only field when the Clipboard API is refused.
 - Entry "Story image" opens the dialog below.
