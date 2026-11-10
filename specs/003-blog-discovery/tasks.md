@@ -127,7 +127,7 @@ description: "Task list for Discover and Read Other People's Blog Posts"
 - [x] T031 [P] Update `docs/PRD.md` §30 (discovery entries, search, "Yours"), `docs/design/README.md`, `docs/runbooks/blog-check.md` (only if it names entry points), and the comments in `internal/auth/routes.go` that describe the public list
 - [x] T032 [P] Add `specs/003-blog-discovery/validation.md` with real results: tests, browser views, a production run (visitor, pending account via the smoke fixtures, approved user), SC-001/SC-002 timings if measured, SC-003 measured with 500 seeded posts (first page under 2 s) or stated as not driven, and what was not driven
 - [x] T033 Run full checks: `go test ./...`, `npm test`, `npm run build` (bundle committed), `TestBundleIsNotStale`, all browser views, existing views (`mobile-layout`, `desktop-layout`, `blog-public`) still green
-- [ ] T034 Open the PR; address review; merge; deploy with backup; run the production check with synthetic accounts; clean up smoke users and fixtures; update the issue and tick this list
+- [x] T034 Open the PR; address review; merge; deploy with backup; run the production check with synthetic accounts; clean up smoke users and fixtures; update the issue and tick this list
 
 ---
 
