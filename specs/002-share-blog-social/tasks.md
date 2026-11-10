@@ -134,8 +134,8 @@ description: "Task list for Share Blog Posts to Social Media and Stories"
 
 ## Phase 7: Polish and cross-cutting
 
-- [ ] T032 [P] Add a Share paragraph to `docs/PRD.md` §30 (what is shared, that the picture is drawn on the reader's device, the platform limit for Instagram and WhatsApp stories, no new public route)
-- [ ] T033 [P] Write `specs/002-share-blog-social/validation.md`: quickstart scenarios with results, per-package `vitest --coverage` before and after (AGENTS.md "cutting tests keeps coverage"), and a table of SC-001 to SC-008 with evidence or "not measured"
+- [x] T032 [P] Add a Share paragraph to `docs/PRD.md` §30 (what is shared, that the picture is drawn on the reader's device, the platform limit for Instagram and WhatsApp stories, no new public route)
+- [x] T033 [P] Write `specs/002-share-blog-social/validation.md`: quickstart scenarios with results, per-package `vitest --coverage` before and after (AGENTS.md "cutting tests keeps coverage"), and a table of SC-001 to SC-008 with evidence or "not measured"
 - [ ] T034 Rebuild `internal/webui/dist` (Linux/Docker), run `go test ./...`, `npm test` and all `ONLY=` browser views (`share-card-baseline`, `share-menu`, `story-card`, `blog-editor`, `blog-public`, `mobile-layout`); confirm `auth.PublicBlogRoutes` and its kept test are untouched
 - [ ] T035 Run `/speckit-analyze`; fix findings in the spec files only
 - [ ] T036 Deploy (backup first), then verify on production in a real browser: publish a synthetic post, open it signed out, use Share (copy link) and Story image, confirm the PNG is 1080 × 1920 and nothing but the page's own requests were made; unpublish and delete the synthetic post and user; never touch the owner's accounts
