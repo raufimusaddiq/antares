@@ -5,7 +5,7 @@ const root = new URL("../../..", import.meta.url).pathname;
 const dist = root + "/internal/webui/dist";
 const serverGo = fs.readFileSync(root + "/internal/server/server.go", "utf8");
 const styleHash = /const openUIStyleHash = "([^"]+)"/.exec(serverGo)[1];
-const CSP = /h\.Set\("Content-Security-Policy", (.*)\)\n/.exec(serverGo)[1].replace('"+openUIStyleHash+"', styleHash).slice(1, -1);
+const CSP = /h\.Set\("Content-Security-Policy", (.*)\)\n/.exec(serverGo)[1].replace('"+openUIStyleHash+"', styleHash).replace('"+cloudflareBeaconScript+"', /cloudflareBeaconScript\s*=\s*"([^"]+)"/.exec(serverGo)[1]).replace('"+cloudflareBeaconConnect+"', /cloudflareBeaconConnect\s*=\s*"([^"]+)"/.exec(serverGo)[1]).slice(1, -1);
 const CHAT = "a".repeat(32); const NEW = "c".repeat(32); const chatsMade = []; const models_by = { [CHAT]: null, [NEW]: null };
 const st = { capsFail: 0, log: [], model: null, modelsFail: 0, modelsDelay: 0 };
 const models = () => ({ source: "kenari", fetchedAt: "2026-10-25T10:00:00Z", stale: false, default: { provider: "p", model: "m-default" }, unsupported: { serviceTier: "none" },

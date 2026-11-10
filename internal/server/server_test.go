@@ -305,13 +305,31 @@ func TestShellCSPAllowsOnlyTheEdgeBeacon(t *testing.T) {
 			t.Errorf("%s = %q, want %q", name, got, strings.Join(wantHosts, " "))
 		}
 	}
+	// Every token of every directive is one of our own kinds or one of the two beacon hosts: no other origin, no wildcard, no
+	// unsafe keyword, no plain http, whichever directive it is added to.
+	allowed := func(v string) bool {
+		switch {
+		case v == "'self'", v == "'none'", v == "blob:":
+			return true
+		case strings.HasPrefix(v, "'sha256-") && strings.HasSuffix(v, "'"):
+			return true
+		case v == cloudflareBeaconScript, v == cloudflareBeaconConnect:
+			return true
+		}
+		return false
+	}
 	for name, vals := range dirs {
 		for _, v := range vals {
-			if strings.Contains(v, "*") || strings.HasPrefix(v, "'unsafe") {
-				t.Errorf("%s allows %q", name, v)
+			if !allowed(v) {
+				t.Errorf("%s allows %q, which is neither ours nor the edge beacon", name, v)
 			}
-			if strings.HasPrefix(v, "http") && name != "script-src" && name != "connect-src" {
-				t.Errorf("%s allows the origin %q", name, v)
+		}
+	}
+	// The beacon hosts are allowed only where the beacon needs them.
+	for name, vals := range dirs {
+		for _, v := range vals {
+			if (v == cloudflareBeaconScript && name != "script-src") || (v == cloudflareBeaconConnect && name != "connect-src") {
+				t.Errorf("%s allows %q, which belongs to another directive", name, v)
 			}
 		}
 	}
