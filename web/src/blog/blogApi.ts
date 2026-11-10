@@ -5,9 +5,9 @@
 import { purgeDrafts } from "../drafts";
 import { purgeUserState } from "../pwa";
 import type { Limits } from "./limits";
-import { EMPTY_DOC, type Capabilities, type Check, type CheckBlock, type CheckNote, type CheckProgress, type CheckStage, type Decision, type DocNode, type Post, type PostStatus, type PostSummary, type PublicBlock, type PublicPost, type PublicSummary, type Source, type Takedown, type TakedownNotice } from "./types";
+import { EMPTY_DOC, type Capabilities, type Check, type CheckBlock, type CheckNote, type CheckProgress, type CheckStage, type EditSuggestion, type Decision, type DocNode, type Post, type PostStatus, type PostSummary, type PublicBlock, type PublicPost, type PublicSummary, type Source, type Takedown, type TakedownNotice } from "./types";
 
-export type BlogResult<T> = { ok: true; value: T } | { ok: false; status: number; code: string; latest?: Post };
+export type BlogResult<T> = { ok: true; value: T } | { ok: false; status: number; code: string; latest?: Post; /** LIMIT_REACHED: when the oldest check in the last 24 hours ages out, or running: two are running now. */ retryAt?: string; running?: boolean };
 
 const obj = (v: unknown): Record<string, unknown> | null => (typeof v === "object" && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : null);
 const str = (v: unknown): string => (typeof v === "string" ? v : "");
@@ -81,6 +81,13 @@ function parseProgress(v: unknown): CheckProgress | null {
   };
 }
 
+function parseEdit(v: unknown): EditSuggestion | null {
+  const o = obj(v);
+  if (!o || !str(o.id) || !str(o.proposed) || (o.kind !== "replace" && o.kind !== "insert")) return null;
+  const d = str(o.decision);
+  return { id: str(o.id), kind: o.kind, part: Math.max(0, Math.floor(num(o.part))), anchor: str(o.anchor), original: str(o.original), proposed: str(o.proposed), reason: str(o.reason), decision: d === "accepted" || d === "rejected" ? d : "open" };
+}
+
 export function parseCheck(v: unknown): Check | null {
   const o = obj(v);
   if (!o || !str(o.id) || !CHECK_STATES.includes(str(o.state))) return null;
@@ -88,6 +95,7 @@ export function parseCheck(v: unknown): Check | null {
   return {
     id: str(o.id),
     progress: parseProgress(o.progress),
+    edits: arr(o.edits).map(parseEdit).filter((e): e is EditSuggestion => e !== null),
     state: str(o.state) as Check["state"],
     reason: r === "disconnected" || r === "unusable" || r === "error" ? r : "",
     notes: arr(o.notes)
@@ -120,6 +128,7 @@ export function parsePost(v: unknown): Post | null {
     check: o.check ? parseCheck(o.check) : null,
     updatedAt: str(o.updatedAt),
     takedown: parseTakedown(o.takedown),
+    ...(num(o.skippedBlocks) > 0 ? { skippedBlocks: num(o.skippedBlocks) } : {}),
   };
 }
 
@@ -190,7 +199,8 @@ async function request<T>(method: string, path: string, parse: (b: unknown) => T
     }
     const e = obj(obj(json)?.error);
     const latest = res.status === 409 ? parsePost(obj(json)?.latest) : null;
-    return { ok: false, status: res.status, code: str(e?.code) || "ERROR", ...(latest ? { latest } : {}) };
+    const j = obj(json);
+    return { ok: false, status: res.status, code: str(e?.code) || "ERROR", ...(latest ? { latest } : {}), ...(str(j?.retryAt) ? { retryAt: str(j?.retryAt) } : {}), ...(j?.running === true ? { running: true } : {}) };
   }
   const value = parse(json);
   // A success we cannot read is a failure, never a guessed value.
@@ -213,6 +223,7 @@ export const startCheck = (id: string) => request("POST", `${P}/${enc(id)}/check
 export const getCheck = (id: string, signal?: AbortSignal) => request("GET", `${P}/${enc(id)}/check`, parseCheck, undefined, signal);
 export const cancelCheck = (id: string) => request("POST", `${P}/${enc(id)}/check/cancel`, parseCheck, {});
 export const decideBlock = (id: string, blockId: string, decision: "accepted" | "rejected", ack?: true) => request("PUT", `${P}/${enc(id)}/blocks/${enc(blockId)}`, parseBlock, { decision, ...(ack ? { ack } : {}) });
+export const decideEdit = (id: string, editId: string, decision: "accepted" | "rejected") => request("PUT", `${P}/${enc(id)}/edits/${enc(editId)}`, parseEdit, { decision });
 export const publish = (id: string, mode: "enriched" | "original") => request("POST", `${P}/${enc(id)}/publish`, parsePost, { mode });
 export const unpublish = (id: string) => request("POST", `${P}/${enc(id)}/unpublish`, parsePost, {});
 export function parseNotices(v: unknown): TakedownNotice[] | null {

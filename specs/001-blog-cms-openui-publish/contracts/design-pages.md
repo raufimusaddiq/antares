@@ -41,7 +41,7 @@ Add the new pages to `docs/design/README.md` and wire click flows as prototype i
 | Preview | original vs enriched, notes panel, AI-added badge on each block, per-block Accept / Reject, sources drawer per block with verified/unverified, "Accept all", "Publish my original" |
 | Unverified source | explicit acknowledgement required before accepting |
 | Failed / timed out / cancelled / disconnected | each worded as in `check-envelope.md`, with Retry and Publish original |
-| Out of date | draft changed during the check, Run again |
+| Out of date | only for old checks; since spec 006 a draft change no longer ends a check |
 | Rejected block notice | markup refused, text kept |
 | Published | success with the public address, Copy link, View post, Unpublish |
 | Unavailable | assistant or web search not configured: Publish original only, with the reason |

@@ -1,5 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { EditorContent, useEditor } from "@tiptap/react";
+import { AssistPanel } from "./AssistPanel";
+import { makeBridge, type DraftBridge } from "./draftBridge";
 import { pressed, useFormatState, type Tri } from "./formatState";
 import StarterKit from "@tiptap/starter-kit";
 import Image from "@tiptap/extension-image";
@@ -27,6 +29,12 @@ export interface EditorProps {
   onSettings: () => void;
   onPublish: (flush: () => Promise<boolean>) => void;
   onBack: () => void;
+  /** Hands the live editor's bridge (apply a suggestion, undo it) to the Publish screen, which sits over this editor. */
+  onBridge?: (b: DraftBridge | null) => void;
+  /** The Publish screen is open over the editor. */
+  publishing?: boolean;
+  /** The assistant can check posts (the server confirmed it); without it the editor offers no check. */
+  canCheck?: boolean;
 }
 
 /** True for a document with nothing in it: no nodes, or only paragraphs with no content. */
@@ -42,7 +50,8 @@ function docIsEmpty(doc: DocNode | undefined): boolean {
 
 const BODY_HINT = "Tell your story…";
 
-export default function Editor({ post, email, onPost, onSettings, onPublish, onBack }: EditorProps) {
+export default function Editor({ post, email, onPost, onSettings, onPublish, onBack, onBridge, publishing = false, canCheck = false }: EditorProps) {
+  const [panel, setPanel] = useState(false);
   const [save, setSave] = useState<SaveState>("saved");
   const [latest, setLatest] = useState<Post | null>(null);
   const [title, setTitle] = useState(() => loadLocalCopy(email, post.id)?.title ?? post.title);
@@ -121,6 +130,13 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
   };
 
   const fmt = useFormatState(editor);
+  const bridge = useMemo(() => (editor ? makeBridge(editor) : null), [editor]);
+  useEffect(() => {
+    onBridge?.(bridge);
+    return () => onBridge?.(null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the bridge follows the editor
+  }, [bridge]);
+  const flushNow = useCallback(() => saver.current?.flush() ?? Promise.resolve(false), []);
   const b = (label: string, on: () => void, state?: Tri) => (
     <button type="button" className="quiet" aria-pressed={state === undefined ? undefined : pressed(state)} aria-label={label} onClick={on}>
       {label}
@@ -129,7 +145,7 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
   const chain = () => editor!.chain().focus();
 
   return (
-    <main className="blog-editor">
+    <main className={panel ? "blog-editor has-panel" : "blog-editor"}>
       <header className="blog-bar">
         <button type="button" className="quiet" onClick={onBack}>
           My posts
@@ -140,6 +156,11 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
         <button type="button" className="quiet" onClick={onSettings}>
           Post settings
         </button>
+        {canCheck && (
+          <button type="button" className="quiet check-btn" aria-expanded={panel} aria-controls="blog-panel" onClick={() => setPanel((v) => !v)}>
+            Check with the editor
+          </button>
+        )}
         <button type="button" className="btn" data-publish disabled={save === "conflict" || !!post.takedown} aria-describedby={post.takedown ? "blog-takedown" : undefined} onClick={() => onPublish(() => saver.current?.flush() ?? Promise.resolve(false))}>
           Publish
         </button>
@@ -209,6 +230,7 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
         </span>
         <EditorContent editor={editor} />
       </div>
+      {panel && canCheck && <AssistPanel postId={post.id} initial={post.check} editor={editor} bridge={bridge} flush={flushNow} paused={publishing} canCheck={canCheck} onClose={() => setPanel(false)} />}
     </main>
   );
 }

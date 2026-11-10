@@ -76,9 +76,22 @@ export interface CheckProgress {
   now: string;
 }
 
+/** A suggested change to the author's own text (specs/006-ai-editor-blog). The editor in the browser applies it; the server keeps only the decision. */
+export interface EditSuggestion {
+  id: string;
+  kind: "replace" | "insert";
+  part: number;
+  anchor: string;
+  original: string;
+  proposed: string;
+  reason: string;
+  decision: "open" | "accepted" | "rejected";
+}
+
 export interface Check {
   id: string;
   progress?: CheckProgress | null;
+  edits?: EditSuggestion[];
   state: CheckState;
   /** failed only: "disconnected" and "unusable" are told apart from a plain failure. */
   reason: "" | "error" | "disconnected" | "unusable";
@@ -89,6 +102,8 @@ export interface Check {
 }
 
 export interface Post {
+  /** Set only by a publish with the enriched version: accepted blocks whose place in the draft was gone were left out. */
+  skippedBlocks?: number;
   id: string;
   title: string;
   summary: string;
