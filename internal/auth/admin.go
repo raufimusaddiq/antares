@@ -108,6 +108,8 @@ func (a *Auth) registerAdmin(mux *http.ServeMux) {
 	mux.Handle("PUT /api/admin/model-policy", a.adminRoute(true, a.adminSetModelPolicy))
 	mux.Handle("GET /api/admin/models", a.adminRoute(false, a.adminModels))
 	mux.Handle("PUT /api/admin/model-defaults", a.adminRoute(true, a.adminSetModelDefaults))
+	mux.Handle("GET /api/admin/writing-rules", a.adminRoute(false, a.adminWritingRules))
+	mux.Handle("PUT /api/admin/writing-rules", a.adminRoute(true, a.adminSetWritingRules))
 	mux.Handle("GET /api/admin/tool-policy", a.adminRoute(false, a.adminToolPolicy))
 	mux.Handle("PUT /api/admin/tool-policy", a.adminRoute(true, a.adminSetToolPolicy))
 	mux.Handle("GET /api/admin/media-models", a.adminRoute(false, a.adminMediaModels))

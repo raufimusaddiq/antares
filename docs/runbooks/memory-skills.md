@@ -41,6 +41,9 @@ the instructions above. Nothing is written to a profile file, a SOUL or another 
 operator's and is not shown. `TestPersonalityAppliesToTheOwnersNextRunOnly` checks A's run carries it, B's does not,
 and clearing it stops it.
 
+The built-in writing rules (`docs/runbooks/writing-rules.md`) go first in the same `instructions`, then the OpenUI instruction, then
+these preferences, so the person's own words about tone come last and win. `runs.writing_rules` records `v1`, `off` or NULL.
+
 ## Skills list on Hermes v0.22.5
 
 The deployed Hermes' `GET /v1/skills` calls its skill lister with an argument the lister no longer accepts

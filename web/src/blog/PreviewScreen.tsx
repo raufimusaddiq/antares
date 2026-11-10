@@ -1,11 +1,11 @@
-import { lazy, Suspense, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { DocView, SourcesLine } from "./DocView";
 import { AckGate, SourceDrawer } from "./Sources";
 import type { Check, CheckBlock, CheckNote, Post } from "./types";
 
 const ReaderBlock = lazy(() => import("./ReaderBlock"));
 
-const NOTE_WORDS: Record<CheckNote["kind"], string> = { clarity: "Clarity", fact: "Fact", "missing-context": "Missing context", unsourced: "Unsourced" };
+const NOTE_WORDS: Record<CheckNote["kind"], string> = { clarity: "Clarity", fact: "Fact", "missing-context": "Missing context", unsourced: "Unsourced", style: "Style" };
 
 export interface PreviewProps {
   post: Post;
@@ -109,20 +109,58 @@ export function PreviewScreen({ post, check, acks, onAck, busy, ready, error, on
         </section>
 
         <div className="blog-review-side">
-          {check.notes.length > 0 && (
-            <section className="blog-notes" aria-labelledby="notes-h">
-              <h3 id="notes-h">Notes from the assistant</h3>
-              {check.notes.map((n, i) => (
-                <div key={i} className={n.kind === "unsourced" ? "blog-note blog-note-warn" : "blog-note"}>
-                  <p className="label">{NOTE_WORDS[n.kind]}</p>
-                  <p>{n.text}</p>
-                </div>
-              ))}
-            </section>
-          )}
+          <Notes notes={check.notes} />
           {focus && <SourceDrawer sources={focus.sources} />}
         </div>
       </div>
     </main>
+  );
+}
+
+/** The assistant's notes. Style notes (the built-in writing rules) and the others can be dismissed; a dismissal lives in this screen only and changes nothing on the server. */
+function Notes({ notes }: { notes: CheckNote[] }) {
+  // Dismissals are kept by what a note says, not by its place, so a different check in the same screen cannot lose notes to them.
+  const [gone, setGone] = useState<Set<string>>(new Set());
+  const idOf = (n: CheckNote) => `${n.kind}|${n.afterNode}|${n.text}`;
+  const [focusNext, setFocusNext] = useState<number | "heading" | null>(null);
+  const buttons = useRef<Map<number, HTMLButtonElement>>(new Map());
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => {
+    if (focusNext === null) return;
+    (focusNext === "heading" ? heading.current : buttons.current.get(focusNext))?.focus();
+    setFocusNext(null);
+  }, [focusNext, gone]);
+  if (notes.length === 0) return null;
+  const shown = notes.map((n, i) => ({ n, i })).filter(({ n }) => !gone.has(idOf(n)));
+  const dismissed = notes.length - shown.length;
+  const dismiss = (i: number) => {
+    const after = shown.filter((x) => x.i !== i);
+    const next = after.find((x) => x.i > i) ?? after[0];
+    setFocusNext(next ? next.i : "heading");
+    setGone(new Set(gone).add(idOf(notes[i])));
+  };
+  return (
+    <section className="blog-notes" aria-labelledby="notes-h">
+      <h3 id="notes-h" ref={heading} tabIndex={-1}>
+        Notes from the assistant ({shown.length})
+      </h3>
+      {shown.map(({ n, i }) => (
+        <div key={i} className={n.kind === "unsourced" ? "blog-note blog-note-warn" : "blog-note"}>
+          <p className="blog-note-head">
+            <span className={n.kind === "style" ? "chip chip-warn" : "chip chip-info"}>{NOTE_WORDS[n.kind]}</span>
+            <span className="label">after part {n.afterNode}</span>
+          </p>
+          <p>{n.text}</p>
+          <button type="button" className="quiet" ref={(el) => { if (el) buttons.current.set(i, el); else buttons.current.delete(i); }} onClick={() => dismiss(i)}>
+            Dismiss this note
+          </button>
+        </div>
+      ))}
+      {dismissed > 0 && (
+        <p className="label" role="status">
+          {dismissed} {dismissed === 1 ? "note" : "notes"} dismissed.
+        </p>
+      )}
+    </section>
   );
 }

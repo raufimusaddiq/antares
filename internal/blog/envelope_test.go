@@ -136,3 +136,14 @@ func TestNoticesNeverCarryTheAssistantsWords(t *testing.T) {
 		t.Fatalf("a notice repeats the assistant's text: %s", b)
 	}
 }
+
+func TestAStyleNoteIsAccepted(t *testing.T) {
+	res, err := ParseEnvelope([]byte(env("", `{"kind":"style","text":"Hype words in the opening.","afterNode":0}`)), 3, envNow)
+	if err != nil || len(res.Notes) != 1 || res.Notes[0].Kind != "style" {
+		t.Fatalf("%v %+v", err, res)
+	}
+	res, _ = ParseEnvelope([]byte(env("", `{"kind":"tone","text":"x","afterNode":0}`)), 3, envNow)
+	if len(res.Notes) != 0 {
+		t.Fatalf("an unknown note kind was kept: %+v", res.Notes)
+	}
+}

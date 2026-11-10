@@ -26,6 +26,7 @@ import (
 	"github.com/raufimusaddiq/antares/internal/server"
 	"github.com/raufimusaddiq/antares/internal/store"
 	"github.com/raufimusaddiq/antares/internal/tenant"
+	"github.com/raufimusaddiq/antares/internal/writing"
 )
 
 func main() {
@@ -165,6 +166,13 @@ func run() error {
 			// The administrator's default for summaries and titles, when usable; a switched-off model makes no call.
 			Pick: func(ctx context.Context, configured string) (string, bool) {
 				return modelpolicy.Pick(ctx, db, kenariCat, "summary", configured, time.Now())
+			},
+			// The same writing rules chat runs carry, for summaries only; off when the administrator switched them off.
+			Rules: func(ctx context.Context) string {
+				if on, _ := store.WritingRulesEnabled(ctx, db); !on {
+					return ""
+				}
+				return writing.Text()
 			}}
 		titler, summarizer = m, m
 	}

@@ -30,19 +30,19 @@ func TestVisualizeIsPerChatAndReachesOnlyItsRuns(t *testing.T) {
 	alice.do("PUT", "/api/me/personality", nil, map[string]string{"text": "Be brief."})
 
 	first := alice.send(on, "visual question")
-	instr, _ := runBodyFor(t, a, "visual question")["instructions"].(string)
+	instr := ownInstructions(t, runBodyFor(t, a, "visual question"))
 	vi, pi := strings.Index(instr, "[antares-openui v3]"), strings.Index(instr, "Be brief.")
 	if vi != 0 || pi < vi {
 		t.Errorf("instructions with visualize on: %q", instr)
 	}
 	alice.send(off, "plain question")
-	instr, _ = runBodyFor(t, a, "plain question")["instructions"].(string)
+	instr = ownInstructions(t, runBodyFor(t, a, "plain question"))
 	if strings.Contains(instr, "openui") || !strings.HasSuffix(instr, "Be brief.") {
 		t.Errorf("instructions with visualize off: %q", instr)
 	}
 	bob.send(bob.newPlainChat(), "bob question")
-	if b := runBodyFor(t, a, "bob question"); b["instructions"] != nil {
-		t.Errorf("bob's run: %v", b["instructions"])
+	if i := ownInstructions(t, runBodyFor(t, a, "bob question")); i != "" {
+		t.Errorf("bob's run: %v", i)
 	}
 	_, fr := a.hx.runWithInput(t, "visual question") // finish the chat's first run before sending into it again
 	st := alice.open(first, "")
@@ -52,7 +52,7 @@ func TestVisualizeIsPerChatAndReachesOnlyItsRuns(t *testing.T) {
 	alice.do("PATCH", "/api/chats/"+on, nil, map[string]bool{"visualize": false})
 	alice.do("PUT", "/api/me/personality", nil, map[string]string{"text": ""})
 	alice.send(on, "after turning off")
-	if b := runBodyFor(t, a, "after turning off"); b["instructions"] != nil {
-		t.Errorf("after turning it off: %v", b["instructions"])
+	if i := ownInstructions(t, runBodyFor(t, a, "after turning off")); i != "" {
+		t.Errorf("after turning it off: %v", i)
 	}
 }

@@ -16,6 +16,7 @@ import (
 	"github.com/raufimusaddiq/antares/internal/hermes"
 	"github.com/raufimusaddiq/antares/internal/modelpolicy"
 	"github.com/raufimusaddiq/antares/internal/store"
+	"github.com/raufimusaddiq/antares/internal/writing"
 )
 
 // The AI check: one run of the author's own assistant (their own binding, chosen by the backend, never by the browser) over
@@ -62,11 +63,42 @@ type Spend interface {
 	HardLimitReached(ctx context.Context, userID string) (bool, error)
 }
 
-// checkPromptVersion is the first line of the instruction ("blog-check v1"), kept with every check so a result can be
+// checkPromptVersion is the first line of the instruction ("blog-check v2"), kept with every check so a result can be
 // traced to the instruction that produced it.
 func checkPromptVersion() string {
 	line, _, _ := strings.Cut(checkPrompt, "\n")
 	return strings.TrimSpace(line)
+}
+
+// styleAddendum follows the shared writing rules in a check's instructions (specs/005-antislop-writing, contracts/rules-text.md).
+const styleAddendum = "These rules apply to the text you write in notes and block titles and fallbacks. Where the author's own draft breaks them, " +
+	"add a note of kind \"style\" (what kind of problem, where). For this check only, the allowed note kinds are \"clarity\", \"fact\", \"missing-context\", \"unsourced\" and \"style\", " +
+	"which overrides the list in the reply format above. Never rewrite the draft."
+
+// checkInstructions is the check's instruction text and what it carried: the versioned prompt, then (when the administrator has not
+// switched them off) the built-in writing rules and the style-note paragraph. The state is store.RulesAttached, store.RulesOff or ""
+// (expected, but the text could not be loaded: the check still runs without it). A failing read of the switch keeps the rules on.
+func (s *Service) checkInstructions(ctx context.Context) (text, state string) {
+	on, err := store.WritingRulesEnabled(ctx, s.db)
+	if err != nil {
+		log.Printf("blog: writing rules switch unreadable, rules stay on: %v", err)
+	}
+	if !on {
+		return checkPrompt, store.RulesOff
+	}
+	rules := writing.Text()
+	if rules == "" {
+		log.Printf("blog: writing rules text unavailable: %v", writing.Check())
+		return checkPrompt, ""
+	}
+	return checkPrompt + "\n\n" + rules + "\n\n" + styleAddendum, store.RulesAttached
+}
+
+func rulesArg(state string) any {
+	if state == "" {
+		return nil
+	}
+	return state
 }
 
 // CheckView is a check as the author sees it.
@@ -593,7 +625,11 @@ func (s *Service) driveRun(ctx context.Context, id, author, input string, topNod
 		}
 		provider, model = cat.Provider, cat.Model
 	}
-	req := hermes.RunRequest{SessionID: sid, Provider: provider, Model: model, Input: input, SessionKey: "chatui:user:" + author, IdempotencyKey: "antares-blog-" + id, Instructions: checkPrompt}
+	instructions, rulesState := s.checkInstructions(ctx)
+	if _, err := s.db.ExecContext(context.WithoutCancel(ctx), `UPDATE post_checks SET writing_rules = ? WHERE id = ? AND author_id = ?`, rulesArg(rulesState), id, author); err != nil {
+		log.Printf("blog: record writing rules: %v", err)
+	}
+	req := hermes.RunRequest{SessionID: sid, Provider: provider, Model: model, Input: input, SessionKey: "chatui:user:" + author, IdempotencyKey: "antares-blog-" + id, Instructions: instructions}
 	runID, err := s.hx.CreateRun(ctx, b, req)
 	if err != nil {
 		if ctx.Err() != nil {

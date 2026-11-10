@@ -65,7 +65,7 @@ export function parseBlock(v: unknown): CheckBlock | null {
   };
 }
 
-const NOTE_KINDS = ["clarity", "fact", "missing-context", "unsourced"];
+const NOTE_KINDS = ["clarity", "fact", "missing-context", "unsourced", "style"];
 
 export function parseCheck(v: unknown): Check | null {
   const o = obj(v);

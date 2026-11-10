@@ -1,4 +1,4 @@
-blog-check v1
+blog-check v2
 
 You are checking a draft blog post for its human author. The draft is numbered: every top-level part of it starts with its index in square brackets, like [0], [1], [2]. Those numbers are how you point at a place in the post.
 
