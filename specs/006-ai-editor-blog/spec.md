@@ -27,6 +27,7 @@ Today the check is deliberately read-only about the author's text (spec 001: the
 - Q: Where does the author review the editor's suggestions? → A: At any time while writing: a "Check with the editor" action in the editor runs the same check and shows suggestions beside the draft; Publish still runs the check on the way out, as today.
 - Q: After the author accepts one suggestion (or types elsewhere), do the remaining suggestions and data blocks stay usable? → A: Yes. Accepting changes only its own passage; every other suggestion and block stays valid unless its own passage changed (then it is "no longer applicable"). Typing elsewhere also leaves them valid.
 - Q: Do checks started from the editor count against the same limits as the check at Publish? → A: Yes, one shared limit (daily and simultaneous, as today). When it is reached the author is told and can still publish the original.
+- Q: Should the published post tell readers that accepted text was assistant-written? → A: No. Once accepted, the text is the author's own; the "written by the assistant" mark exists only in the editor and review screens until acceptance. Data blocks keep their "AI-added" marker for readers, as today.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -113,7 +114,7 @@ The check no longer only adds data blocks and notes. It also proposes changes to
 - **FR-010**: For a draft that is mostly a framework (headings and bullets with little prose), the check MUST be able to propose prose for each section built from the author's own points.
 - **FR-011**: Nothing in the author's draft MUST change until the author accepts a suggestion; accepting MUST change only that passage and MUST be undoable; rejecting MUST change nothing.
 - **FR-012**: Notes, reasons and proposed text MUST be in the language the post (or the passage) is written in.
-- **FR-013**: Text written by the assistant MUST be marked as such until accepted, and a suggestion MUST NOT state a number, quote or source it cannot support; unsupported specifics are left out.
+- **FR-013**: Text written by the assistant MUST be marked as such in the editor and review screens until accepted (after acceptance it is the author's own text and carries no mark on the published post; data blocks keep their reader-facing "AI-added" marker), and a suggestion MUST NOT state a number, quote or source it cannot support; unsupported specifics are left out.
 - **FR-014**: A suggestion whose original passage has changed (by an accepted suggestion or by the author's typing) MUST be shown as no longer applicable and MUST NOT be applied; every other suggestion and data block MUST stay usable, so one check can be worked through in one sitting. This replaces today's rule that any edit marks the whole check out of date.
 - **FR-015**: Publishing without accepting any suggestion MUST publish exactly the author's text.
 - **FR-016**: The check, the progress and the suggestions MUST stay private to the author while a draft: the administrator never sees a draft, a suggestion or a check (constitution principle I).
