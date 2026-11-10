@@ -25,6 +25,7 @@ Today the check is deliberately read-only about the author's text (spec 001: the
 - Q: How much of the author's text may the assistant propose to write or rewrite? → A: Both: it edits what the author wrote and also expands a bare framework into full paragraphs built from the author's own points, marked as assistant-written until accepted.
 - Q: Where does an accepted text change land? → A: Straight into the saved draft, as a new saved version the author can step back to; what the editor shows is what gets published.
 - Q: Where does the author review the editor's suggestions? → A: At any time while writing: a "Check with the editor" action in the editor runs the same check and shows suggestions beside the draft; Publish still runs the check on the way out, as today.
+- Q: After the author accepts one suggestion (or types elsewhere), do the remaining suggestions and data blocks stay usable? → A: Yes. Accepting changes only its own passage; every other suggestion and block stays valid unless its own passage changed (then it is "no longer applicable"). Typing elsewhere also leaves them valid.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -89,7 +90,7 @@ The check no longer only adds data blocks and notes. It also proposes changes to
 - A selection that spans a bold word, a link and plain text: the buttons show a mixed state and still work.
 - A very short draft (a title only): the assistant says there is too little to edit instead of inventing a whole post.
 - A very long draft: the check still refuses clearly (as today) and the progress screen never claims a step that did not run.
-- The author edits the draft while a check runs: the check is marked out of date, as today; no suggestion is applied to a changed draft.
+- The author edits the draft while a check runs: suggestions about the passages that changed are dropped when the check finishes; the rest stay valid. No suggestion is applied to a passage that changed.
 - A suggestion whose original passage the author has since changed: it is shown as no longer applicable, not applied.
 - A post that mixes two languages: the assistant follows the language of the passage it is about.
 - The assistant returns something unusable: the author sees which suggestions were dropped and why, never a silent gap.
@@ -112,7 +113,7 @@ The check no longer only adds data blocks and notes. It also proposes changes to
 - **FR-011**: Nothing in the author's draft MUST change until the author accepts a suggestion; accepting MUST change only that passage and MUST be undoable; rejecting MUST change nothing.
 - **FR-012**: Notes, reasons and proposed text MUST be in the language the post (or the passage) is written in.
 - **FR-013**: Text written by the assistant MUST be marked as such until accepted, and a suggestion MUST NOT state a number, quote or source it cannot support; unsupported specifics are left out.
-- **FR-014**: A suggestion whose original passage has changed MUST be shown as no longer applicable and MUST NOT be applied.
+- **FR-014**: A suggestion whose original passage has changed (by an accepted suggestion or by the author's typing) MUST be shown as no longer applicable and MUST NOT be applied; every other suggestion and data block MUST stay usable, so one check can be worked through in one sitting. This replaces today's rule that any edit marks the whole check out of date.
 - **FR-015**: Publishing without accepting any suggestion MUST publish exactly the author's text.
 - **FR-016**: The check, the progress and the suggestions MUST stay private to the author while a draft: the administrator never sees a draft, a suggestion or a check (constitution principle I).
 - **FR-017**: The assistant MAY both edit the author's own sentences and expand a bare framework into full paragraphs built from the author's own points; expanded text MUST come from those points and MUST NOT add facts the author did not give (see FR-013).
