@@ -14,7 +14,7 @@ Run on 2026-11-10 against the build in this branch. Only what was actually run i
 | `npm test` | 867 tests, 100 files. The first run had one timeout in `PreviewScreen.test.tsx` while Go tests, a build and vitest ran together; that file passes alone (15/15) |
 | Web: strip (3 cards, absent on empty, failure and 429), a Read the blog button on sign-in, waiting, refused and suspended and not on a broken workspace, reader header (visitor, pending, suspended, approved), writer's workspace link, Yours (published only, never drafts), Show more with a repeated slug, search and Clear, page failure with retry | `web/src/blog/Discovery.test.tsx` (25), pass |
 | Web: chat rail and menu entries, with and without writing, no extra rail row | `web/src/ChatBlogEntries.test.tsx` (4), pass |
-| Browser `blog-discovery` (new): sign-in, waiting, chat (with and without writing) and the public list at 320, 390, 820 and 1280 px, light and dark | 48/48; every page fits the device, the only console error is the visitor's one 401 from `/api/me` |
+| Browser `blog-discovery` (new): sign-in, waiting, chat (with and without writing) and the public list at 320, 390, 820 and 1280 px, light and dark, plus sign-in and waiting on short and landscape screens (390x520, 320x420, 568x320, 1024x600) with an unbroken 50-character title and author name | 56/56; every page fits the device, the top is not cut off, the last button can be scrolled to, every card is inside; the only console error is the visitor's one 401 from `/api/me` |
 | Browser, existing views re-run | mobile-layout 101/101, desktop-layout 50/50 (earlier run, before the late CSS edits; mobile-layout re-run after), blog-public 8/8, blog-editor 34/34, share-menu 30/30, share-preview 6/6, story-card 18/18, images 20/20 |
 | `TestBundleIsNotStale` | pass, bundle rebuilt |
 
@@ -30,6 +30,9 @@ Run on 2026-11-10 against the build in this branch. Only what was actually run i
 - The phone's chat rail is a strip and hides the Blog posts button (the menu has it); the new rail row is hidden there too, and the phone reaches Read the blog from the Menu.
 - The public pages ask `/api/me` once, shared between the header and the list through one provider; the first version asked twice.
 - `T030a`: the public blog pages (`/b`, `/b/{slug}`) in production show flat paper, not the dot grid: the dots come from `body:not(.chat):not(.admin)`, and `.blog-public` paints its own `background: var(--canvas)` over it. The design agrees (flat), so nothing changed.
+
+- Read the blog touched the last latest-post card: `.screen a.btn` (more specific) set a 0.25rem margin that beat the button's own top margin. The spacing is now the container's (`.blog-entry` gap); found by the owner on the sign-in page.
+- An unbroken long title or author name stretched the card column (sign-in strip and public list) and pushed the page sideways by up to 94 px; cards now wrap such text (`min-width: 0`, `overflow-wrap`). The Hermes Review's blocker (a Show more page in flight landing in a newer search) is fixed with an epoch and an abort, with a test.
 
 ## Motion (design-motion-principles, Emil first, Jakub second)
 

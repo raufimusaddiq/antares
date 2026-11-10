@@ -151,6 +151,42 @@ describe("finding a post", () => {
     expect(screen.getAllByText("Post 20")).toHaveLength(1);
     expect(screen.queryByRole("button", { name: "Show more" })).toBeNull(); // a short page is the end
   });
+  it("a page still coming when the search changes never lands in the new results", async () => {
+    const page1 = Array.from({ length: 20 }, (_, i) => sum(i + 1));
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => (release = r));
+    const f = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const u = new URL(String(input), "https://antares.test");
+      if (u.pathname === "/api/me") return json(401, {});
+      if (u.searchParams.get("page") === "2") {
+        await held; // the old search's second page is slow
+        if (init?.signal?.aborted) throw new DOMException("aborted", "AbortError");
+        return json(200, [sum(98), sum(99)]);
+      }
+      return json(200, u.searchParams.get("q") === "fresh" ? [sum(50)] : page1);
+    });
+    vi.stubGlobal("fetch", f);
+    render(<PublicIndex />);
+    await screen.findByText("Post 1");
+    fireEvent.click(await screen.findByRole("button", { name: "Show more" }));
+    fireEvent.change(screen.getByRole("searchbox", { name: "Search posts" }), { target: { value: "fresh" } });
+    await screen.findByText("Post 50");
+    release();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(screen.queryByText("Post 98")).toBeNull();
+    expect(screen.queryByText("Post 99")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Show more" })).toBeNull(); // the new search has one short page, so nothing more
+  });
+  it("only the cards that arrive are animated in, not the ones already on screen", async () => {
+    const page1 = Array.from({ length: 20 }, (_, i) => sum(i + 1));
+    server({ me: null, list: (u) => (u.searchParams.get("page") === "2" ? [sum(21)] : page1) });
+    const { container } = render(<PublicIndex />);
+    await screen.findByText("Post 1");
+    fireEvent.click(await screen.findByRole("button", { name: "Show more" }));
+    await screen.findByText("Post 21");
+    const entering = [...container.querySelectorAll(".blog-card[data-enter]")].map((li) => li.querySelector("h2")?.textContent);
+    expect(entering).toEqual(["Post 21"]);
+  });
   it("a short first page has no Show more", async () => {
     server({ me: null, list: () => [sum(1)] });
     render(<PublicIndex />);

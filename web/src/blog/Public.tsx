@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { getCapabilities, getPublic, listMyPublishedSlugs, listPublic, mediaUrl } from "./blogApi";
 import { ReaderProvider, isActive, useReader } from "./readerSession";
 import { LOGIN_URL } from "../api";
@@ -93,8 +93,11 @@ function IndexBody() {
   const [state, setState] = useState<"loading" | "ready" | "error" | "more" | "more-error">("loading");
   const [tick, setTick] = useState(0);
   const [mine, setMine] = useState<Set<string>>(new Set());
-  // The cards ease in on the first load and when more arrive, never while someone is typing a search.
-  const [enter, setEnter] = useState(true);
+  // The cards ease in on the first load and when more arrive (only the new ones), never while someone is typing a search: the index of the first card to animate.
+  const [enterFrom, setEnterFrom] = useState(0);
+  // A page of an older search must never land in a newer one: each search bumps the epoch and aborts the page in flight.
+  const epoch = useRef(0);
+  const moreCtl = useRef<AbortController | null>(null);
   const [full, setFull] = useState(false);
   const active = isActive(reader);
 
@@ -110,6 +113,8 @@ function IndexBody() {
   }, [active]);
   // A new search (or a retry of the first page) starts again from page 1.
   useEffect(() => {
+    epoch.current += 1;
+    moreCtl.current?.abort();
     const ctl = new AbortController();
     setState("loading");
     void listPublic({ q }, ctl.signal).then((r) => {
@@ -118,7 +123,7 @@ function IndexBody() {
       setPosts(r.value);
       setPage(1);
       setFull(r.value.length >= PAGE);
-      setEnter(q === "");
+      setEnterFrom(q === "" ? 0 : Infinity);
       setState("ready");
     });
     return () => ctl.abort();
@@ -126,7 +131,11 @@ function IndexBody() {
 
   const more = () => {
     setState("more");
-    void listPublic({ q, page: page + 1 }).then((r) => {
+    const mine = epoch.current;
+    const ctl = new AbortController();
+    moreCtl.current = ctl;
+    void listPublic({ q, page: page + 1 }, ctl.signal).then((r) => {
+      if (ctl.signal.aborted || mine !== epoch.current) return; // the search changed while this page was coming
       if (!r.ok) return setState("more-error");
       // A post published while reading shifts the next page by one: a slug already shown is never shown twice.
       setPosts((cur) => {
@@ -135,7 +144,7 @@ function IndexBody() {
       });
       setPage(page + 1);
       setFull(r.value.length >= PAGE);
-      setEnter(true);
+      setEnterFrom(posts.length);
       setState("ready");
     });
   };
@@ -174,9 +183,9 @@ function IndexBody() {
           )
         )}
         {shown.length > 0 && (
-          <ul className="blog-cards" data-enter={enter ? "" : undefined}>
+          <ul className="blog-cards">
             {shown.map((p, i) => (
-              <li key={p.slug} className="blog-card" style={{ "--i": Math.min(i % PAGE, 8) } as React.CSSProperties}>
+              <li key={p.slug} className="blog-card" data-enter={i >= enterFrom ? "" : undefined} style={{ "--i": Math.min(Math.max(i - enterFrom, 0), 8) } as React.CSSProperties}>
                 <a href={`/b/${p.slug}`}>
                   {mediaUrl(p.coverUrl) && <img src={mediaUrl(p.coverUrl)} alt="" loading="lazy" />}
                   <span className="label">

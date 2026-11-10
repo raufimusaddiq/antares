@@ -1450,6 +1450,8 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 .blog-card a { display: grid; gap: 0.5rem; height: 100%; padding: 1rem; box-sizing: border-box; color: var(--ink); text-decoration: none; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
 .blog-card a:hover { transform: translate(-1px, -1px); box-shadow: var(--hard); }
 .blog-card h2 { margin: 0; font-size: 1.3rem; }
+/* An unbroken long title or author name wraps inside its card: without min-width 0 the grid column grows to it and the page goes sideways. */
+.blog-card, .blog-card a, .blog-card h2, .blog-card p, .blog-by { min-width: 0; overflow-wrap: anywhere; }
 .blog-card img { width: 100%; height: 9rem; object-fit: cover; border-radius: var(--r-sm); }
 .avatar { display: inline-grid; place-items: center; width: 1.75rem; height: 1.75rem; border-radius: 50%; border: 2px solid var(--ink); background: var(--peri); font-size: 0.7rem; font-weight: 700; }
 .blog-by { display: flex; align-items: center; gap: 0.5rem; font-weight: 700; }
@@ -1465,14 +1467,16 @@ a.btn.plain:hover { background: var(--mark); color: var(--mark-ink); }
 .blog-more-posts { margin: 2rem 0 0; }
 
 /* The latest posts on the sign-in and waiting screens: three cards, each one link named by its title. */
-.blog-entry { margin-top: 1.5rem; max-width: 34rem; }
-.blog-entry .read-blog { margin-top: 1rem; }
-.latest-posts { border-top: 2px solid var(--ink); padding-top: 0.9rem; }
+/* The spacing is the container's: ".screen a.btn" (more specific) sets a small margin on every button, which used to win over a margin here and
+   left Read the blog touching the last card. */
+.blog-entry { display: grid; justify-items: start; gap: 1.1rem; margin-top: 1.5rem; max-width: 34rem; }
+.screen .blog-entry .read-blog { margin: 0; }
+.latest-posts { width: 100%; min-width: 0; border-top: 2px solid var(--ink); padding-top: 0.9rem; }
 .latest-posts h2 { margin: 0 0 0.7rem; font-size: 0.75rem; color: var(--ink-2); }
-.latest-posts ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.75rem; }
-.latest-posts a { display: grid; gap: 0.15rem; padding: 0.7rem 0.9rem; min-height: 2.75rem; box-sizing: border-box; color: var(--ink); text-decoration: none; background: var(--card); border: 1.5px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
+.latest-posts ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: minmax(0, 1fr); gap: 0.75rem; }
+.latest-posts a { display: grid; gap: 0.15rem; min-width: 0; padding: 0.7rem 0.9rem; min-height: 2.75rem; box-sizing: border-box; color: var(--ink); text-decoration: none; background: var(--card); border: 1.5px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
 .latest-title { font-weight: 700; overflow-wrap: anywhere; }
-.latest-posts .label { color: var(--ink-2); }
+.latest-posts .label { color: var(--ink-2); overflow-wrap: anywhere; }
 
 /* The public list: a search box, a count, the cards, one button for more. */
 .blog-search { display: flex; align-items: center; gap: 0.5rem; margin: 1.25rem 0 0.25rem; padding: 0.2rem 0.4rem 0.2rem 1rem; background: var(--card); border: 1.5px solid var(--ink); border-radius: var(--r-pill); }
@@ -1494,7 +1498,7 @@ a.btn.plain:hover { background: var(--mark); color: var(--mark-ink); }
    app's other hard-shadow controls. Everything here is transform and opacity, and none of it runs under reduced motion. */
 @keyframes card-in { from { opacity: 0; transform: translateY(8px); } }
 @media (prefers-reduced-motion: no-preference) {
-  .latest-posts li, .blog-cards[data-enter] .blog-card { animation: card-in 220ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
+  .latest-posts li, .blog-card[data-enter] { animation: card-in 220ms var(--ease-out) both; animation-delay: calc(var(--i, 0) * 45ms); }
   .latest-posts li:nth-child(2) { --i: 1; } .latest-posts li:nth-child(3) { --i: 2; }
   .latest-posts a { transition: transform 120ms var(--ease-out), box-shadow 120ms var(--ease-out), background-color 120ms var(--ease-out); }
   .latest-posts a:hover { transform: translate(-1px, -1px); box-shadow: var(--hard); }

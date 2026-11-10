@@ -159,7 +159,7 @@ function api(req, res, url) {
     const q = (url.searchParams.get("q") || "").toLowerCase();
     const limit = Math.min(20, Number(url.searchParams.get("limit")) || 20);
     const page = Math.max(1, Number(url.searchParams.get("page")) || 1);
-    const all = Array.from({ length: 45 }, (_, i) => ({ slug: `disc-${i + 1}`, title: `Discovery post ${i + 1}`, summary: `Summary of discovery post ${i + 1} with some words to wrap`, coverUrl: "", authorName: i % 2 ? "Dion S." : "Maya R.", publishedAt: "2026-11-08T01:00:00Z" })).filter((p) => !q || p.title.toLowerCase().includes(q));
+    const all = Array.from({ length: 45 }, (_, i) => ({ slug: `disc-${i + 1}`, title: i === 0 ? "Averyveryverylongtitlewithoutanyspacesatallsoitcannotwrapnormally" : `Discovery post ${i + 1}`, summary: `Summary of discovery post ${i + 1} with some words to wrap`, coverUrl: "", authorName: i === 0 ? "Averyveryverylongdisplaynamewithoutanyspacesatall" : i % 2 ? "Dion S." : "Maya R.", publishedAt: "2026-11-08T01:00:00Z" })).filter((p) => !q || p.title.toLowerCase().includes(q));
     return send(200, all.slice((page - 1) * limit, page * limit));
   }
   if (url.pathname === "/api/public/blog/posts") return send(200, [{ slug: "first-post", title: "A long title that has to wrap on a phone without pushing the page sideways", summary: "A summary with " + "words ".repeat(30), coverUrl: "", authorName: "A Writer With A Rather Long Display Name", publishedAt: "2026-11-08T01:00:00Z" }]);
@@ -1302,6 +1302,7 @@ async function blogDiscovery(browser) {
       await page.waitForTimeout(500);
       const first = await page.locator(".blog-card").count();
       const back = await page.getByRole("link", { name: "Back to Antares" }).count();
+      await page.screenshot({ path: path.join(outDir, `discovery-list-first-${label}-${scheme}.png`), fullPage: true });
       await page.getByRole("button", { name: "Show more" }).click();
       await page.locator(".blog-card").nth(20).waitFor({ timeout: 5000 }).catch(() => {});
       const more = await page.locator(".blog-card").count();
@@ -1320,6 +1321,34 @@ async function blogDiscovery(browser) {
       check(`blog discovery list, ${label} ${scheme}: no console error or off-origin request`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
       await ctx.close();
     } finally { state.manyPosts = false; }
+  }
+}
+
+// Short and landscape screens: the sign-in and waiting pages hold a tall strip now, so on a short viewport the top must not be cut off (a
+// centred grid cannot scroll upward), the page must scroll to its last button, and an unbroken long name or title must not push it sideways.
+async function blogDiscoveryShort(browser) {
+  for (const [label, w, h] of [["short phone", 390, 520], ["very short", 320, 420], ["landscape", 568, 320], ["tablet landscape", 1024, 600]]) {
+    for (const meState of ["", "PENDING"]) {
+      state.visitor = meState === ""; state.meState = meState || "ACTIVE";
+      try {
+        const { ctx, page, consoleErrors } = await openPage(browser, { viewport: { width: w, height: h }, ...(w < 700 ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) });
+        await page.goto(base + "/");
+        await page.waitForSelector(".latest-posts a", { timeout: 8000 }).catch(() => {});
+        await page.waitForTimeout(500);
+        const m = await page.evaluate((devW) => {
+          const top = document.querySelector(".screen h1")?.getBoundingClientRect().top ?? -1;
+          const btn = document.querySelector("a.read-blog");
+          window.scrollTo(0, document.documentElement.scrollHeight);
+          const b = btn ? btn.getBoundingClientRect() : { bottom: 99999 };
+          const cards = [...document.querySelectorAll(".latest-posts a")].map((a) => { const r = a.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth; });
+          return { widened: innerWidth - devW, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, top, btnBottom: Math.round(b.bottom), vh: innerHeight, cardsInside: cards.every(Boolean), cards: cards.length };
+        }, w);
+        check(`blog discovery ${meState ? "waiting" : "sign-in"}, ${label} ${w}x${h}: nothing sideways, the top is not cut off, the last button can be scrolled to, every card is inside`,
+          m.widened <= 0 && m.overflowX <= 0 && m.top >= 0 && m.btnBottom <= m.vh && m.cardsInside && m.cards === 3, JSON.stringify(m));
+        await page.screenshot({ path: path.join(outDir, `discovery-short-${meState ? "waiting" : "signin"}-${w}x${h}.png`), fullPage: true });
+        await ctx.close();
+      } finally { state.visitor = false; state.meState = "ACTIVE"; }
+    }
   }
 }
 
@@ -1342,7 +1371,7 @@ try {
   if (only === "share-image") await shareImage(browser);
   if (!only || only === "share-menu") await shareMenu(browser);
   if (!only || only === "story-card") await storyCard(browser);
-  if (!only || only === "blog-discovery") await blogDiscovery(browser);
+  if (!only || only === "blog-discovery") { state.manyPosts = true; try { await blogDiscovery(browser); await blogDiscoveryShort(browser); } finally { state.manyPosts = false; } }
   if (!only || only === "blog-editor" || only === "share-preview") await shareSettings(browser);
 } finally {
   await browser.close();
