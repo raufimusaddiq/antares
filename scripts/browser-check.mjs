@@ -1314,10 +1314,16 @@ async function blogDiscovery(browser) {
       const none = await page.getByText("No posts match").count();
       await page.getByRole("button", { name: "Clear" }).click();
       await page.locator(".blog-card").first().waitFor({ timeout: 5000 }).catch(() => {});
+      const top = await page.evaluate(() => { window.scrollTo(0, 0); return { display: getComputedStyle(document.body).display, headerTop: Math.round(document.querySelector(".blog-public-head")?.getBoundingClientRect().top ?? -1) }; });
+      check(`blog discovery list, ${label} ${scheme}: the page hangs from the top of the screen (not centred in a grid that can leave a band above a short page)`, top.display !== "grid" && top.headerTop === 0, JSON.stringify(top));
       const f = await fits(page, w);
       check(`blog discovery list, ${label} ${scheme}: 20 posts, Show more adds the next page, a search narrows it, no match is said, Clear restores it, Back to Antares is there`,
         first === 20 && more === 40 && hits === 1 && none > 0 && back === 1 && f.widened <= 0 && f.overflowX <= 0, JSON.stringify({ first, more, hits, none, back, ...f }));
       await page.screenshot({ path: path.join(outDir, `discovery-list-${label}-${scheme}.png`), fullPage: true });
+      await page.goto(base + "/blog");
+      await page.waitForSelector(".blog-rows, .blog-empty", { timeout: 8000 }).catch(() => {});
+      const mine = await page.evaluate(() => ({ display: getComputedStyle(document.body).display, rootTop: Math.round(document.getElementById("root").firstElementChild.getBoundingClientRect().top) }));
+      check(`blog workspace, ${label} ${scheme}: the page hangs from the top of the screen, no band of dots above it`, mine.display !== "grid" && mine.rootTop === 0, JSON.stringify(mine));
       check(`blog discovery list, ${label} ${scheme}: no console error or off-origin request`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
       await ctx.close();
     } finally { state.manyPosts = false; }
