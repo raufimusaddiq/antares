@@ -89,3 +89,18 @@ the only place another may be added. It reads a copy of a chat that its owner ch
 bits kept only as a hash; the answer is the title, the date and the turns' role and text, with no account, chat or
 profile identity and no media. A link dies when the owner stops or replaces it, deletes the chat, or is no longer
 approved, and a dead link answers exactly like one that never existed.
+
+## 8. Accepted risk: media tools can read another profile's image (#161)
+
+Re-tested on production on 2026-11-10 (Hermes v0.22.5, disposable accounts A and B, the A/B probe of #161): the media tools Hermes gives every
+account (`vision_analyze`, `image_generate`, `video_analyze`, `video_generate`) go through an image resolver that loads any path under the shared
+Hermes data directory, so a user's tool call can read an image that sits in another user's profile if it names the path. Everything else held:
+Antares answered 404 on every route into another user's data, `web_extract` refused all 14 local, private and metadata targets, another profile's
+skills could not be read, and an inline shell skill stayed inert.
+
+**The owner accepted this risk on 2026-11-10 for the invited, approved-user group** (decision recorded on #161): the tools stay on, nothing was
+changed in the code, and the fix (move those toolsets into the floor, `hermes.DeniedToolsets`, which turns image, vision and video off for everyone)
+stays available in the closed PR #202. It needs the other user's file path, which is not guessable by accident, and no exploitation was observed.
+Antares therefore MUST NOT be described as secure for mutually untrusted users (constitution, Additional Constraints); revisit this before
+anyone not personally approved by the owner can use it, or when Hermes closes the resolver upstream.
+

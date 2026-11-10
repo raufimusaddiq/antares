@@ -1,6 +1,8 @@
 <!--
 Sync Impact Report
-Version change: 1.1.0 -> 1.2.0
+Version change: 1.2.0 -> 1.2.1 (PATCH: the no-overclaim constraint now points at the one known accepted isolation risk, #161)
+
+Previous: 1.1.0 -> 1.2.0
 Modified principles: I (admin blindness now names its one exception: the published version of a public blog post, which an
 admin may read and take down)
 Added sections: none
@@ -58,7 +60,8 @@ Rationale: the system is operated by one owner; every moving part is a recurring
 - **Secrets:** no credential in a committed file, log, error string, URL or read model. Keys come
   from runtime secrets; `.env.example` holds names and placeholders only; fixtures are sanitized.
 - **No security overclaim:** Antares MUST NOT be described as secure for mutually untrusted users
-  until the Phase 0 isolation gate is demonstrated.
+  until the Phase 0 isolation gate is demonstrated. One cross-profile read is known and accepted by the owner for the invited group
+  (media tools can read another profile's image given its path; #161, `docs/runbooks/security-invariants.md` section 8).
 - **Hermes API fidelity:** shapes come from recorded fixtures of the deployed version, never guesses.
 - **Production boundaries:** no Docker socket access for Antares; Antares does not modify Hermes
   data directories; inside the Hermes container only profile create/delete is authorised.
@@ -84,4 +87,4 @@ adding one or materially expanding guidance, PATCH for wording. Every plan and P
 check compliance with Principles I-V; deviations are recorded in the plan with justification. Use
 `AGENTS.md` for runtime development guidance.
 
-**Version**: 1.2.0 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-10
+**Version**: 1.2.1 | **Ratified**: 2026-11-08 | **Last Amended**: 2026-11-10
