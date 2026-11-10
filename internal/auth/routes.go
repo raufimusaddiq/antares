@@ -124,6 +124,8 @@ var BlogRoutes = []Route{
 	{"POST", "/api/blog/posts/{id}/duplicate"},
 	{"POST", "/api/blog/posts/{id}/assets"},
 	{"GET", "/api/blog/posts/{id}/assets/{assetId}"},
+	{"GET", "/api/blog/notices"},
+	{"POST", "/api/blog/notices/{id}/seen"},
 }
 
 // PublicBlogRoutes are the other routes that answer without a session: the read of posts their authors published (and
@@ -143,6 +145,12 @@ func (a *Auth) BlogReadLimit() func(http.Handler) http.Handler { return a.blogRe
 type BlogHandlers interface {
 	Handlers() map[string]http.Handler
 	PublicHandlers() map[string]http.Handler
+}
+
+// BlogAdminHandlers is the optional part the blog supplies for the administrator's post routes (admin.go registers them by
+// name, so the kept guard tests can read every admin route from that file).
+type BlogAdminHandlers interface {
+	AdminHandlers() map[string]http.Handler
 }
 
 // PublicRoutes answer without a session (#250): the read of a chat its owner shared by link. Nothing else may be

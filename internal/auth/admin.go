@@ -111,6 +111,24 @@ func (a *Auth) registerAdmin(mux *http.ServeMux) {
 	mux.Handle("PUT /api/admin/media-models", a.adminRoute(true, a.adminSetMediaModels))
 	mux.Handle("GET /api/admin/kenari-usage", a.adminRoute(false, a.adminKenariUsage))
 	mux.Handle("GET /api/admin/metrics", a.adminRoute(false, a.adminMetrics))
+	mux.Handle("GET /api/admin/blog-posts", a.adminRoute(false, a.adminBlog("GET /api/admin/blog-posts")))
+	mux.Handle("GET /api/admin/blog-posts/{postId}", a.adminRoute(false, a.adminBlog("GET /api/admin/blog-posts/{postId}")))
+	mux.Handle("POST /api/admin/blog-posts/{postId}/take-down", a.adminRoute(true, a.adminBlog("POST /api/admin/blog-posts/{postId}/take-down")))
+	mux.Handle("POST /api/admin/blog-posts/{postId}/restore", a.adminRoute(true, a.adminBlog("POST /api/admin/blog-posts/{postId}/restore")))
+}
+
+// adminBlog hands a post route to the blog (published content and takedown state only, see blog/takedown.go). Without the
+// blog the route answers like any unknown admin path.
+func (a *Auth) adminBlog(key string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		if b, ok := a.blog.(BlogAdminHandlers); ok {
+			if h, ok := b.AdminHandlers()[key]; ok {
+				h.ServeHTTP(w, r)
+				return
+			}
+		}
+		a.apiError(w, r, http.StatusNotFound, "NOT_FOUND", "Not found")
+	}
 }
 
 func targetID(w http.ResponseWriter, r *http.Request, a *Auth) (string, bool) {

@@ -9,7 +9,7 @@
 //
 //   cd web && npm ci && npm run build && cd ..
 //   PLAYWRIGHT_CORE=/path/to/node_modules/playwright-core node scripts/browser-check.mjs [--out DIR]
-//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview|blog-discovery)
+//   (CHROME=/path/to/chromium selects the browser; ONLY=mobile-layout|desktop-layout|starting-card|images|blog-public|blog-list|blog-editor|shots|phone-shots|share-image|share-menu|story-card|share-preview|blog-discovery|admin-posts)
 //
 // playwright-core and a Chromium are deliberately not dependencies of web/.
 
@@ -121,7 +121,7 @@ function transcript(rich) {
 const DATA = { [PLAIN]: transcript(false), [RICH]: transcript(true) };
 const b64 = (s) => Buffer.from(s).toString("base64url");
 
-const state = { manyPosts: false, visitor: false, meState: "ACTIVE", noWriting: false, log: [], delayMs: 15, models: false, admin: false, email: "reader@example.test", budgetReached: false, emptyList: false, hold: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map(), blogCheck: false };
+const state = { manyPosts: false, visitor: false, meState: "ACTIVE", noWriting: false, log: [], delayMs: 15, models: false, admin: false, email: "reader@example.test", budgetReached: false, emptyList: false, hold: false, assets: new Map(), deleted: [], sent: [], failNextUpload: false, runs: new Map(), blogCheck: false, takedown: false, notices: [], posts: null };
 // A slow runner answers later than a fast one. MOCK_DELAY_MS adds that latency to the image endpoints of the mock (upload, delete, send) so
 // the ordering a slow CI runner produces can be reproduced on demand. Unset (the default) the mock answers at once.
 const MOCK_DELAY = Number(process.env.MOCK_DELAY_MS || 0);
@@ -141,9 +141,25 @@ function api(req, res, url) {
   // phone sideways (a long unbroken address, a long code line).
   if (url.pathname === "/api/blog/capabilities") return send(200, { writing: !state.noWriting, check: state.blogCheck === true, webSearch: state.blogCheck === true });
   if (url.pathname === "/api/blog/limits") return send(200, BLOG_LIMITS);
+  // Spec 004: the administrator's takedown, seen by the author as a list row, a banner, and a blocked Publish.
+  if (url.pathname === "/api/blog/notices" && req.method === "GET") return send(200, { notices: state.notices });
+  if (/^\/api\/blog\/notices\/[^/]+\/seen$/.test(url.pathname) && req.method === "POST") { state.notices = []; res.writeHead(204); return res.end(); }
+  if (state.admin && url.pathname === "/api/admin/blog-posts" && req.method === "GET") {
+    const f = url.searchParams.get("state");
+    const items = state.posts.filter((p) => !f || p.state === f);
+    return send(200, { items, next: "" });
+  }
+  const adminPost = /^\/api\/admin\/blog-posts\/([0-9a-f]{32})(\/take-down|\/restore)?$/.exec(url.pathname);
+  if (state.admin && adminPost) {
+    const p = state.posts.find((x) => x.id === adminPost[1]);
+    if (!p) return send(404, { error: { code: "NOT_FOUND" } });
+    if (adminPost[2] === "/take-down" && req.method === "POST") { p.state = "taken_down"; p.takedown = { at: "2026-11-10T00:00:00Z", reason: "Spam", byName: "Admin" }; return send(200, p); }
+    if (adminPost[2] === "/restore" && req.method === "POST") { p.state = "visible"; p.takedown = null; return send(200, p); }
+    return send(200, { ...p, coverUrl: "", doc: BLOG_DOC, blocks: [] });
+  }
   if (url.pathname === "/api/blog/posts" && req.method === "GET")
-    return send(200, [BLOG_ID, "c".repeat(32), "d".repeat(32)].map((id, i) => ({ id, title: ["A long title that has to wrap on a phone without pushing the page sideways", "", "Second post"][i], status: ["published", "draft", "unpublished"][i], slug: i === 0 ? "first-post" : "", updatedAt: "2026-11-09T01:00:00Z", publishedAt: i === 0 ? "2026-11-08T01:00:00Z" : "", interactive: false })));
-  if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "GET") return send(200, blogPost());
+    return send(200, [BLOG_ID, "c".repeat(32), "d".repeat(32)].map((id, i) => ({ ...(i === 0 && state.takedown ? { takedown: { at: "2026-11-09T00:00:00Z", reason: "Advertising a booking site. See the community rules." } } : {}), id, title: ["A long title that has to wrap on a phone without pushing the page sideways", "", "Second post"][i], status: ["published", "draft", "unpublished"][i], slug: i === 0 ? "first-post" : "", updatedAt: "2026-11-09T01:00:00Z", publishedAt: i === 0 ? "2026-11-08T01:00:00Z" : "", interactive: false })));
+  if (url.pathname === `/api/blog/posts/${BLOG_ID}` && req.method === "GET") return send(200, state.takedown ? { ...blogPost(), status: "published", takedown: { at: "2026-11-09T00:00:00Z", reason: "Advertising a booking site. See the community rules." } } : blogPost());
   if (url.pathname === `/api/blog/posts/${BLOG_SHARE_ID}` && req.method === "GET") return send(200, { ...blogPost(), id: BLOG_SHARE_ID, title: SHARE_POST.title, summary: SHARE_POST.summary, slug: "share-post", doc: SHARE_POST.doc });
   if (url.pathname === `/api/blog/posts/${BLOG_EMPTY_ID}` && req.method === "GET") return send(200, { ...blogPost(), id: BLOG_EMPTY_ID, title: "", doc: { type: "doc", content: [{ type: "paragraph" }] } });
   if (url.pathname === `/api/blog/posts/${BLOG_LONG_ID}` && req.method === "GET")
@@ -1226,6 +1242,103 @@ async function shareSettings(browser) {
 
 await new Promise((r) => server.listen(0, "127.0.0.1", r));
 base = `http://127.0.0.1:${server.address().port}`;
+// ONLY=admin-posts: the administrator's Posts screens and the author's side of a takedown (spec 004) in a real browser at 320, 390, 820 and
+// 1280 px, light and dark. The list, a post, the take-down form and the restore; a takedown seen by the author as a list row, a one-time
+// banner that goes away for good, and an editor whose Publish is blocked. Every page fits the device and raises no console error.
+const pid = (n) => String(n).padStart(32, "0");
+const freshPosts = () => [
+  { id: pid(1), slug: "home-lab", title: "How I set up a home lab on a mini PC", summary: "Notes from a weekend of cables, one stubborn BIOS and a very quiet fan.", authorName: "Sari Wulandari", publishedAt: "2026-11-08T01:00:00Z", state: "visible", takedown: null },
+  { id: pid(2), slug: "long", title: "A very long post title that keeps going so we can see how it wraps in the table on a small screen", summary: "Hidden from visitors because the author's account is suspended.", authorName: "Someone With A Very Long Display Name Indeed", publishedAt: "2026-10-30T01:00:00Z", state: "hidden_account", takedown: null },
+  { id: pid(3), slug: "flights", title: "Cheap flights are a lie", summary: "", authorName: "Bima Prakoso", publishedAt: "2026-11-03T01:00:00Z", state: "taken_down", takedown: { at: "2026-11-09T00:00:00Z", reason: "Advertising a booking site", byName: "Admin" } },
+];
+// No two buttons (or a button and a link) may draw over each other: within each group of controls, no pair of boxes may intersect.
+const overlaps = (page) => page.evaluate(() => {
+  const out = [];
+  for (const g of document.querySelectorAll(".confirm, .actions, .filters, .search, .takedown-notice, .blog-row-end, .blog-bar, .admin-nav")) {
+    const els = [...g.querySelectorAll("button, a, input, textarea")].filter((e) => { const r = e.getBoundingClientRect(); return r.width > 0 && r.height > 0; });
+    for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) {
+      if (els[i].contains(els[j]) || els[j].contains(els[i])) continue;
+      const a = els[i].getBoundingClientRect(), b = els[j].getBoundingClientRect();
+      if (a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1) out.push(`${(els[i].textContent || els[i].tagName).trim().slice(0, 20)} x ${(els[j].textContent || els[j].tagName).trim().slice(0, 20)}`);
+    }
+  }
+  return out;
+});
+async function adminPosts(browser) {
+  const fits = (page, w) => page.evaluate((devW) => ({ widened: innerWidth - devW, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth }), w);
+  for (const [label, w, h, scheme] of [["narrow", 320, 640, "light"], ["phone", 390, 844, "dark"], ["tablet", 820, 1180, "light"], ["desktop", 1280, 800, "dark"]]) {
+    const ctxOpts = { viewport: { width: w, height: h }, colorScheme: scheme, ...(w < 500 ? { deviceScaleFactor: 2, isMobile: true, hasTouch: true } : {}) };
+    state.admin = true; state.posts = freshPosts();
+    try {
+      let { ctx, page, consoleErrors, external } = await openPage(browser, ctxOpts);
+      await page.goto(base + "/admin/posts");
+      await page.waitForSelector(".admin-table tbody tr", { timeout: 8000 }).catch(() => {});
+      const rows = await page.locator(".admin-table tbody tr").count();
+      const badges = await page.locator(".admin-table .badge").allTextContents();
+      const nav = await page.evaluate(() => [...document.querySelectorAll(".admin-nav a")].filter((a) => { const r = document.createRange(); r.selectNodeContents(a); return new Set([...r.getClientRects()].map((b) => Math.round(b.top))).size > 1; }).map((a) => a.textContent));
+      let f = await fits(page, w);
+      check(`admin posts list, ${label} ${scheme}: three posts with their states, the nav does not break, the page fits`, rows === 3 && badges.join("|") === "Visible|Hidden · account|Taken down" && nav.length === 0 && f.widened <= 0 && f.overflowX <= 0, JSON.stringify({ rows, badges, nav, ...f }));
+      check(`admin posts list, ${label} ${scheme}: no button draws over another`, (await overlaps(page)).length === 0, JSON.stringify(await overlaps(page)));
+      await page.screenshot({ path: path.join(outDir, `admin-posts-${label}-${scheme}.png`), fullPage: true });
+      await page.getByRole("button", { name: "Taken down" }).click();
+      await page.waitForTimeout(300);
+      check(`admin posts list, ${label} ${scheme}: the Taken down filter narrows to one`, (await page.locator(".admin-table tbody tr").count()) === 1);
+      await page.goto(base + `/admin/posts/${pid(1)}`);
+      await page.waitForSelector(".admin-post-content", { timeout: 8000 }).catch(() => {});
+      await page.getByRole("button", { name: "Take down" }).click();
+      await page.getByLabel("Reason (required, shown to the author)").fill("Spam");
+      f = await fits(page, w);
+      const formShown = await page.getByRole("form", { name: "Confirm: Take down" }).isVisible();
+      check(`admin post, ${label} ${scheme}: the take-down form opens under the button, with its reason box, and the page fits`, formShown && f.widened <= 0 && f.overflowX <= 0, JSON.stringify({ formShown, ...f }));
+      check(`admin post, ${label} ${scheme}: no button draws over another (Take down, Confirm, Cancel)`, (await overlaps(page)).length === 0, JSON.stringify(await overlaps(page)));
+      await page.screenshot({ path: path.join(outDir, `admin-post-takedown-${label}-${scheme}.png`), fullPage: true });
+      await page.getByRole("button", { name: "Confirm take down" }).click();
+      await page.waitForSelector(".notice-card.taken", { timeout: 8000 }).catch(() => {});
+      const restoreBtn = await page.getByRole("button", { name: "Restore" }).count();
+      check(`admin post, ${label} ${scheme}: after the takedown the post shows who, why, and Restore`, restoreBtn === 1 && (await page.locator(".notice-card.taken").count()) === 1);
+      await page.getByRole("button", { name: "Restore" }).click();
+      await page.getByRole("button", { name: "Confirm restore" }).click();
+      await page.waitForTimeout(400);
+      check(`admin post, ${label} ${scheme}: a restore puts it back (Take down is offered again)`, (await page.getByRole("button", { name: "Take down" }).count()) === 1);
+      check(`admin posts, ${label} ${scheme}: no console error or off-origin request`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
+      await ctx.close();
+    } finally { state.admin = false; state.posts = null; }
+    // The author's side: the banner once, the list row, the editor.
+    state.takedown = true; state.notices = [{ postId: BLOG_ID, title: "Self-hosting an assistant", reason: "Advertising a booking site. See the community rules.", at: "2026-11-09T00:00:00Z" }];
+    try {
+      const { ctx, page, consoleErrors, external } = await openPage(browser, ctxOpts);
+      await page.goto(base + "/");
+      await page.waitForSelector(".takedown-notice", { timeout: 8000 }).catch(() => {});
+      const shown = await page.locator(".takedown-notice").count();
+      let f = await fits(page, w);
+      check(`takedown banner, ${label} ${scheme}: shown once with the reason, and the page fits`, shown === 1 && (await page.locator(".takedown-notice").textContent()).includes("Advertising a booking site") && f.widened <= 0 && f.overflowX <= 0, JSON.stringify({ shown, ...f }));
+      check(`takedown banner, ${label} ${scheme}: its buttons do not draw over each other or the text`, (await overlaps(page)).length === 0, JSON.stringify(await overlaps(page)));
+      await page.screenshot({ path: path.join(outDir, `takedown-banner-${label}-${scheme}.png`) });
+      await page.getByRole("button", { name: "Got it" }).click();
+      await page.waitForTimeout(300);
+      await page.reload();
+      await page.waitForTimeout(800);
+      check(`takedown banner, ${label} ${scheme}: dismissed, it does not come back after a reload`, (await page.locator(".takedown-notice").count()) === 0);
+      await page.goto(base + "/blog");
+      await page.waitForSelector(".blog-rows", { timeout: 8000 }).catch(() => {});
+      const row = await page.locator(".chip-taken-down").count();
+      f = await fits(page, w);
+      check(`my posts, ${label} ${scheme}: the taken-down post says Taken down with its reason, and the page fits`, row === 1 && (await page.locator(".blog-takedown-why").count()) === 1 && f.widened <= 0 && f.overflowX <= 0, JSON.stringify({ row, ...f }));
+      check(`my posts, ${label} ${scheme}: the row's chip and buttons do not draw over each other`, (await overlaps(page)).length === 0, JSON.stringify(await overlaps(page)));
+      await page.screenshot({ path: path.join(outDir, `takedown-list-${label}-${scheme}.png`), fullPage: true });
+      await page.goto(base + `/blog/${BLOG_ID}`);
+      await page.waitForSelector(".blog-takedown", { timeout: 8000 }).catch(() => {});
+      const blocked = await page.evaluate(() => ({ disabled: document.querySelector("[data-publish]")?.disabled, note: !!document.querySelector(".blog-takedown") }));
+      f = await fits(page, w);
+      check(`editor, ${label} ${scheme}: Publish is disabled and the takedown is explained, the page fits`, blocked.disabled === true && blocked.note && f.widened <= 0 && f.overflowX <= 0, JSON.stringify({ ...blocked, ...f }));
+      check(`editor, ${label} ${scheme}: the top bar buttons do not draw over each other`, (await overlaps(page)).length === 0, JSON.stringify(await overlaps(page)));
+      await page.screenshot({ path: path.join(outDir, `takedown-editor-${label}-${scheme}.png`) });
+      check(`takedown author side, ${label} ${scheme}: no console error or off-origin request`, consoleErrors.length === 0 && external.length === 0, consoleErrors.concat(external).join(" | "));
+      await ctx.close();
+    } finally { state.takedown = false; state.notices = []; }
+  }
+}
+
 // ONLY=blog-discovery: the doors to the public blog (spec 003) in a real browser at 320, 390, 820 and 1280 px, light and dark. A visitor's
 // sign-in page and a pending account's waiting screen show the three latest posts as cards, the Read the blog button and keep the sign-in
 // action first; the chat rail and menu offer Read the blog (for a user with and without writing) without pushing the history down; the public
@@ -1378,6 +1491,7 @@ try {
   if (!only || only === "share-menu") await shareMenu(browser);
   if (!only || only === "story-card") await storyCard(browser);
   if (!only || only === "blog-discovery") { state.manyPosts = true; try { await blogDiscovery(browser); await blogDiscoveryShort(browser); } finally { state.manyPosts = false; } }
+  if (!only || only === "admin-posts") await adminPosts(browser);
   if (!only || only === "blog-editor" || only === "share-preview") await shareSettings(browser);
 } finally {
   await browser.close();

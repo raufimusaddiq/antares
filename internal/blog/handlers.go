@@ -117,6 +117,7 @@ func own(h func(w http.ResponseWriter, r *http.Request, uid, id string)) http.Ha
 // reply maps the store's errors to the contract's answers.
 func reply(w http.ResponseWriter, p Post, err error) {
 	var c ConflictError
+	var td TakenDownError
 	switch {
 	case err == nil:
 		writeJSON(w, http.StatusOK, p)
@@ -124,6 +125,8 @@ func reply(w http.ResponseWriter, p Post, err error) {
 		notFound(w)
 	case errors.As(err, &c):
 		apiError(w, http.StatusConflict, "CONFLICT", "The post changed", map[string]any{"latest": c.Latest})
+	case errors.As(err, &td):
+		apiError(w, http.StatusConflict, "TAKEN_DOWN", "An administrator took this post down; it cannot be published until it is restored", map[string]any{"reason": td.Reason})
 	case errors.Is(err, ErrSlugTaken):
 		apiError(w, http.StatusConflict, "SLUG_TAKEN", "That address is used by another published post", nil)
 	case errors.Is(err, ErrTooLong):
@@ -158,6 +161,14 @@ func reply(w http.ResponseWriter, p Post, err error) {
 // Handlers are the author's routes, keyed as in auth.BlogRoutes. Auth wraps each in the Active guard and the
 // same-origin check; every one acts on the caller's own posts only.
 func (s *Service) Handlers() map[string]http.Handler {
+	h := s.postHandlers()
+	for k, v := range s.noticeHandlers() {
+		h[k] = v
+	}
+	return h
+}
+
+func (s *Service) postHandlers() map[string]http.Handler {
 	return map[string]http.Handler{
 		"GET /api/blog/limits": http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, CurrentLimits())

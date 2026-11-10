@@ -53,6 +53,13 @@ An admin can approve, reject, suspend, revoke and see account status and audit m
 content for a support case, that is a separate, logged, user-consented mechanism — not a default
 capability.
 
+**Published blog posts are the one exception, and only their published version.** A published post is public (anyone on the
+internet can read it), so an admin may list published posts, read what a visitor could read, and take one down with a reason
+(specs/004-admin-full-control; four routes under `/api/admin/blog-posts`, the only admin routes that may name posts). An admin
+still cannot see a draft, a later unpublished version of a live post, a post check, or who reads what: no admin type carries
+those fields, and `TestAdminBlogPostRoutesReturnOnlyPublishedFields` plants them and scans every response. A takedown is a mark
+on the post (never a status change), is audited with its reason, and is shown to the author with the reason, never the admin.
+
 ## 7. Secrets never leak
 
 - Hermes API keys, Google client secrets, session signing keys and push keys come from runtime

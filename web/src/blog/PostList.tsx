@@ -69,7 +69,7 @@ export function PostList({ email, onOpen, onChats }: { email: string; onOpen: (i
 
   const actionsOf = (p: PostSummary): RowAction[] => [
     { label: "Open", run: () => onOpen(p.id) },
-    ...(p.status === "published" && p.slug ? [{ label: "View post", href: `/b/${p.slug}` }] : []),
+    ...(p.status === "published" && p.slug && !p.takedown ? [{ label: "View post", href: `/b/${p.slug}` }] : []),
     { label: "Duplicate", run: () => void act(duplicatePost(p.id), "duplicate") },
     ...(p.status === "published" ? [{ label: "Unpublish", run: () => void act(unpublish(p.id), "unpublish") }] : []),
     { label: "Delete", danger: true, run: () => setConfirm(p) },
@@ -114,11 +114,13 @@ export function PostList({ email, onOpen, onChats }: { email: string; onOpen: (i
                 <span className="blog-row-title">{p.title || "Untitled"}</span>
                 <span className="label">
                   Edited {formatDay(p.updatedAt, false)}
-                  {p.status === "published" && p.slug ? ` · /b/${p.slug}` : ""}
+                  {p.status === "published" && p.slug && !p.takedown ? ` · /b/${p.slug}` : ""}
+                  {p.takedown ? " · not public" : ""}
                 </span>
+                {p.takedown && <span className="blog-takedown-why">An administrator took it down{p.takedown.reason ? `: ${p.takedown.reason}` : "."}</span>}
               </span>
               <div className="blog-row-end">
-                <span className={`chip chip-${p.status}`}>{STATUS_WORDS[p.status]}</span>
+                {p.takedown ? <span className="chip chip-taken-down">Taken down</span> : <span className={`chip chip-${p.status}`}>{STATUS_WORDS[p.status]}</span>}
                 {p.interactive && <span className="chip chip-ai">Interactive</span>}
                 <button type="button" className="quiet" aria-label={`Open ${p.title || "Untitled"}`} onClick={() => onOpen(p.id)}>
                   Open

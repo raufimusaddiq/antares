@@ -5,6 +5,7 @@ import Image from "@tiptap/extension-image";
 import { Autosaver, loadLocalCopy, localCopyBase, type SaveState } from "./autosave";
 import { describeBlogError, uploadImage } from "./blogApi";
 import { safeHref } from "./DocView";
+import { formatDay } from "./dates";
 import type { DocNode, Post } from "./types";
 
 // The writing surface, from the Editor frames of the design file. It is lazy-loaded (BlogApp) so readers and chat
@@ -137,10 +138,15 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
         <button type="button" className="quiet" onClick={onSettings}>
           Post settings
         </button>
-        <button type="button" className="btn" data-publish disabled={save === "conflict"} onClick={() => onPublish(() => saver.current?.flush() ?? Promise.resolve(false))}>
+        <button type="button" className="btn" data-publish disabled={save === "conflict" || !!post.takedown} aria-describedby={post.takedown ? "blog-takedown" : undefined} onClick={() => onPublish(() => saver.current?.flush() ?? Promise.resolve(false))}>
           Publish
         </button>
       </header>
+      {post.takedown && (
+        <p id="blog-takedown" className="blog-takedown" role="status">
+          An administrator took this post down on {formatDay(post.takedown.at, false)}{post.takedown.reason ? `. Reason: ${post.takedown.reason}` : "."} You can keep editing, but it cannot be published again until it is restored.
+        </p>
+      )}
       {save === "conflict" && latest && (
         <div className="blog-conflict" role="alert">
           <p>This post was changed in another tab or device. Your latest text is kept here.</p>
