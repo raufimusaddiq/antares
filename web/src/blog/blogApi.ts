@@ -5,7 +5,7 @@
 import { purgeDrafts } from "../drafts";
 import { purgeUserState } from "../pwa";
 import type { Limits } from "./limits";
-import { EMPTY_DOC, type Capabilities, type Check, type CheckBlock, type CheckNote, type Decision, type DocNode, type Post, type PostStatus, type PostSummary, type PublicBlock, type PublicPost, type PublicSummary, type Source } from "./types";
+import { EMPTY_DOC, type Capabilities, type Check, type CheckBlock, type CheckNote, type Decision, type DocNode, type Post, type PostStatus, type PostSummary, type PublicBlock, type PublicPost, type PublicSummary, type Source, type Takedown, type TakedownNotice } from "./types";
 
 export type BlogResult<T> = { ok: true; value: T } | { ok: false; status: number; code: string; latest?: Post };
 
@@ -84,6 +84,11 @@ export function parseCheck(v: unknown): Check | null {
   };
 }
 
+function parseTakedown(v: unknown): Takedown | null {
+  const o = obj(v);
+  return o && str(o.at) ? { at: str(o.at), reason: str(o.reason) } : null;
+}
+
 export function parsePost(v: unknown): Post | null {
   const o = obj(v);
   if (!o || !str(o.id) || !STATUSES.includes(str(o.status))) return null;
@@ -99,13 +104,14 @@ export function parsePost(v: unknown): Post | null {
     doc: parseDoc(o.doc),
     check: o.check ? parseCheck(o.check) : null,
     updatedAt: str(o.updatedAt),
+    takedown: parseTakedown(o.takedown),
   };
 }
 
 export function parseSummary(v: unknown): PostSummary | null {
   const o = obj(v);
   if (!o || !str(o.id) || !STATUSES.includes(str(o.status))) return null;
-  return { id: str(o.id), title: str(o.title), status: str(o.status) as PostStatus, slug: str(o.slug), updatedAt: str(o.updatedAt), publishedAt: str(o.publishedAt), interactive: o.interactive === true };
+  return { id: str(o.id), title: str(o.title), status: str(o.status) as PostStatus, slug: str(o.slug), updatedAt: str(o.updatedAt), publishedAt: str(o.publishedAt), interactive: o.interactive === true, takedown: parseTakedown(o.takedown) };
 }
 
 export function parseLimits(v: unknown): Limits | null {
@@ -194,6 +200,20 @@ export const cancelCheck = (id: string) => request("POST", `${P}/${enc(id)}/chec
 export const decideBlock = (id: string, blockId: string, decision: "accepted" | "rejected", ack?: true) => request("PUT", `${P}/${enc(id)}/blocks/${enc(blockId)}`, parseBlock, { decision, ...(ack ? { ack } : {}) });
 export const publish = (id: string, mode: "enriched" | "original") => request("POST", `${P}/${enc(id)}/publish`, parsePost, { mode });
 export const unpublish = (id: string) => request("POST", `${P}/${enc(id)}/unpublish`, parsePost, {});
+export function parseNotices(v: unknown): TakedownNotice[] | null {
+  const o = obj(v);
+  if (!o || !Array.isArray(o.notices)) return null;
+  const out: TakedownNotice[] = [];
+  for (const n of o.notices) {
+    const x = obj(n);
+    if (!x || !str(x.postId)) return null;
+    out.push({ postId: str(x.postId), title: str(x.title), reason: str(x.reason), at: str(x.at) });
+  }
+  return out;
+}
+/** Takedowns this author has not yet seen (the one-time banner). */
+export const listNotices = (signal?: AbortSignal) => request("GET", "/api/blog/notices", parseNotices, undefined, signal);
+export const markNoticeSeen = (postId: string) => request("POST", `/api/blog/notices/${enc(postId)}/seen`, nothing, {});
 export const getLimits = (signal?: AbortSignal) => request("GET", "/api/blog/limits", parseLimits, undefined, signal);
 export const getCapabilities = (signal?: AbortSignal) => request("GET", "/api/blog/capabilities", parseCapabilities, undefined, signal);
 
@@ -233,6 +253,7 @@ export function describeBlogError(r: { status: number; code: string }, what = "d
   if (r.code === "NETWORK") return "Could not reach Antares. Check your connection.";
   if (r.status === 401) return "You are signed out. Sign in again.";
   if (r.status === 404) return "That post no longer exists.";
+  if (r.status === 409 && r.code === "TAKEN_DOWN") return "An administrator took this post down. You can keep editing it, but it cannot be published until it is restored.";
   if (r.status === 409) return "This post changed somewhere else.";
   if (r.status === 413) return "That is too large.";
   if (r.status === 429) return "Too many requests. Wait a minute and try again.";

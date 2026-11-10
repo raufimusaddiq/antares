@@ -130,7 +130,7 @@ func TestBrowserCodeReachesOnlyTheIdentityAPI(t *testing.T) {
 		"/api/me/memory": true,
 		// The blog (specs/001-blog-cms-openui-publish): the author's own posts and capability probe, and the public read
 		// of published posts, which like /api/shared/ needs no session.
-		"/api/blog/posts": true, "/api/blog/capabilities": true, "/api/blog/limits": true, "/api/public/blog/posts": true, "/api/public/blog/posts/": true,
+		"/api/blog/posts": true, "/api/blog/notices": true, "/api/blog/notices/": true, "/api/admin/blog-posts": true, "/api/admin/blog-posts/": true, "/api/blog/capabilities": true, "/api/blog/limits": true, "/api/public/blog/posts": true, "/api/public/blog/posts/": true,
 		// #250 a chat shared by link: the public read of /api/shared/{token}, the only route that needs no session. The
 		// owner's own link is /api/chats/{id}/share, covered above.
 		"/api/shared/": true,

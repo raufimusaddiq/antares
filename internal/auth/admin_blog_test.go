@@ -23,6 +23,16 @@ func scanned(writer string) []string {
 	return paths
 }
 
+// takedownRoutes are the administrator's post routes (specs/004-admin-full-control): published content and takedown state only.
+// They need the blog mounted, so the auth harness cannot answer them; the blog package proves what they return
+// (TestAdminBlogPostRoutesReturnOnlyPublishedFields) and this list is the only place they are allowed (below).
+var takedownRoutes = map[string]bool{
+	"GET /api/admin/blog-posts":                     true,
+	"GET /api/admin/blog-posts/{postId}":            true,
+	"POST /api/admin/blog-posts/{postId}/take-down": true,
+	"POST /api/admin/blog-posts/{postId}/restore":   true,
+}
+
 // "Every admin endpoint" stays literal: a GET route added to admin.go that scanned() does not list fails here, so a new admin
 // view cannot go in without being checked for post and draft content.
 func TestEveryAdminGetRouteIsScannedForPostContent(t *testing.T) {
@@ -37,6 +47,9 @@ func TestEveryAdminGetRouteIsScannedForPostContent(t *testing.T) {
 	found := 0
 	for _, m := range regexp.MustCompile(`mux\.Handle\("GET (/api/admin/[^"]+)"`).FindAllStringSubmatch(string(src), -1) {
 		found++
+		if takedownRoutes["GET "+m[1]] {
+			continue
+		}
 		if !have[m[1]] {
 			t.Errorf("GET %s is an admin route and is not scanned for post content (add it to scanned)", m[1])
 		}
@@ -98,11 +111,28 @@ func TestNoAdminRouteNamesPostsReadersOrReads(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, m := range regexp.MustCompile(`mux\.Handle\("[A-Z]+ (/api/admin/[^"]+)"`).FindAllStringSubmatch(string(src), -1) {
-		for _, word := range []string{"blog", "post", "reader", "reads", "views"} {
-			if strings.Contains(strings.ToLower(m[1]), word) {
-				t.Errorf("admin route %s names %q: an admin must not see what people read", m[1], word)
+	seen := map[string]bool{}
+	for _, m := range regexp.MustCompile(`mux\.Handle\("([A-Z]+) (/api/admin/[^"]+)"`).FindAllStringSubmatch(string(src), -1) {
+		key := m[1] + " " + m[2]
+		lower := strings.ToLower(m[2])
+		for _, word := range []string{"reader", "reads", "views"} { // never allowed, takedown routes included
+			if strings.Contains(lower, word) {
+				t.Errorf("admin route %s names %q: an admin must not see what people read", key, word)
 			}
+		}
+		if takedownRoutes[key] {
+			seen[key] = true
+			continue
+		}
+		for _, word := range []string{"blog", "post"} {
+			if strings.Contains(lower, word) {
+				t.Errorf("admin route %s names %q: only the takedown routes may (takedownRoutes)", key, word)
+			}
+		}
+	}
+	for k := range takedownRoutes {
+		if !seen[k] {
+			t.Errorf("takedownRoutes lists %s, which admin.go does not register", k)
 		}
 	}
 }

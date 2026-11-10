@@ -4,6 +4,7 @@ import { AdminScreens, AdminShell, Forbidden } from "./Admin";
 import { Chat } from "./Chat";
 import { BlogApp, isBlogPath, parseBlogPath } from "./blog/BlogApp";
 import { getCapabilities } from "./blog/blogApi";
+import { TakedownNotices } from "./blog/TakedownNotice";
 import type { Capabilities } from "./blog/types";
 import { revokeThisDevice, chatIdFromPath } from "./push";
 import { isAdminPath, parseAdminPath } from "./route";
@@ -145,8 +146,9 @@ export function App() {
         </AdminShell>
       );
     }
-    if (isBlogPath(path)) return <BlogApp caps={blogCaps} email={session.account.email} name={session.account.displayName} route={parseBlogPath(path)} onNavigate={navigate} onChats={() => navigate("/")} />;
-    return <Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onBlog={blogWriting ? () => navigate("/blog") : undefined} onReadBlog={() => window.location.assign("/b")} onSignOut={onSignOut} signOutError={signOutMessage} />;
+    const notices = blogWriting ? <TakedownNotices onOpen={isBlogPath(path) ? undefined : () => navigate("/blog")} /> : null;
+    if (isBlogPath(path)) return <>{notices}<BlogApp caps={blogCaps} email={session.account.email} name={session.account.displayName} route={parseBlogPath(path)} onNavigate={navigate} onChats={() => navigate("/")} /></>;
+    return <>{notices}<Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onBlog={blogWriting ? () => navigate("/blog") : undefined} onReadBlog={() => window.location.assign("/b")} onSignOut={onSignOut} signOutError={signOutMessage} /></>;
   }
   return (
     <Screen

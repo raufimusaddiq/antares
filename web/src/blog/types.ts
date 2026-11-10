@@ -14,6 +14,12 @@ export interface DocNode {
 
 export const EMPTY_DOC: DocNode = { type: "doc", content: [{ type: "paragraph" }] };
 
+/** An administrator's takedown, as the author sees it: when and why, never who. */
+export interface Takedown {
+  at: string;
+  reason: string;
+}
+
 export interface PostSummary {
   id: string;
   title: string;
@@ -23,6 +29,8 @@ export interface PostSummary {
   publishedAt: string;
   /** The published post has AI-added blocks. */
   interactive: boolean;
+  /** Set while an administrator has taken the post down: it is not public and cannot be published. */
+  takedown?: Takedown | null;
 }
 
 export interface Source {
@@ -78,6 +86,7 @@ export interface Post {
   doc: DocNode;
   check: Check | null;
   updatedAt: string;
+  takedown?: Takedown | null;
 }
 
 export interface Capabilities {
@@ -110,4 +119,12 @@ export interface PublicPost {
   blocks: PublicBlock[];
   authorName: string;
   publishedAt: string;
+}
+
+/** A takedown the author has not yet been told about (the one-time banner). */
+export interface TakedownNotice {
+  postId: string;
+  title: string;
+  reason: string;
+  at: string;
 }

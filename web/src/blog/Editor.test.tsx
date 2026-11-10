@@ -85,4 +85,19 @@ describe("editor", () => {
     expect(r2.container.querySelector("#blog-body-hint")?.textContent).toBe(""); // nothing to announce once there is text
   });
 
+
+  it("says an administrator took the post down, why, and does not let it be published, while editing stays open", () => {
+    vi.stubGlobal("fetch", async () => new Response("{}", { status: 500 }));
+    const onPublish = vi.fn();
+    render(<Editor {...props} onPublish={onPublish} post={{ ...post, status: "published", takedown: { at: "2026-11-09T00:00:00Z", reason: "Advertising a booking site" } }} />);
+    expect(document.body.textContent).toContain("An administrator took this post down on 9 Nov");
+    expect(document.body.textContent).toContain("Reason: Advertising a booking site");
+    const publish = screen.getByRole("button", { name: "Publish" }) as HTMLButtonElement;
+    expect(publish.disabled).toBe(true);
+    expect(publish.getAttribute("aria-describedby")).toBe("blog-takedown");
+    fireEvent.click(publish);
+    expect(onPublish).not.toHaveBeenCalled();
+    expect((screen.getByLabelText("Title") as HTMLInputElement).disabled).toBe(false);
+  });
 });
+

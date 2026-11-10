@@ -64,7 +64,8 @@ proves it.
 6. **Failure is visible.** A failed, cancelled or disconnected run is never presented as completed.
 7. **Small footprint.** Two containers, SQLite, no Redis/Kafka/Postgres/extra orchestration in v1.
 8. **Admin is blind by default.** An admin can approve, revoke and suspend. An admin cannot read a
-   user's conversations, memories or files.
+   user's conversations, memories, files or blog drafts. The one exception is a published blog post (already public): an
+   admin may read its published version and take it down with a reason.
 
 ## The reference implementation is a reference, never a copy source
 

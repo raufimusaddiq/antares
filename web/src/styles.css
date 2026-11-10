@@ -524,6 +524,20 @@ button.quiet.on:where(:not(.openui-root *)) { background: var(--ink); color: var
 .admin-table .sub { display: block; font-size: 0.8rem; color: var(--ink-2); font-weight: 400; }
 .mono { font-family: var(--font-mono); font-size: 0.8rem; }
 .badge.bad { background: var(--blush); color: var(--ink); }
+.badge.ok { background: var(--mint); color: var(--ink); }
+.badge.hold { background: var(--peri); color: var(--ink); }
+/* Admin → Posts (specs/004-admin-full-control): a post's facts row, a note card, the published content. */
+.facts-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.25rem; margin: 0 0 0.75rem; }
+.facts-row a { color: var(--ink); overflow-wrap: anywhere; }
+.admin-main .back { display: inline-block; margin: 0.5rem 0 0; color: var(--ink); }
+.notice-card { max-width: 40rem; margin: 0.75rem 0; padding: 1rem 1.25rem; border: 2px solid var(--ink); border-radius: var(--r-lg); background: var(--card); box-shadow: var(--hard-sm); }
+.notice-card h2 { margin: 0 0 0.3rem; font-size: 1.05rem; }
+.notice-card p { margin: 0; }
+.notice-card.taken { background: var(--blush); color: var(--ink); max-width: none; }
+.notice-card.ok { background: var(--mint); color: var(--ink); }
+.admin-post-content { margin: 0.75rem 0 1rem; padding: 1.25rem; border: 2px solid var(--ink); border-radius: var(--r-lg); background: var(--card); box-shadow: var(--hard); overflow-wrap: anywhere; }
+.admin-post-content .blog-cover { max-width: 100%; height: auto; border-radius: var(--r-md); }
+.admin-post .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; margin: 0.75rem 0; }
 .facts { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 0.25rem 1.5rem; margin: 0.5rem 0; padding: 0.9rem 1.25rem; max-width: 40rem; border: 2px solid var(--ink); border-radius: var(--r-lg); background: var(--card); }
 .facts dd { margin: 0; }
 /* Figures side by side (Admin → Provider usage balance): one tile each, wrapping on a narrow screen. */
@@ -1587,4 +1601,17 @@ img.ProseMirror-separator {
 
 .ProseMirror-focused .ProseMirror-gapcursor {
   display: block;
+}
+
+/* A taken-down post (specs/004-admin-full-control): the author's list row, the editor's notice, the one-time banner. */
+.chip-taken-down { background: var(--blush); color: var(--ink); }
+.blog-takedown-why { display: block; margin-top: 0.15rem; font-size: 0.8rem; color: var(--ink); font-weight: 600; }
+.blog-takedown { margin: 0; padding: 0.7rem 1.25rem; background: var(--blush); color: var(--ink); border-bottom: 2px solid var(--ink); font-weight: 600; }
+.takedown-notice .quiet { flex: 0 0 auto; }
+
+/* Motion for the takedown screens (specs/004-admin-full-control): the banner and the confirm form ease in once (200 ms), and only when the
+   person has not asked for reduced motion. Nothing animates on the list itself: it is used often. */
+@keyframes takedown-in { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: no-preference) {
+  .takedown-notice, .admin-post .confirm { animation: takedown-in 200ms var(--ease-out) both; }
 }

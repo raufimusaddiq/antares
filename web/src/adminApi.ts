@@ -100,7 +100,7 @@ export function parseAudit(v: unknown): AuditPage | null {
   return entries ? { entries, next: str(obj(v)?.next) } : null;
 }
 
-async function call<T>(method: "GET" | "POST" | "PUT", path: string, parse: (b: unknown) => T | null, body?: unknown, signal?: AbortSignal): Promise<AdminResult<T>> {
+export async function call<T>(method: "GET" | "POST" | "PUT", path: string, parse: (b: unknown) => T | null, body?: unknown, signal?: AbortSignal): Promise<AdminResult<T>> {
   let res: Response;
   try {
     res = await fetch(path, {
@@ -171,7 +171,11 @@ export function describeAdminCode(code: string, status: number): string {
     case "NETWORK":
       return "Could not reach Antares. Check your connection.";
     case "NOT_FOUND":
-      return "That account no longer exists.";
+      return "That no longer exists.";
+    case "ALREADY_TAKEN_DOWN":
+      return "Someone already took this post down. Nothing was changed. Reload to see its current state.";
+    case "NOT_TAKEN_DOWN":
+      return "This post is not taken down. Nothing was changed. Reload to see its current state.";
     case "REASON_REQUIRED":
       return "A reason is required for this action.";
     case "EXPORT_TOO_LARGE":

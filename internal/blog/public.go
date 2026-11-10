@@ -21,8 +21,9 @@ const (
 
 // publicWhere selects exactly the rows a reader may see. approval_status is read in the same statement, so a suspended
 // or rejected author's posts vanish and a reinstated author's return with no other change. The author's workspace state
-// (tenant status) is deliberately not part of it: re-verifying an assistant profile must not take writing offline.
-const publicWhere = `p.status = 'published' AND p.published_version > 0 AND u.approval_status = 'APPROVED'`
+// (tenant status) is deliberately not part of it: re-verifying an assistant profile must not take writing offline. An
+// administrator's takedown (takedown_at) hides a post here like any other miss, so every public read drops it together.
+const publicWhere = `p.status = 'published' AND p.published_version > 0 AND u.approval_status = 'APPROVED' AND p.takedown_at = ''`
 
 type PublicSummary struct {
 	Slug        string `json:"slug"`

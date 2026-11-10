@@ -843,6 +843,9 @@ func (s *Service) PublishEnriched(ctx context.Context, author, postID string) (P
 	if strings.TrimSpace(cur.Title) == "" || !ValidSlug(cur.Slug) {
 		return Post{}, ErrInvalid
 	}
+	if cur.Takedown != nil {
+		return Post{}, TakenDownError{Reason: cur.Takedown.Reason}
+	}
 	// The check the author sees and decides on is the post's newest. If that one did not finish, an older finished check is not
 	// published behind its back.
 	var checkID, checkState string

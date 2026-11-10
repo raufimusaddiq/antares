@@ -21,6 +21,7 @@ var (
 	ErrSlugTaken    = errors.New("blog: that address is used by another published post")
 	ErrTooMany      = errors.New("blog: too many")
 	ErrNotPublished = errors.New("blog: the post is not published")
+	ErrTakenDown    = errors.New("blog: an administrator took the post down")
 )
 
 const (
@@ -87,6 +88,7 @@ type Post struct {
 	PublishedVersion int             `json:"publishedVersion"`
 	Doc              json.RawMessage `json:"doc"`
 	Check            *CheckView      `json:"check"`
+	Takedown         *TakedownView   `json:"takedown,omitempty"`
 	UpdatedAt        string          `json:"updatedAt"`
 	coverID          string          // the stored cover image id; the browser gets CoverURL
 }
@@ -101,6 +103,8 @@ type Summary struct {
 	UpdatedAt   string `json:"updatedAt"`
 	PublishedAt string `json:"publishedAt"`
 	Interactive bool   `json:"interactive"`
+	// Takedown is set while an administrator has taken the post down; the author sees when and why, never who.
+	Takedown *TakedownView `json:"takedown,omitempty"`
 }
 
 func assetURL(postID, assetID string) string {
@@ -131,6 +135,9 @@ func loadPost(ctx context.Context, q querier, author, id string) (Post, error) {
 	}
 	p.CoverURL, p.coverID = assetURL(p.ID, cover), cover
 	p.Doc = json.RawMessage(doc)
+	if p.Takedown, err = loadTakedown(ctx, q, id); err != nil {
+		return Post{}, err
+	}
 	if c, err := latestCheck(ctx, q, author, p.ID); err == nil {
 		p.Check = c
 	} else if !errors.Is(err, ErrNoCheck) {
@@ -145,7 +152,8 @@ func (s *Service) Get(ctx context.Context, author, id string) (Post, error) {
 
 func (s *Service) List(ctx context.Context, author string) ([]Summary, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT id, title, status, slug, updated_at, published_at,
-		EXISTS (SELECT 1 FROM published_blocks b WHERE b.post_id = posts.id AND b.version = posts.published_version)
+		EXISTS (SELECT 1 FROM published_blocks b WHERE b.post_id = posts.id AND b.version = posts.published_version),
+		takedown_at, takedown_reason
 		FROM posts WHERE author_id = ? ORDER BY updated_at DESC LIMIT ?`, author, maxPosts)
 	if err != nil {
 		return nil, err
@@ -154,8 +162,12 @@ func (s *Service) List(ctx context.Context, author string) ([]Summary, error) {
 	out := []Summary{}
 	for rows.Next() {
 		var x Summary
-		if err := rows.Scan(&x.ID, &x.Title, &x.Status, &x.Slug, &x.UpdatedAt, &x.PublishedAt, &x.Interactive); err != nil {
+		var downAt, downWhy string
+		if err := rows.Scan(&x.ID, &x.Title, &x.Status, &x.Slug, &x.UpdatedAt, &x.PublishedAt, &x.Interactive, &downAt, &downWhy); err != nil {
 			return nil, err
+		}
+		if downAt != "" {
+			x.Takedown = &TakedownView{At: downAt, Reason: downWhy}
 		}
 		out = append(out, x)
 	}
@@ -335,6 +347,9 @@ func (s *Service) PublishOriginal(ctx context.Context, author, id string) (Post,
 	}
 	if strings.TrimSpace(cur.Title) == "" || !ValidSlug(cur.Slug) {
 		return Post{}, ErrInvalid
+	}
+	if cur.Takedown != nil {
+		return Post{}, TakenDownError{Reason: cur.Takedown.Reason}
 	}
 	now := s.stamp()
 	// The new head is the version readers see; any earlier published version is an ordinary one again.
