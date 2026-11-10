@@ -176,7 +176,7 @@ func TestRootServesTheBuiltBundle(t *testing.T) {
 		if rec.Header().Get("Cache-Control") != "no-store" {
 			t.Errorf("%s shell must not be cached", p)
 		}
-		wantCSP := "default-src 'none'; script-src 'self'; style-src 'self' " + openUIStyleHash + "; connect-src 'self'; img-src 'self' blob:; media-src blob:; font-src 'self'; frame-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+		wantCSP := "default-src 'none'; script-src 'self' https://static.cloudflareinsights.com; style-src 'self' " + openUIStyleHash + "; connect-src 'self' https://cloudflareinsights.com; img-src 'self' blob:; media-src blob:; font-src 'self'; frame-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 		if got := rec.Header().Get("Content-Security-Policy"); got != wantCSP {
 			t.Errorf("%s CSP = %q, want %q", p, got, wantCSP)
 		}
@@ -284,5 +284,35 @@ func TestAccessLogNeverCarriesAnArbitraryMethod(t *testing.T) {
 	got := buf.String()
 	if strings.Contains(got, "PRIVATE-PROMPT-77") || !strings.Contains(got, "method=OTHER") || !strings.Contains(got, "method=GET") {
 		t.Fatalf("access log:\n%s", got)
+	}
+}
+
+// The edge's analytics beacon is the one third party the page may talk to: exactly these two hosts, in script-src and
+// connect-src, and nowhere else. Any other origin, a wildcard or 'unsafe-*' is a change to the policy that must be made on
+// purpose and in this test.
+func TestShellCSPAllowsOnlyTheEdgeBeacon(t *testing.T) {
+	h := New(nil, "").WithAssets(webui.FS()).Routes()
+	csp := get(h, "/").Header().Get("Content-Security-Policy")
+	dirs := map[string][]string{}
+	for _, d := range strings.Split(csp, ";") {
+		if f := strings.Fields(d); len(f) > 0 {
+			dirs[f[0]] = f[1:]
+		}
+	}
+	want := map[string][]string{"script-src": {"'self'", "https://static.cloudflareinsights.com"}, "connect-src": {"'self'", "https://cloudflareinsights.com"}}
+	for name, wantHosts := range want {
+		if got := strings.Join(dirs[name], " "); got != strings.Join(wantHosts, " ") {
+			t.Errorf("%s = %q, want %q", name, got, strings.Join(wantHosts, " "))
+		}
+	}
+	for name, vals := range dirs {
+		for _, v := range vals {
+			if strings.Contains(v, "*") || strings.HasPrefix(v, "'unsafe") {
+				t.Errorf("%s allows %q", name, v)
+			}
+			if strings.HasPrefix(v, "http") && name != "script-src" && name != "connect-src" {
+				t.Errorf("%s allows the origin %q", name, v)
+			}
+		}
 	}
 }

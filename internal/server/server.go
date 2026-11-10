@@ -298,9 +298,18 @@ func (s *Server) static(w http.ResponseWriter, r *http.Request) {
 // fails if the pinned library's text stops matching this value.
 const openUIStyleHash = "'sha256-vai9tBS1dbqDlLt2vYYQwJl16j1hMfOCO5KhCK8LRBg='"
 
+// The edge (Cloudflare, in front of this server) injects its web-analytics beacon into every HTML page. Without these two
+// exact hosts the browser refuses it, logs an error on every page and the owner's analytics collect nothing. They are the
+// only origins beyond our own that the page may load a script from or send to, named in full (no wildcard), and
+// TestShellCSPAllowsOnlyTheEdgeBeacon fails if anything else is added.
+const (
+	cloudflareBeaconScript  = "https://static.cloudflareinsights.com"
+	cloudflareBeaconConnect = "https://cloudflareinsights.com"
+)
+
 // shellHeaders are the headers both shells carry: only our own bundle is allowed, and framing is refused.
 func shellHeaders(h http.Header) {
-	h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'self' "+openUIStyleHash+"; connect-src 'self'; img-src 'self' blob:; media-src blob:; font-src 'self'; frame-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
+	h.Set("Content-Security-Policy", "default-src 'none'; script-src 'self' "+cloudflareBeaconScript+"; style-src 'self' "+openUIStyleHash+"; connect-src 'self' "+cloudflareBeaconConnect+"; img-src 'self' blob:; media-src blob:; font-src 'self'; frame-src 'self'; worker-src 'self'; manifest-src 'self'; base-uri 'none'; form-action 'self'; frame-ancestors 'none'")
 	h.Set("Referrer-Policy", "no-referrer")
 }
 
