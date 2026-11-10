@@ -101,6 +101,13 @@ variable mode); the minor state frames reuse the same components and are not dup
 - New components: none. Switch (46 x 26, mint on / rail off, ink knob) and the state chips are drawn here for the first time;
   both are built from existing variables.
 
+## Writing rules (designed for spec `specs/005-antislop-writing/`, not built yet)
+
+Page **Writing rules**. Light frames; dark copies of the Capabilities (on, not applied), Check result and phone frames sit to the right (Dark mode).
+- **Admin / Capabilities** (desktop and phone): the "Writing rules" card with switch, "writing-rules v1" chip, description, MIT credit, last-24-hours counts (chat and post-check runs only); variants off, rules not applied (alert), save failed.
+- **Check result / style notes**: "Notes from the assistant" with Style notes (pink chip, position, "Dismiss this note"); none; one dismissed. Phone: two notes.
+- New components: none.
+
 Blog: where the frames and the code still differ (kept honest; each is a gap to close in the design or the code):
 - The preview frames draw two blocks and only Reject on the first one is wired as a prototype interaction; the code handles any
   number of blocks, each with Accept and Reject.
