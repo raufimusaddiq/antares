@@ -116,7 +116,8 @@ Page **AI editor**. Light frames; dark copies of the main ones sit 3,600 to the 
 - **Panel / stopped and empty states**: stalled, timed out, limit reached (with when to try again), nothing to suggest, too little to edit.
 - **Publish / checking (steps)** and **Publish / review with suggestions**: the existing screens with the same steps (no fake progress bar) and a Suggestions card plus a skipped-block notice.
 - **Phone / Editor panel**: bottom sheets with progress and with suggestions at 390.
-- New components: step list, suggestion card, mixed toggle state, panel.
+- **Phone / Editor, keyboard open** (approved for phones only): while the text has focus the toolbar is one scrolling row of 44 px buttons docked above the on-screen keyboard and follows it (visual viewport); otherwise the wrapped toolbar at the top.
+- New components: step list, suggestion card, mixed toggle state, panel, docked toolbar strip.
 
 Blog: where the frames and the code still differ (kept honest; each is a gap to close in the design or the code):
 - The preview frames draw two blocks and only Reject on the first one is wired as a prototype interaction; the code handles any
