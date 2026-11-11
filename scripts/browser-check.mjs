@@ -1313,13 +1313,13 @@ async function shareSettings(browser) {
     await page.waitForSelector("[contenteditable=true]");
     await page.screenshot({ path: path.join(outDir, `share-preview-before-${label}-${scheme}.png`) });
     await page.getByRole("button", { name: "Post settings" }).click();
-    await page.waitForSelector('[aria-label="Post settings"]');
+    await page.waitForSelector('[role=dialog][aria-label="Post settings"]');
     await page.waitForSelector(".blog-share-preview-row img", { timeout: 15000 });
     await page.waitForTimeout(300);
     const m = await page.evaluate(() => {
-      const sheet = document.querySelector('[aria-label="Post settings"]').getBoundingClientRect();
+      const sheet = document.querySelector('[role=dialog][aria-label="Post settings"]').getBoundingClientRect();
       const img = document.querySelector(".blog-share-preview-row img").getBoundingClientRect();
-      return { sheetRight: sheet.right, vw: document.documentElement.clientWidth, ratio: img.width / img.height, inside: img.left >= sheet.left - 1 && img.right <= sheet.right + 1, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, link: !!document.querySelector('[aria-label="Post settings"] .blog-link-preview'), noSend: document.querySelectorAll('[aria-label="Post settings"] button').length };
+      return { sheetRight: sheet.right, vw: document.documentElement.clientWidth, ratio: img.width / img.height, inside: img.left >= sheet.left - 1 && img.right <= sheet.right + 1, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, link: !!document.querySelector('[role=dialog][aria-label="Post settings"] .blog-link-preview'), noSend: document.querySelectorAll('[role=dialog][aria-label="Post settings"] button').length };
     });
     await page.screenshot({ path: path.join(outDir, `share-preview-${label}-${scheme}.png`) });
     check(`share preview, ${label} ${scheme}: the link preview and a 9:16 picture, inside the sheet, no sideways scroll`, m.link && Math.abs(m.ratio - 9 / 16) < 0.02 && m.inside && m.sheetRight <= m.vw + 1 && m.overflowX <= 0, JSON.stringify(m));
@@ -1588,6 +1588,12 @@ async function editorToolbar(browser) {
     await page.waitForTimeout(150);
     const mixed = await page.evaluate(() => { const b = [...document.querySelectorAll(".blog-toolbar button")].find((x) => x.getAttribute("aria-label") === "Bold"); const cs = getComputedStyle(b); return { v: b.getAttribute("aria-pressed"), border: cs.borderTopWidth, bar: getComputedStyle(b, "::after").content !== "none" }; });
     check(`editor toolbar, ${label} ${scheme}: a partly bold selection shows Bold as mixed, with an outline and a bar`, mixed.v === "mixed" && parseFloat(mixed.border) >= 2 && mixed.bar, JSON.stringify(mixed));
+    // The toolbar follows the page while writing a long post: after scrolling a long way it is still at the top of the screen.
+    await page.evaluate(() => { const d = document.querySelector(".ProseMirror"); for (let i = 0; i < 40; i++) { const p = document.createElement("p"); p.textContent = "Another paragraph to make the page long, number " + i; d.appendChild(p); } });
+    await page.evaluate(() => window.scrollTo(0, 1200));
+    await page.waitForTimeout(150);
+    const stick = await page.evaluate(() => { const r = document.querySelector(".blog-toolbar").getBoundingClientRect(); return { top: Math.round(r.top), scrollY: Math.round(scrollY), h: Math.round(r.height), vh: innerHeight }; });
+    check(`editor toolbar, ${label} ${scheme}: after scrolling a long post the toolbar is still at the top of the screen`, stick.scrollY > 300 && stick.top >= 0 && stick.top <= 2, JSON.stringify(stick));
     await page.screenshot({ path: path.join(outDir, `editor-toolbar-${label}-${scheme}.png`), fullPage: true });
     check(`editor toolbar, ${label} ${scheme}: no console error or off-origin request`, consoleErrors.length === 0 && external.length === 0, consoleErrors.join("|").slice(0, 200));
     await ctx.close();
@@ -1627,17 +1633,28 @@ async function aiEditor(browser) {
       await page.screenshot({ path: path.join(outDir, `ai-editor-progress-${label}-${scheme}.png`), fullPage: false });
       state.ai.phase = "ready";
       await page.waitForSelector(".suggestion", { timeout: 6000 });
-      const lay = await page.evaluate(() => {
-        const r = (sel) => document.querySelector(sel)?.getBoundingClientRect();
-        const panel = r(".blog-panel"), bar = r(".blog-bar"), bar2 = r(".blog-toolbar"), pub = r("[data-publish]");
+      // The sheet (a phone) covers the bottom of the page: never the bar or Publish, and the toolbar can be scrolled clear of it (it follows the page, and the page keeps room under the sheet).
+      const hit = (a, b) => !!a && !!b && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+      const top1 = await page.evaluate(() => { const r = (sel) => document.querySelector(sel)?.getBoundingClientRect(); const p = r(".blog-panel"); return { bar: JSON.parse(JSON.stringify(r(".blog-bar") ?? {})), pub: JSON.parse(JSON.stringify(r("[data-publish]") ?? {})), panel: JSON.parse(JSON.stringify(p ?? {})), scrollY: scrollY }; });
+      await page.evaluate(() => { window.scrollTo(0, 0); });
+      await page.waitForTimeout(100);
+      const first = await page.evaluate(() => { const r = (sel) => { const q = document.querySelector(sel)?.getBoundingClientRect(); return q ? { left: q.left, right: q.right, top: q.top, bottom: q.bottom } : null; }; return { bar: r(".blog-bar"), pub: r("[data-publish]"), panel: r(".blog-panel") }; });
+      await page.evaluate(() => { document.querySelector(".blog-toolbar").scrollIntoView({ block: "start" }); });
+      await page.waitForTimeout(100);
+      const lay = await page.evaluate((first) => {
+        const r = (sel) => { const q = document.querySelector(sel)?.getBoundingClientRect(); return q ? { left: q.left, right: q.right, top: q.top, bottom: q.bottom } : null; };
         const hit = (a, b) => !!a && !!b && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
-        const els = [...document.querySelectorAll(".blog-panel button, .blog-bar button, .blog-toolbar button")].filter((e) => { const q = e.getBoundingClientRect(); return q.width > 0 && q.height > 0; });
+        const panel = r(".blog-panel"), bar2 = r(".blog-toolbar");
+        const els = [...document.querySelectorAll(".blog-panel button, .blog-toolbar button")].filter((e) => { const q = e.getBoundingClientRect(); return q.width > 0 && q.height > 0; });
         let overlap = 0;
         for (let i = 0; i < els.length; i++) for (let j = i + 1; j < els.length; j++) if (hit(els[i].getBoundingClientRect(), els[j].getBoundingClientRect())) overlap++;
         const panelBtns = [...document.querySelectorAll(".blog-panel button")].filter((e) => e.getBoundingClientRect().width > 0);
-        return { panelOverBar: hit(panel, bar), panelOverToolbar: hit(panel, bar2), panelOverPublish: hit(panel, pub), overlap, short: panelBtns.filter((b) => b.getBoundingClientRect().height < 43.5).length, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, widened: innerWidth, cards: document.querySelectorAll(".suggestion").length, gone: document.querySelectorAll(".suggestion-gone").length, head: document.querySelector("#blog-panel-h")?.textContent };
-      });
-      check(`ai editor, ${label} ${scheme}: three suggestions, the one about missing words says it no longer applies; the panel covers neither the bar, the toolbar nor Publish`, lay.cards === 3 && lay.gone === 1 && !lay.panelOverBar && !lay.panelOverToolbar && !lay.panelOverPublish && lay.head === "Suggestions (3)", JSON.stringify(lay));
+        const cs = getComputedStyle(document.querySelector(".blog-panel"));
+        return { panelOverBar: hit(first.panel, first.bar), panelOverToolbar: hit(panel, bar2), panelOverPublish: hit(first.panel, first.pub), overlap, short: panelBtns.filter((b) => b.getBoundingClientRect().height < 43.5).length, overflowX: document.documentElement.scrollWidth - document.documentElement.clientWidth, widened: innerWidth, cards: document.querySelectorAll(".suggestion").length, gone: document.querySelectorAll(".suggestion-gone").length, head: document.querySelector("#blog-panel-h")?.textContent, position: cs.position, topRadius: cs.borderTopLeftRadius, closeButton: !![...document.querySelectorAll(".blog-panel button")].find((b) => /Close/.test(b.getAttribute("aria-label") ?? b.textContent ?? "")), sheet: innerWidth < 1200 };
+      }, first);
+      void top1; void hit;
+      check(`ai editor, ${label} ${scheme}: the panel is the design's (a bottom sheet with rounded corners on a phone, a side panel on a wide screen) with no extra Close button`, lay.position === "fixed" && (!lay.sheet || parseFloat(lay.topRadius) >= 16) && !lay.closeButton, JSON.stringify(lay));
+      check(`ai editor, ${label} ${scheme}: three suggestions, the one about missing words says it no longer applies; the panel covers neither the bar, the toolbar (scrolled clear) nor Publish`, lay.cards === 3 && lay.gone === 1 && !lay.panelOverBar && !lay.panelOverToolbar && !lay.panelOverPublish && lay.head === "Suggestions (3)", JSON.stringify(lay));
       check(`ai editor, ${label} ${scheme}: no button overlaps another, targets are at least 44 px, the page fits`, lay.overlap === 0 && lay.short === 0 && lay.overflowX <= 0 && lay.widened === w, JSON.stringify(lay));
       await page.screenshot({ path: path.join(outDir, `ai-editor-suggestions-${label}-${scheme}.png`), fullPage: false });
       check(`ai editor, ${label} ${scheme}: the draft is still exactly as written before any accept`, (await body(page)) === original);

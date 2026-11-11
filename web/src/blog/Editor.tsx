@@ -154,8 +154,8 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
         <span className={`blog-save blog-save-${save}`} role="status">
           {SAVE_WORDS[save]}
         </span>
-        <button type="button" className="quiet" onClick={onSettings}>
-          Post settings
+        <button type="button" className="quiet" aria-label="Post settings" onClick={onSettings}>
+          Settings
         </button>
         {canCheck && (
           <button type="button" className="quiet check-btn" aria-expanded={panel} aria-controls="blog-panel" onClick={() => setPanel((v) => !v)}>
