@@ -179,8 +179,27 @@ describe("transcript and composer markup", () => {
     expect(html).not.toContain("<script");
   });
 
-  it("shows no regenerate, edit or rewind control: the assistant cannot act on them (#139 stage 3)", () => {
-    const turns = [{ seq: 0, role: "user" as const, text: "q" }, { seq: 1, role: "assistant" as const, text: "a" }];
+  it("drops an assistant turn that has neither text nor tool calls", () => {
+    const turns = [
+      { seq: 0, role: "user" as const, text: "q" },
+      { seq: 1, role: "assistant" as const, text: "" },
+      { seq: 2, role: "assistant" as const, text: "a" },
+    ];
+    const html = renderToStaticMarkup(<Transcript {...props} chatId="c1" run={null} pending={null} turns={turns} />);
+    expect(html.match(/class="turn assistant"/g) ?? []).toHaveLength(1);
+    expect(html.match(/<h2 class="who">Assistant<\/h2>/g) ?? []).toHaveLength(1);
+  });
+
+  it("keeps an assistant turn that has tool calls but no text", () => {
+    const turns = [
+      { seq: 0, role: "user" as const, text: "q" },
+      { seq: 1, role: "assistant" as const, text: "", tools: [{ name: "web_search", detail: "x" }] },
+    ];
+    const html = renderToStaticMarkup(<Transcript {...props} chatId="c1" run={null} pending={null} turns={turns} />);
+    expect(html).toContain('class="activity"');
+  });
+
+  it("shows no regenerate, edit or rewind control: the assistant cannot act on them (#139 stage 3)", () => {    const turns = [{ seq: 0, role: "user" as const, text: "q" }, { seq: 1, role: "assistant" as const, text: "a" }];
     const html = renderToStaticMarkup(<Transcript {...props} chatId="c1" run={null} pending={null} turns={turns} />);
     expect(html).not.toMatch(/data-control="(regenerate|edit|rewind)"|aria-disabled="true"|no retry route/);
   });

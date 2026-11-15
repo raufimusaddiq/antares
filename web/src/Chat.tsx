@@ -283,7 +283,10 @@ function describeManage(code: string, what: "change" | "delete"): string {
 }
 
 export function Transcript(props: TranscriptProps) {
-  const { turns, pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0, jumpSlot = null, chatId, onReuse } = props;
+  // An assistant turn with no text and no tool calls has nothing to say: one is left where a step produced nothing,
+  // and rendering it put an empty "Assistant" article in the list (and a second heading in the accessibility tree).
+  const turns = useMemo(() => props.turns.filter((t) => t.role !== "assistant" || t.text.trim() !== "" || t.tools), [props.turns]);
+  const { pending, run, hasMore = false, loadingMore = false, olderError = "", onLoadMore = never, focusSeq = null, focusNonce = 0, jumpSlot = null, chatId, onReuse } = props;
   // Compact: the controls sit on the newest turn of each role only, not on every message.
   const lastUser = turns.reduce((n, t) => (t.role === "user" ? t.seq : n), -1);
   const lastAssistant = turns.reduce((n, t) => (t.role === "assistant" ? t.seq : n), -1);
