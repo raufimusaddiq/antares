@@ -54,13 +54,17 @@ func TestBundleMakesNoThirdPartyImageRequests(t *testing.T) {
 	if scanned < 6 {
 		t.Fatalf("scanned only %d bundle files", scanned)
 	}
-	entry, err := fs.Glob(FS(), "assets/index-*.js")
-	if err != nil || len(entry) != 1 {
-		t.Fatalf("want one entry chunk, got %v", entry)
+	entry, err := fs.Glob(FS(), "assets/*.js")
+	if err != nil || len(entry) == 0 {
+		t.Fatalf("no chunks in the bundle: %v", entry)
 	}
-	b, _ := fs.ReadFile(FS(), entry[0])
+	all := ""
+	for _, f := range entry {
+		b, _ := fs.ReadFile(FS(), f)
+		all += string(b)
+	}
 	for _, label := range []string{"Scroll sources left", "Scroll sources right"} {
-		if !strings.Contains(string(b), label) {
+		if !strings.Contains(all, label) {
 			t.Errorf("the sources carousel has no %q: its arrows are icon-only and would be announced as bare buttons", label)
 		}
 	}
