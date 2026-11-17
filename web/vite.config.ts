@@ -40,10 +40,59 @@ function stripOpenUITelemetry(): Plugin {
   };
 }
 
+// @openuidev/react-ui asks Google's favicon service for every source a reply cites. The page's CSP
+// (img-src 'self' blob:) refuses those images, so each one is a blocked request and a console error, and
+// the request itself tells Google which pages the reader's answer cites. The library already falls back to
+// its own globe icon when a source has no favicon URL, so the build empties the two places that build one.
+// Each rewrite must match exactly once or the build fails, so a library upgrade cannot silently bring the
+// third-party request back.
+function stripThirdPartyFavicons(): Plugin {
+  const rewrites: [string, string][] = [
+    ["return `https://www.google.com/s2/favicons?sz=128&domain=${new URL(url).hostname}`;", 'return "";'],
+  ];
+  return {
+    name: "strip-third-party-favicons",
+    enforce: "pre",
+    transform(code, id) {
+      const path = id.replace(/\\/g, "/");
+      if (!path.includes("react-ui/dist/genui-lib/index.mjs")) return null;
+      let out = code;
+      for (const [from, to] of rewrites) {
+        if (out.split(from).length !== 2) this.error(`strip-third-party-favicons: expected exactly one "${from}" in ${path}; the library changed, review its favicon requests again`);
+        out = out.replace(from, to);
+      }
+      return { code: out, map: null };
+    },
+  };
+}
+
+// The sources carousel's two arrow buttons are icon-only and carry no accessible name, so a screen reader
+// announces "button" twice. IconButton spreads its props onto the <button>, so the build names them.
+function labelSourceCarousel(): Plugin {
+  const rewrites: [string, string][] = [
+    ['onClick: () => ref.current?.scroll("left"),\n\t\t\t\t\tdisabled: !scroll.left,', '"aria-label": "Scroll sources left",\n\t\t\t\t\tonClick: () => ref.current?.scroll("left"),\n\t\t\t\t\tdisabled: !scroll.left,'],
+    ['onClick: () => ref.current?.scroll("right"),\n\t\t\t\t\tdisabled: !scroll.right,', '"aria-label": "Scroll sources right",\n\t\t\t\t\tonClick: () => ref.current?.scroll("right"),\n\t\t\t\t\tdisabled: !scroll.right,'],
+  ];
+  return {
+    name: "label-source-carousel",
+    enforce: "pre",
+    transform(code, id) {
+      const path = id.replace(/\\/g, "/");
+      if (!path.includes("react-ui/dist/genui-lib/index.mjs")) return null;
+      let out = code;
+      for (const [from, to] of rewrites) {
+        if (out.split(from).length !== 2) this.error(`label-source-carousel: expected exactly one "${from.split("\n")[0]}" in ${path}; the library changed, review the carousel again`);
+        out = out.replace(from, to);
+      }
+      return { code: out, map: null };
+    },
+  };
+}
+
 // The bundle is built into the directory the Go binary embeds (internal/webui),
 // so `go build` needs no Node. Production never runs Node: this is build-time only.
 export default defineConfig({
-  plugins: [react(), stripOpenUITelemetry()],
+  plugins: [react(), stripOpenUITelemetry(), stripThirdPartyFavicons(), labelSourceCarousel()],
   build: {
     outDir: "../internal/webui/dist",
     emptyOutDir: true,
