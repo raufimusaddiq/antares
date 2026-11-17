@@ -1492,6 +1492,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
         />
       </nav>
       <main className={empty ? "pane empty" : "pane"}>
+        {/* The page's one h1: the conversation's own name, so a reader who navigates by heading lands on the page
+            rather than on the first "Assistant" h2. Visually hidden — the design shows the title in the rail, not
+            over the conversation. */}
+        <h1 className="sr">{current ? chats.find((c) => c.id === current)?.title || openTitle.current || "Conversation" : "New conversation"}</h1>
         {banner && (
           <p className="notice" role="alert">
             {banner}
