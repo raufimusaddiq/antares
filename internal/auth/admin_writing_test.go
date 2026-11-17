@@ -104,6 +104,10 @@ func TestTheNotAppliedWarningNeedsRunsThatShouldHaveHadTheRules(t *testing.T) {
 	h, admin, _ := modelsHarness(t)
 	now := time.Now().UTC()
 	h.a.now = func() time.Time { return now }
+	// The harness signed the admin in on its own clock (2026-01-02). Moving the clock to the real "now" to place the
+	// runs after the migration would leave that session past its 7-day absolute lifetime, so sign in again on the
+	// clock the test runs on.
+	admin.login("adm", "adm@example.test")
 	var applied string
 	if err := h.db.QueryRow(`SELECT applied_at FROM schema_migrations WHERE version = 29`).Scan(&applied); err != nil {
 		t.Fatal(err)
