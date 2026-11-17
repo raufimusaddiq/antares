@@ -59,7 +59,7 @@ describe("New chat", () => {
   it("creates a real chat, lists it first, selects it and clears the screen", async () => {
     await mount([chat("c1", { title: "Old talk" })]);
     api.getMessages.mockResolvedValue(page(["hello", "hi there"]));
-    fireEvent.click(screen.getByText("Old talk"));
+    fireEvent.click(screen.getByRole("button", { name: "Old talk" }));
     await screen.findByText("hi there");
 
     api.createChat.mockResolvedValue(ok(chat("c2")));
@@ -107,7 +107,7 @@ describe("New chat", () => {
   it("shows why when POST /api/chats fails, and leaves the current chat alone", async () => {
     await mount([chat("c1", { title: "Old talk" })]);
     api.getMessages.mockResolvedValue(page(["hello", "hi there"]));
-    fireEvent.click(screen.getByText("Old talk"));
+    fireEvent.click(screen.getByRole("button", { name: "Old talk" }));
     await screen.findByText("hi there");
 
     api.createChat.mockResolvedValue({ ok: false, code: "UPSTREAM_UNAVAILABLE" });
@@ -137,7 +137,7 @@ describe("New chat", () => {
     expect(api.cancelRun).not.toHaveBeenCalled();
     expect(FakeSource.all.length).toBe(1); // nothing re-sent, nothing duplicated
 
-    fireEvent.click(screen.getByText("Busy"));
+    fireEvent.click(screen.getByRole("button", { name: "Busy" }));
     await waitFor(() => expect(FakeSource.all.length).toBe(2));
     expect(FakeSource.all[1].url).toContain("r1");
   });

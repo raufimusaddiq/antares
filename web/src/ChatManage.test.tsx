@@ -371,7 +371,7 @@ describe("Visualize and sending", () => {
   for (const outcome of ["stored", "failed"] as const) {
     it(`a send during a pending Visualize save is held, then goes after the save (${outcome})`, async () => {
       await mount([chat("c1", "One")]);
-      fireEvent.click(screen.getByText("One"));
+      fireEvent.click(screen.getByRole("button", { name: "One" }));
       let saved!: (v: unknown) => void;
       api.changeChat.mockReturnValue(new Promise((r) => (saved = r)));
       api.sendMessage.mockResolvedValue(ok({ runId: "r1", status: "PENDING" }));
@@ -405,11 +405,27 @@ describe("Visualize and sending", () => {
     fireEvent.click(await within(archive).findByText("Old"));
     expect(((await screen.findByRole("checkbox", { name: /Visualize/ })) as HTMLInputElement).checked).toBe(true);
     // Archived while open.
-    fireEvent.click(screen.getByText("One"));
+    fireEvent.click(screen.getByRole("button", { name: "One" }));
     await waitFor(() => expect((screen.getByRole("checkbox", { name: /Visualize/ }) as HTMLInputElement).checked).toBe(false));
     api.changeChat.mockResolvedValue(ok(chat("c1", "One", { archived: true })));
     fireEvent.click(within(openMenu("One")).getByRole("menuitem", { name: "Archive" }));
     await waitFor(() => expect(rows()).toEqual([]));
     expect(screen.getByRole("checkbox", { name: /Visualize/ })).toBeTruthy();
+  });
+});
+
+// A reader who navigates by heading needs the page to have one: without an h1 the first heading is the reply's
+// "Assistant" h2, so the page has no name and the conversation has no start.
+describe("the page names itself", () => {
+  it("has one h1, and it is the open conversation's title", async () => {
+    await mount([chat("c1", "One"), chat("c2", "Two")]);
+    fireEvent.click(screen.getByRole("button", { name: "Two" }));
+    await waitFor(() => expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1));
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Two");
+  });
+
+  it("names a new chat before it has a title", async () => {
+    await mount([]);
+    expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("New conversation");
   });
 });
