@@ -1139,7 +1139,7 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 .openui-root .openui-entity-list__row { padding: 0.65rem 0; }
 .openui-root .openui-entity-list__row--header :is(.openui-entity-list__cell-left, .openui-entity-list__cell-right) { font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
 .openui-root .openui-entity-list__cell-right { font-variant-numeric: tabular-nums; }
-.openui-root .openui-table-container { background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); overflow: hidden; }
+.openui-root .openui-table-container { background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }
 .openui-root .openui-table-head { background: var(--peri); border-bottom: 2px solid var(--ink); }
 .openui-root .openui-table-head-label { font: 700 0.72rem/1.4 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--ink); }
 .openui-root .openui-table-row:nth-child(even) { background: transparent; }
@@ -1192,6 +1192,8 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 .openui-root .openui-follow-up-item-icon { display: none; }
 /* Sections, accordions, code and sources. */
 .openui-root :is(.openui-foldable-section-trigger-content-text, .openui-accordion-trigger) { font-weight: 700; color: var(--ink); }
+/* A button inherits the UA's centre alignment: a heading that wraps would indent its second line away from the body under it. */
+.openui-root :is(.openui-foldable-section-trigger, .openui-accordion-trigger) { text-align: start; }
 .openui-root .openui-accordion .openui-accordion-item .openui-accordion-content-wrapper { padding-top: 0.5rem; }  /* the opened text clears the rule under its heading, as in the design */
 .openui-root .openui-code-block-wrapper { border: 2px solid var(--ink); border-radius: var(--r-md); overflow: hidden; }
 .openui-root .openui-listed-sources-header { font: 700 0.75rem/1.4 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase; color: var(--ink-2); }
