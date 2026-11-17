@@ -40,12 +40,6 @@ jobs:
       - name: Test
         if: steps.detect.outputs.present == 'true'
         run: go test -race -count=1 ./...
-      # Bounded fuzz of the ownership and SSE-recovery properties (#63). The fixed
-      # corpora already ran in Test above; this explores around them for a short, fixed time.
-      - name: Fuzz (bounded)
-        if: steps.detect.outputs.present == 'true'
-        timeout-minutes: 15
-        run: make fuzz FUZZTIME=20s
       # tools/hermes-provisioner is a separate module: ./... from the root does not reach it (#50).
       - name: Build (provisioner module)
         if: steps.detect.outputs.present == 'true'
@@ -59,6 +53,23 @@ jobs:
         if: steps.detect.outputs.present == 'true'
         working-directory: tools/hermes-provisioner
         run: go test -race -count=1 ./...
+
+  # Bounded fuzz of the ownership and SSE-recovery properties (#63). The fixed
+  # corpora already ran in the `go` job's Test step; this explores around them for a short,
+  # fixed time. It is its own job so it runs in parallel and does not sit on `go`'s critical
+  # path. It is not a required check: a failure still shows red on the PR.
+  fuzz:
+    name: fuzz (bounded)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Fuzz (bounded)
+        run: make fuzz FUZZTIME=20s
 
   web:
     name: web
