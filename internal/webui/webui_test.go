@@ -33,6 +33,43 @@ func TestBundleIsEmbeddedAndSelfConsistent(t *testing.T) {
 	}
 }
 
+// The page's CSP is img-src 'self' blob:, so a third-party image is a blocked request, a console error and a
+// disclosure of what the answer cites. The library's favicon service is emptied at build time (vite.config.ts);
+// this proves the bundle carries no such URL, and that the sources carousel's icon-only arrows are named.
+func TestBundleMakesNoThirdPartyImageRequests(t *testing.T) {
+	var scanned int
+	_ = fs.WalkDir(FS(), ".", func(p string, d fs.DirEntry, err error) error {
+		if err != nil || d.IsDir() || !(strings.HasSuffix(p, ".js") || strings.HasSuffix(p, ".css") || strings.HasSuffix(p, ".html")) {
+			return err
+		}
+		b, _ := fs.ReadFile(FS(), p)
+		scanned++
+		for _, host := range []string{"google.com/s2/favicons", "www.google.com"} {
+			if strings.Contains(string(b), host) {
+				t.Errorf("bundle:%s names %s: the CSP refuses it, so it is a blocked request and a disclosure", p, host)
+			}
+		}
+		return nil
+	})
+	if scanned < 6 {
+		t.Fatalf("scanned only %d bundle files", scanned)
+	}
+	entry, err := fs.Glob(FS(), "assets/*.js")
+	if err != nil || len(entry) == 0 {
+		t.Fatalf("no chunks in the bundle: %v", entry)
+	}
+	all := ""
+	for _, f := range entry {
+		b, _ := fs.ReadFile(FS(), f)
+		all += string(b)
+	}
+	for _, label := range []string{"Scroll sources left", "Scroll sources right"} {
+		if !strings.Contains(all, label) {
+			t.Errorf("the sources carousel has no %q: its arrows are icon-only and would be announced as bare buttons", label)
+		}
+	}
+}
+
 // The same algorithm as web/scripts/stamp.mjs: sha256 over, for each source file
 // in sorted path order, path NUL content NUL. Test files are not part of the bundle.
 func TestBundleIsNotStale(t *testing.T) {
