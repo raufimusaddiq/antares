@@ -11,11 +11,14 @@ against a fake Hermes.
 | Command | What it runs |
 |---|---|
 | `make threat` | The cross-user suite, the ownership properties and the SSE recovery properties on their fixed corpora, with `-race`. A failure reads `SURFACE BROKEN [<surface>]`. |
-| `make fuzz` | The three native fuzz targets, `FUZZTIME` each (default `20s`). CI runs `make fuzz FUZZTIME=20s` in its own `fuzz (bounded)` job, in parallel with `go` (not a required check). `FuzzSSERecovery` is slow (each scenario waits on settle timers, a few executions a second at best), so 20s buys tens of executions: in CI it is mostly its fixed corpus. The two ownership targets do thousands. |
+| `make fuzz` | The three native fuzz targets, `FUZZTIME` each (default `20s`). CI runs `make fuzz FUZZTIME=20s` in its own `fuzz (bounded)` job, in parallel with the `go` shards (not a required check). `FuzzSSERecovery` is slow (each scenario waits on settle timers, a few executions a second at best), so 20s buys tens of executions: in CI it is mostly its fixed corpus. The two ownership targets do thousands. |
 | `make fuzz FUZZTIME=5m` | Hunt locally. A crashing input is saved under `testdata/fuzz/<Target>/`; commit it. |
 
 `go test -race ./...` also runs everything above on the fixed corpora, so the suite cannot be skipped
-by forgetting a target.
+by forgetting a target. CI runs that suite as four named shards (`scripts/go-shard.sh`,
+`go-test (shard i/4)`), which together are exactly the whole suite: the required `go` check fails
+unless every shard and `go-static` passed, so no shard can be dropped. `git status`/local runs are
+still the whole suite in one command.
 
 ## Where things are
 
