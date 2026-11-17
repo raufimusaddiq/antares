@@ -125,3 +125,26 @@ describe("controls look like what they are", () => {
     expect(topLevel(/\.extras-toggle \{[^}]*display: inline-flex/)).toBe(0);
   });
 });
+
+describe("a wide table scrolls inside its card instead of being clipped", () => {
+  it("keeps the table container's own overflow (a card that clips cannot be scrolled by touch)", () => {
+    const rule = css.match(/\.openui-root \.openui-table-container \{[^}]*\}/)?.[0];
+    expect(rule).toBeDefined();
+    expect(rule).not.toMatch(/overflow:\s*hidden/);
+  });
+});
+
+// A button inherits the UA's centre alignment, so a heading that wraps indents its second line away from the text under it.
+describe("section headings sit flush with the text under them", () => {
+  it("aligns a foldable section and an accordion trigger to the start", () => {
+    const rule = css.match(/\.openui-root :is\(\.openui-foldable-section-trigger, \.openui-accordion-trigger\) \{[^}]*\}/)?.[0];
+    expect(rule).toMatch(/text-align:\s*start/);
+  });
+});
+
+describe("the web app manifest is valid", () => {
+  it("gives the share target an enctype, which a browser otherwise reports as missing", () => {
+    const manifest = JSON.parse(readFileSync(join(pub, "manifest.webmanifest"), "utf8")) as { share_target?: { enctype?: string } };
+    expect(manifest.share_target?.enctype).toMatch(/^(application\/x-www-form-urlencoded|multipart\/form-data)$/);
+  });
+});
