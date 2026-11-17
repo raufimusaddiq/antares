@@ -15,44 +15,79 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # The baseline is specification-only: no go.mod, no web/package.json. These
-  # jobs skip cleanly until the first implementation lands, then do real work.
-  go:
-    name: go
+  # The Go suite is sharded by TEST NAME inside each package (T-152, after the
+  # measurements in T-150): tests are serial within a package and `chat` alone
+  # was ~98% of the Test wall, so splitting by package could not shorten the
+  # critical path. Shard i runs every test whose position in the listing is i
+  # mod 4, so no test is dropped; `go` below fails unless every shard and
+  # `go-static` succeeded.
+  go-test:
+    name: go-test (shard ${{ matrix.shard }}/4)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Test
+        run: scripts/go-shard.sh ${{ matrix.shard }}/4
+
+  # Build, vet and the shard invariant: the four shards together are exactly the
+  # suite, each test in one shard. Cheap and not racy, so it runs beside them.
+  go-static:
+    name: go-static
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Detect Go module
-        id: detect
-        run: |
-          if [ -f go.mod ]; then echo "present=true" >> "$GITHUB_OUTPUT"; else echo "present=false" >> "$GITHUB_OUTPUT"; echo "no go.mod yet — skipping"; fi
       - uses: actions/setup-go@v5
-        if: steps.detect.outputs.present == 'true'
         with:
           go-version-file: go.mod
           cache: true
       - name: Build
-        if: steps.detect.outputs.present == 'true'
         run: go build ./...
       - name: Vet
-        if: steps.detect.outputs.present == 'true'
         run: go vet ./...
-      - name: Test
-        if: steps.detect.outputs.present == 'true'
-        run: go test -race -count=1 ./...
+      - name: Shards partition the suite
+        run: scripts/go-shard.sh --check 4
       # tools/hermes-provisioner is a separate module: ./... from the root does not reach it (#50).
       - name: Build (provisioner module)
-        if: steps.detect.outputs.present == 'true'
         working-directory: tools/hermes-provisioner
         run: go build ./...
       - name: Vet (provisioner module)
-        if: steps.detect.outputs.present == 'true'
         working-directory: tools/hermes-provisioner
         run: go vet ./...
       - name: Test (provisioner module)
-        if: steps.detect.outputs.present == 'true'
         working-directory: tools/hermes-provisioner
         run: go test -race -count=1 ./...
+
+  # The required check keeps this exact name. It fails unless both needed jobs
+  # succeeded: a failed, cancelled or SKIPPED shard fails it (matrix results are
+  # aggregated) and the results are printed either way.
+  go:
+    name: go
+    needs: [go-test, go-static]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Every Go job succeeded
+        env:
+          RESULTS: go-test=${{ needs.go-test.result }} go-static=${{ needs.go-static.result }}
+        run: |
+          echo "$RESULTS"
+          status=0
+          for r in $RESULTS; do
+            case "${r#*=}" in
+              success) echo "ok ${r%%=*}" ;;
+              *) echo "::error::${r%%=*} did not succeed (${r#*=})"; status=1 ;;
+            esac
+          done
+          exit $status
 
   # Bounded fuzz of the ownership and SSE-recovery properties (#63). The fixed
   # corpora already ran in the `go` job's Test step; this explores around them for a short,
