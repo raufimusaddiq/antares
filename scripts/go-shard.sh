@@ -47,7 +47,7 @@ listing="$tmp/listing"
 : > "$listing"
 for pkg in $packages; do
   out="$tmp/list"
-  go test -list '.*' "$pkg" > "$out" || die "go test -list failed for $pkg"
+  go test -list '.*' -race "$pkg" > "$out" || die "go test -list failed for $pkg"
   grep -E '^(Test|Fuzz|Example)' "$out" | LC_ALL=C sort |
     while read -r name; do printf '%s\t%s\n' "$pkg" "$name"; done >> "$listing"
 done
