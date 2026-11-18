@@ -15,11 +15,12 @@ import (
 )
 
 // A shell as the build ships it: noindex, the app's own title and description, its canonical address and card tags.
-const testShell = `<!doctype html><html><head>
+const testShell = `<!doctype html><html lang="en"><head>
     <meta name="robots" content="noindex" />
     <title>Antares</title>
     <meta name="description" content="A private chat, by invitation." />
     <link rel="canonical" href="https://antares.example/" />
+    <meta property="og:type" content="website" />
     <meta property="og:title" content="Antares" />
     <meta property="og:description" content="A private chat, by invitation." />
     <meta property="og:url" content="https://antares.example/" />
@@ -56,6 +57,8 @@ func TestTheBlogIndexIsTheShellWithItsOwnTitleAndIsFindable(t *testing.T) {
 		}
 		for _, want := range []string{
 			"<title>Blog · Antares</title>",
+			`<html lang="en">`,
+			`<meta property="og:type" content="website" />`,
 			`<meta name="description" content="Posts written on Antares." />`,
 			`<meta property="og:title" content="Blog · Antares" />`,
 			`<link rel="canonical" href="https://antares.example/b" />`,
@@ -68,6 +71,9 @@ func TestTheBlogIndexIsTheShellWithItsOwnTitleAndIsFindable(t *testing.T) {
 		}
 		if has(b, "noindex") {
 			t.Errorf("%s still says noindex: a blog is meant to be found", path)
+		}
+		if has(b, "article:published_time") {
+			t.Errorf("%s is an index, not an article", path)
 		}
 		if has(b, "A private chat") {
 			t.Errorf("%s keeps the app's own description", path)
@@ -111,6 +117,23 @@ func TestAPostsOwnWordsAreWrittenInAsTextAndNothingElse(t *testing.T) {
 	}
 	if has(b, "og.png") {
 		t.Errorf("the app's own card image stayed when the post has a cover")
+	}
+}
+
+func TestAPostPageIsAnArticleInItsOwnLanguage(t *testing.T) {
+	h := blogServer(t, func(context.Context, string) (PageMeta, error) {
+		return PageMeta{Title: "T", Lang: "id", PublishedAt: "2026-11-08T01:00:00Z", Author: "Maya R."}, nil
+	}, nil)
+	b := page(h, http.MethodGet, "/b/some-post").Body.String()
+	for _, want := range []string{
+		`<html lang="id">`,
+		`<meta property="og:type" content="article" />`,
+		`<meta property="article:published_time" content="2026-11-08T01:00:00Z" />`,
+		`<meta property="article:author" content="Maya R." />`,
+	} {
+		if !has(b, want) {
+			t.Errorf("lacks %s:\n%s", want, b)
+		}
 	}
 }
 

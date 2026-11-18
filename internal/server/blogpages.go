@@ -17,7 +17,7 @@ import (
 // executable, and the shell's strict Content-Security-Policy is unchanged.
 
 // PageMeta is the metadata of one published post (or of the blog index).
-type PageMeta struct{ Title, Description, Image string }
+type PageMeta struct{ Title, Description, Image, Lang, PublishedAt, Author string }
 
 // ErrNoPage is the answer for anything a reader may not see (unknown, unpublished, hidden): a 404. Any other error from
 // a PostMeta is a failure of ours and is answered as one, never as "no such post".
@@ -46,6 +46,8 @@ var (
 	reOGURL    = regexp.MustCompile(`(<meta property="og:url" content=")[^"]*(")`)
 	reCanon    = regexp.MustCompile(`(<link rel="canonical" href=")([^"]*)(")`)
 	reOGImage  = regexp.MustCompile(`(<meta (?:property="og:image"|name="twitter:image") content=")[^"]*(")`)
+	reOGType   = regexp.MustCompile(`(<meta property="og:type" content=")[^"]*(")`)
+	reLang     = regexp.MustCompile(`<html lang="[^"]*"`)
 	reSlugPath = regexp.MustCompile(`^/b/([a-z0-9-]{3,80})$`)
 )
 
@@ -63,7 +65,7 @@ func (s *Server) blogShell(w http.ResponseWriter, r *http.Request) {
 	status := http.StatusOK
 	switch {
 	case r.URL.Path == "/b":
-		meta = PageMeta{Title: "Blog · Antares", Description: "Posts written on Antares."}
+		meta = PageMeta{Title: "Blog · Antares", Description: "Posts written on Antares.", Lang: "en"}
 	default:
 		m := reSlugPath.FindStringSubmatch(r.URL.Path)
 		var err error = ErrNoPage
@@ -113,10 +115,21 @@ func withMeta(shell []byte, path string, m PageMeta) []byte {
 	title := esc(m.Title)
 	desc := esc(m.Description)
 	out := reRobots.ReplaceAll(shell, nil)
+	lang := m.Lang
+	if lang == "" {
+		lang = "en"
+	}
+	out = reLang.ReplaceAllLiteral(out, []byte(`<html lang="`+esc(lang)+`"`))
 	out = reTitle.ReplaceAllLiteral(out, []byte("<title>"+title+"</title>"))
 	out = setAttr(reDesc, out, desc)
 	out = setAttr(reOGTitle, out, title)
 	out = setAttr(reOGDesc, out, desc)
+	if m.PublishedAt != "" { // a post is an article, with its publication time and author; the index is a website
+		out = setAttr(reOGType, out, "article")
+		extra := `<meta property="article:published_time" content="` + esc(m.PublishedAt) + `" />` + "\n    " +
+			`<meta property="article:author" content="` + esc(m.Author) + `" />`
+		out = bytes.Replace(out, []byte(`<meta property="og:type" content="article" />`), []byte(`<meta property="og:type" content="article" />`+"\n    "+extra), 1)
+	}
 	if c := reCanon.FindSubmatch(out); c != nil {
 		origin := strings.TrimRight(string(c[2]), "/")
 		url := esc(origin + path)

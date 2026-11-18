@@ -1,6 +1,7 @@
 package blog
 
 import (
+	"encoding/json"
 	"regexp"
 	"strings"
 	"testing"
@@ -12,6 +13,53 @@ func metaOf(html, key string) string {
 		return ""
 	}
 	return m[1]
+}
+
+// A post written in Indonesian says so, and its page is an article with its publication time and author. A post with
+// no summary still has a description: the first words of its body.
+func TestAPostsPageSaysItsLanguageAndIsAnArticle(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": 1, "title": "Menjalankan asisten sendiri", "doc": body("Ini adalah catatan tentang cara menjalankan asisten pribadi dengan aman dan tidak mahal.")})
+	u.do("PATCH", "/api/blog/posts/"+p.ID+"/settings", map[string]any{"slug": "asisten-sendiri", "summary": ""})
+	u.do("POST", "/api/blog/posts/"+p.ID+"/publish", map[string]any{"mode": "original"})
+
+	h := a.anon("GET", "/b/asisten-sendiri").Body.String()
+	if !strings.Contains(h, `<html lang="id">`) {
+		t.Errorf("an Indonesian post does not say so:\n%s", h)
+	}
+	for key, want := range map[string]string{
+		"og:type":        "article",
+		"article:author": "Author alice",
+		"description":    "Ini adalah catatan tentang cara menjalankan asisten pribadi dengan aman dan tidak mahal.",
+		"og:description": "Ini adalah catatan tentang cara menjalankan asisten pribadi dengan aman dan tidak mahal.",
+	} {
+		if got := metaOf(h, key); got != want {
+			t.Errorf("%s = %q, want %q", key, got, want)
+		}
+	}
+	if metaOf(h, "article:published_time") == "" {
+		t.Errorf("an article has no publication time:\n%s", h)
+	}
+}
+
+// A card is never a title over empty space: a post with no summary shows the first words of its body.
+func TestAPostWithoutASummaryStillHasACardExcerpt(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": 1, "title": "No summary", "doc": body("The first words of the post are the card.")})
+	u.do("PATCH", "/api/blog/posts/"+p.ID+"/settings", map[string]any{"slug": "no-summary", "summary": ""})
+	u.do("POST", "/api/blog/posts/"+p.ID+"/publish", map[string]any{"mode": "original"})
+
+	var l []PublicSummary
+	if err := json.Unmarshal(a.anon("GET", "/api/public/blog/posts").Body.Bytes(), &l); err != nil || len(l) != 1 {
+		t.Fatalf("list: %v %+v", err, l)
+	}
+	if l[0].Summary != "The first words of the post are the card." {
+		t.Errorf("card excerpt = %q", l[0].Summary)
+	}
 }
 
 // The page of a published post carries its own title, description, address and cover for search engines and link previews;

@@ -215,7 +215,7 @@ func run() error {
 			if errors.Is(err, blog.ErrNotFound) {
 				err = server.ErrNoPage
 			}
-			return server.PageMeta{Title: p.Title, Description: p.Description, Image: p.Image}, err
+			return server.PageMeta{Title: p.Title, Description: p.Description, Image: p.Image, Lang: p.Lang, PublishedAt: p.PublishedAt, Author: p.Author}, err
 		}, identity.BlogReadLimit()).Routes(),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       30 * time.Second,
