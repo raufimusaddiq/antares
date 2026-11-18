@@ -89,10 +89,49 @@ function labelSourceCarousel(): Plugin {
   };
 }
 
+// @openuidev/react-ui's TextContentWrapper imports rehype-katex on mount, so every rich reply
+// downloads KaTeX (259 KB) even when it holds no math. The build makes that import conditional on
+// the text actually carrying math ($$…$$, \(…\) or \[…\]) and re-runs it when the text changes, so a
+// streaming reply that gains math still gets it. Each rewrite must match exactly once or the build
+// fails, so a library upgrade cannot silently bring the unconditional import back.
+function loadKatexOnlyForMath(): Plugin {
+  const from = String.raw`	const [rehypeKatex, setRehypeKatex] = useState(null);
+	useEffect(() => {
+		let cancelled = false;
+		import("rehype-katex").then((m) => {
+			if (!cancelled) setRehypeKatex(() => m.default);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, []);`;
+  const to = String.raw`	const [rehypeKatex, setRehypeKatex] = useState(null);
+	useEffect(() => {
+		let cancelled = false;
+		const text = props.textMarkdown ?? "";
+		if (text.includes("$$") || text.includes("\\(") || text.includes("\\[")) import("rehype-katex").then((m) => {
+			if (!cancelled) setRehypeKatex(() => m.default);
+		});
+		return () => {
+			cancelled = true;
+		};
+	}, [props.textMarkdown]);`;
+  return {
+    name: "load-katex-only-for-math",
+    enforce: "pre",
+    transform(code, id) {
+      if (!id.replace(/\\/g, "/").includes("react-ui/dist/genui-lib/index.mjs")) return null;
+      if (code.split(from).length !== 2) this.error("load-katex-only-for-math: the library's TextContentWrapper changed; review its KaTeX import again");
+      // A function replacer: a string replacement would read the "$$" in the guard as an escaped "$".
+      return { code: code.replace(from, () => to), map: null };
+    },
+  };
+}
+
 // The bundle is built into the directory the Go binary embeds (internal/webui),
 // so `go build` needs no Node. Production never runs Node: this is build-time only.
 export default defineConfig({
-  plugins: [react(), stripOpenUITelemetry(), stripThirdPartyFavicons(), labelSourceCarousel()],
+  plugins: [react(), stripOpenUITelemetry(), stripThirdPartyFavicons(), labelSourceCarousel(), loadKatexOnlyForMath()],
   build: {
     outDir: "../internal/webui/dist",
     emptyOutDir: true,

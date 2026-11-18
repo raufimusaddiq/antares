@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"regexp"
 	"strings"
+	"sync"
 )
 
 // Capability discovery (PRD §9A.4, §9A.8, issue "Phase 2b slice 1"). Everything
@@ -173,21 +174,31 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 		return "Hermes does not report " + feature + " as enabled"
 	}
 
-	// models
-	models := unsupported(CapModels, "Model choices", why("model_options"))
-	if capsOK && caps.flag("model_options") {
-		models.Reason = "Hermes does not advertise a model options route"
-		if p, ok := caps.route("model_options"); ok {
-			var err error
-			inv.Providers, models.Reason, err = c.modelOptions(ctx, b, p)
-			if err != nil {
-				return Inventory{}, err
-			}
-			if len(inv.Providers) > 0 {
-				models = available(CapModels, "Model choices")
-			}
-		}
+	// The toolsets, skills, model-option and clarify-probe reads are independent of each other, so they
+	// run concurrently: the cold path costs two round trips (the capabilities document, then these)
+	// instead of five. Each read reports whether Hermes refused the binding; any refusal means no
+	// inventory at all.
+	var (
+		models   modelRead
+		toolsets toolsetsRead
+		skillsR  skillsRead
+		clarify  clarifyRead
+	)
+	var wg sync.WaitGroup
+	wg.Add(4)
+	go func() { defer wg.Done(); models = c.readModels(ctx, b, caps, capsOK, why) }()
+	go func() { defer wg.Done(); toolsets = c.readToolsets(ctx, b, caps, capsOK) }()
+	go func() { defer wg.Done(); skillsR = c.readSkills(ctx, b, caps, capsOK, why) }()
+	go func() { defer wg.Done(); clarify = c.readClarify(ctx, b, caps, capsOK, why) }()
+	wg.Wait()
+	if models.tenant || toolsets.tenant || skillsR.tenant || clarify.tenant {
+		return Inventory{}, fail(CodeTenantNotReady)
 	}
+	if models.err != nil {
+		return Inventory{}, models.err
+	}
+	inv.Providers, inv.Toolsets, inv.Skills = models.providers, toolsets.rows, skillsR.rows
+
 	lock := unsupported(CapModelLock, "Per-chat model", why("session_model_lock"))
 	if caps.flag("session_model_lock") {
 		lock = available(CapModelLock, "Per-chat model")
@@ -197,84 +208,6 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 	settings := unsupported(CapSettings, "Change Hermes settings", why("admin_config_rw"))
 	if caps.flag("admin_config_rw") {
 		settings = available(CapSettings, "Change Hermes settings")
-	}
-
-	// toolsets
-	tools := unsupported(CapToolsets, "Tools", "Hermes does not advertise a toolsets route")
-	if p, ok := caps.route("toolsets"); ok && capsOK {
-		var d struct {
-			Object string `json:"object"`
-			Data   []struct {
-				Name       string   `json:"name"`
-				Enabled    *bool    `json:"enabled"`
-				Configured *bool    `json:"configured"`
-				Tools      []string `json:"tools"`
-			} `json:"data"`
-		}
-		tools.Reason = "Hermes did not return a usable toolset list"
-		ok, tenant := c.getJSON(ctx, b, p, &d, maxAPIResponse)
-		if tenant {
-			return Inventory{}, fail(CodeTenantNotReady)
-		}
-		if ok && d.Object == "list" {
-			tools.Reason = "No toolset is enabled and configured"
-			for _, t := range d.Data {
-				if len(inv.Toolsets) >= maxListed {
-					break
-				}
-				if !printable(t.Name) {
-					continue
-				}
-				ts := Toolset{Name: t.Name, Status: StatusUnsupported, Tools: boundedNames(t.Tools, maxToolsPerToolset)}
-				switch {
-				case t.Enabled == nil || t.Configured == nil:
-					ts.Reason = "Hermes did not say whether this toolset is enabled and configured"
-				case !*t.Enabled:
-					ts.Reason = "Not enabled on this Hermes"
-				case !*t.Configured:
-					ts.Reason = "Enabled but not configured (missing credentials)"
-				default:
-					ts.Status = StatusAvailable
-					tools = available(CapToolsets, "Tools")
-				}
-				inv.Toolsets = append(inv.Toolsets, ts)
-			}
-		}
-	}
-
-	// skills
-	skills := unsupported(CapSkills, "Skills", why("skills_api"))
-	if capsOK && caps.flag("skills_api") {
-		skills.Reason = "Hermes does not advertise a skills route"
-		if p, ok := caps.route("skills"); ok {
-			var d struct {
-				Object string `json:"object"`
-				Data   []struct {
-					Name        string `json:"name"`
-					Description string `json:"description"`
-					Category    string `json:"category"`
-				} `json:"data"`
-			}
-			skills.Reason = "Hermes did not return a usable skills list"
-			ok, tenant := c.getJSON(ctx, b, p, &d, maxAPIResponse)
-			if tenant {
-				return Inventory{}, fail(CodeTenantNotReady)
-			}
-			if ok && d.Object == "list" {
-				skills.Reason = "Hermes reports no installed skills"
-				for _, s := range d.Data {
-					if len(inv.Skills) >= maxListed {
-						break
-					}
-					if printable(s.Name) {
-						inv.Skills = append(inv.Skills, Skill{Name: s.Name, Description: clip(s.Description, 300), Category: clip(s.Category, 60)})
-					}
-				}
-				if len(inv.Skills) > 0 {
-					skills = available(CapSkills, "Skills")
-				}
-			}
-		}
 	}
 
 	// tool progress arrives on the run event stream, so both must be on.
@@ -295,13 +228,6 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 			approvals = available(CapApprovals, "Run approvals")
 		}
 	}
-	clarify := unsupported(CapClarify, "Clarification prompts", "Hermes does not advertise a clarification route")
-	if !capsOK {
-		clarify.Reason = why("run_clarify")
-	} else if caps.hasPost("run_clarify") || c.proven(ctx, b, "run_clarify") {
-		clarify = available(CapClarify, "Clarification prompts")
-	}
-
 	// Turn controls (PRD §21.5, issue #109). No route in the deployed Hermes retries, edits or truncates
 	// a turn (docs/runbooks/turn-controls.md), so none can be advertised, and a whole-session fork or a
 	// second run in the same session is not a substitute. They are listed, always unsupported, so the UI
@@ -350,8 +276,160 @@ func (c *Client) Discover(ctx context.Context, b Binding) (Inventory, error) {
 		compaction.Reason = why("a compaction route")
 	}
 
-	inv.Capabilities = []Capability{models, lock, settings, tools, skills, progress, approvals, clarify, regenerate, editTurn, rewind, chatDelete, steer, compaction}
+	inv.Capabilities = []Capability{models.cap, lock, settings, toolsets.cap, skillsR.cap, progress, approvals, clarify.cap, regenerate, editTurn, rewind, chatDelete, steer, compaction}
 	return inv, nil
+}
+
+// modelRead is the model-option route's outcome: the providers it listed, the capability verdict, and
+// whether Hermes refused the binding.
+type modelRead struct {
+	providers []Provider
+	cap       Capability
+	tenant    bool
+	err       error
+}
+
+func (c *Client) readModels(ctx context.Context, b Binding, caps discoveryCaps, capsOK bool, why func(string) string) modelRead {
+	r := modelRead{providers: []Provider{}, cap: unsupported(CapModels, "Model choices", why("model_options"))}
+	if !capsOK || !caps.flag("model_options") {
+		return r
+	}
+	r.cap.Reason = "Hermes does not advertise a model options route"
+	p, ok := caps.route("model_options")
+	if !ok {
+		return r
+	}
+	r.providers, r.cap.Reason, r.err = c.modelOptions(ctx, b, p)
+	if r.err != nil {
+		r.tenant = CodeOf(r.err) == CodeTenantNotReady
+		return r
+	}
+	if len(r.providers) > 0 {
+		r.cap = available(CapModels, "Model choices")
+	}
+	return r
+}
+
+// toolsetsRead is the toolsets route's outcome.
+type toolsetsRead struct {
+	rows   []Toolset
+	cap    Capability
+	tenant bool
+}
+
+func (c *Client) readToolsets(ctx context.Context, b Binding, caps discoveryCaps, capsOK bool) toolsetsRead {
+	r := toolsetsRead{rows: []Toolset{}, cap: unsupported(CapToolsets, "Tools", "Hermes does not advertise a toolsets route")}
+	p, ok := caps.route("toolsets")
+	if !ok || !capsOK {
+		return r
+	}
+	var d struct {
+		Object string `json:"object"`
+		Data   []struct {
+			Name       string   `json:"name"`
+			Enabled    *bool    `json:"enabled"`
+			Configured *bool    `json:"configured"`
+			Tools      []string `json:"tools"`
+		} `json:"data"`
+	}
+	r.cap.Reason = "Hermes did not return a usable toolset list"
+	ok, tenant := c.getJSON(ctx, b, p, &d, maxAPIResponse)
+	if tenant {
+		r.tenant = true
+		return r
+	}
+	if ok && d.Object == "list" {
+		r.cap.Reason = "No toolset is enabled and configured"
+		for _, t := range d.Data {
+			if len(r.rows) >= maxListed {
+				break
+			}
+			if !printable(t.Name) {
+				continue
+			}
+			ts := Toolset{Name: t.Name, Status: StatusUnsupported, Tools: boundedNames(t.Tools, maxToolsPerToolset)}
+			switch {
+			case t.Enabled == nil || t.Configured == nil:
+				ts.Reason = "Hermes did not say whether this toolset is enabled and configured"
+			case !*t.Enabled:
+				ts.Reason = "Not enabled on this Hermes"
+			case !*t.Configured:
+				ts.Reason = "Enabled but not configured (missing credentials)"
+			default:
+				ts.Status = StatusAvailable
+				r.cap = available(CapToolsets, "Tools")
+			}
+			r.rows = append(r.rows, ts)
+		}
+	}
+	return r
+}
+
+// skillsRead is the skills route's outcome.
+type skillsRead struct {
+	rows   []Skill
+	cap    Capability
+	tenant bool
+}
+
+func (c *Client) readSkills(ctx context.Context, b Binding, caps discoveryCaps, capsOK bool, why func(string) string) skillsRead {
+	r := skillsRead{rows: []Skill{}, cap: unsupported(CapSkills, "Skills", why("skills_api"))}
+	if !capsOK || !caps.flag("skills_api") {
+		return r
+	}
+	r.cap.Reason = "Hermes does not advertise a skills route"
+	p, ok := caps.route("skills")
+	if !ok {
+		return r
+	}
+	var d struct {
+		Object string `json:"object"`
+		Data   []struct {
+			Name        string `json:"name"`
+			Description string `json:"description"`
+			Category    string `json:"category"`
+		} `json:"data"`
+	}
+	r.cap.Reason = "Hermes did not return a usable skills list"
+	ok, tenant := c.getJSON(ctx, b, p, &d, maxAPIResponse)
+	if tenant {
+		r.tenant = true
+		return r
+	}
+	if ok && d.Object == "list" {
+		r.cap.Reason = "Hermes reports no installed skills"
+		for _, s := range d.Data {
+			if len(r.rows) >= maxListed {
+				break
+			}
+			if printable(s.Name) {
+				r.rows = append(r.rows, Skill{Name: s.Name, Description: clip(s.Description, 300), Category: clip(s.Category, 60)})
+			}
+		}
+		if len(r.rows) > 0 {
+			r.cap = available(CapSkills, "Skills")
+		}
+	}
+	return r
+}
+
+// clarifyRead is the clarification route's outcome. The probe is a POST to a run that cannot exist, so
+// it changes nothing.
+type clarifyRead struct {
+	cap    Capability
+	tenant bool
+}
+
+func (c *Client) readClarify(ctx context.Context, b Binding, caps discoveryCaps, capsOK bool, why func(string) string) clarifyRead {
+	r := clarifyRead{cap: unsupported(CapClarify, "Clarification prompts", "Hermes does not advertise a clarification route")}
+	if !capsOK {
+		r.cap.Reason = why("run_clarify")
+		return r
+	}
+	if caps.hasPost("run_clarify") || c.proven(ctx, b, "run_clarify") {
+		r.cap = available(CapClarify, "Clarification prompts")
+	}
+	return r
 }
 
 // modelOptions reads the picker inventory. Only providers Hermes marks
