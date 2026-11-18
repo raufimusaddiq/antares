@@ -34,7 +34,7 @@ import { AdminModelsScreen } from "./AdminModels";
 import { Forbidden, Loading, Problem, useLoad, when } from "./adminLoad";
 export { Forbidden, when } from "./adminLoad";
 export type { Load } from "./adminLoad";
-import { saveText } from "./exportChat";
+import { saveText } from "./chatExport";
 import { AntaresMark } from "./brand/AntaresMark";
 import { QuotaBar, WINDOW_LABELS, grouped } from "./QuotaBar";
 

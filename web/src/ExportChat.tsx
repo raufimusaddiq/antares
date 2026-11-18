@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Turn } from "./chatApi";
-import { fileName, loadAllTurns, saveText, toMarkdown } from "./exportChat";
+import { fileName, loadAllTurns, saveText, toMarkdown } from "./chatExport";
 import { Markdown } from "./Markdown";
 
 /**
