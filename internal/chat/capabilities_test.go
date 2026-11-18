@@ -200,17 +200,25 @@ func TestCapabilitiesCacheExpires(t *testing.T) {
 
 // The gate runs before the cache: an account that loses its right to ask never sees a cached inventory.
 func TestCapabilitiesCacheNeverOutlivesTheRightToAsk(t *testing.T) {
-	a := newApp(t)
-	alice := a.user("alice")
-	serveDiscovery(a, readFixture(t, "../../docs/hermes/fixtures/capabilities.body.json"))
-	if w := alice.get("/api/capabilities"); w.Code != 200 {
-		t.Fatalf("%d %s", w.Code, w.Body.String())
-	}
-	if _, err := a.db.Exec(`UPDATE users SET approval_status = 'SUSPENDED' WHERE id = ?`, alice.id); err != nil {
-		t.Fatal(err)
-	}
-	if w := alice.get("/api/capabilities"); w.Code != 403 || strings.Contains(w.Body.String(), `"capabilities"`) {
-		t.Errorf("suspended account got %d %s", w.Code, w.Body.String())
+	for name, lose := range map[string]string{
+		"suspended":       `UPDATE users SET approval_status = 'SUSPENDED' WHERE id = ?`,
+		"binding revoked": `UPDATE tenant_bindings SET status = 'DISABLED' WHERE user_id = ?`,
+		"unbound":         `DELETE FROM tenant_bindings WHERE user_id = ?`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := newApp(t)
+			alice := a.user("alice")
+			serveDiscovery(a, readFixture(t, "../../docs/hermes/fixtures/capabilities.body.json"))
+			if w := alice.get("/api/capabilities"); w.Code != 200 {
+				t.Fatalf("%d %s", w.Code, w.Body.String())
+			}
+			if _, err := a.db.Exec(lose, alice.id); err != nil {
+				t.Fatal(err)
+			}
+			if w := alice.get("/api/capabilities"); w.Code < 400 || w.Code >= 500 || strings.Contains(w.Body.String(), `"capabilities"`) {
+				t.Errorf("%s: got %d %s", name, w.Code, w.Body.String())
+			}
+		})
 	}
 }
 
