@@ -45,6 +45,16 @@ describe("appearance", () => {
     expect(root.hasAttribute("data-focus")).toBe(true);
     expect(loadAppearance()).toMatchObject({ theme: "light", focus: true });
   });
+
+  // A light theme on a dark OS must draw native controls light: color-scheme follows the choice, not the OS.
+  it.each([
+    ["light", "light"],
+    ["dark", "dark"],
+    ["system", "light dark"],
+  ] as const)("theme %s sets color-scheme %s", (theme, scheme) => {
+    applyAppearance({ ...DEFAULT_APPEARANCE, theme });
+    expect(root.style.getPropertyValue("color-scheme")).toBe(scheme);
+  });
 });
 
 // #113: diagnostics read only public, secret-free endpoints and show nothing that identifies the session.
