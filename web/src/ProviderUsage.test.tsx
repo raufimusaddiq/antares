@@ -43,6 +43,16 @@ describe("provider usage screen (#146)", () => {
     expect(panel({ ...ok, stale: true })).toContain("Stale: the latest attempt to read Kenari failed");
   });
 
+  // A model billed per character, image or second reports 0 tokens with real requests: that is not a measured zero.
+  it("shows — for a model the provider did not meter in tokens", () => {
+    const tts = { model: "gemini-3-1-flash-tts", billingKind: "payg", requests: 71, promptTokens: 0, completionTokens: 0, cachedPromptTokens: 0, cacheWritePromptTokens: 0, costMicroIdr: 17750000000, catalogMicroIdr: 17750000000 };
+    const html = panel({ ...ok, usage: { state: "OK", data: { ...ok.usage.data, rows: [tts], total: { ...ok.usage.data.total, requests: 71, promptTokens: 0, completionTokens: 0 } } } });
+    const plain = html.replace(/&nbsp;|\u00a0/g, " ");
+    expect(plain).toContain("did not meter tokens");
+    expect(plain).toContain("—");
+    expect(plain).not.toMatch(/<td>0<\/td>/);
+  });
+
   it("not configured and unavailable show no number at all", () => {
     for (const state of ["NOT_CONFIGURED", "UNAVAILABLE"]) {
       const html = panel({ state, source: "x", balance: ok.balance });

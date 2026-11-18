@@ -852,11 +852,15 @@ function SectionNote({ s, what }: { s: UsageSection<unknown> | null; what: strin
 }
 
 function UsageTotals({ u }: { u: KenariUsage }) {
+  // A model billed per character, image or second reports 0 tokens with real requests: that is "not metered",
+  // not a measured zero, so it is shown as "—" (AGENTS.md rule 5).
+  const tokenCell = (requests: number, tokens: number) => (requests > 0 && tokens === 0 ? "—" : grouped(tokens));
   return (
     <div className="table-wrap">
       <table className="admin-table usage-table">
         <caption className="label">
-          Whole provider account, {day(u.start)} to {day(u.end)} (UTC)
+          Whole provider account, {day(u.start)} to {day(u.end)} (UTC). — means the provider did not meter tokens for that model
+          (billed per character, image or second).
         </caption>
         <thead>
           <tr>
@@ -874,8 +878,8 @@ function UsageTotals({ u }: { u: KenariUsage }) {
               <th scope="row">{r.model}</th>
               <td>{r.billingKind}</td>
               <td>{grouped(r.requests)}</td>
-              <td>{grouped(r.promptTokens)}</td>
-              <td>{grouped(r.completionTokens)}</td>
+              <td>{tokenCell(r.requests, r.promptTokens)}</td>
+              <td>{tokenCell(r.requests, r.completionTokens)}</td>
               <td>{microRp(r.costMicroIdr)}</td>
             </tr>
           ))}
@@ -883,8 +887,8 @@ function UsageTotals({ u }: { u: KenariUsage }) {
             <th scope="row">Total</th>
             <td />
             <td>{grouped(u.total.requests)}</td>
-            <td>{grouped(u.total.promptTokens)}</td>
-            <td>{grouped(u.total.completionTokens)}</td>
+            <td>{tokenCell(u.total.requests, u.total.promptTokens)}</td>
+            <td>{tokenCell(u.total.requests, u.total.completionTokens)}</td>
             <td>{microRp(u.total.costMicroIdr)}</td>
           </tr>
         </tbody>

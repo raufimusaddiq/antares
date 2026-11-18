@@ -14,6 +14,7 @@ import {
   putSpending,
   type Spending,
   describeGlance,
+  GLANCE_TITLE,
   parseLimitInput,
   getChat,
   getMessages,
@@ -1567,7 +1568,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
             </p>
           )}
           {usage && (
-            <button type="button" className="quiet" data-chip="usage" aria-controls="chat-extras" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}>
+            <button type="button" className="quiet" data-chip="usage" title={GLANCE_TITLE} aria-controls="chat-extras" aria-expanded={moreOpen} onClick={() => setMoreOpen((o) => !o)}>
               {describeGlance(usage)}
             </button>
           )}

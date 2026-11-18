@@ -532,7 +532,7 @@ const fmt = (n: number) => n.toLocaleString("en-US");
 /** The words shown for a chat's usage. Unknown is "—", cost is always labelled an estimate, the budget behaviour is stated. */
 export function describeUsage(u: ChatUsage): string[] {
   const lines: string[] = [];
-  lines.push(u.tokens ? `Used in this chat, all replies: ${fmt(u.tokens.total)} tokens (${fmt(u.tokens.input)} in, ${fmt(u.tokens.output)} out)` : "Used in this chat, all replies: — (none reported)");
+  lines.push(u.tokens ? `Used in this chat, all replies (all time): ${fmt(u.tokens.total)} tokens (${fmt(u.tokens.input)} in, ${fmt(u.tokens.output)} out)` : "Used in this chat, all replies (all time): — (none reported)");
   lines.push(u.costIDR !== null ? `Estimated cost: about Rp ${fmt(Math.round(u.costIDR))}, from the provider price list of ${u.priceListDate}; not a bill` : "Estimated cost: — (no price for the model)");
   lines.push(`Model context window: ${u.windowTokens !== null ? `${fmt(u.windowTokens)} tokens` : "— (unknown)"}`);
   lines.push(
@@ -553,10 +553,14 @@ export function describeGlance(u: ChatUsage): string {
   if (u.spending?.hardReached) return "Daily spending limit reached";
   // A reached warning is shown where the reader looks, not only inside the closed usage panel (review #190).
   if (u.spending?.warnings.length) return `Spending warning: ${u.spending.warnings.join(" and ")} limit reached`;
-  const used = u.tokens ? `${fmt(u.tokens.total)} tokens used` : "Usage unknown";
+  const used = u.tokens ? `${fmt(u.tokens.total)} tokens used, all time` : "Usage unknown";
   const ctx = u.carriedTokens !== null && u.windowTokens ? `context ${Math.min(100, Math.round((u.carriedTokens / u.windowTokens) * 100))}% full` : "context in use unknown";
   return `${used} · ${ctx}`;
 }
+
+/** Why the chip says "all time" and "context in use unknown": the two figures are not the same period or the same thing. */
+export const GLANCE_TITLE =
+  "Tokens are this chat's lifetime total, not a period. The assistant does not report how full the context window is, so that stays unknown.";
 
 const BASIS = "counts input + output tokens reported across all your chats, and input includes cache reads";
 
