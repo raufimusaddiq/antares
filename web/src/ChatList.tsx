@@ -1,6 +1,7 @@
 import { createPortal } from "react-dom";
 import { useCallback, useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import { describeCode, type ApiResult, type ChatList as ChatPage, type ChatSummary } from "./chatApi";
+import { chatPath } from "./push";
 
 // The conversation list and what the owner can do to a conversation: rename, pin, archive, delete.
 // This component only asks; every change is made by the server (Chat.tsx passes the calls), and a change is
@@ -88,11 +89,21 @@ export function ChatList(props: {
 
   const row = (c: ChatSummary): ReactNode => (
     <li key={c.id}>
-      <button type="button" className={c.id === current ? "item current" : "item"} aria-current={c.id === current ? "true" : undefined} onClick={() => onOpen(c)}>
+      {/* A real link: middle-click or ctrl-click opens the chat in a new tab; a plain click opens it here. */}
+      <a
+        className={c.id === current ? "item current" : "item"}
+        href={chatPath(c.id)}
+        aria-current={c.id === current ? "true" : undefined}
+        onClick={(e) => {
+          if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+          e.preventDefault();
+          onOpen(c);
+        }}
+      >
         {label(c)}
         {c.pinned && <span className="tag"> Pinned</span>}
         {c.deleteFailed && <span className="tag warn"> Delete failed</span>}
-      </button>
+      </a>
       <button
         type="button"
         className="quiet row-more"

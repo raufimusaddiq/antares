@@ -132,8 +132,9 @@ export function App() {
   }, [session]);
 
   useEffect(() => {
-    if (view) document.title = documentTitle(view);
-  }, [view]);
+    // An active account's screens (chat, blog, admin) name their own tab; only the account states are named here.
+    if (view && !(session.kind === "account" && session.account.state === "ACTIVE")) document.title = documentTitle(view);
+  }, [view, session]);
 
   if (!view || (active && deepLink === undefined)) return <main className="screen" aria-busy="true"><p>Loading…</p></main>;
   if (session.kind === "account" && session.account.state === "ACTIVE") {
@@ -148,7 +149,7 @@ export function App() {
     }
     const notices = blogWriting ? <TakedownNotices onOpen={isBlogPath(path) ? undefined : () => navigate("/blog")} /> : null;
     if (isBlogPath(path)) return <>{notices}<BlogApp caps={blogCaps} email={session.account.email} name={session.account.displayName} route={parseBlogPath(path)} onNavigate={navigate} onChats={() => navigate("/")} /></>;
-    return <>{notices}<Chat initialChatId={deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onBlog={blogWriting ? () => navigate("/blog") : undefined} onReadBlog={() => window.location.assign("/b")} onSignOut={onSignOut} signOutError={signOutMessage} /></>;
+    return <>{notices}<Chat initialChatId={chatIdFromPath(path) ?? deepLink ?? null} email={session.account.email} canAdmin={session.account.canAdmin} onAdmin={() => navigate("/admin/users")} onBlog={blogWriting ? () => navigate("/blog") : undefined} onReadBlog={() => window.location.assign("/b")} onSignOut={onSignOut} signOutError={signOutMessage} /></>;
   }
   return (
     <Screen

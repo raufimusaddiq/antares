@@ -47,7 +47,7 @@ import { MAX_REPLY, ReplyContext } from "./openui/reply";
 import { Artifacts } from "./Artifacts";
 import { ExportChat } from "./ExportChat";
 import { ShareChat, ShareImageDialog } from "./ShareChat";
-import { SettingsDialog, type SettingsTab } from "./SettingsDialog";
+import { SettingsDialog, SETTINGS_TABS, type SettingsTab } from "./SettingsDialog";
 import { OpenChatVisualize } from "./VisualizeToggle";
 import { fenceSelection, inFence, indentInFence, toggleList, wrapSelection, type Edit } from "./composerEdit";
 import { ImageStrip, useImageAttachments, type Attachment } from "./ImageAttachments";
@@ -70,12 +70,19 @@ import { DraftNotice, sharedTextApplied, takeSharedText, useDraftSync, NO_HOLD, 
 import { listOwnTemplates, type OwnTemplate } from "./draftApi";
 import { Templates } from "./Templates";
 import { SharedQuotaMeter, useSharedQuota } from "./QuotaBar";
+import { chatIdFromPath, chatPath } from "./push";
 
 const MAX_INPUT = 32_000;
 const RECONNECT_TRIES = 5;
 /** Waits between reads of a chat whose reply ended before its automatic title: at 4, 10 and 22 seconds, past the
  * server's 20-second title budget (internal/chat/title.go). */
 const TITLE_RECHECKS = [4000, 6000, 12000] as const;
+
+/** The Settings section an address names (?settings=usage), or null. */
+const settingsFromSearch = (search: string): SettingsTab | null => {
+  const v = new URLSearchParams(search).get("settings");
+  return SETTINGS_TABS.some((t) => t.id === v) ? (v as SettingsTab) : null;
+};
 
 type Action = { k: "start"; runId: string } | { k: "event"; ev: RunEvent } | { k: "maybe" } | { k: "clear" };
 
@@ -723,7 +730,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
   // The account actions live behind the Menu toggle at every width (rail footer on a wide screen, header on a phone); the
   // per-chat options are behind their toggle on a phone only. Both stay one tap away.
   const [menuOpen, setMenuOpen] = useState(false);
-  const [settings, setSettings] = useState<SettingsTab | null>(null);
+  const [settings, setSettings] = useState<SettingsTab | null>(() => settingsFromSearch(window.location.search));
+  const settingsRef = useRef<SettingsTab | null>(settings);
+  settingsRef.current = settings;
   const [moreOpen, setMoreOpen] = useState(false);
   const [jumpSlot, setJumpSlot] = useState<HTMLElement | null>(null);
   useEffect(() => {
@@ -931,11 +940,19 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
   // The open chat as it was opened: a chat from search, from Archived, or one archived while open is not in `chats`, and
   // its controls (Visualize) still show its state.
   const [openSummary, setOpenSummary] = useState<ChatSummary | null>(null);
+  // The address follows what is on screen: /chat/<id>, or "/" for a new chat, plus an open Settings section. A chat can be
+  // bookmarked, reloaded into, opened in a new tab, and reached with Back/Forward.
+  const writeUrl = useCallback((path: string, mode: "push" | "replace" | "keep", tab: SettingsTab | null = settingsRef.current) => {
+    if (mode === "keep") return;
+    const to = path + (tab ? `?settings=${tab}` : "");
+    if (to !== window.location.pathname + window.location.search) window.history[mode === "push" ? "pushState" : "replaceState"](null, "", to);
+  }, []);
   const open = useCallback(
-    (c: ChatSummary) => {
+    (c: ChatSummary, mode: "push" | "replace" | "keep" = "push") => {
       setOpenSummary(c);
       nav.current++;
       openTitle.current = c.title;
+      writeUrl(chatPath(c.id), mode);
       discardImages(); // staged images belong to the message being written in the chat being left
       detach();
       attempts.current = 0;
@@ -953,7 +970,20 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
       void loadTurns(c.id, "replace");
       if (c.activeRunId) attach(c.activeRunId, c.id);
     },
-    [attach, detach, loadTurns],
+    [attach, detach, loadTurns, writeUrl],
+  );
+
+  // Back/Forward and a reload land on the chat the address names. The server still decides whether it is the reader's.
+  const openById = useCallback(
+    async (id: string) => {
+      const known = chatsRef.current.find((x) => x.id === id);
+      if (known) return open(known, "keep");
+      const got = await getChat(id);
+      if (!got.ok) return; // not this account's chat: nothing of it is shown
+      setChats((l) => (l.some((x) => x.id === got.value.id) ? l : [got.value, ...l]));
+      open(got.value, "keep");
+    },
+    [open],
   );
 
   // A search result: the owning chat, at the matching turn. The turn may be in an
@@ -1016,17 +1046,17 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
           if (!live) return;
           if (c.ok) {
             setChats((l) => (l.some((x) => x.id === c.value.id) ? l : [c.value, ...l]));
-            open(c.value);
+            open(c.value, "keep"); // the address already names it
           } else {
-            if (r.value.chats.length > 0) open(mostRecent(r.value.chats)); // open() clears the banner, so say it after
+            if (r.value.chats.length > 0) open(mostRecent(r.value.chats), "keep"); // open() clears the banner, so say it after
             setBanner("That conversation is not available to this account.");
+            writeUrl("/", "replace"); // the link named nothing of the reader's: the address falls back to the app root
           }
-          window.history.replaceState(null, "", "/");
         });
         return;
       }
       if (share !== null) return; // a share lands in the new-chat draft; opening the latest chat would hide it
-      if (r.value.chats.length > 0) open(mostRecent(r.value.chats));
+      if (r.value.chats.length > 0) open(mostRecent(r.value.chats), "keep"); // "/" keeps meaning "my chats, newest open"
     });
     return () => {
       live = false;
@@ -1077,6 +1107,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
       const c = await newChat();
       if (!c || nav.current !== at) return; // failed (the banner says why), or the reader chose another chat meanwhile
       blankChat.current = c.id;
+      openTitle.current = ""; // a new chat has no title yet
+      writeUrl("/", "push"); // a new chat is the app root, not a chat address
       detach();
       attempts.current = 0;
       setCurrent(c.id);
@@ -1092,7 +1124,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
     } finally {
       creating.current = false;
     }
-  }, [detach, newChat]);
+  }, [detach, newChat, writeUrl]);
 
   const submit = useCallback(
     async (input: string, key: string, hold: SendHold, images: AttachmentRef[] = []) => {
@@ -1213,6 +1245,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
     detach();
     attempts.current = 0;
     blankChat.current = "";
+    writeUrl("/", "replace");
     setCurrent(null);
     currentRef.current = null;
     setTurns([]);
@@ -1223,7 +1256,43 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
     setPending(null);
     setFocus(null);
     dispatch({ k: "clear" });
-  }, [detach, discardImages]);
+  }, [detach, discardImages, writeUrl]);
+
+  // Back/Forward move between chats, and a Settings section is part of the address too.
+  useEffect(() => {
+    const onPop = () => {
+      setSettings(settingsFromSearch(window.location.search));
+      const id = chatIdFromPath(window.location.pathname);
+      if (id === null) {
+        if (window.location.pathname === "/") leaveChat();
+        return;
+      }
+      if (id !== currentRef.current) void openById(id);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, [leaveChat, openById]);
+
+  // The tab says which conversation is open.
+  useEffect(() => {
+    const title = current && current !== blankChat.current ? chats.find((c) => c.id === current)?.title || openTitle.current || "Conversation" : "New chat";
+    document.title = `${title} · Antares`;
+  }, [current, chats]);
+
+  // Settings is a place in the address, so a section can be linked; closing returns to the chat's own address.
+  const openSettings = (tab: SettingsTab) => {
+    setSettings(tab);
+    writeUrl(window.location.pathname, "push", tab);
+  };
+  const closeSettings = () => {
+    setSettings(null);
+    writeUrl(window.location.pathname, "replace", null);
+    document.querySelector<HTMLElement>(".bar-toggle")?.focus();
+  };
+  const chooseSettingsTab = (tab: SettingsTab) => {
+    setSettings(tab);
+    writeUrl(window.location.pathname, "replace", tab);
+  };
 
   const chatActions: ChatActions = useMemo(() => {
     const failed = async (code: string, what: "change" | "delete") => {
@@ -1422,7 +1491,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
           </button>
           <div id="bar-actions" className={menuOpen ? "bar-actions open" : "bar-actions"}>
             <SharedQuotaMeter quota={quota} className="quota-menu" />
-            <button type="button" className="quiet" data-icon="settings" onClick={() => { setMenuOpen(false); setSettings("general"); }}>
+            <button type="button" className="quiet" data-icon="settings" onClick={() => { setMenuOpen(false); openSettings("general"); }}>
               Settings
             </button>
             {onBlog && (
@@ -1447,7 +1516,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
           </div>
         </div>
       </header>
-      {settings && <SettingsDialog tab={settings} jobs={offers(inventory, "jobs")} onClose={() => { setSettings(null); document.querySelector<HTMLElement>(".bar-toggle")?.focus(); }} onSignOutEverywhere={() => onSignOut(true)} signOutError={signOutError} />}
+      {settings && <SettingsDialog tab={settings} jobs={offers(inventory, "jobs")} onClose={closeSettings} onTab={chooseSettingsTab} onSignOutEverywhere={() => onSignOut(true)} signOutError={signOutError} />}
       <nav className="side" aria-label="Conversations">
         <button type="button" data-icon="plus" onClick={() => void startChat()}>
           New chat
@@ -1495,7 +1564,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
         {/* The page's one h1: the conversation's own name, so a reader who navigates by heading lands on the page
             rather than on the first "Assistant" h2. Visually hidden — the design shows the title in the rail, not
             over the conversation. */}
-        <h1 className="sr">{current ? chats.find((c) => c.id === current)?.title || openTitle.current || "Conversation" : "New conversation"}</h1>
+        <h1 className="sr">{current && current !== blankChat.current ? chats.find((c) => c.id === current)?.title || openTitle.current || "Conversation" : "New conversation"}</h1>
         {banner && (
           <p className="notice" role="alert">
             {banner}

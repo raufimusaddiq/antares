@@ -33,7 +33,7 @@ describe("a notification link", () => {
     api.getChat.mockResolvedValue(ok(chat(THEIRS)));
     render(<Chat email="a@example.test" onSignOut={() => {}} initialChatId={THEIRS} />);
     await waitFor(() => expect(api.getMessages).toHaveBeenCalledWith(THEIRS));
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe(`/chat/${THEIRS}`);
   });
 
   it("opens nothing of someone else's chat: the server says not found, the reader is told, and no history is requested for it", async () => {

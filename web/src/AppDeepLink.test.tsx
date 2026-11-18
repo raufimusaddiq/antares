@@ -40,4 +40,10 @@ describe("a chat link that survived sign-in", () => {
     await waitFor(() => expect(api.listChats).toHaveBeenCalled());
     expect(api.getChat).not.toHaveBeenCalled();
   });
+
+  it("opens the chat the address names, so a reload stays on it", async () => {
+    window.history.replaceState(null, "", `/chat/${ID}`);
+    render(<App />);
+    await waitFor(() => expect(api.getChat).toHaveBeenCalledWith(ID));
+  });
 });

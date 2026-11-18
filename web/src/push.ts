@@ -39,6 +39,9 @@ export function chatIdFromPath(p: string): string | null {
   return m ? m[1] : null;
 }
 
+/** The address of a chat: the same one a notification links to. */
+export const chatPath = (id: string) => `/chat/${id}`;
+
 export function b64urlToBytes(s: string): Uint8Array<ArrayBuffer> {
   const pad = "=".repeat((4 - (s.length % 4)) % 4);
   const bin = atob((s + pad).replace(/-/g, "+").replace(/_/g, "/"));
