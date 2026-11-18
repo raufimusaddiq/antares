@@ -78,7 +78,7 @@ describe("the phone toolbar while typing", () => {
     expect(bar.style.getPropertyValue("--kb")).toBe("280px");
     await act(async () => text.blur());
     await waitFor(() => expect(bar.classList.contains("blog-toolbar-docked")).toBe(false));
-    expect(bar.style.getPropertyValue("--kb")).toBe("");
+    await waitFor(() => expect(bar.style.getPropertyValue("--kb")).toBe(""));
   });
 
   it("a tap on a toolbar button does not take the focus away from the text", async () => {
