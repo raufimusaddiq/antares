@@ -99,5 +99,14 @@ describe("editor", () => {
     expect(onPublish).not.toHaveBeenCalled();
     expect((screen.getByLabelText("Title") as HTMLInputElement).disabled).toBe(false);
   });
+
+  it("updates an already-published post instead of publishing it again, and links to what is live", () => {
+    vi.stubGlobal("fetch", async () => new Response("{}", { status: 200 }));
+    render(<Editor {...props} post={{ ...post, status: "published", slug: "my-post" }} />);
+    const update = screen.getByRole("button", { name: "Update" }) as HTMLButtonElement;
+    expect(update.disabled).toBe(false);
+    expect(screen.queryByRole("button", { name: "Publish" })).toBeNull();
+    expect(screen.getByRole("link", { name: "View live post" }).getAttribute("href")).toBe("/b/my-post");
+  });
 });
 

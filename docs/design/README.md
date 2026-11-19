@@ -49,9 +49,10 @@ to delete confirm, Editor to Settings and Publish, Publish choose to checking (a
 published, every failure to retry / publish original / back to editing, published to the post and My posts, and the
 Phone equivalents.
 
-How the blog joins the existing flow: a "Blog posts" button directly under "New chat" in the rail of every desktop
-chat, settings and admin-account frame opens My posts (search and list sit below it); the Account menu on Chat ("Account menu" and "Account menu (admin)") has a new
-"Blog posts" row that opens My posts; the rail's "Chats" item on every My posts frame goes back to Conversation; the
+How the blog joins the existing flow: the "Blog posts" button opens My posts from the Account menu of every desktop chat (search and list sit below "New chat" in the rail); the rail keeps the "Read the blog" pill, one click from the conversations. The
+Account menu on Chat ("Account menu" and "Account menu (admin)") has a new
+"Blog posts" row that opens My posts; My posts is the chat's shell (the rail, the strip and the header), with
+"Chats" going back to the conversation and "Read the blog" to the public list; the
 public "Sign in with Google" button opens the existing Login frame; Published "View post" opens the public post.
 
 Sources: Antares never verifies a source. The assistant names sources, the server stores every one as `verified: false`
@@ -78,9 +79,10 @@ for the "I have checked these sources myself" tick on every block, since the ser
 dialog (checking, preview, failure) are the page itself, below a "Back to editing" bar, with the editor hidden while they show.
 (They used to be a fixed full-screen layer; on phones that made the browser widen its layout to 832px.)
 
-My posts as built differs from its frames in two ways, on purpose. Phone rows also show an Open button (the title is plain text, so
-opening a post is one control and not two tab stops). The rail's account line shows the email and has no Menu button: Settings and Sign
-out stay in the chat's account menu, one click away through Chats.
+My posts as built differs from its frames in one way, on purpose: phone rows also show an Open button (the title is plain text, so
+opening a post is one control and not two tab stops). The rail is the chat's: the brand, one "New post" (there is no second
+one in the page), Chats, Read the blog, Blog posts as the page you are on, and the account line whose Menu holds Settings
+and Sign out. The "Publish / published" editor shows "Update" and a link to the live post; no frame draws that state yet.
 
 ## Admin control (designed for spec `specs/004-admin-full-control/`, not built yet)
 

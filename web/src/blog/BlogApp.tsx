@@ -26,7 +26,7 @@ export const editPath = (id: string) => `/blog/${id}`;
 export const publishPath = (id: string) => `/blog/${id}/publish`;
 
 /** `caps` is what the server said about the blog (null until it has answered); the app asks once and passes it down. */
-export function BlogApp({ caps, email, name, route, onNavigate, onChats }: { caps: Capabilities | null; email: string; name?: string; route: BlogRoute; onNavigate: (to: string) => void; onChats: () => void }) {
+export function BlogApp({ caps, email, name, route, onNavigate, onChats, onReadBlog = () => {}, onSignOut }: { caps: Capabilities | null; email: string; name?: string; route: BlogRoute; onNavigate: (to: string) => void; onChats: () => void; onReadBlog?: () => void; onSignOut?: (everywhere?: unknown) => void }) {
   if (caps === null) return <main className="blog-flow" aria-busy="true"><p>Loading…</p></main>;
   if (!caps.writing)
     return (
@@ -36,7 +36,7 @@ export function BlogApp({ caps, email, name, route, onNavigate, onChats }: { cap
         <button type="button" className="btn" onClick={onChats}>Back to chats</button>
       </main>
     );
-  if (route.kind === "list") return <PostList email={email} onOpen={(id) => onNavigate(editPath(id))} onChats={onChats} />;
+  if (route.kind === "list") return <PostList email={email} onOpen={(id) => onNavigate(editPath(id))} onChats={onChats} onReadBlog={onReadBlog} onSignOut={onSignOut} />;
   return <PostScreen key={route.id} id={route.id} email={email} name={name} publishing={route.kind === "publish"} caps={caps} onNavigate={onNavigate} />;
 }
 

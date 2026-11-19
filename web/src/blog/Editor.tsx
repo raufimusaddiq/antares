@@ -155,6 +155,8 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
     </button>
   );
   const chain = () => editor!.chain().focus();
+  // An already-published post is updated, not published again, and the author can see what is live.
+  const live = post.status === "published" && !post.takedown ? post.slug : "";
 
   return (
     <main className={[panel ? "blog-editor has-panel" : "blog-editor", docked ? "kb-docked" : ""].join(" ").trim()}>
@@ -173,8 +175,13 @@ export default function Editor({ post, email, onPost, onSettings, onPublish, onB
             Check with the editor
           </button>
         )}
+        {live && (
+          <a className="quiet" href={`/b/${live}`}>
+            View live post
+          </a>
+        )}
         <button type="button" className="btn" data-publish disabled={save === "conflict" || !!post.takedown} aria-describedby={post.takedown ? "blog-takedown" : undefined} onClick={() => onPublish(() => saver.current?.flush() ?? Promise.resolve(false))}>
-          Publish
+          {live ? "Update" : "Publish"}
         </button>
       </header>
       {post.takedown && (

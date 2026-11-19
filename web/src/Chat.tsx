@@ -1452,23 +1452,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
         <button type="button" data-icon="plus" onClick={() => void startChat()}>
           New chat
         </button>
-        {(onBlog || onReadBlog) && (
-          <div className="rail-blogs">
-            {onBlog ? (
-              <button type="button" className="quiet rail-blog" data-icon="edit" onClick={onBlog}>
-                Blog posts
-              </button>
-            ) : (
-              onReadBlog && (
-                <button type="button" className="quiet rail-blog" data-icon="book" onClick={onReadBlog}>
-                  Read the blog
-                </button>
-              )
-            )}
-            {onBlog && onReadBlog && (
-              <button type="button" className="quiet rail-read" data-icon="book" onClick={onReadBlog} aria-label="Read the blog" title="Read the blog" />
-            )}
-          </div>
+        {onReadBlog && (
+          <button type="button" className="quiet rail-blog" data-icon="book" onClick={onReadBlog}>
+            Read the blog
+          </button>
         )}
         <SearchPanel key={searchEpoch} current={current} onOpen={(r) => void openResult(r)} />
         {listState === "loading" && <p className="label">Loading…</p>}
