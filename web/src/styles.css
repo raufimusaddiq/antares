@@ -988,7 +988,7 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 .settings-body section:not(.settings-page) { border: 0; padding: 0; margin: 0; background: none; box-shadow: none; }
 .settings-body label { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; min-height: 2.75rem; }
 /* One input style for the whole dialog: a select, a text field and a textarea look the same. */
-.settings-body :is(select, input:not([type="checkbox"]), textarea) { min-height: 2.5rem; border: 2px solid var(--ink); border-radius: var(--r-md); background: var(--card); color: var(--ink); font-family: var(--font-ui); padding: 0.3rem 0.7rem; }
+.settings-body :is(select, input:not([type="checkbox"]):not([type="radio"]):not([type="file"]):not([type="search"]), textarea) { min-height: 2.5rem; border: 2px solid var(--ink); border-radius: var(--r-md); background: var(--card); color: var(--ink); font-family: var(--font-ui); padding: 0.3rem 0.7rem; }
 .settings-body textarea { width: 100%; box-sizing: border-box; resize: vertical; }
 .settings-body label:has(textarea) { flex-direction: column; align-items: stretch; }
 @media (max-width: 640px) {

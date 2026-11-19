@@ -147,6 +147,9 @@ describe("the Settings dialog keeps one size across its tabs", () => {
     expect(css.match(/\.settings-dialog \{[^}]*\}/)?.[0]).toMatch(/height:\s*min\(640px/);
     expect(css.match(/\.settings-body \{[^}]*\}/)?.[0]).toMatch(/flex:\s*1/);
   });
+  it("hides the closed dialog, which the flex display would otherwise keep on screen", () => {
+    expect(css.match(/\.settings-dialog:not\(\[open\]\) \{[^}]*\}/)?.[0]).toMatch(/display:\s*none/);
+  });
 });
 
 describe("the web app manifest is valid", () => {
