@@ -45,10 +45,25 @@ export function ChatList(props: {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [status, setStatus] = useState("");
   const [showArchive, setShowArchive] = useState(false);
+  // On a phone the list is a drawer behind this toggle; a wide screen always shows it.
+  const [listOpen, setListOpen] = useState(false);
+  const listId = useId();
   const [archive, setArchive] = useState<{ state: "loading" | "ready" | "error"; chats: ChatSummary[]; next: string; message: string }>({ state: "loading", chats: [], next: "", message: "" });
   const trigger = useRef<HTMLElement | null>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const toggled = useRef(false);
+  const chatsToggle = useRef<HTMLButtonElement>(null);
+  // Escape closes the phone drawer and hands focus back to the button that opened it.
+  useEffect(() => {
+    if (!listOpen) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      setListOpen(false);
+      chatsToggle.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [listOpen]);
   // The toggle moves between the end of the list and the archive's header, so keyboard focus follows it.
   useEffect(() => {
     if (toggled.current) toggleRef.current?.focus();
@@ -94,9 +109,11 @@ export function ChatList(props: {
         className={c.id === current ? "item current" : "item"}
         href={chatPath(c.id)}
         aria-current={c.id === current ? "page" : undefined}
+        title={label(c)}
         onClick={(e) => {
           if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
           e.preventDefault();
+          setListOpen(false);
           onOpen(c);
         }}
       >
@@ -143,7 +160,10 @@ export function ChatList(props: {
           </button>,
           slot,
         )}
-      <ul>
+      <button ref={chatsToggle} type="button" className="quiet chats-toggle" data-icon="chevron" aria-expanded={listOpen} aria-controls={listId} onClick={() => setListOpen((o) => !o)}>
+        Chats
+      </button>
+      <ul id={listId} className={listOpen ? "open" : undefined}>
         {chats.map(row)}
         {!showArchive && <li className="archive-toggle">{toggle}</li>}
       </ul>

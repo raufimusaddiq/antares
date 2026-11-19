@@ -144,6 +144,20 @@ Blog: where the frames and the code still differ (kept honest; each is a gap to 
   inside it. The frames' inline placement is the drawn variant for blocks that have a title.
 - The Admin frame is a single card, not a full Admin screen.
 
+## Chats on a phone, title room on a wide screen (T-8)
+
+- **Phone / Chats**: the rail is one row (New chat, Search, Chats) and the conversation list opens as a drawer under it:
+  the full list, one row per conversation, the number badge and the actions button as on a wide screen, the page's own
+  scrollbar hidden (it still scrolls by touch). The address is not in the phone header; it lives in the Menu.
+- **Phone / New chat (starters)**: the new-chat card lists the reader's saved templates as starter buttons (none drawn
+  when the account has saved none, because there is nothing to draw).
+- Wide-screen rows: the number badge is smaller and a row's actions button now sits over the row's end, shown on hover
+  or keyboard focus, so the title gets the whole row; its full text is also the row's tooltip.
+- **Refused first send**: a first message the server definitely refuses (a 4xx) removes the chat row it created and
+  puts the text back in the box. A network failure, timeout or 5xx keeps the row and offers "Send again" with the same
+  key (the server may have started a run). Known gap: a first send *with images* skips the rollback, so a refused one
+  leaves the empty row.
+
 ## Addresses and titles (built, and tested)
 
 A chat has its own address (`/chat/<id>`), so it can be bookmarked, reloaded into, opened in a new tab and reached with

@@ -2,7 +2,7 @@
 // Behaviour of the phone-layout toggles (#138). jsdom applies no CSS, so this proves the state, ARIA and keyboard
 // contract only; the layout itself is checked in a real browser by scripts/browser-check.mjs (ONLY=mobile-layout).
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 
 const api = vi.hoisted(() => ({ listChats: vi.fn(), getMessages: vi.fn(), getRun: vi.fn(), getUsage: vi.fn() }));
 vi.mock("./chatApi", async (orig) => ({ ...(await orig<typeof import("./chatApi")>()), ...api }));
@@ -61,6 +61,31 @@ describe("phone layout toggles", () => {
     fireEvent.click(toggle);
     expect(screen.getByRole("button", { name: "Close search" }).getAttribute("aria-expanded")).toBe("true");
     expect(document.querySelector(".search")?.classList.contains("open")).toBe(true);
+  });
+
+  it("opens the conversation list as a drawer and closes it when a conversation is chosen", async () => {
+    api.listChats.mockResolvedValue(ok({ chats: [{ id: "c1", title: "Talk", createdAt: "", updatedAt: "", activeRunId: "" }], nextCursor: "" }));
+    await mount();
+    const toggle = screen.getByRole("button", { name: "Chats" });
+    const list = document.getElementById(toggle.getAttribute("aria-controls") ?? "");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(list?.classList.contains("open")).toBe(false);
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(list?.classList.contains("open")).toBe(true);
+    fireEvent.click(within(list!).getByRole("link", { name: "Talk" }));
+    expect(list?.classList.contains("open")).toBe(false);
+    expect(screen.getByRole("link", { name: "Talk" }).getAttribute("title")).toBe("Talk");
+  });
+
+  it("closes the chat drawer on Escape and returns focus to the Chats toggle", async () => {
+    await mount();
+    const toggle = screen.getByRole("button", { name: "Chats" });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(toggle);
   });
 
   it("puts the per-chat options behind a toggle", async () => {
