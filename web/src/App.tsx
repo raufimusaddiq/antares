@@ -84,6 +84,10 @@ export function App() {
   useEffect(() => {
     if (active && deepLink === undefined) setDeepLink(takeLink()); // reads and clears the sign-in round trip's key
   }, [active, deepLink]);
+  useEffect(() => {
+    // Chat opens the link once, on mount; a later mount follows the address, not the link it opened at first.
+    if (deepLink) setDeepLink(null);
+  }, [deepLink]);
 
   useEffect(() => {
     const onPop = () => setPath(window.location.pathname);

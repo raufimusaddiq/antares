@@ -1216,6 +1216,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
   const inventory = read.kind === "ready" ? read.inventory : null;
   const inventoryFailed = read.kind === "failed";
   const [inventoryTick, setInventoryTick] = useState(0);
+  // The address may name a section this account is not offered; the dialog shows the first one instead.
+  const jobsTab = offers(inventory, "jobs");
+  const settingsTab: SettingsTab | null = settings === "jobs" && !jobsTab ? "general" : settings;
   // Deleting a conversation removes the assistant's session too, so it is offered only when the assistant says it can.
   const deleteBlocked = offers(inventory, "chat_delete")
     ? ""
@@ -1280,9 +1283,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
   }, [current, chats]);
 
   // Settings is a place in the address, so a section can be linked; closing returns to the chat's own address.
+  // The dialog is an overlay, not a page: it takes over the current entry instead of adding one to history.
   const openSettings = (tab: SettingsTab) => {
     setSettings(tab);
-    writeUrl(window.location.pathname, "push", tab);
+    writeUrl(window.location.pathname, "replace", tab);
   };
   const closeSettings = () => {
     setSettings(null);
@@ -1516,7 +1520,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
           </div>
         </div>
       </header>
-      {settings && <SettingsDialog tab={settings} jobs={offers(inventory, "jobs")} onClose={closeSettings} onTab={chooseSettingsTab} onSignOutEverywhere={() => onSignOut(true)} signOutError={signOutError} />}
+      {settingsTab && <SettingsDialog tab={settingsTab} jobs={jobsTab} onClose={closeSettings} onTab={chooseSettingsTab} onSignOutEverywhere={() => onSignOut(true)} signOutError={signOutError} />}
       <nav className="side" aria-label="Conversations">
         <button type="button" data-icon="plus" onClick={() => void startChat()}>
           New chat

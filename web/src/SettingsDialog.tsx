@@ -24,6 +24,7 @@ export function SettingsDialog(props: { tab: SettingsTab; jobs: boolean; onClose
   const ref = useRef<HTMLDialogElement>(null);
   const [tab, setTab] = useState<SettingsTab>(props.tab);
   const tabs = SETTINGS_TABS.filter((t) => t.id !== "jobs" || props.jobs);
+  useEffect(() => setTab(props.tab), [props.tab]); // the section is the address's: a step through it follows
   useEffect(() => {
     const d = ref.current;
     if (!d || d.open) return;

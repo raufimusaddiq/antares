@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ChatSummary } from "./chatApi";
@@ -40,7 +40,7 @@ class FakeSource {
 const mount = async (chats: ChatSummary[]) => {
   api.listChats.mockResolvedValue(ok({ chats, nextCursor: "" }));
   render(<Chat email="a@example.test" onSignOut={() => {}} />);
-  await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
+  await waitFor(() => expect(screen.queryByText("Loadingâ€¦")).toBeNull());
 };
 const newChatButton = () => screen.getAllByRole("button", { name: "New chat" })[0];
 const sidebarItems = () => Array.from(document.querySelectorAll("nav.side li a.item")).map((b) => b.getAttribute("aria-current") ?? "-");
@@ -66,7 +66,7 @@ describe("New chat", () => {
     api.getMessages.mockResolvedValue(page());
     fireEvent.click(newChatButton());
 
-    await waitFor(() => expect(sidebarItems()).toEqual(["true", "-"]));
+    await waitFor(() => expect(sidebarItems()).toEqual(["page", "-"]));
     expect(api.createChat).toHaveBeenCalledTimes(1);
     expect(screen.queryByText("hi there")).toBeNull();
     expect(screen.getByText("New conversation. Write a message below.")).toBeTruthy();
@@ -86,11 +86,11 @@ describe("New chat", () => {
     await mount([]);
     api.createChat.mockResolvedValue(ok(chat("c2")));
     fireEvent.click(newChatButton());
-    await waitFor(() => expect(sidebarItems()).toEqual(["true"]));
+    await waitFor(() => expect(sidebarItems()).toEqual(["page"]));
     fireEvent.click(newChatButton());
     fireEvent.click(newChatButton());
     expect(api.createChat).toHaveBeenCalledTimes(1);
-    expect(sidebarItems()).toEqual(["true"]);
+    expect(sidebarItems()).toEqual(["page"]);
   });
 
   it("a double click while the request is in flight creates one chat", async () => {
@@ -100,7 +100,7 @@ describe("New chat", () => {
     fireEvent.click(newChatButton());
     fireEvent.click(newChatButton());
     release(ok(chat("c2")));
-    await waitFor(() => expect(sidebarItems()).toEqual(["true"]));
+    await waitFor(() => expect(sidebarItems()).toEqual(["page"]));
     expect(api.createChat).toHaveBeenCalledTimes(1);
   });
 
@@ -114,13 +114,13 @@ describe("New chat", () => {
     fireEvent.click(newChatButton());
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).not.toBe("");
-    expect(sidebarItems()).toEqual(["true"]);
+    expect(sidebarItems()).toEqual(["page"]);
     expect(screen.getByText("hi there")).toBeTruthy();
 
     // and it can be tried again
     api.createChat.mockResolvedValue(ok(chat("c2")));
     fireEvent.click(newChatButton());
-    await waitFor(() => expect(sidebarItems()).toEqual(["true", "-"]));
+    await waitFor(() => expect(sidebarItems()).toEqual(["page", "-"]));
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -131,7 +131,7 @@ describe("New chat", () => {
 
     api.createChat.mockResolvedValue(ok(chat("c2")));
     fireEvent.click(newChatButton());
-    await waitFor(() => expect(sidebarItems()).toEqual(["true", "-"]));
+    await waitFor(() => expect(sidebarItems()).toEqual(["page", "-"]));
     expect(FakeSource.all[0].closed).toBe(true);
     expect(api.sendMessage).not.toHaveBeenCalled();
     expect(api.cancelRun).not.toHaveBeenCalled();
@@ -146,7 +146,7 @@ describe("New chat", () => {
     await mount([]);
     api.createChat.mockResolvedValue(ok(chat("c2")));
     fireEvent.click(newChatButton());
-    await waitFor(() => expect(sidebarItems()).toEqual(["true"]));
+    await waitFor(() => expect(sidebarItems()).toEqual(["page"]));
 
     api.sendMessage.mockResolvedValueOnce({ ok: false, code: "UPSTREAM_UNAVAILABLE" });
     fireEvent.change(document.getElementById("composer-input")!, { target: { value: "first" } });

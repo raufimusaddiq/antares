@@ -73,6 +73,7 @@ describe("the address follows the open chat", () => {
 describe("Settings is a place in the address", () => {
   it("opens at ?settings=<section>, follows the section, and closing returns to the chat's address", async () => {
     await mount();
+    const depth = window.history.length;
     fireEvent.click(screen.getByRole("button", { name: "Menu" }));
     fireEvent.click(screen.getByRole("button", { name: "Settings" }));
     await waitFor(() => expect(window.location.search).toBe("?settings=general"));
@@ -83,12 +84,21 @@ describe("Settings is a place in the address", () => {
     fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
     await waitFor(() => expect(window.location.search).toBe(""));
     expect(window.location.pathname).toBe("/");
+    expect(window.history.length).toBe(depth); // an overlay, not a page: no entry left behind
   });
 
   it("opens the section a link names", async () => {
     window.history.replaceState(null, "", `/chat/${A}?settings=usage`);
     render(<Chat email="a@example.test" onSignOut={() => {}} />);
     await waitFor(() => expect(screen.getByRole("button", { name: "Usage" }).getAttribute("aria-current")).toBe("page"));
+  });
+
+  it("shows the first section when the link names one this account is not offered", async () => {
+    window.history.replaceState(null, "", `/chat/${A}?settings=jobs`);
+    render(<Chat email="a@example.test" onSignOut={() => {}} />);
+    await screen.findByText("from two");
+    expect(screen.getByRole("button", { name: "General" }).getAttribute("aria-current")).toBe("page");
+    expect(screen.queryByRole("button", { name: "Scheduled tasks" })).toBeNull();
   });
 });
 

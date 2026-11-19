@@ -93,7 +93,7 @@ export function ChatList(props: {
       <a
         className={c.id === current ? "item current" : "item"}
         href={chatPath(c.id)}
-        aria-current={c.id === current ? "true" : undefined}
+        aria-current={c.id === current ? "page" : undefined}
         onClick={(e) => {
           if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
           e.preventDefault();
