@@ -53,9 +53,21 @@ const WORDS: Record<string, string> = {
 };
 const word = (s: string) => WORDS[s] ?? (s || "—");
 
-/** The status is the word; the class only adds weight, so colour is never the signal. */
-function Badge({ value, bad }: { value: string; bad?: boolean }) {
-  return <span className={bad ? "badge bad" : "badge"}>{word(value)}</span>;
+/** The status is the word; the class only adds weight, so colour is never the signal. The tones are the
+ *  same three the Posts screen uses: mint for well, periwinkle for in-between, salmon for bad. */
+const TONE: Record<string, string> = {
+  APPROVED: "badge ok",
+  READY: "badge ok",
+  PENDING: "badge hold",
+  CONFIGURING: "badge hold",
+  UNPROVISIONED: "badge hold",
+  REJECTED: "badge bad",
+  SUSPENDED: "badge bad",
+  FAILED: "badge bad",
+  DISABLED: "badge bad",
+};
+function Badge({ value }: { value: string }) {
+  return <span className={TONE[value] ?? "badge"}>{word(value)}</span>;
 }
 
 // ---- shell ----------------------------------------------------------------------
@@ -163,8 +175,17 @@ export function UserControls({ filter, onFilter, search, onSearch }: { filter: F
   );
 }
 
-export function UserList({ users, filter, search, onOpen, hasMore, loadingMore, onMore }: { users: AdminUser[]; filter: Filter; search: string; onOpen: (path: string) => void; hasMore: boolean; loadingMore: boolean; onMore: () => void }) {
+export function UserList({ users, filter, search, onOpen, hasMore, loadingMore, onMore, onApprove }: { users: AdminUser[]; filter: Filter; search: string; onOpen: (path: string) => void; hasMore: boolean; loadingMore: boolean; onMore: () => void; onApprove?: (u: AdminUser) => Promise<string> }) {
   const shown = users.filter((u) => matches(u, filter));
+  const [approving, setApproving] = useState("");
+  const [errors, setErrors] = useState<Record<string, string>>({});
+  const approve = async (u: AdminUser) => {
+    if (!onApprove || approving) return;
+    setApproving(u.id);
+    const err = await onApprove(u);
+    setApproving("");
+    if (err) setErrors((e) => ({ ...e, [u.id]: err }));
+  };
   return (
     <>
       {users.length === 0 && <p className="label">{search || filter !== "all" ? "No accounts match." : "No accounts yet."}</p>}
@@ -200,10 +221,20 @@ export function UserList({ users, filter, search, onOpen, hasMore, loadingMore, 
                   <td role="cell">
                     <span className="cell-label">Approval</span>
                     <Badge value={u.approvalStatus} />
+                    {onApprove && u.approvalStatus === "PENDING" && (
+                      <button type="button" className="quiet inline-approve" disabled={approving === u.id} onClick={() => void approve(u)}>
+                        {approving === u.id ? "Approving…" : "Approve"}
+                      </button>
+                    )}
+                    {errors[u.id] && (
+                      <span className="notice" role="alert">
+                        {errors[u.id]}
+                      </span>
+                    )}
                   </td>
                   <td role="cell">
                     <span className="cell-label">Tenant</span>
-                    <Badge value={u.tenantStatus} bad={u.tenantStatus === "FAILED"} />
+                    <Badge value={u.tenantStatus} />
                   </td>
                   <td role="cell" className="when">
                     <span className="cell-label">Last attempt</span>
@@ -244,9 +275,18 @@ function UsersResults({ filter, search, onOpen }: { filter: Filter; search: stri
       setMoreState(r.value.length < USERS_PAGE ? "done" : "idle");
     });
   };
+  // The approve button is the detail page's action: the server re-checks it and writes the same audit row.
+  const approve = async (u: AdminUser): Promise<string> => {
+    const r = await decide(u.id, "approve", "");
+    if (!r.ok) return describeAdminCode(r.code, r.status);
+    setMore([]);
+    setMoreState("idle");
+    reload();
+    return "";
+  };
   return (
     <>
-      <UserList users={users} filter={filter} search={search} onOpen={onOpen} hasMore={hasMore} loadingMore={moreState === "loading"} onMore={loadMore} />
+      <UserList users={users} filter={filter} search={search} onOpen={onOpen} hasMore={hasMore} loadingMore={moreState === "loading"} onMore={loadMore} onApprove={approve} />
       {moreState === "error" && <Problem message="Could not load more accounts." onRetry={loadMore} />}
     </>
   );
@@ -389,7 +429,7 @@ export function UserDetail({ user, onDecide, onRequeue }: { user: AdminUser; onD
       <dl className="facts">
         <dt>Tenant status</dt>
         <dd>
-          <Badge value={user.tenantStatus} bad={failed} />
+          <Badge value={user.tenantStatus} />
         </dd>
         <dt>Binding</dt>
         <dd>{user.binding ? `${word(user.binding.status)}${user.binding.verifiedAt ? ` · verified ${when(user.binding.verifiedAt)}` : ""}` : "None"}</dd>
@@ -464,14 +504,65 @@ export function UserScreen({ id }: { id: string }) {
 
 // ---- audit log ------------------------------------------------------------------
 
-export function AuditTable({ entries, hasOlder, hasNewer, onOlder, onNewer }: { entries: AuditEntry[]; hasOlder: boolean; hasNewer: boolean; onOlder: () => void; onNewer: () => void }) {
+/** An audit row names the account it knows, and keeps its id above the value and in the sub-line, for a copy or a hover. */
+function AuditPerson({ id, name, email }: { id: string; name: string; email: string }) {
+  if (!id) return <span className="mono">—</span>;
+  const label = name || email;
+  const under = [email && email !== label ? email : "", id].filter(Boolean).join(" · ");
+  return (
+    <span className="audit-person" title={id}>
+      {label || id}
+      {under && <span className="sub mono">{under}</span>}
+    </span>
+  );
+}
+
+export function AuditFilter({ action, onAction }: { action: string; onAction: (a: string) => void }) {
+  const [text, setText] = useState(action);
+  return (
+    <form
+      className="search"
+      role="search"
+      onSubmit={(e) => {
+        e.preventDefault();
+        onAction(text.trim());
+      }}
+    >
+      <label htmlFor="audit-action" className="sr">
+        Filter by action
+      </label>
+      <input id="audit-action" type="search" value={text} maxLength={100} placeholder="Filter by action (e.g. admin.approve)" onChange={(e) => setText(e.target.value)} />
+      <button type="submit" className="quiet">
+        Filter
+      </button>
+      {action && (
+        <button
+          type="button"
+          className="quiet"
+          onClick={() => {
+            setText("");
+            onAction("");
+          }}
+        >
+          Clear
+        </button>
+      )}
+    </form>
+  );
+}
+
+export function AuditTable({ entries, hasOlder, hasNewer, onOlder, onNewer, action = "", onAction }: { entries: AuditEntry[]; hasOlder: boolean; hasNewer: boolean; onOlder: () => void; onNewer: () => void; action?: string; onAction?: (a: string) => void }) {
   const newest = entries[0]?.createdAt;
   const oldest = entries[entries.length - 1]?.createdAt;
   return (
     <section aria-labelledby="audit-h">
-      <h1 id="audit-h">Audit log</h1>
+      <div className="page-head">
+        <h1 id="audit-h">Audit log</h1>
+        <AuditExport />
+      </div>
       <p className="label">Who did what to which account, and when. Metadata only: no conversation content is ever recorded here.</p>
-      {entries.length === 0 && <p className="label">{hasNewer ? "No more entries." : "Nothing has been recorded yet."}</p>}
+      {onAction && <AuditFilter action={action} onAction={onAction} />}
+      {entries.length === 0 && <p className="label">{action ? "No entries for that action." : hasNewer ? "No more entries." : "Nothing has been recorded yet."}</p>}
       {entries.length > 0 && (
         <div className="table-wrap">
           <table className="admin-table">
@@ -489,9 +580,13 @@ export function AuditTable({ entries, hasOlder, hasNewer, onOlder, onNewer }: { 
               {entries.map((e) => (
                 <tr key={e.id}>
                   <td>{when(e.createdAt)}</td>
-                  <td className="mono">{e.actor || "—"}</td>
-                  <td>{e.action}</td>
-                  <td className="mono">{e.targetId || "—"}</td>
+                  <td>
+                    <AuditPerson id={e.actor} name={e.actorName} email={e.actorEmail} />
+                  </td>
+                  <td className="action">{e.action}</td>
+                  <td>
+                    <AuditPerson id={e.targetId} name={e.targetName} email={e.targetEmail} />
+                  </td>
                   <td>{e.outcome}</td>
                   <td className="mono">{e.requestId || "—"}</td>
                 </tr>
@@ -517,17 +612,26 @@ export function AuditScreen() {
   // The cursors of the pages already visited, newest page first. "Newer" pops one, so it re-reads
   // from the same position instead of guessing a backwards offset in a feed that keeps growing.
   const [trail, setTrail] = useState<string[]>([""]);
+  const [action, setAction] = useState("");
   const before = trail[trail.length - 1];
-  const [state, reload] = useLoad((s) => listAudit(before, s), `audit-${trail.join(">")}`);
+  const [state, reload] = useLoad((s) => listAudit(before, action, s), `audit-${trail.join(">")}|${action}`);
   if (state.kind === "loading") return <Loading what="the audit log" />;
   if (state.kind === "forbidden") return <Forbidden />;
   if (state.kind === "error") return <Problem message={state.message} onRetry={reload} />;
   const { entries, next } = state.value;
   return (
-    <>
-      <AuditExport />
-      <AuditTable entries={entries} hasOlder={next !== ""} hasNewer={trail.length > 1} onOlder={() => setTrail((t) => [...t, next])} onNewer={() => setTrail((t) => t.slice(0, -1))} />
-    </>
+    <AuditTable
+      entries={entries}
+      hasOlder={next !== ""}
+      hasNewer={trail.length > 1}
+      onOlder={() => setTrail((t) => [...t, next])}
+      onNewer={() => setTrail((t) => t.slice(0, -1))}
+      action={action}
+      onAction={(a) => {
+        setAction(a);
+        setTrail([""]);
+      }}
+    />
   );
 }
 
@@ -560,7 +664,7 @@ export function AuditExport() {
 export function CapabilitiesTable({ inv }: { inv: Inventory }) {
   return (
     <section aria-labelledby="caps-h">
-      <h1 id="caps-h">Assistant capabilities</h1>
+      <h2 id="caps-h">Assistant capabilities</h2>
       <p className="label">Read live from the assistant backend. A capability it does not confirm is unsupported, and users are not offered it.</p>
       <div className="table-wrap">
         <table className="admin-table">
@@ -584,7 +688,7 @@ export function CapabilitiesTable({ inv }: { inv: Inventory }) {
           </tbody>
         </table>
       </div>
-      <h2>Toolsets on the backend</h2>
+      <h3>Toolsets on the backend</h3>
       {inv.toolsets.length === 0 ? (
         <p className="label">The backend reported no toolsets.</p>
       ) : (
@@ -628,7 +732,9 @@ export function CapabilitiesScreen() {
   const [media, reloadMedia] = useLoad((s) => getMediaModels(s), "media-models");
   const [writing, reloadWriting] = useLoad((s) => getWritingRules(s), "writing-rules");
   return (
-    <>
+    <section aria-labelledby="caps-page-h">
+      <h1 id="caps-page-h">Capabilities</h1>
+      <p className="label">What the assistant backend reports, and the three choices every account's assistant follows.</p>
       {writing.kind === "loading" ? (
         <Loading what="Writing rules" />
       ) : writing.kind === "forbidden" ? null : writing.kind === "error" ? (
@@ -659,7 +765,7 @@ export function CapabilitiesScreen() {
       ) : (
         <CapabilitiesTable inv={state.value} />
       )}
-    </>
+    </section>
   );
 }
 
@@ -702,7 +808,7 @@ export function AssistantTools({ policy, onSave }: { policy: ToolPolicy; onSave:
   };
   return (
     <section aria-labelledby="tools-h">
-      <h1 id="tools-h">Assistant tools</h1>
+      <h2 id="tools-h">Assistant tools</h2>
       <p className="label">
         What every account's assistant can use. {saved.custom ? "Set here by an admin." : "This is the server's default until you save a choice."}
       </p>
@@ -710,10 +816,13 @@ export function AssistantTools({ policy, onSave }: { policy: ToolPolicy; onSave:
         <ul className="tool-list">
           {offered.map((t) => (
             <li key={t.name}>
-              <input type="checkbox" id={`tool-${t.name}`} checked={chosen.has(t.name)} disabled={busy} onChange={() => toggle(t.name)} />
-              <label htmlFor={`tool-${t.name}`}>
-                <strong>{t.label}</strong>
-                {t.description && <small>{t.description}</small>}
+              {/* The same switch Models and Writing rules use: one control style for on/off across the admin area. */}
+              <label className="switch-cell">
+                <input type="checkbox" role="switch" className="switch" checked={chosen.has(t.name)} aria-disabled={busy} aria-label={t.label} onChange={() => toggle(t.name)} />
+                <span>
+                  <strong>{t.label}</strong>
+                  {t.description && <small>{t.description}</small>}
+                </span>
               </label>
             </li>
           ))}
@@ -796,7 +905,7 @@ export function AssistantMedia({ models, onSave }: { models: MediaModels; onSave
   };
   return (
     <section aria-labelledby="media-h">
-      <h1 id="media-h">Assistant media</h1>
+      <h2 id="media-h">Assistant media</h2>
       <p className="label">
         The model every account's assistant uses to make images and videos, from Kenari. Videos are billed by the second. Video needs the Video
         generation tool switched on above.

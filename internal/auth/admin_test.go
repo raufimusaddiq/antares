@@ -520,6 +520,12 @@ func TestAuditFeedShowsActionsWithoutContent(t *testing.T) {
 	for _, e := range out.Entries {
 		if e.Action == "admin.reject" && e.Actor == adminID && e.TargetID == id && e.Outcome == "ok" && e.CreatedAt != "" {
 			found = true
+			if e.ActorEmail != "the-admin@example.test" || e.TargetEmail != "t1@example.test" {
+				t.Fatalf("the feed names the accounts it knows: actor %q target %q", e.ActorEmail, e.TargetEmail)
+			}
+			if e.Actor == "" || e.TargetID != id {
+				t.Fatal("the ids are still there beside the names")
+			}
 		}
 	}
 	if !found {
@@ -687,6 +693,47 @@ func TestAuditPagesByCursor(t *testing.T) {
 	}
 	if len(seen) < 3 {
 		t.Fatalf("paged through only %d entries", len(seen))
+	}
+}
+
+func TestAuditFiltersByActionAndPages(t *testing.T) {
+	h := newHarness(t)
+	admin, _, _ := h.adminWithKicks()
+	for i := 0; i < 3; i++ {
+		h.userIn("fa"+strconv.Itoa(i), "PENDING", "UNPROVISIONED", "USER", false)
+		id := h.userID("fa" + strconv.Itoa(i))
+		admin.act(id, "reject", `{"reason":"r"}`)
+		if i == 0 {
+			admin.act(id, "approve", "")
+		}
+	}
+	var seen int
+	before := ""
+	for pages := 0; pages < 20; pages++ {
+		w := admin.get("/api/admin/audit?action=admin.reject&limit=1&before=" + url.QueryEscape(before))
+		var out struct {
+			Entries []AuditView `json:"entries"`
+			Next    string      `json:"next"`
+		}
+		if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+			t.Fatalf("%d %s", w.Code, w.Body.String())
+		}
+		for _, e := range out.Entries {
+			if e.Action != "admin.reject" {
+				t.Fatalf("the action filter leaked %q", e.Action)
+			}
+			seen++
+		}
+		if out.Next == "" {
+			break
+		}
+		before = out.Next
+	}
+	if seen != 3 {
+		t.Fatalf("the filter paged through %d of the 3 rejections", seen)
+	}
+	if w := admin.get("/api/admin/audit?action=" + url.QueryEscape("x\x00y")); w.Code != 400 {
+		t.Fatalf("a control character in the action filter: %d", w.Code)
 	}
 }
 
