@@ -1,6 +1,8 @@
 /// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 
 // @openuidev/lang-core ships opt-in usage telemetry (a PostHog key, host and sender).
 // It is off unless OPENUI_RUNTIME_TELEMETRY_ENABLED is set and our CSP would block it,
@@ -128,10 +130,72 @@ function loadKatexOnlyForMath(): Plugin {
   };
 }
 
+// @openuidev/react-ui's CodeBlock imports react-syntax-highlighter statically, so the whole Prism
+// grammar set (~1 MB) rode inside the chunk every rich reply loads, code or not. The build swaps in
+// src/openui/LazyPrism (a lazy chunk fetched when code first shows) and the two theme objects the
+// library uses, instead of the package index that bundles every theme. Each rewrite must match exactly
+// once or the build fails, so a library upgrade cannot silently bring the static import back.
+function lazyCodeHighlighter(): Plugin {
+  const rewrites: [string, string][] = [
+    ['import { oneLight, vscDarkPlus } from "react-syntax-highlighter/dist/cjs/styles/prism/index.js";',
+      'import oneLight from "react-syntax-highlighter/dist/esm/styles/prism/one-light.js";\nimport vscDarkPlus from "react-syntax-highlighter/dist/esm/styles/prism/vsc-dark-plus.js";'],
+    ['import { Prism } from "react-syntax-highlighter";', 'import { LazyPrism as Prism } from "antares-lazy-prism";'],
+  ];
+  return {
+    name: "lazy-code-highlighter",
+    enforce: "pre",
+    transform(code, id) {
+      const path = id.replace(/\\/g, "/");
+      if (!path.includes("react-ui/dist/genui-lib/index.mjs")) return null;
+      let out = code;
+      for (const [from, to] of rewrites) {
+        if (out.split(from).length !== 2) this.error(`lazy-code-highlighter: expected exactly one "${from}" in ${path}; the library changed, review its code highlighting again`);
+        out = out.replace(from, () => to);
+      }
+      return { code: out, map: null };
+    },
+  };
+}
+
+// OpenUI's Icon resolves any lucide name through lucide-react/dynamicIconImports, whose ~1700 dynamic
+// imports would each become a chunk (and bloat the embedded binary). Hermes can name any lucide icon, so
+// none is dropped: the library's import is pointed at a map with every lucide key (aliases included) whose
+// loader fetches ONE module holding every icon component, so the catalogue is a single lazy chunk fetched
+// when a reply first shows an icon. An icon the app also imports statically stays in the shared chunk.
+const ICON_MAP = "\0antares-lucide-map";
+const ICON_ALL = "\0antares-lucide-all";
+function lucideIconChunk(): Plugin {
+  const iconsDir = "lucide-react/dist/esm/icons/";
+  return {
+    name: "lucide-icon-chunk",
+    enforce: "pre",
+    resolveId(id) {
+      if (id.endsWith("lucide-react/dynamicIconImports.mjs")) return ICON_MAP;
+      if (id === ICON_ALL) return ICON_ALL;
+      return null;
+    },
+    async load(id) {
+      if (id !== ICON_MAP && id !== ICON_ALL) return null;
+      const all = await this.resolve("lucide-react/dist/esm/dynamicIconImports.js");
+      if (!all) return this.error("lucide-icon-chunk: cannot find lucide-react's icon map");
+      const keys = [...readFileSync(all.id, "utf8").matchAll(/^ {2}"([^"]+)": \(\) => import\('\.\/icons\/([^']+)'\)/gm)].map((m) => [m[1], m[2]] as const);
+      if (keys.length < 1000) return this.error("lucide-icon-chunk: lucide's icon map changed shape; review the loader again");
+      if (id === ICON_MAP) {
+        const entries = keys.map(([k, f]) => `  ${JSON.stringify(k)}: () => import(${JSON.stringify(ICON_ALL)}).then((m) => ({ default: m.default[${JSON.stringify(f)}] })),`);
+        return `export default {\n${entries.join("\n")}\n};\n`;
+      }
+      const files = [...new Set(keys.map(([, f]) => f))];
+      const imports = files.map((f, n) => `import i${n} from "${iconsDir}${f}";`);
+      return `${imports.join("\n")}\nexport default {\n${files.map((f, n) => `  ${JSON.stringify(f)}: i${n},`).join("\n")}\n};\n`;
+    },
+  };
+}
+
 // The bundle is built into the directory the Go binary embeds (internal/webui),
 // so `go build` needs no Node. Production never runs Node: this is build-time only.
 export default defineConfig({
-  plugins: [react(), stripOpenUITelemetry(), stripThirdPartyFavicons(), labelSourceCarousel(), loadKatexOnlyForMath()],
+  plugins: [react(), stripOpenUITelemetry(), stripThirdPartyFavicons(), labelSourceCarousel(), loadKatexOnlyForMath(), lazyCodeHighlighter(), lucideIconChunk()],
+  resolve: { alias: { "antares-lazy-prism": fileURLToPath(new URL("./src/openui/LazyPrism.tsx", import.meta.url)) } },
   build: {
     outDir: "../internal/webui/dist",
     emptyOutDir: true,
