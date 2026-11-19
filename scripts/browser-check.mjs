@@ -601,6 +601,23 @@ const desktopMeasure = () => {
   };
 };
 
+// A desktop row's actions button appears over the row's end on hover: a long title must stop before it, not run under it.
+async function desktopRowTitle(browser) {
+  CURRENT.w = 1280;
+  const { ctx, page } = await openPage(browser, { viewport: { width: 1280, height: 800 } });
+  await page.goto(base + "/");
+  await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
+  const row = page.locator(".side li:has(button.row-more)").first();
+  await row.locator(".item").evaluate((a) => { a.firstChild.textContent = "A very long chat title that keeps going well past the width of the side rail "; });
+  await row.hover();
+  const m = await row.evaluate((li) => {
+    const a = li.querySelector(".item"), b = li.querySelector("button.row-more"), cs = getComputedStyle(a);
+    return { titleEnd: a.getBoundingClientRect().right - parseFloat(cs.paddingRight), btn: b.getBoundingClientRect().left, shown: getComputedStyle(b).visibility === "visible", clipped: a.scrollWidth > a.clientWidth };
+  });
+  check("desktop layout, a hovered row's long title ends before its actions button", m.shown && m.clipped && m.titleEnd <= m.btn + 1, JSON.stringify(m));
+  await ctx.close();
+}
+
 async function desktopLayout(browser) {
   for (const { w, h } of [{ w: 1280, h: 800 }, { w: 1024, h: 700 }, { w: 700, h: 700 }, { w: 641, h: 800 }]) {
     const { ctx, page, consoleErrors } = await openPage(browser, { viewport: { width: w, height: h } });
@@ -1958,6 +1975,7 @@ const only = process.env.ONLY;
 try {
   if (!only || only === "mobile-layout") await mobileLayout(browser);
   if (!only || only === "mobile-layout") await phoneRowActions(browser);
+  if (!only || only === "desktop-layout") await desktopRowTitle(browser);
   if (!only || only === "desktop-layout") await desktopLayout(browser);
   if (!only || only === "mobile-layout" || only === "desktop-layout") await modelPicker(browser);
   if (!only || only === "starting-card") await startingCard(browser);

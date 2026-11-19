@@ -1,7 +1,7 @@
-const CACHE = "antares-public-9032dd449b4b16b128fb4fa99b627524af531a4f299b2a4ca795fe67ecaa1d84";
-const PUBLIC = ["/offline.html","/assets/index-1s4vC4pI.css","/assets/index-CLUpM3Op.js","/assets/offline-ef31f7914e3f8ae2.css","/assets/react-CaKr0epQ.js","/assets/rolldown-runtime-BWaJ3C7D.js"];
+const CACHE = "antares-public-eb469e0e511df16fd7236d6d718211321fc23c46ec374b2c496916f573582224";
+const PUBLIC = ["/offline.html","/assets/index-B0We3ZAZ.js","/assets/index-DyA_LqM2.css","/assets/offline-ef31f7914e3f8ae2.css","/assets/react-CaKr0epQ.js","/assets/rolldown-runtime-BWaJ3C7D.js"];
 // On-demand chunks (OpenUI Block, Chart): not fetched at install, cached the first time the page asks for them.
-const OPTIONAL = ["/assets/Block-BD9kxLpp.js","/assets/Editor-C-cjJ8uW.js","/assets/ReaderBlock-B_c2TXnu.js","/assets/_antares-lucide-all-9qiOhSuc.js","/assets/ci-info-Bauk7qhZ.js","/assets/components-BLj1qi0c.css","/assets/lib-Gvp5I0Ke.js","/assets/lib-jq1Nk-DM.js","/assets/prism-BGQ6XjLJ.js","/assets/rehype-katex-pPZltjnN.js","/assets/shareBlocks-BICsyejO.js","/assets/shareBlocks-Cwy3pbKz.js","/assets/validate-DxDPUfvZ.js","/assets/with-selector-VzSZIxYk.js"];
+const OPTIONAL = ["/assets/Block-kD4G6L9c.js","/assets/Editor-CIVX74VG.js","/assets/ReaderBlock-DEK6ElZf.js","/assets/_antares-lucide-all-9qiOhSuc.js","/assets/ci-info-Bauk7qhZ.js","/assets/components-BLj1qi0c.css","/assets/lib-D2xlx2X0.js","/assets/lib-Gvp5I0Ke.js","/assets/prism-Cu17Yf1T.js","/assets/rehype-katex-c1Qf0kNQ.js","/assets/shareBlocks-Bvjuo4wu.js","/assets/shareBlocks-CtbWVjQL.js","/assets/validate-DGETRPJ3.js","/assets/with-selector-VzSZIxYk.js"];
 const optional = new Set(OPTIONAL.map(path => new URL(path, self.location.origin).href));
 const allowed = new Set([...PUBLIC, ...OPTIONAL].map(path => new URL(path, self.location.origin).href));
 
