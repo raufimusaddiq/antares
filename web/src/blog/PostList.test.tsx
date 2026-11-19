@@ -88,21 +88,34 @@ describe("My posts: states", () => {
   });
 });
 
-describe("My posts: the rail", () => {
-  it("has the design's rail: brand, New post, Chats, Blog posts as the current page, and the account", async () => {
+describe("My posts: the shell", () => {
+  it("uses the chat's rail: brand, one New post, Chats, Blog posts as the current page, Read the blog, and the account's Menu", async () => {
     serve(() => FIVE);
     mount();
     await screen.findByText("Draft one");
     const rail = screen.getByRole("navigation", { name: "Antares" });
-    expect(within(rail).getByText("Antares")).toBeTruthy();
-    expect(within(rail).getByRole("button", { name: "New post" })).toBeTruthy();
+    expect(document.querySelector(".chat-app > header.bar .brand")?.textContent).toBe("Antares");
+    expect(within(rail).getAllByRole("button", { name: "New post" })).toHaveLength(1); // once, not in the page too
     expect(within(rail).getByRole("button", { name: "Chats" })).toBeTruthy();
+    expect(within(rail).getByRole("button", { name: "Read the blog" })).toBeTruthy();
     expect(within(rail).getByText("Blog posts").getAttribute("aria-current")).toBe("page");
     expect(within(rail).queryByRole("button", { name: "Blog posts" })).toBeNull(); // the page you are on is not a control
-    expect(within(rail).getByText("writer@example.test")).toBeTruthy();
+    expect(document.querySelector(".chat-app > header.bar .who-am-i")?.textContent).toBe("writer@example.test");
   });
 
-  it("goes back to the chats, and starts a post from the rail as from the page", async () => {
+  it("puts Settings and Sign out behind the account Menu, as the chat does", async () => {
+    serve(() => FIVE);
+    const signOut = vi.fn();
+    render(<PostList email="writer@example.test" onOpen={() => {}} onChats={() => {}} onSignOut={signOut} />);
+    await screen.findByText("Draft one");
+    const toggle = screen.getByRole("button", { name: "Menu" });
+    const panel = document.getElementById(toggle.getAttribute("aria-controls") ?? "") as HTMLElement;
+    expect(panel.contains(screen.getByRole("button", { name: "Settings" }))).toBe(true);
+    fireEvent.click(within(panel).getByRole("button", { name: "Sign out" }));
+    expect(signOut).toHaveBeenCalledTimes(1);
+  });
+
+  it("goes back to the chats, and starts a post from the rail", async () => {
     const calls = serve(() => FIVE, () => json(post({ id: "new1" })));
     const { onChats, onOpen } = mount();
     await screen.findByText("Draft one");
@@ -210,7 +223,7 @@ describe("My posts: focus after a delete", () => {
     await deleteIt("Only one", "o1", [post({ id: "o1", title: "Only one" })]);
     await screen.findByText("No posts yet");
     await waitFor(() => expect(document.activeElement?.textContent).toBe("New post"));
-    expect(document.activeElement?.closest(".blog-bar")).not.toBeNull(); // the page's, not the rail's
+    expect(document.activeElement?.closest(".side")).not.toBeNull(); // the rail's, which is the only New post there is
   });
 });
 

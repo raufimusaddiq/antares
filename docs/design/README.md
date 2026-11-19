@@ -78,9 +78,10 @@ for the "I have checked these sources myself" tick on every block, since the ser
 dialog (checking, preview, failure) are the page itself, below a "Back to editing" bar, with the editor hidden while they show.
 (They used to be a fixed full-screen layer; on phones that made the browser widen its layout to 832px.)
 
-My posts as built differs from its frames in two ways, on purpose. Phone rows also show an Open button (the title is plain text, so
-opening a post is one control and not two tab stops). The rail's account line shows the email and has no Menu button: Settings and Sign
-out stay in the chat's account menu, one click away through Chats.
+My posts as built differs from its frames in one way, on purpose: phone rows also show an Open button (the title is plain text, so
+opening a post is one control and not two tab stops). The rail is the chat's: the brand, one "New post" (there is no second
+one in the page), Chats, Read the blog, Blog posts as the page you are on, and the account line whose Menu holds Settings
+and Sign out. The "Publish / published" editor shows "Update" and a link to the live post; no frame draws that state yet.
 
 ## Admin control (designed for spec `specs/004-admin-full-control/`, not built yet)
 

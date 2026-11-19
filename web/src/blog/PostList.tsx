@@ -18,13 +18,24 @@ export const STATUS_WORDS: Record<PostStatus, string> = {
 type Load = { k: "loading" } | { k: "error"; why: string } | { k: "ok"; posts: PostSummary[] };
 
 
-export function PostList({ email, onOpen, onChats }: { email: string; onOpen: (id: string) => void; onChats: () => void }) {
+export function PostList({
+  email,
+  onOpen,
+  onChats,
+  onReadBlog = () => {},
+  onSignOut = () => {},
+}: {
+  email: string;
+  onOpen: (id: string) => void;
+  onChats: () => void;
+  onReadBlog?: () => void;
+  onSignOut?: (everywhere?: unknown) => void;
+}) {
   const [load, setLoad] = useState<Load>({ k: "loading" });
   const [confirm, setConfirm] = useState<PostSummary | null>(null);
   const [note, setNote] = useState("");
   // Where focus goes once a deleted post is gone: the row that took its place, else New post (the row it came from is unmounted).
   const focusAfterDelete = useRef<number | null>(null);
-  const newPost = useRef<HTMLButtonElement>(null);
 
   const inflight = useRef<AbortController | null>(null);
   const refresh = useCallback(() => {
@@ -55,7 +66,7 @@ export function PostList({ email, onOpen, onChats }: { email: string; onOpen: (i
     const at = focusAfterDelete.current;
     focusAfterDelete.current = null;
     const more = document.querySelectorAll<HTMLElement>(".blog-list .blog-more");
-    (more.length > 0 ? more[Math.min(at, more.length - 1)] : newPost.current)?.focus();
+    (more.length > 0 ? more[Math.min(at, more.length - 1)] : document.querySelector<HTMLElement>("[data-new-post]"))?.focus();
   }, [load]);
 
   const creating = useRef(false);
@@ -76,16 +87,13 @@ export function PostList({ email, onOpen, onChats }: { email: string; onOpen: (i
   ];
 
   return (
-    <BlogShell email={email} onNewPost={() => void create()} onChats={onChats}>
+    <BlogShell email={email} onNewPost={() => void create()} onChats={onChats} onReadBlog={onReadBlog} onSignOut={onSignOut}>
     <main className="blog-list">
       <header className="blog-bar">
         <div>
           <h1>My posts</h1>
           <p className="label blog-bar-note">Only you can see drafts. Published posts are public.</p>
         </div>
-        <button ref={newPost} type="button" className="btn" onClick={() => void create()}>
-          New post
-        </button>
       </header>
       {note && <p className="blog-error" role="alert">{note}</p>}
       {load.k === "loading" && <p aria-busy="true">Loading your posts…</p>}

@@ -18,6 +18,13 @@ describe("where Share appears", () => {
     render(<PublicPostPage slug="a-post" />);
     await waitFor(() => expect(screen.getByRole("button", { name: "Share this post" })).toBeTruthy());
   });
+  it("as the same pill as the header's other buttons (T-7)", async () => {
+    vi.stubGlobal("fetch", reply(200, POST));
+    render(<PublicPostPage slug="a-post" />);
+    const share = await screen.findByRole("button", { name: "Share this post" });
+    const signIn = screen.getByRole("link", { name: /Sign in/ });
+    expect(share.className.split(" ").sort()).toEqual([...signIn.className.split(" "), "plain"].sort());
+  });
   it("not on a post that is not found, one that failed to load, or the index", async () => {
     vi.stubGlobal("fetch", reply(404, {}));
     const gone = render(<PublicPostPage slug="a-post" />);

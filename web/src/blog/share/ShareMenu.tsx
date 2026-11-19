@@ -45,7 +45,7 @@ export function ShareMenu({ title, slug, onStory }: { title: string; slug: strin
 
   return (
     <div className="blog-share">
-      <RowMenu label="Share this post" actions={actions} trigger="Share" triggerClass="quiet" triggerIcon="share" />
+      <RowMenu label="Share this post" actions={actions} trigger="Share" triggerClass="btn plain" triggerIcon="share" />
       <span className="label blog-share-note" role="status">
         {copied ? "Link copied" : ""}
       </span>
