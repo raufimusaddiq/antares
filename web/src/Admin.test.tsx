@@ -106,6 +106,19 @@ describe("user list", () => {
     expect(controls("all")).not.toMatch(/\(\d+\)/);
   });
 
+  it("a status badge carries a tone, and a pending row offers Approve inline", () => {
+    const tones = (status: string, tenant: string) => {
+      const html = list("all", [user({ approvalStatus: status, tenantStatus: tenant })]);
+      return html.match(/class="badge[^"]*"/g) ?? [];
+    };
+    expect(tones("APPROVED", "READY")).toEqual(['class="badge ok"', 'class="badge ok"']);
+    expect(tones("PENDING", "UNPROVISIONED")).toEqual(['class="badge hold"', 'class="badge hold"']);
+    expect(tones("REJECTED", "FAILED")).toEqual(['class="badge bad"', 'class="badge bad"']);
+    const withApprove = (u: AdminUser) => renderToStaticMarkup(<UserList users={[u]} filter="all" search="" onOpen={noop} hasMore={false} loadingMore={false} onMore={noop} onApprove={async () => ""} />);
+    expect(withApprove(user({ approvalStatus: "PENDING" }))).toContain(">Approve<");
+    expect(withApprove(user({ approvalStatus: "APPROVED" }))).not.toContain(">Approve<");
+  });
+
   it("has a search box with a label, and offers Clear only while a search is active", () => {
     const html = renderToStaticMarkup(<UserControls filter="all" onFilter={noop} search="" onSearch={noop} />);
     expect(html).toContain('role="search"');
@@ -192,7 +205,10 @@ describe("user detail", () => {
 });
 
 describe("audit log", () => {
-  const entry = (n: number, at = "2026-03-04T05:06:07Z") => ({ id: `e${n}`, actor: "adm", action: "admin.approve", targetId: ID, outcome: "ok", requestId: `r${n}`, createdAt: at });
+  const entry = (n: number, at = "2026-03-04T05:06:07Z") => ({
+    id: `e${n}`, actor: "adm", actorName: "Ada Admin", actorEmail: "adm@example.test", action: "admin.approve",
+    targetId: ID, targetName: "Test Person", targetEmail: "person@example.test", outcome: "ok", requestId: `r${n}`, createdAt: at,
+  });
   const table = (entries: ReturnType<typeof entry>[], hasOlder: boolean, hasNewer: boolean) =>
     renderToStaticMarkup(<AuditTable entries={entries} hasOlder={hasOlder} hasNewer={hasNewer} onOlder={noop} onNewer={noop} />);
 
@@ -201,6 +217,18 @@ describe("audit log", () => {
     for (const t of ["When", "Actor", "Action", "Target", "Outcome", "Request", "2 entries, 2026-03-05 00:00 UTC back to 2026-03-04 05:06 UTC"]) expect(html).toContain(t);
     expect(html).not.toMatch(/Entries \d+–\d+/);
     expect(html).not.toMatch(/disabled="">(Older|Newer)/);
+  });
+
+  it("starts with the h1, keeps Export in its header row, and names the accounts while keeping their ids", () => {
+    const html = table([entry(1)], false, false);
+    expect(html.indexOf("<h1")).toBeLessThan(html.indexOf("Export audit log"));
+    expect(html).toContain("Ada Admin");
+    expect(html).toContain("adm@example.test");
+    expect(html).toContain(`title="adm"`);
+    expect(html).toContain("Test Person");
+    expect(html).toContain(ID);
+    expect(html).toContain('class="action"');
+    expect(renderToStaticMarkup(<AuditTable entries={[entry(1)]} hasOlder={false} hasNewer={false} onOlder={noop} onNewer={noop} action="admin.approve" onAction={noop} />)).toContain('id="audit-action"');
   });
 
   it("the newest page cannot go newer; the last page cannot go older; empty says so", () => {
@@ -235,6 +263,7 @@ describe("api calls send the server nothing it must choose", () => {
     await listUsers(0, "APPROVED", "sari & co");
     await listAudit("");
     await listAudit("2026-03-04T05:06:07Z|e4");
+    await listAudit("", "admin.approve");
     await getUser(ID);
     const urls = (f.mock.calls as unknown as [string, RequestInit][]).map(([u]) => u);
     expect(urls).toEqual([
@@ -242,6 +271,7 @@ describe("api calls send the server nothing it must choose", () => {
       "/api/admin/users?limit=200&offset=0&status=APPROVED&q=sari+%26+co",
       "/api/admin/audit?limit=50",
       "/api/admin/audit?limit=50&before=2026-03-04T05%3A06%3A07Z%7Ce4",
+      "/api/admin/audit?limit=50&action=admin.approve",
       `/api/admin/users/${ID}`,
     ]);
   });

@@ -510,8 +510,12 @@ pre.plain { white-space: pre-wrap; overflow-wrap: anywhere; }
 .admin-app .bar .who-am-i { margin-left: auto; }
 .admin-main { min-width: 0; width: min(64rem, 100%); margin: 0 auto; padding: 0.5rem 0.5rem 2rem; }
 .admin-main h1 { font-size: clamp(1.8rem, 4vw, 2.6rem); margin: 1rem 0 1rem; }
-.admin-main h2 { font-size: 1rem; font-weight: 700; margin: 1.75rem 0 0.5rem; color: var(--ink); }
+.admin-main h2, .admin-main h3 { font-size: 1rem; font-weight: 700; margin: 1.75rem 0 0.5rem; color: var(--ink); }
 .admin-main > section > p { max-width: 40rem; }
+/* A screen's title and its one screen-level action share the first row. */
+.admin-main .page-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; margin: 1rem 0; }
+.admin-main .page-head h1 { margin: 0; }
+.admin-main .page-head .actions { margin: 0; }
 .admin-nav { display: flex; align-items: center; gap: 0.25rem; min-width: 0; margin-left: 0.5rem; }
 .admin-nav a.navlink { padding: 0.3rem 0.8rem; border: 2px solid transparent; border-radius: var(--r-pill); color: var(--ink-2); text-decoration: none; }
 .admin-nav a.navlink:hover { color: var(--ink); }
@@ -533,6 +537,11 @@ button.quiet.on:where(:not(.openui-root *)) { background: var(--ink); color: var
 .badge.bad { background: var(--blush); color: var(--ink); }
 .badge.ok { background: var(--mint); color: var(--ink); }
 .badge.hold { background: var(--peri); color: var(--ink); }
+/* An action name is one token (admin.revoke_sessions): never broken mid-word. */
+.admin-table td.action { white-space: nowrap; }
+/* Audit actor and target: the name on top, the id under it, both selectable. */
+.audit-person { display: inline-block; min-width: 0; overflow-wrap: anywhere; }
+.inline-approve { margin-left: 0.5rem; }
 /* Admin → Posts (specs/004-admin-full-control): a post's facts row, a note card, the published content. */
 .facts-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem 1.25rem; margin: 0 0 0.75rem; }
 .facts-row a { color: var(--ink); overflow-wrap: anywhere; }
@@ -564,11 +573,10 @@ button.quiet.on:where(:not(.openui-root *)) { background: var(--ink); color: var
 .failure pre { max-width: 40rem; margin: 0.25rem 0 0; padding: 0.65rem 0.85rem; overflow: auto; font-family: var(--font-mono); font-size: 0.85rem; background: var(--card); border: 1px solid var(--hair); border-radius: var(--r-sm); }
 .actions { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.5rem 0; }
 /* Admin → Assistant tools: one row per tool, a 44px checkbox target, the description under the name. */
-.tool-list { list-style: none; margin: 0.75rem 0; padding: 0; display: grid; gap: 0.25rem; max-width: 44rem; }
-.tool-list li { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: start; gap: 0.75rem; padding: 0.55rem 0.75rem; border-radius: var(--r-lg); }
+.tool-list { list-style: none; margin: 0.75rem 0; padding: 0; display: grid; gap: 0.25rem; max-width: 64rem; }
+.tool-list li { padding: 0.55rem 0.75rem; border-radius: var(--r-lg); }
 .tool-list li:hover { background: var(--rail); }
-.tool-list input { width: 1.2rem; height: 1.2rem; margin: 0.15rem 0 0; }
-.tool-list label { display: grid; gap: 0.1rem; min-height: 2.75rem; cursor: pointer; }
+.tool-list .switch-cell span { display: grid; gap: 0.1rem; min-width: 0; }
 .tool-list small { color: var(--ink-2); font-size: 0.85rem; line-height: 1.4; }
 .tool-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; }
 .tool-locked { margin: 1rem 0 2rem; max-width: 44rem; }
@@ -1686,6 +1694,7 @@ input.switch:focus-visible { outline: 3px solid var(--focus-halo); outline-offse
 }
 
 /* Admin → Capabilities → Writing rules (spec 005). The switch and the card are the ones Models uses. */
+.writing-card { max-width: 64rem; }
 .writing-card .switch-cell { min-height: 2.75rem; }
 .writing-counts { display: flex; flex-wrap: wrap; gap: 0.5rem 2rem; margin: 0.25rem 0 0.75rem; }
 .writing-counts div { min-width: 0; }
