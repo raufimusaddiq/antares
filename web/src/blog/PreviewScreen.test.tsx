@@ -1,11 +1,14 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { PublishFlow } from "./PublishFlow";
 import type { Check, CheckBlock, DocNode, Post } from "./types";
 
 // These render the block library and wait on several requests in turn: on a busy runner that can pass the 5 s default.
 vi.setConfig({ testTimeout: 20000 });
+
+// ReaderBlock is a lazy chunk: load it once here, outside any test's budget.
+beforeAll(() => import("./ReaderBlock"), 120_000);
 
 afterEach(() => {
   cleanup();
