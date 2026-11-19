@@ -469,7 +469,18 @@ func (s *scn) chat(ctx context.Context, a *Actor) (string, error) {
 			break
 		}
 		if !sleep(rctx, s.cfg.Poll) {
-			return "", fmt.Errorf("no terminal phase within %s: run is %q, events seen %s", s.cfg.RunTimeout, final.Status, eventSummary(counts))
+			// The stream may have used the whole budget, so the loop above never got to read the row: read it once more
+			// on its own clock, or the report says the run is "" when it is RUNNING.
+			fctx, fcancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+			if rr, gerr := s.c.Do(fctx, a.Session, "GET", "/api/runs/"+run.RunID, nil, nil); gerr == nil && rr.Status == 200 {
+				_ = rr.JSON(&final)
+			}
+			fcancel()
+			state := final.Status
+			if state == "" {
+				state = "unreadable"
+			}
+			return "", fmt.Errorf("no terminal phase within %s: the run row is %s, events seen %s", s.cfg.RunTimeout, state, eventSummary(counts))
 		}
 	}
 	if final.Status != "COMPLETED" {
