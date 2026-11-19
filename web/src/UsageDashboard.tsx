@@ -40,6 +40,9 @@ export function UsageDashboard({ page = false }: { page?: boolean } = {}) {
   }, [open, days]);
 
   const peak = data ? Math.max(1, ...data.byDay.map((d) => d.input + d.output)) : 1;
+  // No replies in the range is a real answer, not a broken panel: say so, and say why a chat's chip can be larger.
+  const empty = data !== null && data.total.runs === 0;
+  const chartEmpty = data !== null && data.byDay.every((d) => d.input + d.output === 0);
 
   return (
     <Panel page={page} className="usage-panel" title="Usage" onToggle={setOpen}>
@@ -58,24 +61,38 @@ export function UsageDashboard({ page = false }: { page?: boolean } = {}) {
           ) : (
             <>
               <p>
-                <strong>{tokens(data.total)} tokens</strong> in {num(data.total.runs)} replies since {data.since} (UTC) · estimated spend {rp(data.total.estimate)}
-                {caveats(data.total)}
+                {empty ? (
+                  <>
+                    <strong>No replies in the last {data.days} days</strong> (since {data.since}, UTC). The usage chip in a chat shows
+                    that chat's lifetime total, so it can be larger than this period.
+                  </>
+                ) : (
+                  <>
+                    <strong>{tokens(data.total)} tokens</strong> in {num(data.total.runs)} replies in the last {data.days} days (since{" "}
+                    {data.since}, UTC) · estimated spend {rp(data.total.estimate)}
+                    {caveats(data.total)}
+                  </>
+                )}
               </p>
               <p className="label">
                 Estimates use the {data.currency} price list read on {data.priceDate}. They are not the provider's bill.
               </p>
 
               <h3>Tokens per day</h3>
-              <div className="usage-bars" role="img" aria-label={`Tokens per day, ${data.byDay[0].day} to ${data.byDay[data.byDay.length - 1].day}; the table below has the figures`}>
-                {data.byDay.map((d) => {
-                  const t = d.input + d.output;
-                  return (
-                    <span key={d.day} className="usage-bar" title={`${d.day}: ${tokens(d)} tokens, ${num(d.runs)} replies, ${rp(d.estimate)}`}>
-                      <span style={{ height: `${t === 0 ? 0 : Math.max(2, (t / peak) * 100)}%` }} />
-                    </span>
-                  );
-                })}
-              </div>
+              {chartEmpty ? (
+                <p className="label">No tokens reported in this range, so there is nothing to chart.</p>
+              ) : (
+                <div className="usage-bars" role="img" aria-label={`Tokens per day, ${data.byDay[0].day} to ${data.byDay[data.byDay.length - 1].day}; the table below has the figures`}>
+                  {data.byDay.map((d) => {
+                    const t = d.input + d.output;
+                    return (
+                      <span key={d.day} className="usage-bar" title={`${d.day}: ${tokens(d)} tokens, ${num(d.runs)} replies, ${rp(d.estimate)}`}>
+                        <span style={{ height: `${t === 0 ? 0 : Math.max(2, (t / peak) * 100)}%` }} />
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
               <details>
                 <summary>Per day as a table</summary>
                 <div className="table-wrap">

@@ -315,11 +315,11 @@ describe("usage text", () => {
     expect(t).toContain("2026-10-23");
     expect(t).toContain("Context in use now: —");
     expect(t).toContain("Model context window: 1,000,000 tokens");
-    expect(t).toContain("Used in this chat, all replies: 1,200 tokens");
+    expect(t).toContain("Used in this chat, all replies (all time): 1,200 tokens");
     expect(t).not.toMatch(/\d+%/);
     expect(t).toContain("1 finished reply reported no usage and is not counted");
     expect(describeUsage({ ...base, unpricedRuns: 2 }).join("\n")).toContain("2 replies were from a model with no known price");
-    expect(describeUsage({ ...base, tokens: null, costIDR: null }).join("\n")).toContain("Used in this chat, all replies: — (none reported)");
+    expect(describeUsage({ ...base, tokens: null, costIDR: null }).join("\n")).toContain("Used in this chat, all replies (all time): — (none reported)");
   });
 
   it("keeps an unknown occupancy unknown: a stray number without REPORTED is not read, and nothing becomes 0% (#165)", () => {
@@ -337,9 +337,9 @@ describe("usage text", () => {
   });
 
   it("the usage chip is glanceable and keeps unknown context unknown (#164)", () => {
-    expect(describeGlance(base)).toBe("1,200 tokens used · context in use unknown");
+    expect(describeGlance(base)).toBe("1,200 tokens used, all time · context in use unknown");
     expect(describeGlance({ ...base, tokens: null })).toBe("Usage unknown · context in use unknown");
-    expect(describeGlance({ ...base, carriedTokens: 250000 })).toBe("1,200 tokens used · context 25% full");
+    expect(describeGlance({ ...base, carriedTokens: 250000 })).toBe("1,200 tokens used, all time · context 25% full");
     expect(describeGlance({ ...base, budget: { ...base.budget, reached: true } })).toBe("Token limit reached");
     expect(describeGlance(base)).not.toMatch(/0%/);
   });

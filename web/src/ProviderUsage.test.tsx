@@ -43,6 +43,17 @@ describe("provider usage screen (#146)", () => {
     expect(panel({ ...ok, stale: true })).toContain("Stale: the latest attempt to read Kenari failed");
   });
 
+  // 0 tokens with real requests is "not reported", not a measured zero.
+  it("shows — for a row where the provider reported no tokens", () => {
+    const tts = { model: "gemini-3-1-flash-tts", billingKind: "payg", requests: 71, promptTokens: 0, completionTokens: 0, cachedPromptTokens: 0, cacheWritePromptTokens: 0, costMicroIdr: 17750000000, catalogMicroIdr: 17750000000 };
+    const html = panel({ ...ok, usage: { state: "OK", data: { ...ok.usage.data, rows: [tts], total: { ...ok.usage.data.total, requests: 71, promptTokens: 0, completionTokens: 0 } } } });
+    const plain = html.replace(/&nbsp;|\u00a0/g, " ");
+    expect(plain).toContain("reported no tokens for that row");
+    expect(plain).toContain("—");
+    expect(plain).not.toMatch(/<td>0<\/td>/);
+    expect(plain).not.toContain("billed per"); // the code cannot know why a provider did not report tokens
+  });
+
   it("not configured and unavailable show no number at all", () => {
     for (const state of ["NOT_CONFIGURED", "UNAVAILABLE"]) {
       const html = panel({ state, source: "x", balance: ok.balance });
