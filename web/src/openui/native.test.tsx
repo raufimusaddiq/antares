@@ -179,6 +179,38 @@ describe("rendering", () => {
     expect(note.querySelector("summary")!.textContent).toContain(says);
     expect(note.querySelector("code")!.textContent).toBe(source);
   });
+  it.each([
+    [
+      "a list among named children",
+      'root = Card([a, [b, [c]], d])\na = TextContent("alpha")\nb = TextContent("beta")\nc = TextContent("gamma")\nd = TextContent("delta")',
+    ],
+    [
+      "a list of inline parts, with an empty one",
+      'root = Card([TextContent("alpha"), [TextContent("beta"), [[TextContent("gamma")]], []], TextContent("delta")])',
+    ],
+  ])("%s: a nested list is flattened in order, rendered whole, with no note and no console warning", (_, source) => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { container } = render(<RichBlock source={source} />);
+    const block = container.querySelector(".ou-block")!;
+    expect(block.querySelector(".ou-note")).toBeNull();
+    expect(block.textContent).toMatch(/alpha.*beta.*gamma.*delta/);
+    expect(warn).not.toHaveBeenCalled();
+    expect(error).not.toHaveBeenCalled();
+  });
+  it("a nested list holding a part that was never written still shows the note", () => {
+    const { container } = render(<RichBlock source={'root = Card([a, [b, missing]])\na = TextContent("alpha")\nb = TextContent("beta")'} />);
+    const block = container.querySelector(".ou-block")!;
+    expect(block.textContent).toContain("beta");
+    expect(block.querySelector(".ou-note summary")!.textContent).toContain("never written");
+  });
+  it("a Table's rows stay nested lists, and a genuinely invalid child still falls back to source", () => {
+    const table = 'root = Card([Table([Col("A"), Col("B")], [["1", "2"], ["3", "4"]])])';
+    expect(repair(table).program).toBe(table);
+    const bad = 'root = Card([TextContent("alpha"), Bogus("x")])';
+    expect(repair(bad).program).toBe(bad);
+    expect(check(bad)).toEqual({ ok: false, reason: "invalid: unknown-component" });
+  });
   it("a repaired or cut-off program passes the same safety checks", () => {
     expect(check('root = Card([a, b])\na = TextContent("[x](javascript:alert(1))")\nb = TextContent("cut').ok).toBe(false);
     const { program } = repair('root = Card([TextContent("a")])\nlost = TextContent("[x](javascript:alert(1))")');

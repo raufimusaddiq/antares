@@ -155,6 +155,11 @@ export function repair(source: string, lib: GateLibrary = openuiChatLibrary): { 
     const r = read(closed);
     if (r && !r.m.incomplete && r.m.errors.length <= best.m.errors.length) [best, program] = [r, closed];
   }
+  // A nested list where one child is expected (`Card([a, [b, c], d])`) is dropped by the parser; flatten it in place.
+  if (best && !best.m.incomplete && best.m.errors.some((e) => GOT_ARRAY.test(e.message))) {
+    const flat = flatten(program, (src) => read(src));
+    if (flat) [best, program] = [flat.read, flat.program];
+  }
   if (!best || best.n === 0 || best.m.incomplete) return { program };
   const step = (next: string | null) => {
     const r = next === null ? null : read(next);
@@ -171,6 +176,83 @@ export function repair(source: string, lib: GateLibrary = openuiChatLibrary): { 
   const left = outermost(program, best.m.orphaned).filter((n) => !isSource(n));
   if (left.length > 0) step(placeInRoot(program, left));
   return { program };
+}
+
+// The parser reports a list written where one child is expected as `... but got array` and leaves the whole list out.
+// Lists are legitimately nested elsewhere (a Table's rows), so flatten only while the parser reports that error, one
+// nested list at a time, and keep a step only if it leaves fewer parse errors and no more unplaced or unwritten parts.
+const GOT_ARRAY = /but got array$/;
+
+/** Start and end (the brackets themselves) of each list written directly inside another list, outside string literals. */
+function nestedLists(src: string): Array<[number, number]> {
+  const found: Array<[number, number]> = [];
+  const open: Array<{ c: string; at: number; nested: boolean }> = [];
+  let prev = "";
+  for (let i = 0; i < src.length; i++) {
+    const c = src[i];
+    if (c === '"') {
+      LITERAL.lastIndex = i;
+      const lit = LITERAL.exec(src);
+      if (!lit || lit.index !== i) break;
+      i += lit[0].length - 1;
+      prev = '"';
+      continue;
+    }
+    if (c in CLOSER) open.push({ c, at: i, nested: c === "[" && open[open.length - 1]?.c === "[" && (prev === "," || prev === "[") });
+    else if (")]}".includes(c)) {
+      const top = open.pop();
+      if (top?.nested && c === "]") found.push([top.at, i]);
+    }
+    if (!/\s/.test(c)) prev = c;
+  }
+  return found.sort((a, b) => a[0] - b[0]);
+}
+
+/** The items of the list written at `start`..`end`, with every list nested inside it opened up too, as one comma-separated text. */
+function itemsOf(src: string, start: number, end: number): string {
+  let inner = src.slice(start + 1, end);
+  // Outermost lists only, last first, so earlier offsets stay valid.
+  const lists = nestedLists(`[${inner}]`);
+  for (const [s, e] of lists.filter(([s, e]) => !lists.some(([a, b]) => a < s && b > e)).reverse()) {
+    const items = itemsOf(`[${inner}]`, s, e);
+    inner = inner.slice(0, s - 1) + items + inner.slice(e);
+  }
+  return inner.trim().replace(/,$/, "").trim();
+}
+
+function flatten<R extends { m: { errors: { message: string }[] }; n: number }>(
+  program: string,
+  read: (src: string) => R | null,
+): { program: string; read: R } | null {
+  let best = read(program);
+  let changed = false;
+  // Outermost lists first: opening one opens everything inside it, so the lists inside it are not tried on their own.
+  for (let pass = 0; best && pass < 50; pass++) {
+    const cur = best;
+    if (!cur.m.errors.some((e) => GOT_ARRAY.test(e.message))) break;
+    let next: { program: string; read: R } | null = null;
+    const lists = nestedLists(program);
+    for (const [start, end] of lists) {
+      if (lists.some(([s, e]) => s < start && e > end)) continue;
+      const inner = itemsOf(program, start, end);
+      let head = program.slice(0, start);
+      let tail = program.slice(end + 1);
+      if (inner === "") {
+        if (/^\s*,/.test(tail)) tail = tail.replace(/^\s*,/, "");
+        else head = head.replace(/,\s*$/, "");
+      }
+      const src = head + inner + tail;
+      const r = read(src);
+      if (r && r.m.errors.length < cur.m.errors.length && r.n <= cur.n) {
+        next = { program: src, read: r };
+        break;
+      }
+    }
+    if (!next) break;
+    [program, best] = [next.program, next.read];
+    changed = true;
+  }
+  return changed && best ? { program, read: best } : null;
 }
 
 const LITERAL = /"(?:[^"\\\n]|\\.)*"/g;
