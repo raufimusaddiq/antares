@@ -99,5 +99,5 @@ describe("Share", () => {
       { kind: "rows", rows: [["Normal", "Rp 220rb (global)"], ["Cheapest", "Rp 90rb"]] },
       { kind: "bars", unit: "Rp k", series: ["Renewal"], bars: [["SAV", [230]], ["Cloudflare", [221]]] },
     ]);
-  });
+  }, 30_000); // loads the OpenUI answer parser, slow when the whole suite runs at once
 });
