@@ -22,7 +22,7 @@ import (
 // with a CSP `sandbox` (no scripts, opaque origin, no forms/popups/top
 // navigation) and `default-src 'none'`; downloads are attachments.
 //
-// The fence rules and index order must match web/src/artifacts.ts.
+// The fence rules and index order must match web/src/artifactRefs.ts.
 
 const (
 	maxArtifactBytes = 512 << 10
