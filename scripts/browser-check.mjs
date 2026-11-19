@@ -472,6 +472,26 @@ async function mobileLayout(browser) {
   }
 }
 
+// A phone-width window with a mouse (hover, fine pointer: no hasTouch) must show every row's actions button in the Chats drawer.
+async function phoneRowActions(browser) {
+  CURRENT.w = 390;
+  const { ctx, page } = await openPage(browser, { viewport: { width: 390, height: 844 } });
+  await page.goto(base + "/");
+  await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
+  await page.getByRole("button", { name: "Chats", exact: true }).click();
+  const rows = page.locator(".side > ul.open > li:has(button.row-more)");
+  const n = await rows.count();
+  const bad = [];
+  for (let i = 0; i < n; i++) {
+    const b = rows.nth(i).locator("button.row-more");
+    const t = await rows.nth(i).locator(".item").boundingBox();
+    const r = await b.boundingBox();
+    if (!(await b.isVisible()) || !r || r.height < 44 || r.width < 36 || (t && t.x + t.width > r.x + 1)) bad.push(`row ${i}`);
+  }
+  check("mobile layout 390px, each drawer row's actions button is visible, tappable and clear of the title", n > 0 && bad.length === 0, bad.join(", "));
+  await ctx.close();
+}
+
 // A reached token limit opens the Options drawer, and the toggle must still close it so the conversation grows back.
 async function mobileBudget(browser) {
   state.budgetReached = true;
@@ -580,6 +600,23 @@ const desktopMeasure = () => {
     noteVisible: Boolean(note), noteUnderText: under, notePosition: noteEl ? getComputedStyle(noteEl.parentElement).position : "",
   };
 };
+
+// A desktop row's actions button appears over the row's end on hover: a long title must stop before it, not run under it.
+async function desktopRowTitle(browser) {
+  CURRENT.w = 1280;
+  const { ctx, page } = await openPage(browser, { viewport: { width: 1280, height: 800 } });
+  await page.goto(base + "/");
+  await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
+  const row = page.locator(".side li:has(button.row-more)").first();
+  await row.locator(".item").evaluate((a) => { a.firstChild.textContent = "A very long chat title that keeps going well past the width of the side rail "; });
+  await row.hover();
+  const m = await row.evaluate((li) => {
+    const a = li.querySelector(".item"), b = li.querySelector("button.row-more"), cs = getComputedStyle(a);
+    return { titleEnd: a.getBoundingClientRect().right - parseFloat(cs.paddingRight), btn: b.getBoundingClientRect().left, shown: getComputedStyle(b).visibility === "visible", clipped: a.scrollWidth > a.clientWidth };
+  });
+  check("desktop layout, a hovered row's long title ends before its actions button", m.shown && m.clipped && m.titleEnd <= m.btn + 1, JSON.stringify(m));
+  await ctx.close();
+}
 
 async function desktopLayout(browser) {
   for (const { w, h } of [{ w: 1280, h: 800 }, { w: 1024, h: 700 }, { w: 700, h: 700 }, { w: 641, h: 800 }]) {
@@ -1937,6 +1974,8 @@ console.log(`# ${await browser.version()} (Chromium), bundle ${fs.readdirSync(pa
 const only = process.env.ONLY;
 try {
   if (!only || only === "mobile-layout") await mobileLayout(browser);
+  if (!only || only === "mobile-layout") await phoneRowActions(browser);
+  if (!only || only === "desktop-layout") await desktopRowTitle(browser);
   if (!only || only === "desktop-layout") await desktopLayout(browser);
   if (!only || only === "mobile-layout" || only === "desktop-layout") await modelPicker(browser);
   if (!only || only === "starting-card") await startingCard(browser);
