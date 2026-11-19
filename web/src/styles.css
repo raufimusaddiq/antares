@@ -791,6 +791,10 @@ textarea:where(:not(.openui-root *)) { font-family: var(--font-ui); color: var(-
     .side { gap: 0.1rem; }
     .side > button, .chats-toggle, .search-toggle { padding: 0 0.3rem; border-width: 3px; }
     .side > button[data-icon]::before { margin-right: 0.2rem; }
+    .chats-toggle::after { margin-left: 0.15rem; }
+  }
+  @media (max-width: 340px) {
+    .side > button, .chats-toggle, .search-toggle { padding: 0 0.15rem; font-size: 0.9rem; }
   }
   .side .label { flex: 1 1 0; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The conversation list is a drawer, not a sideways strip: a vertical list with its own scrolling, rows as on a
