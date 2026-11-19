@@ -51,6 +51,14 @@ describe("the address follows the open chat", () => {
     await screen.findByText("from one");
   });
 
+  it("opening / shows the newest chat and replaces the address with it, adding no history entry", async () => {
+    const depth = window.history.length;
+    await mount();
+    expect(window.location.pathname).toBe(`/chat/${B}`);
+    expect(document.title).toBe("Two · Antares");
+    expect(window.history.length).toBe(depth);
+  });
+
   it("returns to / for a new chat", async () => {
     await mount();
     fireEvent.click(screen.getByRole("link", { name: "One" }));
@@ -83,7 +91,7 @@ describe("Settings is a place in the address", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Close settings" }));
     await waitFor(() => expect(window.location.search).toBe(""));
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe(`/chat/${B}`);
     expect(window.history.length).toBe(depth); // an overlay, not a page: no entry left behind
   });
 
