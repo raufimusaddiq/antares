@@ -44,6 +44,9 @@ export function ChatList(props: {
   const [dialog, setDialog] = useState<Dialog | null>(null);
   const [status, setStatus] = useState("");
   const [showArchive, setShowArchive] = useState(false);
+  // On a phone the list is a drawer behind this toggle; a wide screen always shows it.
+  const [listOpen, setListOpen] = useState(false);
+  const listId = useId();
   const [archive, setArchive] = useState<{ state: "loading" | "ready" | "error"; chats: ChatSummary[]; next: string; message: string }>({ state: "loading", chats: [], next: "", message: "" });
   const trigger = useRef<HTMLElement | null>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
@@ -88,7 +91,16 @@ export function ChatList(props: {
 
   const row = (c: ChatSummary): ReactNode => (
     <li key={c.id}>
-      <button type="button" className={c.id === current ? "item current" : "item"} aria-current={c.id === current ? "true" : undefined} onClick={() => onOpen(c)}>
+      <button
+        type="button"
+        className={c.id === current ? "item current" : "item"}
+        aria-current={c.id === current ? "true" : undefined}
+        title={label(c)}
+        onClick={() => {
+          setListOpen(false);
+          onOpen(c);
+        }}
+      >
         {label(c)}
         {c.pinned && <span className="tag"> Pinned</span>}
         {c.deleteFailed && <span className="tag warn"> Delete failed</span>}
@@ -132,7 +144,10 @@ export function ChatList(props: {
           </button>,
           slot,
         )}
-      <ul>
+      <button type="button" className="quiet chats-toggle" data-icon="chevron" aria-expanded={listOpen} aria-controls={listId} onClick={() => setListOpen((o) => !o)}>
+        Chats
+      </button>
+      <ul id={listId} className={listOpen ? "open" : undefined}>
         {chats.map(row)}
         {!showArchive && <li className="archive-toggle">{toggle}</li>}
       </ul>

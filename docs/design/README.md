@@ -135,7 +135,19 @@ Blog: where the frames and the code still differ (kept honest; each is a gap to 
   inside it. The frames' inline placement is the drawn variant for blocks that have a title.
 - The Admin frame is a single card, not a full Admin screen.
 
-Known gaps: only states the mock backend could show were captured (no live Hermes). Text is placed per rendered line, so
+## Chats on a phone, title room on a wide screen (T-8)
+
+- **Phone / Chats**: the rail is one row (New chat, Search, Chats) and the conversation list opens as a drawer under it:
+  the full list, one row per conversation, the number badge and the actions button as on a wide screen, the page's own
+  scrollbar kept thin. The address is not in the phone header; it lives in the Menu.
+- **Phone / New chat (starters)**: the new-chat card lists the reader's saved templates as starter buttons (none drawn
+  when the account has saved none, because there is nothing to draw).
+- Wide-screen rows: the number badge is smaller and a row's actions button now sits over the row's end, shown on hover
+  or keyboard focus, so the title gets the whole row; its full text is also the row's tooltip.
+
+## Known gaps
+
+Only states the mock backend could show were captured (no live Hermes). Text is placed per rendered line, so
 it does not reflow when edited. Not yet drawn: most Notifications and Jobs states, Memory and Skills states, model
 picker states, delete-failed and pinned rows, dictation consent, the recorder, share-link variants, the keyboard-open
 phone layout, and keyboard shortcuts.
