@@ -472,6 +472,26 @@ async function mobileLayout(browser) {
   }
 }
 
+// A phone-width window with a mouse (hover, fine pointer: no hasTouch) must show every row's actions button in the Chats drawer.
+async function phoneRowActions(browser) {
+  CURRENT.w = 390;
+  const { ctx, page } = await openPage(browser, { viewport: { width: 390, height: 844 } });
+  await page.goto(base + "/");
+  await page.waitForSelector(`.vitem[data-vkey="${2 * TURNS - 1}"]`);
+  await page.getByRole("button", { name: "Chats", exact: true }).click();
+  const rows = page.locator(".side > ul.open > li:has(button.row-more)");
+  const n = await rows.count();
+  const bad = [];
+  for (let i = 0; i < n; i++) {
+    const b = rows.nth(i).locator("button.row-more");
+    const t = await rows.nth(i).locator(".item").boundingBox();
+    const r = await b.boundingBox();
+    if (!(await b.isVisible()) || !r || r.height < 44 || r.width < 36 || (t && t.x + t.width > r.x + 1)) bad.push(`row ${i}`);
+  }
+  check("mobile layout 390px, each drawer row's actions button is visible, tappable and clear of the title", n > 0 && bad.length === 0, bad.join(", "));
+  await ctx.close();
+}
+
 // A reached token limit opens the Options drawer, and the toggle must still close it so the conversation grows back.
 async function mobileBudget(browser) {
   state.budgetReached = true;
@@ -1937,6 +1957,7 @@ console.log(`# ${await browser.version()} (Chromium), bundle ${fs.readdirSync(pa
 const only = process.env.ONLY;
 try {
   if (!only || only === "mobile-layout") await mobileLayout(browser);
+  if (!only || only === "mobile-layout") await phoneRowActions(browser);
   if (!only || only === "desktop-layout") await desktopLayout(browser);
   if (!only || only === "mobile-layout" || only === "desktop-layout") await modelPicker(browser);
   if (!only || only === "starting-card") await startingCard(browser);

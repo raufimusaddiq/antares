@@ -339,8 +339,9 @@ dd:where(:not(.openui-root *)):last-child { margin-bottom: 0; }
 /* A row's actions appear over its end on hover or focus, so the title gets the row's whole width. */
 .side button.row-more { position: absolute; right: 0.15rem; top: 50%; transform: translateY(-50%); z-index: 1; visibility: hidden; width: 2.25rem; min-width: 2.25rem; min-height: 2.75rem; margin: 0; padding: 0; justify-content: center; border-color: transparent; font-size: 1.2rem; line-height: 1; }
 .side li:hover > button.row-more, .side li:focus-within > button.row-more, .side button.row-more[aria-expanded="true"] { visibility: visible; }
-/* There is no hover on a touch screen: the actions button keeps its place in the row. */
-@media (hover: none) { .side button.row-more { position: static; transform: none; visibility: visible; } }
+/* There is no hover on a touch screen, and a phone-width drawer is a touch surface even when the browser reports hover: the
+   actions button keeps its place in the row. */
+@media (hover: none), (pointer: coarse), (max-width: 40rem) { .side button.row-more { position: static; transform: none; visibility: visible; } }
 .side .tag { margin-left: 0.4rem; font-family: var(--font-mono); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .side .tag.warn { text-decoration: underline wavy; text-underline-offset: 3px; }
 .side .archive { margin-top: 0.4rem; }
