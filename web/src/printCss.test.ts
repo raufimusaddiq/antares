@@ -5,7 +5,8 @@ import { describe, expect, it } from "vitest";
 // Plain Ctrl+P (no export in flight, so no .print-root in the page) must print the page as it
 // is. Every selector in the print block is therefore tied to the print copy; a bare `body`,
 // `#root` or `body.chat` there would blank printing on every route.
-const css = readFileSync(join(__dirname, "styles.css"), "utf8");
+// Normalize CRLF: a Windows checkout (core.autocrlf) must not change what this test reads.
+const css = readFileSync(join(__dirname, "styles.css"), "utf8").replace(/\r\n/g, "\n");
 const start = css.indexOf("@media print {");
 const block = css.slice(start, css.indexOf("\n}\n", start)).replace(/\/\*[\s\S]*?\*\//g, "");
 

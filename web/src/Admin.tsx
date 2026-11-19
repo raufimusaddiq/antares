@@ -34,7 +34,7 @@ import { AdminModelsScreen } from "./AdminModels";
 import { Forbidden, Loading, Problem, useLoad, when } from "./adminLoad";
 export { Forbidden, when } from "./adminLoad";
 export type { Load } from "./adminLoad";
-import { saveText } from "./exportChat";
+import { saveText } from "./chatExport";
 import { AntaresMark } from "./brand/AntaresMark";
 import { QuotaBar, WINDOW_LABELS, grouped } from "./QuotaBar";
 
@@ -60,12 +60,28 @@ function Badge({ value, bad }: { value: string; bad?: boolean }) {
 
 // ---- shell ----------------------------------------------------------------------
 
+/** Each admin screen names its own tab. */
+const ADMIN_TITLES: Record<AdminRoute["kind"], string> = {
+  users: "Users",
+  user: "User",
+  posts: "Posts",
+  post: "Post",
+  models: "Models",
+  capabilities: "Capabilities",
+  usage: "Provider usage",
+  audit: "Audit log",
+  unknown: "Admin",
+};
+
 export function AdminShell({ email, route, onNavigate, onSignOut, children }: { email: string; route: AdminRoute; onNavigate: (path: string) => void; onSignOut: () => void; children: ReactNode }) {
   const link = (path: string, label: string, current: boolean) => (
     <a href={path} className={current ? "navlink current" : "navlink"} aria-current={current ? "page" : undefined} onClick={(e) => go(e, onNavigate, path)}>
       {label}
     </a>
   );
+  useEffect(() => {
+    document.title = `${ADMIN_TITLES[route.kind]} · Antares`;
+  }, [route.kind]);
   useEffect(() => {
     document.body.classList.add("admin");
     return () => document.body.classList.remove("admin");

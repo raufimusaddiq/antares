@@ -1,0 +1,5 @@
+# Antares is built and deployed on Linux. Keep every text file LF in the working
+# tree on any checkout, so byte-exact tests (the web bundle's source hash, the
+# OpenUI prompt, the print stylesheet) and the POSIX shell scripts in deploy/
+# behave the same on Windows as on CI.
+* text=auto eol=lf

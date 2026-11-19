@@ -5,6 +5,7 @@ import { generate, target } from "../../scripts/openui-prompt.mjs";
 
 describe("the Visualize instruction", () => {
   it("is exactly OpenUI's chat prompt for the pinned library (run node web/scripts/openui-prompt.mjs after an upgrade)", () => {
-    expect(readFileSync(target, "utf8")).toBe(generate());
+    // Normalize CRLF: a Windows checkout (core.autocrlf) must not change what this test reads.
+    expect(readFileSync(target, "utf8").replace(/\r\n/g, "\n")).toBe(generate());
   }, 60_000); // loads the whole component library
 });
