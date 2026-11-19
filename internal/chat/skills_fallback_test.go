@@ -6,6 +6,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/raufimusaddiq/antares/internal/hermes"
 )
@@ -97,5 +98,53 @@ func TestCapabilitiesRepeatCallMakesNoHelperCallWhenSkillsFallBack(t *testing.T)
 	defer src.mu.Unlock()
 	if len(src.slugs) != 1 || len(a.hx.requests()) != n || first.Body.String() != second.Body.String() || !strings.Contains(second.Body.String(), "deep-research") {
 		t.Fatalf("helper calls = %d, extra hermes calls = %d; want 1 and 0\n%s", len(src.slugs), len(a.hx.requests())-n, second.Body.String())
+	}
+}
+
+func skillsFallbackApp(t *testing.T, src *fakeSkills) *app {
+	a := newApp(t, appOpts{skills: src})
+	serveDiscovery(a, readFixture(t, "../../docs/hermes/fixtures/capabilities.body.json"))
+	a.hx.mu.Lock()
+	delete(a.hx.canned, "/v1/skills")
+	a.hx.mu.Unlock()
+	return a
+}
+
+// Each profile's skills come from its own helper call: bob is never served alice's cached skills.
+func TestSkillsCachePerProfile(t *testing.T) {
+	src := &fakeSkills{list: []hermes.Skill{{Name: "deep-research"}}}
+	a := skillsFallbackApp(t, src)
+	alice, bob := a.user("alice"), a.user("bob")
+	alice.get("/api/capabilities")
+	if w := bob.get("/api/capabilities"); w.Code != 200 || !strings.Contains(w.Body.String(), "deep-research") {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	src.mu.Lock()
+	defer src.mu.Unlock()
+	if len(src.slugs) != 2 || src.slugs[0] != alice.profile || src.slugs[1] != bob.profile {
+		t.Fatalf("helper asked about %v, want [%s %s]", src.slugs, alice.profile, bob.profile)
+	}
+}
+
+// A helper error is not an answer: it is retried after capsNegTTL (not capsTTL), and not before.
+func TestSkillsHelperErrorIsCachedBrieflyOnly(t *testing.T) {
+	src := &fakeSkills{err: errors.New("down")}
+	a := skillsFallbackApp(t, src)
+	alice := a.user("alice")
+	base := time.Now()
+	a.svc.now = func() time.Time { return base }
+	calls := func() int { src.mu.Lock(); defer src.mu.Unlock(); return len(src.slugs) }
+
+	alice.get("/api/capabilities")
+	src.mu.Lock()
+	src.err, src.list = nil, []hermes.Skill{{Name: "deep-research"}}
+	src.mu.Unlock()
+	a.svc.now = func() time.Time { return base.Add(capsNegTTL - time.Second) }
+	if w := alice.get("/api/capabilities"); calls() != 1 || strings.Contains(w.Body.String(), "deep-research") {
+		t.Fatalf("helper retried inside the negative TTL (calls=%d)", calls())
+	}
+	a.svc.now = func() time.Time { return base.Add(capsNegTTL + time.Second) }
+	if w := alice.get("/api/capabilities"); calls() != 2 || !strings.Contains(w.Body.String(), "deep-research") {
+		t.Fatalf("skills did not heal after the negative TTL (calls=%d): %s", calls(), w.Body.String())
 	}
 }
