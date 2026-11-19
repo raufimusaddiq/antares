@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ChatSummary } from "./chatApi";
@@ -43,10 +43,10 @@ class FakeSource {
 const mount = async (chats: ChatSummary[]) => {
   api.listChats.mockResolvedValue(ok({ chats, nextCursor: "" }));
   render(<Chat email="a@example.test" onSignOut={() => {}} />);
-  await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
+  await waitFor(() => expect(screen.queryByText("Loadingâ€¦")).toBeNull());
 };
 const newChatButton = () => screen.getAllByRole("button", { name: "New chat" })[0];
-const sidebarItems = () => Array.from(document.querySelectorAll("nav.side li button.item")).map((b) => b.getAttribute("aria-current") ?? "-");
+const sidebarItems = () => Array.from(document.querySelectorAll("nav.side li a.item")).map((b) => b.getAttribute("aria-current") ?? "-");
 
 beforeEach(() => {
   vi.stubGlobal("EventSource", FakeSource);
@@ -64,7 +64,7 @@ describe("New chat", () => {
   it("opens an empty conversation and writes no chat row until the first message is sent", async () => {
     await mount([chat("c1", { title: "Old talk" })]);
     api.getMessages.mockResolvedValue(page(["hello", "hi there"]));
-    fireEvent.click(screen.getByRole("button", { name: "Old talk" }));
+    fireEvent.click(screen.getByRole("link", { name: "Old talk" }));
     await screen.findByText("hi there");
 
     api.createChat.mockResolvedValue(ok(chat("c2")));
@@ -80,7 +80,7 @@ describe("New chat", () => {
 
     fireEvent.change(document.getElementById("composer-input")!, { target: { value: "first" } });
     fireEvent.submit(document.querySelector("form.composer")!);
-    await waitFor(() => expect(sidebarItems()).toEqual(["true", "-"]));
+    await waitFor(() => expect(sidebarItems()).toEqual(["page", "-"]));
     expect(api.createChat).toHaveBeenCalledTimes(1);
   });
 
@@ -125,7 +125,7 @@ describe("New chat", () => {
     api.createChat.mockResolvedValue(ok(chat("c2")));
     api.sendMessage.mockResolvedValue(ok({ runId: "r9", status: "PENDING" }));
     fireEvent.submit(document.querySelector("form.composer")!);
-    await waitFor(() => expect(sidebarItems()).toEqual(["true", "-"]));
+    await waitFor(() => expect(sidebarItems()).toEqual(["page", "-"]));
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -142,7 +142,7 @@ describe("New chat", () => {
     expect(api.cancelRun).not.toHaveBeenCalled();
     expect(FakeSource.all.length).toBe(1); // nothing re-sent, nothing duplicated
 
-    fireEvent.click(screen.getByRole("button", { name: "Busy" }));
+    fireEvent.click(screen.getByRole("link", { name: "Busy" }));
     await waitFor(() => expect(FakeSource.all.length).toBe(2));
     expect(FakeSource.all[1].url).toContain("r1");
   });

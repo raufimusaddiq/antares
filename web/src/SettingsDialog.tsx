@@ -7,7 +7,7 @@ import { UsageDashboard } from "./UsageDashboard";
 
 export type SettingsTab = "general" | "memory" | "usage" | "jobs" | "diagnostics";
 
-const TABS: { id: SettingsTab; label: string }[] = [
+export const SETTINGS_TABS: { id: SettingsTab; label: string }[] = [
   { id: "general", label: "General" },
   { id: "memory", label: "Memory & skills" },
   { id: "usage", label: "Usage" },
@@ -20,10 +20,11 @@ const TABS: { id: SettingsTab; label: string }[] = [
  * section is mounted, so each one loads when it is shown. Escape or the close button closes it; the caller puts focus
  * back where it was.
  */
-export function SettingsDialog(props: { tab: SettingsTab; jobs: boolean; onClose: () => void; onSignOutEverywhere: () => void; signOutError?: string }) {
+export function SettingsDialog(props: { tab: SettingsTab; jobs: boolean; onClose: () => void; onSignOutEverywhere: () => void; signOutError?: string; onTab?: (tab: SettingsTab) => void }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [tab, setTab] = useState<SettingsTab>(props.tab);
-  const tabs = TABS.filter((t) => t.id !== "jobs" || props.jobs);
+  const tabs = SETTINGS_TABS.filter((t) => t.id !== "jobs" || props.jobs);
+  useEffect(() => setTab(props.tab), [props.tab]); // the section is the address's: a step through it follows
   useEffect(() => {
     const d = ref.current;
     if (!d || d.open) return;
@@ -39,7 +40,7 @@ export function SettingsDialog(props: { tab: SettingsTab; jobs: boolean; onClose
       <div className="settings-body">
         <nav aria-label="Settings sections">
           {tabs.map((t) => (
-            <button key={t.id} type="button" aria-current={tab === t.id ? "page" : undefined} onClick={() => setTab(t.id)}>
+            <button key={t.id} type="button" aria-current={tab === t.id ? "page" : undefined} onClick={() => { setTab(t.id); props.onTab?.(t.id); }}>
               {t.label}
             </button>
           ))}

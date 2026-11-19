@@ -46,6 +46,9 @@ export function applyAppearance(a: Appearance, root: HTMLElement = document.docu
   const set = (name: string, value: string | null) => (value === null ? root.removeAttribute(name) : root.setAttribute(name, value));
   set("data-theme", a.theme === "system" ? null : a.theme);
   set("data-openui-theme", a.theme === "system" ? null : a.theme); // OpenUI blocks follow the same choice
+  // Native controls (checkbox, textarea, select) follow the chosen theme, not the OS: a light theme on a dark OS
+  // otherwise draws them dark. "system" keeps the OS pair.
+  root.style.setProperty("color-scheme", a.theme === "system" ? "light dark" : a.theme);
   set("data-text", a.text === "normal" ? null : a.text);
   set("data-focus", a.focus ? "" : null);
   set("data-sidebar", a.sidebar === "normal" ? null : a.sidebar);

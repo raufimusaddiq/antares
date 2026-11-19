@@ -94,7 +94,7 @@ describe("phone layout toggles", () => {
     api.listChats.mockResolvedValue(ok({ chats: [{ id: "c1", title: "Talk", createdAt: "", updatedAt: "", activeRunId: "" }], nextCursor: "" }));
     api.getUsage.mockResolvedValue(ok(usage));
     await mount();
-    fireEvent.click(await screen.findByRole("button", { name: "Talk" }));
+    fireEvent.click(await screen.findByRole("link", { name: "Talk" }));
     const drawer = () => document.getElementById("chat-extras");
     await waitFor(() => expect(drawer()?.classList.contains("open")).toBe(true));
     const toggle = screen.getByRole("button", { name: /^Options/ });

@@ -145,9 +145,15 @@ Blog: where the frames and the code still differ (kept honest; each is a gap to 
 - Wide-screen rows: the number badge is smaller and a row's actions button now sits over the row's end, shown on hover
   or keyboard focus, so the title gets the whole row; its full text is also the row's tooltip.
 
-## Known gaps
+## Addresses and titles (built, and tested)
 
-Only states the mock backend could show were captured (no live Hermes). Text is placed per rendered line, so
+A chat has its own address (`/chat/<id>`), so it can be bookmarked, reloaded into, opened in a new tab and reached with
+Back/Forward; a new chat is `/`. Each conversation row is a real link (middle-click or ctrl-click opens a new tab) and
+looks exactly as drawn. Settings is a place in the address too (`?settings=<section>`), so a section can be linked, and
+closing it returns to the chat's address. The tab names the view: `<chat title> · Antares`, `New chat · Antares`, and one
+title per blog and admin screen. No frame changes: the look is the same.
+
+Known gaps: only states the mock backend could show were captured (no live Hermes). Text is placed per rendered line, so
 it does not reflow when edited. Not yet drawn: most Notifications and Jobs states, Memory and Skills states, model
 picker states, delete-failed and pinned rows, dictation consent, the recorder, share-link variants, the keyboard-open
 phone layout, and keyboard shortcuts.
