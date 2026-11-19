@@ -46,7 +46,7 @@ var (
 	reOGURL    = regexp.MustCompile(`(<meta property="og:url" content=")[^"]*(")`)
 	reCanon    = regexp.MustCompile(`(<link rel="canonical" href=")([^"]*)(")`)
 	reOGImage  = regexp.MustCompile(`(<meta (?:property="og:image"|name="twitter:image") content=")[^"]*(")`)
-	reOGType   = regexp.MustCompile(`(<meta property="og:type" content=")[^"]*(")`)
+	reOGType   = regexp.MustCompile(`(<meta property="og:type" content=")[^"]*("\s*/?>)`)
 	reLang     = regexp.MustCompile(`<html lang="[^"]*"`)
 	reSlugPath = regexp.MustCompile(`^/b/([a-z0-9-]{3,80})$`)
 )
@@ -125,10 +125,15 @@ func withMeta(shell []byte, path string, m PageMeta) []byte {
 	out = setAttr(reOGTitle, out, title)
 	out = setAttr(reOGDesc, out, desc)
 	if m.PublishedAt != "" { // a post is an article, with its publication time and author; the index is a website
-		out = setAttr(reOGType, out, "article")
 		extra := `<meta property="article:published_time" content="` + esc(m.PublishedAt) + `" />` + "\n    " +
 			`<meta property="article:author" content="` + esc(m.Author) + `" />`
-		out = bytes.Replace(out, []byte(`<meta property="og:type" content="article" />`), []byte(`<meta property="og:type" content="article" />`+"\n    "+extra), 1)
+		// The tags follow the og:type match itself, not a fixed byte string: a rebuilt shell may reformat that tag, and
+		// they must land on whatever it looks like.
+		out = reOGType.ReplaceAllFunc(out, func(tag []byte) []byte {
+			g := reOGType.FindSubmatch(tag)
+			article := append(append(append([]byte{}, g[1]...), "article"...), g[2]...)
+			return append(article, "\n    "+extra...)
+		})
 	}
 	if c := reCanon.FindSubmatch(out); c != nil {
 		origin := strings.TrimRight(string(c[2]), "/")

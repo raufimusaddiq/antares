@@ -151,7 +151,11 @@ func (s *Service) PublicList(ctx context.Context, page, limit int, q string) ([]
 		if err := rows.Scan(&x.Slug, &x.Title, &x.Summary, &doc, &cover, &name, &x.PublishedAt); err != nil {
 			return nil, err
 		}
-		x.Summary, x.CoverURL, x.AuthorName = excerpt(x.Summary, doc), publicAssetURL(x.Slug, cover), authorName(name)
+		body := ""
+		if strings.TrimSpace(x.Summary) == "" {
+			body = docText(doc)
+		}
+		x.Summary, x.CoverURL, x.AuthorName = excerpt(x.Summary, body), publicAssetURL(x.Slug, cover), authorName(name)
 		out = append(out, x)
 	}
 	return out, rows.Err()
@@ -220,22 +224,22 @@ func (s *Service) Meta(ctx context.Context, slug string) (PageMeta, error) {
 	if err != nil {
 		return PageMeta{}, err
 	}
-	m.Description = excerpt(m.Description, doc)
-	m.Lang = detectLang(m.Title + " " + m.Description + " " + docText(doc))
+	body := docText(doc) // read once: the excerpt fallback and the language guess both use it
+	m.Description = excerpt(m.Description, body)
+	m.Lang = detectLang(m.Title + " " + m.Description + " " + body)
 	m.Image, m.Author = publicAssetURL(slug, cover), authorName(name)
 	return m, nil
 }
 
-// excerpt is what a card and a link preview show: the author's summary, or the first words of the post when there is
-// none, cut to about three lines so a card is never a title over empty space.
-func excerpt(summary, doc string) string {
-	text := strings.TrimSpace(summary)
-	if text == "" {
-		text = docText(doc)
+// excerpt is what a card and a link preview show: the author's summary as written, or, when there is none, the first
+// words of the post (body, as docText reads it), cut to about three lines so a card is never a title over empty space.
+func excerpt(summary, body string) string {
+	if text := strings.TrimSpace(summary); text != "" {
+		return text // the author's own words are never cut: the settings field already bounds them
 	}
-	r := []rune(text)
+	r := []rune(body)
 	if len(r) <= 120 {
-		return text
+		return strings.TrimSpace(body)
 	}
 	cut := 120
 	for cut > 0 && r[cut] != ' ' {

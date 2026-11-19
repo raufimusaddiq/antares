@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/raufimusaddiq/antares/internal/webui"
 )
 
 // A shell as the build ships it: noindex, the app's own title and description, its canonical address and card tags.
@@ -31,8 +34,12 @@ const testShell = `<!doctype html><html lang="en"><head>
   </head><body><div id="root"></div></body></html>`
 
 func blogServer(t *testing.T, m PostMeta, limit Limit) http.Handler {
+	return blogServerShell(t, testShell, m, limit)
+}
+
+func blogServerShell(t *testing.T, shell string, m PostMeta, limit Limit) http.Handler {
 	t.Helper()
-	assets := fstest.MapFS{"index.html": {Data: []byte(testShell)}}
+	assets := fstest.MapFS{"index.html": {Data: []byte(shell)}}
 	return New(func(context.Context) error { return nil }, t.TempDir()).WithAssets(assets).WithBlog(m, limit).Routes()
 }
 
@@ -117,6 +124,50 @@ func TestAPostsOwnWordsAreWrittenInAsTextAndNothingElse(t *testing.T) {
 	}
 	if has(b, "og.png") {
 		t.Errorf("the app's own card image stayed when the post has a cover")
+	}
+}
+
+// The article tags follow the og:type match, not the tag's exact bytes: a reformatted tag (no slash, extra spacing)
+// still gets them, where a fixed-string replace silently drops them.
+func TestTheArticleTagsFollowTheOGTypeTagNotItsExactBytes(t *testing.T) {
+	byFormat := map[string]string{
+		"no self-closing slash": `<meta property="og:type" content="website">`,
+		"extra spacing":         `<meta property="og:type" content="website"    />`,
+	}
+	for name, tag := range byFormat {
+		shell := strings.Replace(testShell, `<meta property="og:type" content="website" />`, tag, 1)
+		h := blogServerShell(t, shell, func(context.Context, string) (PageMeta, error) {
+			return PageMeta{Title: "T", PublishedAt: "2026-11-08T01:00:00Z", Author: "Maya R."}, nil
+		}, nil)
+		b := page(h, http.MethodGet, "/b/some-post").Body.String()
+		for _, want := range []string{
+			`<meta property="og:type" content="article"`,
+			`<meta property="article:published_time" content="2026-11-08T01:00:00Z" />`,
+			`<meta property="article:author" content="Maya R." />`,
+		} {
+			if !has(b, want) {
+				t.Errorf("%s: lacks %s:\n%s", name, want, b)
+			}
+		}
+	}
+}
+
+// The article tags hang on the shell the build actually ships, not on the hand-written copy above: if a bundle rebuild
+// reformats the og:type tag so the match stops finding it, this fails here rather than silently in production.
+func TestTheRealBundleGetsTheArticleTags(t *testing.T) {
+	shell, err := fs.ReadFile(webui.FS(), "index.html")
+	if err != nil {
+		t.Fatalf("the embedded shell: %v", err)
+	}
+	b := string(withMeta(shell, "/b/real-post", PageMeta{Title: "T", Lang: "id", PublishedAt: "2026-11-08T01:00:00Z", Author: "Maya R."}))
+	for _, want := range []string{
+		`<meta property="og:type" content="article"`,
+		`<meta property="article:published_time" content="2026-11-08T01:00:00Z" />`,
+		`<meta property="article:author" content="Maya R." />`,
+	} {
+		if !has(b, want) {
+			t.Errorf("the embedded shell lacks %s:\n%s", want, b)
+		}
 	}
 }
 

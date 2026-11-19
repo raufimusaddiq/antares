@@ -62,6 +62,60 @@ func TestAPostWithoutASummaryStillHasACardExcerpt(t *testing.T) {
 	}
 }
 
+// A summary is the author's own text: previews and cards show it whole, however long it is.
+func TestAnAuthorsSummaryIsNeverCut(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	summary := strings.TrimSpace(strings.Repeat("A sentence the author wrote. ", 8)) // well past the 120-rune body cut
+	u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": 1, "title": "Summarised", "doc": body("The body is not what a reader is shown.")})
+	u.do("PATCH", "/api/blog/posts/"+p.ID+"/settings", map[string]any{"slug": "summarised", "summary": summary})
+	u.do("POST", "/api/blog/posts/"+p.ID+"/publish", map[string]any{"mode": "original"})
+
+	h := a.anon("GET", "/b/summarised").Body.String()
+	for _, key := range []string{"description", "og:description", "twitter:description"} {
+		if got := metaOf(h, key); got != summary {
+			t.Errorf("%s = %q, want the summary whole", key, got)
+		}
+	}
+	var l []PublicSummary
+	if err := json.Unmarshal(a.anon("GET", "/api/public/blog/posts").Body.Bytes(), &l); err != nil || len(l) != 1 {
+		t.Fatalf("list: %v %+v", err, l)
+	}
+	if l[0].Summary != summary {
+		t.Errorf("card summary = %q, want the summary whole", l[0].Summary)
+	}
+}
+
+// The body fallback is the one that is cut: a long post becomes about three lines and says so with an ellipsis.
+func TestALongBodyIsCutToAboutThreeLines(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": 1, "title": "Long", "doc": body(strings.Repeat("word ", 40))})
+	u.do("PATCH", "/api/blog/posts/"+p.ID+"/settings", map[string]any{"slug": "long", "summary": ""})
+	u.do("POST", "/api/blog/posts/"+p.ID+"/publish", map[string]any{"mode": "original"})
+
+	d := metaOf(a.anon("GET", "/b/long").Body.String(), "description")
+	if n := len([]rune(d)); n > 121 || !strings.HasSuffix(d, "…") || !strings.HasPrefix(d, "word word") {
+		t.Errorf("body excerpt = %q (%d runes)", d, n)
+	}
+}
+
+// Words in neither language are still a sensible page: it says English, not nothing.
+func TestAPostInNeitherLanguageSaysEnglish(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": 1, "title": "2026 11 19", "doc": body("1234 5678 90")})
+	u.do("PATCH", "/api/blog/posts/"+p.ID+"/settings", map[string]any{"slug": "numbers", "summary": ""})
+	u.do("POST", "/api/blog/posts/"+p.ID+"/publish", map[string]any{"mode": "original"})
+
+	if h := a.anon("GET", "/b/numbers").Body.String(); !strings.Contains(h, `<html lang="en">`) {
+		t.Errorf("a page with no recognisable words does not default to English:\n%s", h)
+	}
+}
+
 // The page of a published post carries its own title, description, address and cover for search engines and link previews;
 // the page of anything a reader may not see carries none of it.
 func TestAPublishedPostsPageCarriesItsOwnOpenGraphAndCanonical(t *testing.T) {
