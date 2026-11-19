@@ -235,7 +235,7 @@ describe("overlapping sends in different chats", () => {
     return { srv, answers };
   };
   const admitted = ok({ runId: "r1", status: "PENDING" });
-  const refused = { ok: false, code: "UPSTREAM_UNAVAILABLE" };
+  const refused = { ok: false, code: "UPSTREAM_UNAVAILABLE", status: 400 };
 
   for (const order of [["c1", "c2"], ["c2", "c1"]]) {
     it(`A admitted, B refused, answers in order ${order.join(" then ")}: A's draft is cleared, B's is kept and both holds end`, async () => {

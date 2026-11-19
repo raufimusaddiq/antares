@@ -1152,11 +1152,14 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
         // Every outcome ends the hold: admitted deletes the server draft (and the reader's other devices lose it);
         // refused keeps it and resumes syncing whatever is typed next.
         hold.release(r.ok);
-        if (!r.ok && created && images.length === 0) {
+        // Only a definite refusal (a 4xx) rolls back. A network failure, timeout, unreadable 2xx or 5xx may still have
+        // started a run on the server, so those keep the row and 'Send again' with the same key.
+        if (!r.ok && created && images.length === 0 && r.status >= 400 && r.status < 500) {
           // A first message the server refused leaves no chat behind: the row it created is removed (here and on the
           // server), the screen goes back to the empty new chat, and the text returns to the box to be sent again.
-          void deleteChat(chat);
-          setChats((l) => l.filter((x) => x.id !== chat));
+          // If the delete fails the row stays listed, so the list matches the server.
+          const d = await deleteChat(chat);
+          if (d.ok) setChats((l) => l.filter((x) => x.id !== chat));
           if (currentRef.current === chat) {
             nav.current++;
             detach();

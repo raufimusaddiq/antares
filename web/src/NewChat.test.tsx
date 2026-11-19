@@ -1,7 +1,7 @@
 ﻿// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import type { ChatSummary } from "./chatApi";
+import { describeCode, type ChatSummary } from "./chatApi";
 
 const api = vi.hoisted(() => ({
   listChats: vi.fn(),
@@ -128,7 +128,7 @@ describe("New chat", () => {
     api.sendMessage.mockResolvedValue(ok({ runId: "r9", status: "PENDING" }));
     fireEvent.submit(document.querySelector("form.composer")!);
     await waitFor(() => expect(sidebarItems()).toEqual(["page", "-"]));
-    expect(screen.queryByRole("alert")).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("alert")).toBeNull());
   });
 
   it("mid-run: the run is neither lost nor duplicated, and reopening the chat re-attaches to it", async () => {
@@ -155,19 +155,54 @@ describe("New chat", () => {
     api.deleteChat.mockResolvedValue(ok(true));
     fireEvent.click(newChatButton());
 
-    api.sendMessage.mockResolvedValueOnce({ ok: false, code: "UPSTREAM_UNAVAILABLE" });
+    api.sendMessage.mockResolvedValueOnce({ ok: false, code: "BUDGET_REACHED", status: 429 });
     fireEvent.change(document.getElementById("composer-input")!, { target: { value: "first" } });
     fireEvent.submit(document.querySelector("form.composer")!);
     await waitFor(() => expect(api.deleteChat).toHaveBeenCalledWith("c2"));
     await waitFor(() => expect(sidebarItems()).toEqual(["-"]));
     expect(screen.getByText("Start a conversation below.")).toBeTruthy();
     expect((document.getElementById("composer-input") as HTMLTextAreaElement).value).toBe("first");
+    expect(screen.getByRole("alert").textContent).toBe(describeCode("BUDGET_REACHED"));
 
     // and it can be sent again
     api.createChat.mockResolvedValue(ok(chat("c3")));
     api.sendMessage.mockResolvedValue(ok({ runId: "r9", status: "PENDING" }));
     fireEvent.submit(document.querySelector("form.composer")!);
     await waitFor(() => expect(sidebarItems()).toEqual(["page", "-"]));
+  });
+
+  it("a failed rollback delete keeps the row listed", async () => {
+    await mount([]);
+    api.createChat.mockResolvedValue(ok(chat("c2")));
+    api.deleteChat.mockResolvedValue({ ok: false, code: "NETWORK", status: 0 });
+    fireEvent.click(newChatButton());
+    api.sendMessage.mockResolvedValueOnce({ ok: false, code: "HERMES_UNAVAILABLE", status: 400 });
+    fireEvent.change(document.getElementById("composer-input")!, { target: { value: "first" } });
+    fireEvent.submit(document.querySelector("form.composer")!);
+    await waitFor(() => expect(api.deleteChat).toHaveBeenCalledWith("c2"));
+    await waitFor(() => expect(sidebarItems()).toEqual(["-"]));
+  });
+
+  it.each([
+    ["NETWORK", 0],
+    ["HERMES_UNAVAILABLE", 200],
+    ["HERMES_UNAVAILABLE", 503],
+  ])("an unsure first send (%s, status %i) keeps the row and sends again with the same key", async (code, status) => {
+    await mount([]);
+    api.createChat.mockResolvedValue(ok(chat("c2")));
+    fireEvent.click(newChatButton());
+    api.sendMessage.mockResolvedValueOnce({ ok: false, code, status });
+    fireEvent.change(document.getElementById("composer-input")!, { target: { value: "first" } });
+    fireEvent.submit(document.querySelector("form.composer")!);
+    await screen.findByText("Send again");
+    expect(api.deleteChat).not.toHaveBeenCalled();
+    expect(sidebarItems()).toEqual(["page"]);
+    const key = api.sendMessage.mock.calls[0][2];
+    api.sendMessage.mockResolvedValue(ok({ runId: "r9", status: "PENDING" }));
+    fireEvent.click(screen.getByText("Send again"));
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(2));
+    expect(api.sendMessage.mock.calls[1][2]).toBe(key);
+    expect(api.createChat).toHaveBeenCalledTimes(1);
   });
 
   it("offers the saved templates as starters on the new-chat screen", async () => {
