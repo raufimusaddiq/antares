@@ -131,7 +131,8 @@ func TestRunThatNeverFinishesFailsWithinTheBound(t *testing.T) {
 	cfg.RunTimeout = 1500e6 // 1.5s
 	rep := s.run(cfg)
 	d := wantStatus(t, rep, "chat.a.reply", Fail).Detail
-	if !strings.Contains(d, "no terminal phase within") {
+	// the row is read on its own clock: a stream that used the whole bound must not leave it reported as empty
+	if !strings.Contains(d, "no terminal phase within") || !strings.Contains(d, "run row is RUNNING") {
 		t.Fatalf("detail = %q", d)
 	}
 }

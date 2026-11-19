@@ -785,6 +785,7 @@ func (s *Service) driveRun(ctx context.Context, id, author, input string, draft 
 	}
 	res, err := ParseEnvelopeParts([]byte(output), draft, s.now())
 	if err != nil {
+		log.Printf("blog: check %s: unusable reply (%d bytes, run state %s): %v", id, len(output), terminal.State, err)
 		return failed("unusable")
 	}
 	return outcome{state: "ready", result: &res}

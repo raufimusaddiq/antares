@@ -11,6 +11,7 @@ import (
 	"log"
 	"slices"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/raufimusaddiq/antares/internal/hermes"
@@ -24,6 +25,9 @@ const (
 	maxActiveRunsPerUser = 4
 	reattachTries        = 3
 	reconcileTimeout     = 20 * time.Second
+	// defaultRunStall is how long a run may go without one real event from Hermes (a delta, a tool start or end, a prompt)
+	// before it ends TIMED_OUT. Keep-alive comments do not count: Hermes can keep a stream alive for a tool that never returns.
+	defaultRunStall = 10 * time.Minute
 )
 
 // Options configures Service. All fields except Now and Backoff are required.
@@ -38,6 +42,8 @@ type Options struct {
 	// Heartbeat is the SSE keep-alive interval, which is also how often an open
 	// stream re-checks that the account is still eligible. Default 15s.
 	Heartbeat time.Duration
+	// RunStall bounds the silence of a running chat run (defaultRunStall when zero).
+	RunStall time.Duration
 	// Kenari is the model catalogue image input is checked against. Nil means image input is
 	// reported unavailable (CATALOGUE_NOT_CONFIGURED), never assumed.
 	Kenari *kenari.Catalogue
@@ -90,6 +96,7 @@ type Service struct {
 	now       func() time.Time
 	backoff   func(int) time.Duration
 	heartbeat time.Duration
+	stall     time.Duration
 	notifier  Notifier
 	kenari    *kenari.Catalogue
 
@@ -136,11 +143,14 @@ func New(o Options) (*Service, error) {
 	if o.Backoff == nil {
 		o.Backoff = func(n int) time.Duration { return time.Duration(1<<n) * time.Second }
 	}
+	if o.RunStall <= 0 {
+		o.RunStall = defaultRunStall
+	}
 	if o.Heartbeat <= 0 {
 		o.Heartbeat = 15 * time.Second
 	}
 	ctx, cancel := context.WithCancel(context.Background())
-	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs, media: o.Media, titler: o.Titler, summarizer: o.Summarizer, skills: o.Skills, memory: o.Memory,
+	s := &Service{db: o.DB, box: o.Box, hx: o.Hermes, now: o.Now, backoff: o.Backoff, heartbeat: o.Heartbeat, stall: o.RunStall, notifier: o.Notifier, kenari: o.Kenari, jobs: o.Jobs, media: o.Media, titler: o.Titler, summarizer: o.Summarizer, skills: o.Skills, memory: o.Memory,
 		base: ctx, stop: cancel, live: map[string]*liveRun{}}
 	s.wg.Add(1)
 	go s.jobShutdownLoop()
@@ -323,7 +333,13 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 	failClosed := false
 	hold := "" // the tail of the reply that may be an unfinished MEDIA: tag (streamMedia)
 	for attempt := 0; ; attempt++ {
-		err := s.hx.StreamEvents(ctx, b, hid, func(ev hermes.Event) error {
+		// A stream can stay open (keep-alives) while a tool never returns; the run then ends TIMED_OUT rather than hanging.
+		sctx, scancel := context.WithCancel(ctx)
+		var stalled atomic.Bool
+		quiet := time.AfterFunc(s.stall, func() { stalled.Store(true); scancel() })
+		err := s.hx.StreamEvents(sctx, b, hid, func(ev hermes.Event) error {
+			quiet.Stop() // a prompt waits for a person: only Hermes' silence counts
+			defer quiet.Reset(s.stall)
 			n := hermes.Normalize(ev)
 			switch n.Kind {
 			case hermes.KindDelta:
@@ -360,9 +376,16 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 			}
 			return nil
 		})
+		quiet.Stop()
+		scancel()
 		switch {
 		case ctx.Err() != nil || l.wasCancelled():
 			return // the cancel path owns the outcome
+		case stalled.Load() && terminal == nil && !failClosed:
+			log.Printf("chat: run %s: no event from Hermes for %s, ending it", runID, s.stall)
+			s.stopUpstream(userID, hid)
+			s.finish(l, store.RunTimedOut, hermes.CodeUpstreamTimeout, "")
+			return
 		case failClosed:
 			// Hermes is waiting for a decision Antares cannot collect (no request id to answer,
 			// a route Hermes does not advertise, nothing the user may safely choose). Nothing is
