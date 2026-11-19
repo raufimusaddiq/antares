@@ -67,15 +67,22 @@ func (s *Service) discover(ctx context.Context, b hermes.Binding) (hermes.Invent
 	return cloneInv(inv), nil
 }
 
-// cloneInv copies the slices a caller may edit. Empty slices stay non-nil: the browser's parser and the
-// golden fixture both expect [] rather than null.
+// cloneInv copies every slice a caller may edit, nested ones included. Empty slices stay non-nil: the
+// browser's parser and the golden fixture both expect [] rather than null.
 func cloneInv(inv hermes.Inventory) hermes.Inventory {
-	return hermes.Inventory{
+	out := hermes.Inventory{
 		Capabilities: append([]hermes.Capability{}, inv.Capabilities...),
 		Toolsets:     append([]hermes.Toolset{}, inv.Toolsets...),
 		Providers:    append([]hermes.Provider{}, inv.Providers...),
 		Skills:       append([]hermes.Skill{}, inv.Skills...),
 	}
+	for i := range out.Toolsets {
+		out.Toolsets[i].Tools = append([]string{}, inv.Toolsets[i].Tools...)
+	}
+	for i := range out.Providers {
+		out.Providers[i].Models = append([]string{}, inv.Providers[i].Models...)
+	}
+	return out
 }
 
 // fillSkills covers Hermes v0.22.5's skills route, which fails on every call: when Hermes did not report the skills,

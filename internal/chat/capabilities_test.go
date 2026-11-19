@@ -1,6 +1,7 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"reflect"
@@ -178,6 +179,41 @@ func TestCapabilitiesRepeatCallIsServedFromTheCache(t *testing.T) {
 	}
 	if first.Body.String() != second.Body.String() {
 		t.Error("the cached answer differs from the first")
+	}
+}
+
+// The cached inventory is not shared with callers: an edit to the returned copy, nested slices
+// included, must not reach the next answer.
+func TestCapabilitiesCachedInventoryIsNotSharedWithCallers(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	serveDiscovery(a, readFixture(t, "../../docs/hermes/fixtures/capabilities.body.json"))
+	b := hermes.Binding{Profile: alice.profile, Key: alice.key}
+
+	first, err := a.svc.discover(context.Background(), b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Capabilities) == 0 || len(first.Toolsets) == 0 || len(first.Toolsets[0].Tools) == 0 || len(first.Providers) == 0 || len(first.Providers[0].Models) == 0 {
+		t.Fatalf("fixture has nothing nested to mutate: %+v", first)
+	}
+	wantCap, wantName := first.Capabilities[0].Status, first.Toolsets[0].Name
+	wantTool, wantModel := first.Toolsets[0].Tools[0], first.Providers[0].Models[0]
+	first.Capabilities[0].Status = hermes.StatusUnsupported
+	first.Toolsets[0].Name = "edited"
+	first.Toolsets[0].Tools[0] = "edited"
+	first.Providers[0].Models[0] = "edited"
+
+	n := len(a.hx.requests())
+	second, err := a.svc.discover(context.Background(), b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(a.hx.requests()); got != n {
+		t.Fatal("a second discovery ran; want the cached answer")
+	}
+	if second.Capabilities[0].Status != wantCap || second.Toolsets[0].Name != wantName || second.Toolsets[0].Tools[0] != wantTool || second.Providers[0].Models[0] != wantModel {
+		t.Errorf("a caller's edits reached the cache: %+v", second)
 	}
 }
 
