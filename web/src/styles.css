@@ -773,7 +773,7 @@ textarea:where(:not(.openui-root *)) { font-family: var(--font-ui); color: var(-
   .bar-actions .notify-panel { position: static; width: auto; }
   /* Strip: New chat, Search and the conversation chips on one scrolling line; an open search takes the strip. */
   .side { display: flex; align-items: center; gap: 0.4rem; overflow: hidden; padding: 0 0.25rem 0.35rem; border-bottom: 1px solid var(--hair); }
-  .chat-app:not(.blog-app) > button.rail-blog { display: none; } /* a phone reaches the chat's blog from the Menu, where the strip has no room for it */
+  .side > .rail-blogs { display: none; } /* a phone reaches the blog from the Menu, where the strip has no room for it */
   .side > span.rail-item { width: auto; min-height: 2.75rem; padding: 0 0.6rem; }
   .side > button, .side button.item, .search-toggle { flex: none; width: auto; min-height: 2.75rem; margin: 0; padding: 0 0.6rem; border: 6px solid transparent; background-clip: padding-box; border-radius: var(--r-pill); }
   .side > button { background-color: var(--cobalt); color: var(--cobalt-ink); box-shadow: inset 0 0 0 2px var(--ink); }
@@ -1376,6 +1376,12 @@ button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(
 .blog-share-preview-row img { flex: none; width: 9rem; aspect-ratio: 9 / 16; height: auto; border: 2px solid var(--ink); border-radius: var(--r-sm); background: var(--canvas); }
 .blog-share-preview-row p { margin: 0; }
 .blog-share-manual input { width: 100%; box-sizing: border-box; font-family: var(--font-mono); font-size: 0.8125rem; }
+
+/* The chat rail: the book-icon button sits beside "Blog posts" and adds no row, so the history keeps its place. */
+.rail-blogs { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+.side > .rail-blogs > button.rail-blog { flex: 1; margin-top: 0; min-width: 0; background: var(--card); color: var(--ink); box-shadow: none; }
+.side > .rail-blogs > button.rail-read { flex: none; width: 2.75rem; min-width: 2.75rem; padding: 0; justify-content: center; background: var(--card); box-shadow: none; }
+.side > .rail-blogs > button.rail-read::before { margin: 0; }
 .blog-row-text { display: flex; flex-direction: column; align-items: flex-start; gap: 0.15rem; flex: 1 1 14rem; min-width: 0; }
 .blog-bar-note { margin: 0.25rem 0 0; }
 .blog-limits { margin: 1rem 0; padding: 0.75rem 1rem; background: var(--card); border: 2px solid var(--ink); border-radius: var(--r-md); box-shadow: var(--hard-sm); }

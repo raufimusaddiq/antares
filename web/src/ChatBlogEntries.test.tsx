@@ -22,10 +22,6 @@ const mount = async (props: { onBlog?: () => void; onReadBlog?: () => void }) =>
   await waitFor(() => expect(screen.queryByText("Loading…")).toBeNull());
 };
 const rail = () => document.querySelector("nav.side") as HTMLElement;
-const menu = () => {
-  fireEvent.click(screen.getByRole("button", { name: "Menu" }));
-  return document.getElementById("bar-actions") as HTMLElement;
-};
 
 beforeEach(() => {
   vi.stubGlobal("EventSource", FakeSource);
@@ -38,28 +34,33 @@ afterEach(() => {
   Object.values(api).forEach((m) => m.mockReset());
 });
 
-// Spec 003 FR-003: every approved user reaches the public blog from the rail and the menu. T-7 keeps "Blog posts" in
-// one place (the menu) and leaves the rail's "Read the blog" as the only rail entry.
+// Spec 003 FR-003: every approved user can reach the public blog from the chat, in the menu and in the rail, apart from their own workspace.
 describe("Read the blog in the chat", () => {
-  it("a writer has Read the blog in the rail and in the Menu, apart from Blog posts", async () => {
+  it("a writer has Blog posts and Read the blog as two different controls, in the rail and in the menu", async () => {
     const own = vi.fn();
     const read = vi.fn();
     await mount({ onBlog: own, onReadBlog: read });
-    const pill = within(rail()).getByRole("button", { name: "Read the blog" });
-    expect(within(rail()).queryByRole("button", { name: "Blog posts" })).toBeNull(); // once, in the Menu
-    fireEvent.click(pill);
+    within(rail()).getByRole("button", { name: "Blog posts" });
+    fireEvent.click(within(rail()).getByRole("button", { name: "Read the blog" }));
     expect(read).toHaveBeenCalledTimes(1);
     expect(own).not.toHaveBeenCalled();
-    const panel = menu();
-    expect(within(panel).getByRole("button", { name: "Blog posts" })).toBeTruthy();
-    fireEvent.click(within(panel).getByRole("button", { name: "Read the blog" }));
+    fireEvent.click(screen.getAllByRole("button", { name: "Menu" })[0]);
+    const menu = document.getElementById("bar-actions") as HTMLElement;
+    within(menu).getByRole("button", { name: "Blog posts" });
+    fireEvent.click(within(menu).getByRole("button", { name: "Read the blog" }));
     expect(read).toHaveBeenCalledTimes(2);
   });
 
-  it("a user without writing still gets Read the blog in the rail and the Menu, and no Blog posts", async () => {
+  it("the rail button beside Blog posts adds no row", async () => {
+    await mount({ onBlog: () => {}, onReadBlog: () => {} });
+    const row = within(rail()).getByRole("button", { name: "Blog posts" }).parentElement as HTMLElement;
+    expect(within(row).getAllByRole("button")).toHaveLength(2); // the pill and the icon button share one row
+  });
+
+  it("a user without writing still gets Read the blog, as the one rail button, and no Blog posts", async () => {
     await mount({ onReadBlog: () => {} });
     expect(within(rail()).getAllByRole("button", { name: "Read the blog" })).toHaveLength(1);
-    expect(within(menu()).getByRole("button", { name: "Read the blog" })).toBeTruthy();
+    expect(within(rail()).getByRole("button", { name: "Read the blog" }).textContent).toContain("Read the blog");
     expect(screen.queryByRole("button", { name: "Blog posts" })).toBeNull();
   });
 

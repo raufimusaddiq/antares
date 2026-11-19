@@ -38,8 +38,8 @@ Spec and plan: `specs/001-blog-cms-openui-publish/`. Two pages and one Admin fra
   and phone; also the frame for suspended and revoked), all four on the faint dot grid; the public List signed in ("Back to Antares",
   search box, "Yours" label, "Show more"), List with a search typed (count and a "Clear" button), List with no results, List error (signed out),
   List "Show more" loading, Post signed in ("Back to Antares", "More posts" button) and Phone List and Post; Chat menu and rail
-  (a "Read the blog" pill in the rail and a "Read the blog" row in the account menu, with "Blog posts" in the menu), the same for a user
-  without writing (no "Blog posts"), and the Phone account menu for both
+  (a round book-icon button beside the "Blog posts" pill, and a "Read the blog" row in the account menu), the same for a user
+  without writing (a full "Read the blog" pill in the rail, no "Blog posts"), and the Phone account menu for both
   kinds of user. All entries are buttons or rows, not text links: the secondary pill (white, ink border, hard shadow)
   for "More posts" and "Show more" (and "Back to Antares"), the cobalt filled pill for "Read the blog" on sign-in and status screens, the quiet pill for "Sign out" and "Clear".
 - **Admin / Suspended user (posts hidden)** on the Admin page: states that posts are hidden and no content is shown.
@@ -49,10 +49,9 @@ to delete confirm, Editor to Settings and Publish, Publish choose to checking (a
 published, every failure to retry / publish original / back to editing, published to the post and My posts, and the
 Phone equivalents.
 
-How the blog joins the existing flow: the "Blog posts" button opens My posts from the Account menu of every desktop chat (search and list sit below "New chat" in the rail); the rail keeps the "Read the blog" pill, one click from the conversations. The
-Account menu on Chat ("Account menu" and "Account menu (admin)") has a new
-"Blog posts" row that opens My posts; My posts is the chat's shell (the rail, the strip and the header), with
-"Chats" going back to the conversation and "Read the blog" to the public list; the
+How the blog joins the existing flow: a "Blog posts" button directly under "New chat" in the rail of every desktop
+chat, settings and admin-account frame opens My posts (search and list sit below it); the Account menu on Chat ("Account menu" and "Account menu (admin)") has a new
+"Blog posts" row that opens My posts; the rail's "Chats" item on every My posts frame goes back to Conversation; the
 public "Sign in with Google" button opens the existing Login frame; Published "View post" opens the public post.
 
 Sources: Antares never verifies a source. The assistant names sources, the server stores every one as `verified: false`

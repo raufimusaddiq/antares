@@ -34,7 +34,7 @@ export function BlogShell({
   }, [menuOpen]);
   return (
     <>
-      <div className="chat-app blog-app">
+      <div className="chat-app">
         <header
           className="bar"
           onKeyDown={(e) => {
