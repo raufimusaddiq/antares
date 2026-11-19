@@ -852,15 +852,14 @@ function SectionNote({ s, what }: { s: UsageSection<unknown> | null; what: strin
 }
 
 function UsageTotals({ u }: { u: KenariUsage }) {
-  // A model billed per character, image or second reports 0 tokens with real requests: that is "not metered",
-  // not a measured zero, so it is shown as "—" (AGENTS.md rule 5).
+  // 0 tokens alongside real requests is "not reported", not a measured zero, so it is shown as "—" (AGENTS.md rule 5).
   const tokenCell = (requests: number, tokens: number) => (requests > 0 && tokens === 0 ? "—" : grouped(tokens));
   return (
     <div className="table-wrap">
       <table className="admin-table usage-table">
         <caption className="label">
-          Whole provider account, {day(u.start)} to {day(u.end)} (UTC). — means the provider did not meter tokens for that model
-          (billed per character, image or second).
+          Whole provider account, {day(u.start)} to {day(u.end)} (UTC). — means the provider reported no tokens for that
+          row, not that it used none.
         </caption>
         <thead>
           <tr>
