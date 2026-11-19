@@ -628,21 +628,21 @@ func TestListAuditKeysetPagingSurvivesNewRows(t *testing.T) {
 	put("e4", t0.Add(2*time.Minute))
 	put("e5", t0.Add(3*time.Minute))
 
-	p1, more, err := ListAudit(ctx, db, 2, "", "")
+	p1, more, err := ListAudit(ctx, db, 2, "", "", "")
 	if err != nil || !more || len(p1) != 2 || p1[0].ID != "e5" || p1[1].ID != "e4" {
 		t.Fatalf("page 1 = %+v more=%v %v", p1, more, err)
 	}
 	// A new entry lands after page 1 was read.
 	put("e6", t0.Add(4*time.Minute))
-	p2, more, err := ListAudit(ctx, db, 2, p1[1].CreatedAt, p1[1].ID)
+	p2, more, err := ListAudit(ctx, db, 2, p1[1].CreatedAt, p1[1].ID, "")
 	if err != nil || !more || len(p2) != 2 || p2[0].ID != "e3" || p2[1].ID != "e2" {
 		t.Fatalf("page 2 = %+v more=%v %v (an offset would have repeated e4)", p2, more, err)
 	}
-	p3, more, err := ListAudit(ctx, db, 2, p2[1].CreatedAt, p2[1].ID)
+	p3, more, err := ListAudit(ctx, db, 2, p2[1].CreatedAt, p2[1].ID, "")
 	if err != nil || more || len(p3) != 1 || p3[0].ID != "e1" {
 		t.Fatalf("page 3 = %+v more=%v %v", p3, more, err)
 	}
-	if fresh, _, _ := ListAudit(ctx, db, 2, "", ""); fresh[0].ID != "e6" {
+	if fresh, _, _ := ListAudit(ctx, db, 2, "", "", ""); fresh[0].ID != "e6" {
 		t.Fatalf("a fresh first page must show the new entry, got %+v", fresh)
 	}
 }

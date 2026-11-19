@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
-import { CapabilitiesTable, AdminScreens } from "./Admin";
+import { AssistantTools, CapabilitiesScreen, CapabilitiesTable, AdminScreens } from "./Admin";
 import { getCapabilities, offers, parseInventory } from "./chatApi";
 import { parseAdminPath } from "./route";
 
@@ -60,6 +60,21 @@ describe("capability discovery on the client", () => {
   it("is routed and starts in a labelled loading state", () => {
     expect(parseAdminPath("/admin/capabilities")).toEqual({ kind: "capabilities" });
     expect(renderToStaticMarkup(<AdminScreens route={{ kind: "capabilities" }} onNavigate={() => {}} />)).toContain("Loading");
+  });
+
+  it("the page has one h1 and its sections are h2, so Assistant tools reads as a section", () => {
+    const page = renderToStaticMarkup(<CapabilitiesScreen />);
+    expect(page.match(/<h1/g)).toHaveLength(1);
+    expect(page).toContain(">Capabilities</h1>");
+    expect(renderToStaticMarkup(<CapabilitiesTable inv={parseInventory(body)!} />)).toMatch(/^<section[^>]*><h2/);
+  });
+
+  it("Assistant tools uses the same switch as Models and Writing rules", () => {
+    const policy = { tools: [{ name: "web", label: "Web", description: "", state: "on" as const, reason: "" }], custom: true, reverifying: null };
+    const html = renderToStaticMarkup(<AssistantTools policy={policy} onSave={async () => ({ ok: true as const, value: policy })} />);
+    expect(html).toContain('role="switch"');
+    expect(html).toContain('class="switch"');
+    expect(html).not.toContain('type="checkbox" class="tool-check"');
   });
 });
 

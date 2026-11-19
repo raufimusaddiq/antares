@@ -28,8 +28,12 @@ export interface AdminUser {
 export interface AuditEntry {
   id: string;
   actor: string;
+  actorName: string;
+  actorEmail: string;
   action: string;
   targetId: string;
+  targetName: string;
+  targetEmail: string;
   outcome: string;
   requestId: string;
   createdAt: string;
@@ -86,7 +90,11 @@ export const parseUsers = parseList("users", parseAdminUser);
 export function parseAuditEntry(v: unknown): AuditEntry | null {
   const o = obj(v);
   if (!o || !str(o.id)) return null;
-  return { id: str(o.id), actor: str(o.actor), action: str(o.action), targetId: str(o.targetId), outcome: str(o.outcome), requestId: str(o.requestId), createdAt: str(o.createdAt) };
+  return {
+    id: str(o.id), actor: str(o.actor), actorName: str(o.actorName), actorEmail: str(o.actorEmail), action: str(o.action),
+    targetId: str(o.targetId), targetName: str(o.targetName), targetEmail: str(o.targetEmail), outcome: str(o.outcome),
+    requestId: str(o.requestId), createdAt: str(o.createdAt),
+  };
 }
 
 export interface AuditPage {
@@ -136,10 +144,11 @@ export function listUsers(offset: number, status: string, q: string, signal?: Ab
   return call("GET", `/api/admin/users?${p}`, parseUsers, undefined, signal);
 }
 export const getUser = (id: string, signal?: AbortSignal) => call("GET", `/api/admin/users/${id}`, parseAdminUser, undefined, signal);
-/** Keyset paging: `before` is the previous page's `next`, or empty for the newest entries. */
-export function listAudit(before: string, signal?: AbortSignal) {
+/** Keyset paging: `before` is the previous page's `next`, or empty for the newest entries. `action` is an exact action name. */
+export function listAudit(before: string, action = "", signal?: AbortSignal) {
   const p = new URLSearchParams({ limit: String(AUDIT_PAGE) });
   if (before) p.set("before", before);
+  if (action) p.set("action", action);
   return call("GET", `/api/admin/audit?${p}`, parseAudit, undefined, signal);
 }
 export const decide = (id: string, action: Decision, reason: string) => call("POST", `/api/admin/users/${id}/${action}`, parseAdminUser, reason ? { reason } : {});
