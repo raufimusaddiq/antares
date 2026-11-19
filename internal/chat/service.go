@@ -110,7 +110,9 @@ type Service struct {
 	summarizer    Summarizer
 	skills        SkillSource
 	memory        MemorySource
-	titling       map[string]bool // chats with a title job in flight (title.go); guarded by mu
+	capsMu        sync.Mutex
+	caps          map[string]capsEntry // profile -> last discovered inventory (capabilities.go)
+	titling       map[string]bool      // chats with a title job in flight (title.go); guarded by mu
 	jobs          bool
 	jobLocks      sync.Map // user id -> *sync.Mutex (jobs.go jobLock)
 	jobRetryAfter string   // where the next pending job shutdown retry starts; only the retry loop touches it
