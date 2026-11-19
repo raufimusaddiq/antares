@@ -700,9 +700,9 @@ async function blogPages(browser, which, onlyViews) {
         if (!/Only you can see drafts/.test(shape.note)) editorProblems.push(`the list does not say who can see drafts (${JSON.stringify(shape.note)})`);
         // The rail beside the page (a strip above it on a phone) and a row's "⋯" menu, which opens inside the viewport.
         const rail = await page.evaluate(() => {
-          const r = document.querySelector(".blog-rail")?.getBoundingClientRect();
+          const r = document.querySelector(".side")?.getBoundingClientRect();
           const page = document.querySelector(".blog-list")?.getBoundingClientRect();
-          return { has: !!r && !!page, beside: !!r && !!page && r.right <= page.left + 1, above: !!r && !!page && r.bottom <= page.top + 1, current: document.querySelector('.blog-rail [aria-current="page"]')?.textContent ?? "" };
+          return { has: !!r && !!page, beside: !!r && !!page && r.right <= page.left + 1, above: !!r && !!page && r.bottom <= page.top + 1, current: document.querySelector('.side [aria-current="page"]')?.textContent ?? "" };
         });
         if (!rail.has) editorProblems.push("the list has no rail");
         else if (!(w >= 840 ? rail.beside : rail.above)) editorProblems.push(`the rail is not ${w >= 840 ? "beside" : "above"} the page: ${JSON.stringify(rail)}`);
