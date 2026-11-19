@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { artifactUrl, findArtifacts } from "./artifacts";
+import { artifactUrl, findArtifacts } from "./artifactRefs";
 
 /**
  * Preview and download for the HTML/SVG blocks in one assistant turn. The preview
