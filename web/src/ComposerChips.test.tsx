@@ -24,7 +24,7 @@ afterEach(() => {
 describe("model and usage beside the composer (#164)", () => {
   it("shows the chat's model and effort next to the input, outside the Options drawer, and usage at a glance", async () => {
     render(<Chat email="a@example.test" onSignOut={() => {}} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Talk" }));
+    fireEvent.click(await screen.findByRole("link", { name: "Talk" }));
     const chip = await screen.findByText("Model: m-reason · low effort");
     const row = chip.closest(".composer-chips")!;
     expect(row).toBeTruthy();
@@ -42,7 +42,7 @@ describe("model and usage beside the composer (#164)", () => {
   // and nothing of it sits between the conversation and the input until Options is opened.
   it("keeps the chat's extras in the Options drawer, with usage shown once", async () => {
     render(<Chat email="a@example.test" onSignOut={() => {}} />);
-    fireEvent.click(await screen.findByRole("button", { name: "Talk" }));
+    fireEvent.click(await screen.findByRole("link", { name: "Talk" }));
     await screen.findByRole("button", { name: "1,000 tokens used · context in use unknown" });
     const drawer = document.getElementById("chat-extras")!;
     expect(drawer.classList.contains("open")).toBe(false);
