@@ -46,4 +46,19 @@ describe("the built bundle", () => {
     expect(at, "the library no longer imports rehype-katex dynamically").toBeGreaterThan(-1);
     expect(src.slice(Math.max(0, at - 300), at), "the KaTeX import is not guarded by a math check").toContain("textMarkdown");
   });
+
+  it("fetches the code highlighter only for a reply that holds code", () => {
+    const files = readdirSync(assets);
+    const validate = files.find((f) => f.startsWith("validate-") && f.endsWith(".js"))!;
+    const prism = files.find((f) => f.startsWith("prism-") && f.endsWith(".js"));
+    expect(prism, "no prism chunk: the highlighter is no longer split out").toBeTruthy();
+    expect(staticClosure(validate), "a rich reply without code would fetch the highlighter").not.toContain(prism!);
+    expect(readFileSync(join(assets, validate), "utf8"), "nothing imports the highlighter lazily").toContain(`assets/${prism}`);
+  });
+
+  it("bundles only the icons the app can render, not every lucide icon", () => {
+    const icons = readdirSync(assets).filter((f) => f.endsWith(".js")).length;
+    // ~360 icons are kept (src/openui/iconNames.ts); the full catalogue was ~1700 chunks.
+    expect(icons, "the whole lucide catalogue is bundled again").toBeLessThan(700);
+  });
 });
