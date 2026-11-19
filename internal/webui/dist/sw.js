@@ -1,7 +1,14 @@
+<<<<<<< HEAD
 const CACHE = "antares-public-eb469e0e511df16fd7236d6d718211321fc23c46ec374b2c496916f573582224";
 const PUBLIC = ["/offline.html","/assets/index-B0We3ZAZ.js","/assets/index-DyA_LqM2.css","/assets/offline-ef31f7914e3f8ae2.css","/assets/react-CaKr0epQ.js","/assets/rolldown-runtime-BWaJ3C7D.js"];
 // On-demand chunks (OpenUI Block, Chart): not fetched at install, cached the first time the page asks for them.
 const OPTIONAL = ["/assets/Block-kD4G6L9c.js","/assets/Editor-CIVX74VG.js","/assets/ReaderBlock-DEK6ElZf.js","/assets/_antares-lucide-all-9qiOhSuc.js","/assets/ci-info-Bauk7qhZ.js","/assets/components-BLj1qi0c.css","/assets/lib-D2xlx2X0.js","/assets/lib-Gvp5I0Ke.js","/assets/prism-Cu17Yf1T.js","/assets/rehype-katex-c1Qf0kNQ.js","/assets/shareBlocks-Bvjuo4wu.js","/assets/shareBlocks-CtbWVjQL.js","/assets/validate-DGETRPJ3.js","/assets/with-selector-VzSZIxYk.js"];
+=======
+const CACHE = "antares-public-983d717ab8d86b2d090aeaafb2d308809cfbaa75c48d5ac36e47f7439fe9e712";
+const PUBLIC = ["/offline.html","/assets/index-B9RJwJCX.js","/assets/index-CFHjpYNY.css","/assets/offline-ef31f7914e3f8ae2.css","/assets/react-CaKr0epQ.js","/assets/rolldown-runtime-BWaJ3C7D.js"];
+// On-demand chunks (OpenUI Block, Chart): not fetched at install, cached the first time the page asks for them.
+const OPTIONAL = ["/assets/Block-D0tGIXJA.js","/assets/Editor-uHdzFpPu.js","/assets/ReaderBlock-BuWMK-Oc.js","/assets/_antares-lucide-all-9qiOhSuc.js","/assets/ci-info-Bauk7qhZ.js","/assets/components-BLj1qi0c.css","/assets/lib-Gvp5I0Ke.js","/assets/lib-SXbJCbo2.js","/assets/prism-vXWEexwF.js","/assets/rehype-katex-Dx1EDV9a.js","/assets/shareBlocks-D52LdusE.js","/assets/shareBlocks-DBtZj69T.js","/assets/validate-S5yp_okM.js","/assets/with-selector-VzSZIxYk.js"];
+>>>>>>> origin/main
 const optional = new Set(OPTIONAL.map(path => new URL(path, self.location.origin).href));
 const allowed = new Set([...PUBLIC, ...OPTIONAL].map(path => new URL(path, self.location.origin).href));
 
