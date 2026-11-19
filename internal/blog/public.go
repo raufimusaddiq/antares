@@ -136,7 +136,7 @@ func (s *Service) PublicList(ctx context.Context, page, limit int, q string) ([]
 		args = append(args, pattern, pattern, pattern)
 	}
 	args = append(args, limit, (page-1)*limit)
-	rows, err := s.db.QueryContext(ctx, `SELECT p.slug, v.title, v.summary, p.cover_asset_id, u.display_name, p.published_at
+	rows, err := s.db.QueryContext(ctx, `SELECT p.slug, v.title, v.summary, v.doc, p.cover_asset_id, u.display_name, p.published_at
 		FROM posts p JOIN users u ON u.id = p.author_id JOIN post_versions v ON v.post_id = p.id AND v.version = p.published_version
 		WHERE `+where+` ORDER BY p.published_at DESC, p.id LIMIT ? OFFSET ?`, args...)
 	if err != nil {
@@ -146,12 +146,16 @@ func (s *Service) PublicList(ctx context.Context, page, limit int, q string) ([]
 	out := []PublicSummary{}
 	for rows.Next() {
 		var x PublicSummary
-		var cover string
+		var cover, doc string
 		var name sql.NullString
-		if err := rows.Scan(&x.Slug, &x.Title, &x.Summary, &cover, &name, &x.PublishedAt); err != nil {
+		if err := rows.Scan(&x.Slug, &x.Title, &x.Summary, &doc, &cover, &name, &x.PublishedAt); err != nil {
 			return nil, err
 		}
-		x.CoverURL, x.AuthorName = publicAssetURL(x.Slug, cover), authorName(name)
+		body := ""
+		if strings.TrimSpace(x.Summary) == "" {
+			body = docText(doc)
+		}
+		x.Summary, x.CoverURL, x.AuthorName = excerpt(x.Summary, body), publicAssetURL(x.Slug, cover), authorName(name)
 		out = append(out, x)
 	}
 	return out, rows.Err()
@@ -200,7 +204,7 @@ func (s *Service) PublicAsset(ctx context.Context, slug, assetID string) (Asset,
 }
 
 // PageMeta is what the HTML shell of a published post carries for search engines and link previews.
-type PageMeta struct{ Title, Description, Image string }
+type PageMeta struct{ Title, Description, Image, Lang, PublishedAt, Author string }
 
 // Meta returns the metadata for a published post.
 // ErrNotFound for anything a reader may not see; any other error is ours (a failing database) and is not a 404.
@@ -209,18 +213,86 @@ func (s *Service) Meta(ctx context.Context, slug string) (PageMeta, error) {
 		return PageMeta{}, ErrNotFound
 	}
 	var m PageMeta
-	var cover string
-	err := s.db.QueryRowContext(ctx, `SELECT v.title, v.summary, p.cover_asset_id
+	var cover, doc string
+	var name sql.NullString
+	err := s.db.QueryRowContext(ctx, `SELECT v.title, v.summary, v.doc, p.cover_asset_id, u.display_name, p.published_at
 		FROM posts p JOIN users u ON u.id = p.author_id JOIN post_versions v ON v.post_id = p.id AND v.version = p.published_version
-		WHERE p.slug = ? AND `+publicWhere, slug).Scan(&m.Title, &m.Description, &cover)
+		WHERE p.slug = ? AND `+publicWhere, slug).Scan(&m.Title, &m.Description, &doc, &cover, &name, &m.PublishedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return PageMeta{}, ErrNotFound
 	}
 	if err != nil {
 		return PageMeta{}, err
 	}
-	m.Image = publicAssetURL(slug, cover)
+	body := docText(doc) // read once: the excerpt fallback and the language guess both use it
+	m.Description = excerpt(m.Description, body)
+	m.Lang = detectLang(m.Title + " " + m.Description + " " + body)
+	m.Image, m.Author = publicAssetURL(slug, cover), authorName(name)
 	return m, nil
+}
+
+// excerpt is what a card and a link preview show: the author's summary as written, or, when there is none, the first
+// words of the post (body, as docText reads it), cut to about three lines so a card is never a title over empty space.
+func excerpt(summary, body string) string {
+	if text := strings.TrimSpace(summary); text != "" {
+		return text // the author's own words are never cut: the settings field already bounds them
+	}
+	r := []rune(body)
+	if len(r) <= 120 {
+		return strings.TrimSpace(body)
+	}
+	cut := 120
+	for cut > 0 && r[cut] != ' ' {
+		cut--
+	}
+	if cut == 0 {
+		cut = 120
+	}
+	return strings.TrimSpace(string(r[:cut])) + "…"
+}
+
+// docText is every text run of a stored document, in reading order.
+func docText(doc string) string {
+	var root node
+	if json.Unmarshal([]byte(doc), &root) != nil {
+		return ""
+	}
+	var b strings.Builder
+	var walk func(n node)
+	walk = func(n node) {
+		if n.Type == "text" {
+			b.WriteString(n.Text + " ")
+		}
+		for _, c := range n.Content {
+			walk(c)
+		}
+	}
+	walk(root)
+	return strings.Join(strings.Fields(b.String()), " ")
+}
+
+// detectLang guesses the language of a post from the words it uses, because nothing stores one. Indonesian and
+// English are the two the blog is written in; anything else falls back to English, the sensible default.
+var (
+	idWords = map[string]bool{"yang": true, "dan": true, "di": true, "ini": true, "itu": true, "dengan": true, "untuk": true, "tidak": true, "dari": true, "akan": true, "juga": true, "karena": true, "bisa": true, "sudah": true, "pada": true, "adalah": true, "atau": true, "saya": true, "kita": true, "mereka": true}
+	enWords = map[string]bool{"the": true, "and": true, "of": true, "to": true, "is": true, "in": true, "that": true, "for": true, "with": true, "this": true, "are": true, "was": true, "it": true, "on": true, "as": true, "be": true, "you": true, "not": true}
+)
+
+func detectLang(text string) string {
+	id, en := 0, 0
+	for _, w := range strings.Fields(strings.ToLower(text)) {
+		w = strings.Trim(w, `.,;:!?"'()[]{}<>—–-`)
+		if idWords[w] {
+			id++
+		}
+		if enWords[w] {
+			en++
+		}
+	}
+	if id > en {
+		return "id"
+	}
+	return "en"
 }
 
 // PublicHandlers are the routes that answer without a session, keyed as in auth.PublicBlogRoutes.

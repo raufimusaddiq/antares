@@ -89,7 +89,7 @@ export function JobsPanel({ page = false }: { page?: boolean } = {}) {
           {jobs !== null && jobs.length < max && (
             <form onSubmit={submit}>
               <label>
-                Name <input value={draft.name} maxLength={100} required onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
+                Name <input value={draft.name} maxLength={100} required placeholder="e.g. Morning digest" onChange={(e) => setDraft({ ...draft, name: e.target.value })} />
               </label>{" "}
               <label>
                 Schedule <input value={draft.schedule} maxLength={100} required placeholder="every 2h, or 0 9 * * *" onChange={(e) => setDraft({ ...draft, schedule: e.target.value })} />
