@@ -86,7 +86,7 @@ func newAppWith(t testing.TB, fh *fakeHermes, spend Spend) *app {
 			if errors.Is(err, ErrNotFound) {
 				err = server.ErrNoPage
 			}
-			return server.PageMeta{Title: m.Title, Description: m.Description, Image: m.Image}, err
+			return server.PageMeta{Title: m.Title, Description: m.Description, Image: m.Image, Lang: m.Lang, PublishedAt: m.PublishedAt, Author: m.Author}, err
 		}, au.BlogReadLimit()).Routes()
 	return &app{t: t, db: db, svc: svc, h: h, box: box, fh: fh}
 }
