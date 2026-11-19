@@ -1056,7 +1056,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
         return;
       }
       if (share !== null) return; // a share lands in the new-chat draft; opening the latest chat would hide it
-      if (r.value.chats.length > 0) open(mostRecent(r.value.chats), "keep"); // "/" keeps meaning "my chats, newest open"
+      if (r.value.chats.length > 0) open(mostRecent(r.value.chats), "replace"); // PRD §16: "/" lands on the newest chat; the address is replaced (no history entry) so it names what is shown
     });
     return () => {
       live = false;
