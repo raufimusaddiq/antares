@@ -63,15 +63,20 @@ func adminView(u store.AdminUser) AdminUserView {
 	return v
 }
 
-// AuditView is one audit row; metadata only.
+// AuditView is one audit row; metadata only. Actor and target carry the account's
+// name and email where the row names a known account, beside the id.
 type AuditView struct {
-	ID        string `json:"id"`
-	Actor     string `json:"actor"`
-	Action    string `json:"action"`
-	TargetID  string `json:"targetId"`
-	Outcome   string `json:"outcome"`
-	RequestID string `json:"requestId"`
-	CreatedAt string `json:"createdAt"`
+	ID          string `json:"id"`
+	Actor       string `json:"actor"`
+	ActorName   string `json:"actorName"`
+	ActorEmail  string `json:"actorEmail"`
+	Action      string `json:"action"`
+	TargetID    string `json:"targetId"`
+	TargetName  string `json:"targetName"`
+	TargetEmail string `json:"targetEmail"`
+	Outcome     string `json:"outcome"`
+	RequestID   string `json:"requestId"`
+	CreatedAt   string `json:"createdAt"`
 }
 
 // adminRoute wraps an admin handler in the Admin guard, refuses request
@@ -376,11 +381,12 @@ func (a *Auth) adminAudit(w http.ResponseWriter, r *http.Request) {
 		limit = n
 	}
 	at, id, ok := auditCursor(r.URL.Query().Get("before"))
-	if !ok || r.URL.Query().Has("offset") {
+	action := r.URL.Query().Get("action")
+	if !ok || r.URL.Query().Has("offset") || len(action) > 100 || strings.ContainsFunc(action, unicode.IsControl) {
 		a.apiError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "Invalid limit or before")
 		return
 	}
-	rows, more, err := store.ListAudit(r.Context(), a.db, limit, at, id)
+	rows, more, err := store.ListAudit(r.Context(), a.db, limit, at, id, action)
 	if err != nil {
 		log.Printf("auth: audit list failed: %v", err)
 		a.apiError(w, r, http.StatusInternalServerError, "INTERNAL", "Could not read the audit feed")
@@ -388,7 +394,8 @@ func (a *Auth) adminAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	out := make([]AuditView, 0, len(rows))
 	for _, e := range rows {
-		out = append(out, AuditView{ID: e.ID, Actor: e.Actor, Action: e.Action, TargetID: e.TargetID,
+		out = append(out, AuditView{ID: e.ID, Actor: e.Actor, ActorName: e.ActorName, ActorEmail: e.ActorEmail,
+			Action: e.Action, TargetID: e.TargetID, TargetName: e.TargetName, TargetEmail: e.TargetEmail,
 			Outcome: e.Outcome, RequestID: e.RequestID, CreatedAt: e.CreatedAt})
 	}
 	next := ""

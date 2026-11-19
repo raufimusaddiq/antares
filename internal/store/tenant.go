@@ -671,9 +671,12 @@ func MarkFailed(ctx context.Context, db *sql.DB, c Claim, detail string, attempt
 	return tx.Commit()
 }
 
-// AuditEntry is one audit_log row as the admin feed shows it.
+// AuditEntry is one audit_log row as the admin feed shows it. Names and emails
+// are the account's identity metadata, which an admin already sees in the user
+// list; the ids stay too, so a row can still be matched to one.
 type AuditEntry struct {
 	ID, Actor, Action, TargetKind, TargetID, Outcome, RequestID, CreatedAt string
+	ActorName, ActorEmail, TargetName, TargetEmail                            string
 }
 
 // ListAudit returns the audit feed newest first. It carries no content: only
@@ -684,18 +687,30 @@ type AuditEntry struct {
 // page would repeat entries already seen and hide others. A page starts strictly
 // after (beforeAt, beforeID) in the feed's own order; both empty means the
 // newest page. more reports whether older entries exist.
-func ListAudit(ctx context.Context, db *sql.DB, limit int, beforeAt, beforeID string) (out []AuditEntry, more bool, err error) {
+func ListAudit(ctx context.Context, db *sql.DB, limit int, beforeAt, beforeID, action string) (out []AuditEntry, more bool, err error) {
 	if limit < 1 || limit > 200 {
 		limit = 50
 	}
-	q := `SELECT id, COALESCE(actor_user_id,''), action, COALESCE(target_kind,''), COALESCE(target_id,''),
-		outcome, COALESCE(request_id,''), created_at FROM audit_log`
+	q := `SELECT a.id, COALESCE(a.actor_user_id,''), a.action, COALESCE(a.target_kind,''), COALESCE(a.target_id,''),
+		a.outcome, COALESCE(a.request_id,''), a.created_at,
+		COALESCE(au.display_name,''), COALESCE(au.email,''), COALESCE(tu.display_name,''), COALESCE(tu.email,'')
+		FROM audit_log a
+		LEFT JOIN users au ON au.id = a.actor_user_id
+		LEFT JOIN users tu ON tu.id = a.target_id AND a.target_kind = 'user'`
+	var where []string
 	var args []any
 	if beforeAt != "" || beforeID != "" {
-		q += ` WHERE (created_at < ? OR (created_at = ? AND id < ?))`
+		where = append(where, `(a.created_at < ? OR (a.created_at = ? AND a.id < ?))`)
 		args = append(args, beforeAt, beforeAt, beforeID)
 	}
-	q += ` ORDER BY created_at DESC, id DESC LIMIT ?`
+	if action != "" {
+		where = append(where, `a.action = ?`)
+		args = append(args, action)
+	}
+	if len(where) > 0 {
+		q += ` WHERE ` + strings.Join(where, " AND ")
+	}
+	q += ` ORDER BY a.created_at DESC, a.id DESC LIMIT ?`
 	rows, err := db.QueryContext(ctx, q, append(args, limit+1)...)
 	if err != nil {
 		return nil, false, err
@@ -703,7 +718,8 @@ func ListAudit(ctx context.Context, db *sql.DB, limit int, beforeAt, beforeID st
 	defer rows.Close()
 	for rows.Next() {
 		var e AuditEntry
-		if err := rows.Scan(&e.ID, &e.Actor, &e.Action, &e.TargetKind, &e.TargetID, &e.Outcome, &e.RequestID, &e.CreatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.Actor, &e.Action, &e.TargetKind, &e.TargetID, &e.Outcome, &e.RequestID, &e.CreatedAt,
+			&e.ActorName, &e.ActorEmail, &e.TargetName, &e.TargetEmail); err != nil {
 			return nil, false, err
 		}
 		out = append(out, e)
