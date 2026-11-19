@@ -49,6 +49,7 @@ describe("scheduled tasks", () => {
     const { container } = render(<JobsPanel />);
     open(container);
     await screen.findByText("No scheduled tasks.");
+    expect(screen.getByLabelText("Name").getAttribute("placeholder")).toBeTruthy(); // an example, like Schedule's
     fireEvent.change(screen.getByLabelText("Name"), { target: { value: "Ping" } });
     fireEvent.change(screen.getByLabelText("Schedule"), { target: { value: "every 5m" } });
     fireEvent.change(screen.getByLabelText("Instructions"), { target: { value: "ping" } });
