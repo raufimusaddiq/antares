@@ -24,7 +24,6 @@ func (s *Service) capabilities(w http.ResponseWriter, r *http.Request) {
 		upstreamError(w, err)
 		return
 	}
-	s.fillSkills(r, b, &inv)
 	jobs := hermes.Capability{ID: "jobs", Label: "Scheduled tasks", Status: hermes.StatusAvailable}
 	if !s.jobs {
 		jobs = hermes.Capability{ID: "jobs", Label: "Scheduled tasks", Status: hermes.StatusUnsupported, Reason: "Switched off on this server until their isolation is proven on the deployed assistant"}
@@ -39,6 +38,10 @@ func (s *Service) capabilities(w http.ResponseWriter, r *http.Request) {
 // anything a request supplies, and the gate runs before the cache: a revoked, suspended or unbound
 // account never reaches it, so a cached inventory can never outlive the right to ask for one.
 const capsTTL = 30 * time.Second
+
+// capsNegTTL is how long an inventory whose skills helper errored is reused. A failure is not an answer, so it
+// is retried soon, but not on every call: a persistently failing helper costs one exec per capsNegTTL.
+const capsNegTTL = 5 * time.Second
 
 type capsEntry struct {
 	inv hermes.Inventory
@@ -58,11 +61,17 @@ func (s *Service) discover(ctx context.Context, b hermes.Binding) (hermes.Invent
 	if err != nil {
 		return inv, err
 	}
+	// The skills fallback runs a helper exec on every call because Hermes' skills route always fails, so it
+	// belongs inside the cached answer, not after it.
+	at := s.now()
+	if s.fillSkills(ctx, b, &inv) {
+		at = at.Add(-(capsTTL - capsNegTTL)) // expires after capsNegTTL, not capsTTL
+	}
 	s.capsMu.Lock()
 	if s.caps == nil {
 		s.caps = map[string]capsEntry{}
 	}
-	s.caps[b.Profile] = capsEntry{inv: inv, at: s.now()}
+	s.caps[b.Profile] = capsEntry{inv: inv, at: at}
 	s.capsMu.Unlock()
 	return cloneInv(inv), nil
 }
@@ -87,21 +96,26 @@ func cloneInv(inv hermes.Inventory) hermes.Inventory {
 
 // fillSkills covers Hermes v0.22.5's skills route, which fails on every call: when Hermes did not report the skills,
 // the provisioning helper lists the caller's own profile (never another) with Hermes' own lister. A failure there
-// leaves Hermes' reason in place, so nothing is reported available that was not read.
-func (s *Service) fillSkills(r *http.Request, b hermes.Binding, inv *hermes.Inventory) {
+// leaves Hermes' reason in place, so nothing is reported available that was not read. It reports whether the helper
+// errored: "found none" is a valid answer, an error is not and must not be cached for long.
+func (s *Service) fillSkills(ctx context.Context, b hermes.Binding, inv *hermes.Inventory) (failed bool) {
 	if s.skills == nil {
-		return
+		return false
 	}
 	for i, c := range inv.Capabilities {
 		if c.ID != hermes.CapSkills || c.Status == hermes.StatusAvailable {
 			continue
 		}
-		list, err := s.skills.Skills(r.Context(), b.Profile)
-		if err != nil || len(list) == 0 {
-			return
+		list, err := s.skills.Skills(ctx, b.Profile)
+		if err != nil {
+			return true
+		}
+		if len(list) == 0 {
+			return false
 		}
 		inv.Skills = list
 		inv.Capabilities[i] = hermes.Capability{ID: hermes.CapSkills, Label: c.Label, Status: hermes.StatusAvailable}
-		return
+		return false
 	}
+	return false
 }
