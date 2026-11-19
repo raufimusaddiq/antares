@@ -1134,3 +1134,41 @@ func TestRateLimitedStatusInvariant(t *testing.T) {
 	}()
 	apiError(httptest.NewRecorder(), http.StatusServiceUnavailable, hermes.CodeRateLimited, "test limit")
 }
+
+// A tool that never returns, on a stream Hermes keeps alive with comments, used to leave the run RUNNING until the
+// 30 minute stream limit (T-153, smoke chat.b.reply).
+func TestRunWithAToolThatNeverReturnsEndsTimedOutAndIsStopped(t *testing.T) {
+	a := newApp(t, appOpts{backoff: fastBackoff, stall: 300 * time.Millisecond})
+	u := a.user("alice")
+	run := u.send(u.newChat(), "q")
+	_, fr := a.hx.runWithInput(t, "q")
+	s := u.open(run, "")
+	recv(t, fr.opens, "upstream stream")
+	a.hx.push(fr, "tool.started", `{"tool":"web_search","tool_call_id":"c1"}`)
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		for {
+			select {
+			case <-stop:
+				return
+			case <-time.After(50 * time.Millisecond):
+				a.hx.mu.Lock()
+				ch := fr.frames
+				a.hx.mu.Unlock()
+				select {
+				case ch <- ": keep-alive\n\n":
+				default:
+				}
+			}
+		}
+	}()
+	s.waitFor(t, "run.failed")
+	if got := u.runStatus(run); got != store.RunTimedOut {
+		t.Errorf("status %s, want %s", got, store.RunTimedOut)
+	}
+	if s.has("run.completed") {
+		t.Errorf("a stalled run was reported completed: %v", s.names())
+	}
+	eventually(t, func() bool { a.hx.mu.Lock(); defer a.hx.mu.Unlock(); return fr.stopped }, "the upstream run to be stopped")
+}

@@ -216,3 +216,7 @@ It is how `internal/hermes/testdata/blog_check_*` was recorded.
 
 `blog.check` (after `blog.lifecycle`) runs a real AI check on account A: see `blog-check.md`. It takes up to a minute or two and spends a
 little on the shared account like a chat reply does. `--skip-blog-check` leaves it out; `--check-timeout` bounds it.
+
+## Stuck runs (T-153)
+
+A chat run whose Hermes stream stays open but sends no real event (a delta, a tool start or end) for 10 minutes ends `TIMED_OUT` (`UPSTREAM_TIMEOUT`) and is stopped upstream; keep-alive comments do not count. The smoke's own `--run-timeout` (2 minutes) is shorter on purpose: a reply that slow is a smoke failure, and the detail now names the run row's real state. An unusable blog check logs its cause (`blog: check <id>: unusable reply …`), never the reply's content.

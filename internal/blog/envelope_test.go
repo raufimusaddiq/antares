@@ -2,6 +2,7 @@ package blog
 
 import (
 	"encoding/json"
+	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -253,5 +254,25 @@ func TestMoreEditsThanTheDraftSupportsAreCutWithOneNotice(t *testing.T) {
 	}
 	if len(res.Notices) != 1 {
 		t.Fatalf("notices %v", res.Notices)
+	}
+}
+
+func TestUnusableReplyNamesItsShapeNeverItsContent(t *testing.T) {
+	for name, tc := range map[string]struct{ raw, want string }{
+		"empty":    {"  ", "was empty"},
+		"prose":    {"Looks good to me, secret-draft-phrase!", "not one JSON object"},
+		"cut off":  {`{"version":2,"notes":[{"text":"secret-draft-phrase`, "cut off"},
+		"trailing": {`{"version":2} and secret-draft-phrase`, "text followed"},
+		"version":  {`{"version":9}`, "version was 9"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			_, err := ParseEnvelope([]byte(tc.raw), 1, time.Now())
+			if !errors.Is(err, ErrEnvelope) || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want ErrEnvelope containing %q", err, tc.want)
+			}
+			if strings.Contains(err.Error(), "secret-draft-phrase") {
+				t.Fatalf("the error quotes the reply: %v", err)
+			}
+		})
 	}
 }

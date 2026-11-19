@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"regexp"
 	"strings"
 	"time"
@@ -26,6 +27,26 @@ const (
 )
 
 var ErrEnvelope = errors.New("the assistant's reply is not usable")
+
+// envelopeFault is ErrEnvelope with the shape that was wrong, for the server log.
+func envelopeFault(format string, a ...any) error {
+	return fmt.Errorf("%w: %s", ErrEnvelope, fmt.Sprintf(format, a...))
+}
+
+// jsonFault names the kind of a decode error without quoting the input.
+func jsonFault(err error) string {
+	var syn *json.SyntaxError
+	var typ *json.UnmarshalTypeError
+	switch {
+	case errors.Is(err, io.EOF), errors.Is(err, io.ErrUnexpectedEOF):
+		return "it ended early, so it may have been cut off"
+	case errors.As(err, &syn):
+		return fmt.Sprintf("invalid JSON at byte %d", syn.Offset)
+	case errors.As(err, &typ):
+		return "field " + typ.Field + " had the wrong type"
+	}
+	return "invalid JSON"
+}
 
 var noteKinds = setOfNames("clarity", "fact", "missing-context", "unsourced", "style")
 
@@ -116,17 +137,27 @@ func ParseEnvelopeParts(raw []byte, d DraftInput, now time.Time) (Result, error)
 
 func parseEnvelope(raw []byte, topNodes int, draft *DraftInput, now time.Time) (Result, error) {
 	raw = bytes.TrimSpace(raw)
-	if len(raw) == 0 || len(raw) > maxEnvelope {
-		return Result{}, ErrEnvelope
+	if len(raw) == 0 {
+		return Result{}, envelopeFault("the reply was empty")
+	}
+	if len(raw) > maxEnvelope {
+		return Result{}, envelopeFault("the reply was longer than %d bytes (%d)", maxEnvelope, len(raw))
 	}
 	raw = unfence(raw)
 	var env rawEnvelope
 	dec := json.NewDecoder(bytes.NewReader(raw))
-	if err := dec.Decode(&env); err != nil || dec.More() || (env.Version != 1 && env.Version != envelopeVersion) {
-		return Result{}, ErrEnvelope
+	// The causes name a shape, never a byte of the reply: a draft is private and so is what the assistant said about it.
+	if err := dec.Decode(&env); err != nil {
+		return Result{}, envelopeFault("the reply was not one JSON object (%s)", jsonFault(err))
+	}
+	if dec.More() {
+		return Result{}, envelopeFault("text followed the JSON object")
+	}
+	if env.Version != 1 && env.Version != envelopeVersion {
+		return Result{}, envelopeFault("the envelope version was %d", env.Version)
 	}
 	if len(env.Notes) > maxNotes || len(env.Blocks) > maxBlocks || len(env.Edits) > maxEnvelope/16 {
-		return Result{}, ErrEnvelope
+		return Result{}, envelopeFault("too many notes, blocks or edits (%d, %d, %d)", len(env.Notes), len(env.Blocks), len(env.Edits))
 	}
 	var res Result
 	drop := func(format string, a ...any) { res.Notices = append(res.Notices, fmt.Sprintf(format, a...)) }
