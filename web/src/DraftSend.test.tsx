@@ -235,7 +235,7 @@ describe("overlapping sends in different chats", () => {
     return { srv, answers };
   };
   const admitted = ok({ runId: "r1", status: "PENDING" });
-  const refused = { ok: false, code: "UPSTREAM_UNAVAILABLE" };
+  const refused = { ok: false, code: "UPSTREAM_UNAVAILABLE", status: 400 };
 
   for (const order of [["c1", "c2"], ["c2", "c1"]]) {
     it(`A admitted, B refused, answers in order ${order.join(" then ")}: A's draft is cleared, B's is kept and both holds end`, async () => {
@@ -265,7 +265,7 @@ describe("overlapping sends in different chats", () => {
     });
   }
 
-  it("a resend of a new-chat send clears the new-chat draft it came from", async () => {
+  it("sending a refused new-chat message again clears the new-chat draft it came from", async () => {
     const srv = draftServer();
     vi.stubGlobal("fetch", srv.f);
     srv.docs.set("/api/me/new-chat-draft", { body: "saved text", revision: 1 });
@@ -276,10 +276,11 @@ describe("overlapping sends in different chats", () => {
     await waitFor(() => expect(text()).toBe("saved text"));
     await waitFor(() => expect(srv.calls.some((c) => c.startsWith("GET /api/me/new-chat-draft"))).toBe(true));
     fireEvent.submit(document.querySelector("form.composer")!);
-    await screen.findByText("Send again");
-    expect(srv.docs.get("/api/me/new-chat-draft")).toEqual({ body: "saved text", revision: 1 }); // refused: kept
+    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(text()).toBe("saved text")); // refused: the chat row is gone and the text is back in the box
+    expect(srv.docs.get("/api/me/new-chat-draft")).toEqual({ body: "saved text", revision: 1 }); // and the saved draft is kept
     api.sendMessage.mockResolvedValueOnce(admitted);
-    fireEvent.click(screen.getByText("Send again"));
+    fireEvent.submit(document.querySelector("form.composer")!);
     await waitFor(() => expect(srv.docs.get("/api/me/new-chat-draft")).toEqual({ body: "", revision: 2 }), { timeout: 3000 });
   });
 });

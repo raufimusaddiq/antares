@@ -1,12 +1,15 @@
 // @vitest-environment jsdom
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { ShareChat } from "./ShareChat";
 import { SharedChat } from "./SharedChat";
 import { answerBlocks, plainText, wrap } from "./shareImage";
 
 const json = (status: number, body?: unknown) => new Response(body === undefined ? null : JSON.stringify(body), { status, headers: { "Content-Type": "application/json" } });
 const TOKEN = "A".repeat(40) + "b-_";
+
+// The OpenUI chunk is lazy: load it once here, outside any test's budget, so a loaded host cannot time a test out on the import.
+beforeAll(() => import("./openui/Block"), 120_000);
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -50,7 +53,7 @@ describe("Share", () => {
     unmount();
     render(<SharedChat token={TOKEN} />);
     await waitFor(() => expect(screen.getByRole("heading", { name: "This link does not open" })).toBeTruthy());
-  }, 30_000); // the OpenUI chunk loads slowly when the whole suite runs at once
+  }, 20_000); // the chunk is preloaded; this only covers rendering the answer on a loaded host
 
   it("draws an answer as plain words that fit the card", () => {
     expect(plainText("## Plan\n- **Day 1**: see [the map](https://x.test)\nMEDIA:image-abc")).toBe("Plan\n• Day 1: see the map (https://x.test)");

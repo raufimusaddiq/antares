@@ -755,6 +755,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
   });
 
   const [ownTemplates, setOwnTemplates] = useState<OwnTemplate[]>([]);
+  const [draftVisualize, setDraftVisualize] = useState(false); // the Visualize choice for a chat not created yet: saved with its first message
   useEffect(() => {
     void listOwnTemplates().then((l) => l && setOwnTemplates(l));
   }, []);
@@ -767,8 +768,6 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
   const { discard: discardImages, release: releaseImages } = att;
   const turnsRef = useRef<Turn[]>([]);
   const cursorRef = useRef("");
-  const blankChat = useRef(""); // id of the chat New chat created and nothing has been sent into yet
-  const creating = useRef(false); // a New chat request is in flight: a second click must not create a second chat
   const focusCount = useRef(0); // distinguishes opening the same result twice
   const nav = useRef(0); // bumped whenever the reader picks a chat, so a slow create cannot override that choice
   const olderInflight = useRef(""); // "chat|cursor" of the older-page request in flight: one at a time, never twice
@@ -1088,32 +1087,19 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
     return r.value;
   }, []);
 
-  // New chat creates the conversation now, so it is listed, selected and real. A second
-  // press on a chat that is still blank only returns to its composer: nothing was
-  // sent, so a second empty chat would add nothing. A run in the chat being left keeps
-  // running on the server; the list remembers it, so opening that chat re-attaches.
-  const startChat = useCallback(async () => {
+  // New chat opens an empty conversation and writes nothing: the chat row is created (and listed) when the
+  // first message is sent, so leaving without typing leaves no empty chat behind.
+  const startChat = useCallback(() => {
     const focusComposer = () => document.getElementById("composer-input")?.focus();
-    if (creating.current) return;
-    if (blankChat.current !== "" && blankChat.current === currentRef.current) {
-      setBanner("");
-      focusComposer();
-      return;
-    }
-    creating.current = true;
-    discardImages();
-    const at = ++nav.current;
-    setBanner("");
-    try {
-      const c = await newChat();
-      if (!c || nav.current !== at) return; // failed (the banner says why), or the reader chose another chat meanwhile
-      blankChat.current = c.id;
-      openTitle.current = ""; // a new chat has no title yet
-      writeUrl("/", "push"); // a new chat is the app root, not a chat address
+    if (currentRef.current !== null) {
+      nav.current++;
+      discardImages();
       detach();
       attempts.current = 0;
-      setCurrent(c.id);
-      currentRef.current = c.id;
+      openTitle.current = ""; // a new chat has no title yet
+      writeUrl("/", "push"); // a new chat is the app root, not a chat address
+      setCurrent(null);
+      currentRef.current = null;
       setTurns([]);
       setCursor("");
       setOlder({ kind: "idle" });
@@ -1121,11 +1107,10 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
       setTurnsError("");
       setPending(null);
       dispatch({ k: "clear" });
-      focusComposer();
-    } finally {
-      creating.current = false;
     }
-  }, [detach, newChat, writeUrl]);
+    setBanner("");
+    focusComposer();
+  }, [detach, discardImages, writeUrl]);
 
   const submit = useCallback(
     async (input: string, key: string, hold: SendHold, images: AttachmentRef[] = []) => {
@@ -1133,7 +1118,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
       try {
         setBanner("");
         let chat = current;
+        let created = false;
         if (!chat) {
+          created = true;
           const c = await newChat();
           if (!c) {
             // Nothing was sent and no retry entry exists, so the message goes back into the box (ahead of anything typed
@@ -1151,14 +1138,44 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
           setTurns([]);
           setCursor("");
           chat = c.id;
+          // A Visualize choice made on the empty screen is saved into the chat before the first message runs.
+          if (draftVisualize) {
+            const v = await changeChat(c.id, { visualize: true });
+            setChats((l) => l.map((x) => (x.id === c.id && v.ok ? { ...x, visualize: v.value.visualize } : x)));
+            if (!v.ok) setBanner("The Visualize setting could not be saved; this message is sent without it.");
+            setDraftVisualize(false);
+          }
         }
-        blankChat.current = "";
         dispatch({ k: "clear" });
         setPending({ input, key, failure: "", hold, images });
         const r = images.length > 0 ? await sendMessageWithImages(chat, input, key, images.map((i) => i.assetId)) : await sendMessage(chat, input, key);
         // Every outcome ends the hold: admitted deletes the server draft (and the reader's other devices lose it);
         // refused keeps it and resumes syncing whatever is typed next.
         hold.release(r.ok);
+        // Only a definite refusal (a 4xx) rolls back. A network failure, timeout, unreadable 2xx or 5xx may still have
+        // started a run on the server, so those keep the row and 'Send again' with the same key.
+        if (!r.ok && created && images.length === 0 && r.status >= 400 && r.status < 500) {
+          // A first message the server refused leaves no chat behind: the row it created is removed (here and on the
+          // server), the screen goes back to the empty new chat, and the text returns to the box to be sent again.
+          // If the delete fails the row stays listed, so the list matches the server.
+          const d = await deleteChat(chat);
+          if (d.ok) setChats((l) => l.filter((x) => x.id !== chat));
+          if (currentRef.current === chat) {
+            nav.current++;
+            detach();
+            writeUrl("/", "replace");
+            setCurrent(null);
+            currentRef.current = null;
+            setTurns([]);
+            setCursor("");
+            setPending(null);
+            dispatch({ k: "clear" });
+            const typed = draftNow.current;
+            if (hold.text.trim() !== "") onDraft(typed.trim() === "" ? hold.text : `${hold.text.replace(/\s*$/, "")}\n\n${typed}`);
+            setBanner(describeCode(r.code));
+          }
+          return;
+        }
         if (currentRef.current !== chat) {
           if (!r.ok && hold.text.trim() !== "" && loadDraft(email, chat) === "") {
             // Refused while the reader was elsewhere: the pending entry is gone, so keep the message in that chat's own
@@ -1186,7 +1203,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
         hold.release(false); // a path that left without an answer (no-op if already released)
       }
     },
-    [attach, current, detach, newChat, email, releaseImages],
+    [attach, current, detach, newChat, email, releaseImages, draftVisualize],
   );
 
   // A disconnected run still occupies the chat: reconnect or cancel it first.
@@ -1248,7 +1265,6 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
     discardImages();
     detach();
     attempts.current = 0;
-    blankChat.current = "";
     writeUrl("/", "replace");
     setCurrent(null);
     currentRef.current = null;
@@ -1279,7 +1295,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
 
   // The tab says which conversation is open.
   useEffect(() => {
-    const title = current && current !== blankChat.current ? chats.find((c) => c.id === current)?.title || openTitle.current || "Conversation" : "New chat";
+    const title = current !== null ? chats.find((c) => c.id === current)?.title || openTitle.current || "Conversation" : "New chat";
     document.title = `${title} · Antares`;
   }, [current, chats]);
 
@@ -1474,7 +1490,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
   };
 
   // Nothing to read yet: the conversation area shows the starting card instead of an empty list.
-  const empty = turns.length === 0 && !pending && !run && !turnsError && (current === null || current === blankChat.current);
+  const empty = turns.length === 0 && !pending && !run && !turnsError && current === null;
   return (
     <div className="chat-app">
       <header
@@ -1569,7 +1585,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
         {/* The page's one h1: the conversation's own name, so a reader who navigates by heading lands on the page
             rather than on the first "Assistant" h2. Visually hidden — the design shows the title in the rail, not
             over the conversation. */}
-        <h1 className="sr">{current && current !== blankChat.current ? chats.find((c) => c.id === current)?.title || openTitle.current || "Conversation" : "New conversation"}</h1>
+        <h1 className="sr">{current !== null ? chats.find((c) => c.id === current)?.title || openTitle.current || "Conversation" : "New conversation"}</h1>
         {banner && (
           <p className="notice" role="alert">
             {banner}
@@ -1585,7 +1601,18 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
             <span className="hero-tag" aria-hidden="true">
               New chat
             </span>
-            <p className="hero-text">{current === null ? "Start a conversation below." : "New conversation. Write a message below."}</p>
+            <p className="hero-text">Start a conversation below.</p>
+            {ownTemplates.length > 0 && (
+              <ul className="starters" aria-label="Your templates">
+                {ownTemplates.map((t) => (
+                  <li key={t.id}>
+                    <button type="button" className="quiet" onClick={() => reuseText(t.body)}>
+                      {t.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
         )}
         <ReplyContext.Provider value={addToDraft}>
@@ -1654,8 +1681,8 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
         </div>
         <div id="chat-extras" className={moreOpen ? "extras open" : "extras"}>
           <div className="chat-actions-slot" ref={setActionsSlot} />
-          {current && current !== blankChat.current && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? openTitle.current} />}
-          {current && current !== blankChat.current && <ShareChat chatId={current} />}
+          {current !== null && <ExportChat chatId={current} title={chats.find((c) => c.id === current)?.title ?? openTitle.current} />}
+          {current !== null && <ShareChat chatId={current} />}
           {usage && (
             <details className="usage" open={usage.budget.reached}>
               <summary>{usage.budget.reached ? "Token limit reached" : usage.spending?.hardReached ? "Daily spending limit reached" : usage.spending?.warnings.length ? "Usage: spending warning reached" : "Usage details and limits"}</summary>
@@ -1684,7 +1711,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
             </details>
           )}
           {/* A new, still blank chat is real and listed: its toggle shows, so the first message can ask for visuals. */}
-          {current && (
+          {current ? (
             <OpenChatVisualize
               onSaving={(p) => {
                 visualizeSaving.current++;
@@ -1696,6 +1723,12 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
                 setOpenSummary((u) => (u?.id === c.id ? { ...u, visualize: c.visualize } : u));
               }}
             />
+          ) : (
+            // No chat exists yet: the choice is held here and saved into the chat the first message creates.
+            <label className="visualize-toggle">
+              <input type="checkbox" checked={draftVisualize} onChange={(e) => setDraftVisualize(e.target.checked)} />{" "}
+              Visualize: charts, tables and cards in replies (this chat, from its first message)
+            </label>
           )}
           <div className="extras-row" role="group" aria-label="Voice">
             <Dictation onText={(t) => onDraft(draft.trim() === "" ? t : `${draft.replace(/\s*$/, "")} ${t}`)} />
@@ -1706,7 +1739,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
             Unsent text is kept on this device until you sign out or your session ends, and text older than 7 days is cleared the next time you open Antares. Your account keeps a copy for your other devices.
           </p>
         </div>
-        {current && current !== blankChat.current && (
+        {current !== null && (
           <QueuePanel chatId={current} busy={busy} tick={queueTick} onSent={onQueueSent} onQueue={(q) => (queueRef.current = q)} />
         )}
         <DraftNotice sync={sync} />
