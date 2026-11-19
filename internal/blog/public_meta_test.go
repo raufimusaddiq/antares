@@ -62,6 +62,25 @@ func TestAPostWithoutASummaryStillHasACardExcerpt(t *testing.T) {
 	}
 }
 
+// The post's own page leads with the excerpt its card shows, from the published version only: a later draft never leaks.
+func TestAPostWithoutASummaryHasALedeOnItsOwnPage(t *testing.T) {
+	a := newApp(t)
+	u := a.active("alice")
+	p := u.create()
+	u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": 1, "title": "No summary", "doc": body("The first words of the post are the card.")})
+	u.do("PATCH", "/api/blog/posts/"+p.ID+"/settings", map[string]any{"slug": "no-summary", "summary": ""})
+	u.do("POST", "/api/blog/posts/"+p.ID+"/publish", map[string]any{"mode": "original"})
+	u.do("PUT", "/api/blog/posts/"+p.ID, map[string]any{"baseVersion": 2, "title": "No summary", "doc": body("A secret draft rewrite.")})
+
+	var post PublicPost
+	if err := json.Unmarshal(a.anon("GET", "/api/public/blog/posts/no-summary").Body.Bytes(), &post); err != nil {
+		t.Fatal(err)
+	}
+	if post.Summary != "The first words of the post are the card." {
+		t.Errorf("lede = %q", post.Summary)
+	}
+}
+
 // A summary is the author's own text: previews and cards show it whole, however long it is.
 func TestAnAuthorsSummaryIsNeverCut(t *testing.T) {
 	a := newApp(t)
