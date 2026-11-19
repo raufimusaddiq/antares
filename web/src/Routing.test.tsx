@@ -105,7 +105,7 @@ describe("Settings is a place in the address", () => {
 describe("the tab names the view", () => {
   it("names the open chat, and a new chat", async () => {
     await mount();
-    expect(document.title).toBe("Two · Antares");
+    await waitFor(() => expect(document.title).toBe("Two · Antares")); // set in an effect, after the turns render
     api.createChat.mockResolvedValue(ok(chat(C, "")));
     fireEvent.click(screen.getAllByRole("button", { name: "New chat" })[0]);
     await waitFor(() => expect(document.title).toBe("New chat · Antares"));
