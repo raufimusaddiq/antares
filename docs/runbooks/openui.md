@@ -30,6 +30,7 @@ Antares-specific component set to keep in step with the prompt.
   missing renders without those parts. Either way a note under the card says what happened ("reconnected", "never
   written", "cut off") and holds the source. The safety checks above are the same for a repaired or partial block. The
   prompt also asks the model to check its names before finishing (`ANTARES_RULES`).
+- **A nested list is flattened** (T-18): Hermes sometimes writes a list where one child is expected (`Card([a, [b, c], d])`). The library's parser drops such a child with only a `type-mismatch` ("... but got array"), so its parts vanished, or showed as "never written". While the parser reports that error, `repair` opens the nested list (and any list inside it) into its parent, in order, keeping a step only if it leaves fewer parse errors and no more unplaced or unwritten parts. Lists that are nested on purpose (a Table's rows) are never touched, and anything else invalid still falls back to source or the note.
 - **Streaming**: while the reply streams, the block renders progressively (`isStreaming`), but every update is checked
   first (`check(source, true)`): root, unknown components, no query/mutation/state and every size limit. Parse
   errors, completeness and dangling references wait for the end. A partial program that fails is shown as source
