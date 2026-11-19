@@ -35,7 +35,8 @@ describe("the editor panel", () => {
     fireEvent.click(screen.getByRole("button", { name: "Check my post" }));
     await waitFor(() => expect(screen.getByRole("heading", { name: "Checking with the editor" })).toBeTruthy());
     expect(flush).toHaveBeenCalled();
-    expect(document.querySelector(".step-current")?.textContent).toContain("Looking things up · 2 lookups");
+    // the heading shows before the started run's steps arrive, so wait for the steps too
+    await waitFor(() => expect(document.querySelector(".step-current")?.textContent).toContain("Looking things up · 2 lookups"));
   });
 
   it("does not start when the draft is not saved yet, and says why", async () => {

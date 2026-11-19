@@ -12,6 +12,7 @@ const api = vi.hoisted(() => ({
   sendMessage: vi.fn(),
   getRun: vi.fn(),
   cancelRun: vi.fn(),
+  getRunPrompts: vi.fn(),
 }));
 const drafts = vi.hoisted(() => ({ listOwnTemplates: vi.fn() }));
 
@@ -54,6 +55,7 @@ beforeEach(() => {
   vi.stubGlobal("EventSource", FakeSource);
   api.getMessages.mockResolvedValue(page());
   api.getRun.mockResolvedValue({ ok: false, code: "NOT_FOUND" });
+  api.getRunPrompts.mockResolvedValue(ok([])); // unmocked, a live run's prompt list hits the real network and fails as a stray alert
   drafts.listOwnTemplates.mockResolvedValue([]);
 });
 afterEach(() => {
