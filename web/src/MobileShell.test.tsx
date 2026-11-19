@@ -73,9 +73,9 @@ describe("phone layout toggles", () => {
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(list?.classList.contains("open")).toBe(true);
-    fireEvent.click(within(list!).getByRole("button", { name: "Talk" }));
+    fireEvent.click(within(list!).getByRole("link", { name: "Talk" }));
     expect(list?.classList.contains("open")).toBe(false);
-    expect(screen.getByRole("button", { name: "Talk" }).getAttribute("title")).toBe("Talk");
+    expect(screen.getByRole("link", { name: "Talk" }).getAttribute("title")).toBe("Talk");
   });
 
   it("puts the per-chat options behind a toggle", async () => {
