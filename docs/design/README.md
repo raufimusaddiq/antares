@@ -105,11 +105,10 @@ variable mode); the minor state frames reuse the same components and are not dup
 
 - Admin / Users: the approval and tenant chips carry the same three tones as Posts (mint Approved/Ready, periwinkle
   Pending/Configuring/Not provisioned, salmon Failed/Rejected/Suspended), in both the light and the dark Users frames. A
-  Pending row's Approve is an inline row action; the frame draws no per-row button yet (a gap to close).
-- Admin / Audit: the code puts the page's h1 and the Export button on one header row, above the feed and its action filter;
-  the frame still draws Export above the heading (a gap to close).
-- Admin / Capabilities: the code opens with an h1 "Capabilities" and demotes the section headings to h2; the frame starts
-  at "Assistant tools" (a gap to close). The on/off controls are the Models switch.
+  Pending row carries a small Approve button under its chip (both frames).
+- Admin / Audit: the page's h1 and the Export button share one header row, above the feed and its action filter.
+- Admin / Capabilities: opens with an h1 "Capabilities"; "Assistant tools" and "Assistant capabilities" are h2 (16 px bold).
+  The frame still draws the three tools as checkboxes, where the code's on/off control is the Models switch.
 
 ## Writing rules (designed for spec `specs/005-antislop-writing/`, not built yet)
 
