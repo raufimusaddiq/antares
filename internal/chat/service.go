@@ -347,7 +347,8 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 			scancel()
 		})
 		err := s.hx.StreamEvents(sctx, b, hid, func(ev hermes.Event) error {
-			quiet.Reset(s.stall)
+			quiet.Stop() // the timer only measures Hermes' silence between events; an open prompt is handled where it fires
+			defer quiet.Reset(s.stall)
 			n := hermes.Normalize(ev)
 			switch n.Kind {
 			case hermes.KindDelta:
@@ -384,7 +385,7 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 			}
 			return nil
 		})
-		quiet.Stop()
+		quiet.Stop() // the timer only measures Hermes' silence between events; an open prompt is handled where it fires
 		scancel()
 		switch {
 		case ctx.Err() != nil || l.wasCancelled():
