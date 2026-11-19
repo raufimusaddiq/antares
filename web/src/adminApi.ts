@@ -145,10 +145,10 @@ export function listUsers(offset: number, status: string, q: string, signal?: Ab
 }
 export const getUser = (id: string, signal?: AbortSignal) => call("GET", `/api/admin/users/${id}`, parseAdminUser, undefined, signal);
 /** Keyset paging: `before` is the previous page's `next`, or empty for the newest entries. `action` is an exact action name. */
-export function listAudit(before: string, action = "", signal?: AbortSignal) {
+export function listAudit(before: string, q = "", signal?: AbortSignal) {
   const p = new URLSearchParams({ limit: String(AUDIT_PAGE) });
   if (before) p.set("before", before);
-  if (action) p.set("action", action);
+  if (q) p.set("q", q);
   return call("GET", `/api/admin/audit?${p}`, parseAudit, undefined, signal);
 }
 export const decide = (id: string, action: Decision, reason: string) => call("POST", `/api/admin/users/${id}/${action}`, parseAdminUser, reason ? { reason } : {});
