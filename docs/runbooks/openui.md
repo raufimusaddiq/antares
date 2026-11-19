@@ -14,9 +14,9 @@ Antares-specific component set to keep in step with the prompt.
   (at most 8 per message); anything else, including such a fence nested in another code fence, stays Markdown.
 - **Lazy runtime**: renderer, library and its CSS are on-demand chunks (`validate-*.js` ~0.9 MB,
   `components-*.css` ~370 kB). Two heavier parts load later still: the code highlighter (`prism-*.js` ~0.6 MB) only when
-  a reply shows a code block, and KaTeX only for math. Icons are one small chunk each, but only the ~360 listed in
-  `web/src/openui/iconNames.ts` are bundled; any other name falls back to the reply's category icon (add a name to the
-  list to support it; the build fails on a name lucide does not have). A chat with no rich content never fetches them;
+  a reply shows a code block, and KaTeX only for math. Every lucide icon (aliases included, since Hermes can name any) is packed into one lazy chunk
+  (`_antares-lucide-all-*.js` ~0.47 MB) by the `lucideIconChunk` plugin in `web/vite.config.ts`, fetched when a reply first
+  shows an icon; nothing is dropped. A chat with no rich content never fetches them;
   `TestOpenUIChunksAreNotInTheInitialBundle` (`internal/webui`) fails if the shell preloads or contains `Block`.
 - **Strict gate** (`validate.ts`): the parser is permissive, so a block is rendered only if it parses with no error
   other than a mistyped or extra argument, has a `Card` root, uses only components of `openuiChatLibrary`, has no

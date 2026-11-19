@@ -3,7 +3,6 @@ import { defineConfig, type Plugin } from "vite";
 import react from "@vitejs/plugin-react";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { ICON_NAMES } from "./src/openui/iconNames.ts";
 
 // @openuidev/lang-core ships opt-in usage telemetry (a PostHog key, host and sender).
 // It is off unless OPENUI_RUNTIME_TELEMETRY_ENABLED is set and our CSP would block it,
@@ -158,30 +157,36 @@ function lazyCodeHighlighter(): Plugin {
   };
 }
 
-// OpenUI's Icon resolves any lucide name through lucide-react/dynamicIconImports, which makes the
-// build emit one chunk for each of ~1700 icons. The library's import is pointed at a module that
-// holds only the icons in src/openui/iconNames.ts; a name outside it falls back to the reply's
-// category icon, as any unknown name already does. A name that is not a lucide icon fails the build.
-const ICON_MODULE = "\0antares-lucide-icons";
-function lucideIconSubset(): Plugin {
+// OpenUI's Icon resolves any lucide name through lucide-react/dynamicIconImports, whose ~1700 dynamic
+// imports would each become a chunk (and bloat the embedded binary). Hermes can name any lucide icon, so
+// none is dropped: the library's import is pointed at a map with every lucide key (aliases included) whose
+// loader fetches ONE module holding every icon component, so the catalogue is a single lazy chunk fetched
+// when a reply first shows an icon. An icon the app also imports statically stays in the shared chunk.
+const ICON_MAP = "\0antares-lucide-map";
+const ICON_ALL = "\0antares-lucide-all";
+function lucideIconChunk(): Plugin {
+  const iconsDir = "lucide-react/dist/esm/icons/";
   return {
-    name: "lucide-icon-subset",
+    name: "lucide-icon-chunk",
     enforce: "pre",
-    async resolveId(id) {
-      if (id.endsWith("lucide-react/dynamicIconImports.mjs")) return ICON_MODULE;
+    resolveId(id) {
+      if (id.endsWith("lucide-react/dynamicIconImports.mjs")) return ICON_MAP;
+      if (id === ICON_ALL) return ICON_ALL;
       return null;
     },
     async load(id) {
-      if (id !== ICON_MODULE) return null;
+      if (id !== ICON_MAP && id !== ICON_ALL) return null;
       const all = await this.resolve("lucide-react/dist/esm/dynamicIconImports.js");
-      if (!all) return this.error("lucide-icon-subset: cannot find lucide-react's icon map");
-      // A key may be an alias of another icon's file (fingerprint -> fingerprint-pattern), so take the path from the map.
-      const files = new Map([...readFileSync(all.id, "utf8").matchAll(/^ {2}"([^"]+)": \(\) => import\('\.\/icons\/([^']+)'\)/gm)].map((m) => [m[1], m[2]]));
-      const names = [...new Set(ICON_NAMES)];
-      const missing = names.filter((n) => !files.has(n));
-      if (missing.length) this.error(`lucide-icon-subset: not lucide icons: ${missing.join(", ")}`);
-      const entries = names.map((n) => `  ${JSON.stringify(n)}: () => import("lucide-react/dist/esm/icons/${files.get(n)}"),`);
-      return `export default {\n${entries.join("\n")}\n};\n`;
+      if (!all) return this.error("lucide-icon-chunk: cannot find lucide-react's icon map");
+      const keys = [...readFileSync(all.id, "utf8").matchAll(/^ {2}"([^"]+)": \(\) => import\('\.\/icons\/([^']+)'\)/gm)].map((m) => [m[1], m[2]] as const);
+      if (keys.length < 1000) return this.error("lucide-icon-chunk: lucide's icon map changed shape; review the loader again");
+      if (id === ICON_MAP) {
+        const entries = keys.map(([k, f]) => `  ${JSON.stringify(k)}: () => import(${JSON.stringify(ICON_ALL)}).then((m) => ({ default: m.default[${JSON.stringify(f)}] })),`);
+        return `export default {\n${entries.join("\n")}\n};\n`;
+      }
+      const files = [...new Set(keys.map(([, f]) => f))];
+      const imports = files.map((f, n) => `import i${n} from "${iconsDir}${f}";`);
+      return `${imports.join("\n")}\nexport default {\n${files.map((f, n) => `  ${JSON.stringify(f)}: i${n},`).join("\n")}\n};\n`;
     },
   };
 }
@@ -189,7 +194,7 @@ function lucideIconSubset(): Plugin {
 // The bundle is built into the directory the Go binary embeds (internal/webui),
 // so `go build` needs no Node. Production never runs Node: this is build-time only.
 export default defineConfig({
-  plugins: [react(), stripOpenUITelemetry(), stripThirdPartyFavicons(), labelSourceCarousel(), loadKatexOnlyForMath(), lazyCodeHighlighter(), lucideIconSubset()],
+  plugins: [react(), stripOpenUITelemetry(), stripThirdPartyFavicons(), labelSourceCarousel(), loadKatexOnlyForMath(), lazyCodeHighlighter(), lucideIconChunk()],
   resolve: { alias: { "antares-lazy-prism": fileURLToPath(new URL("./src/openui/LazyPrism.tsx", import.meta.url)) } },
   build: {
     outDir: "../internal/webui/dist",
