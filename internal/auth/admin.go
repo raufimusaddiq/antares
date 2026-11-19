@@ -382,11 +382,13 @@ func (a *Auth) adminAudit(w http.ResponseWriter, r *http.Request) {
 	}
 	at, id, ok := auditCursor(r.URL.Query().Get("before"))
 	action := r.URL.Query().Get("action")
-	if !ok || r.URL.Query().Has("offset") || len(action) > 100 || strings.ContainsFunc(action, unicode.IsControl) {
+	search := r.URL.Query().Get("q")
+	if !ok || r.URL.Query().Has("offset") || len(action) > 100 || strings.ContainsFunc(action, unicode.IsControl) ||
+		len(search) > 100 || strings.ContainsFunc(search, unicode.IsControl) {
 		a.apiError(w, r, http.StatusBadRequest, "INVALID_REQUEST", "Invalid limit or before")
 		return
 	}
-	rows, more, err := store.ListAudit(r.Context(), a.db, limit, at, id, action)
+	rows, more, err := store.ListAudit(r.Context(), a.db, limit, at, id, action, search)
 	if err != nil {
 		log.Printf("auth: audit list failed: %v", err)
 		a.apiError(w, r, http.StatusInternalServerError, "INTERNAL", "Could not read the audit feed")

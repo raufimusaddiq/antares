@@ -228,7 +228,7 @@ describe("audit log", () => {
     expect(html).toContain("Test Person");
     expect(html).toContain(ID);
     expect(html).toContain('class="action"');
-    expect(renderToStaticMarkup(<AuditTable entries={[entry(1)]} hasOlder={false} hasNewer={false} onOlder={noop} onNewer={noop} action="admin.approve" onAction={noop} />)).toContain('id="audit-action"');
+    expect(renderToStaticMarkup(<AuditTable entries={[entry(1)]} hasOlder={false} hasNewer={false} onOlder={noop} onNewer={noop} query="approve" onQuery={noop} />)).toContain('id="audit-search"');
   });
 
   it("the newest page cannot go newer; the last page cannot go older; empty says so", () => {
@@ -263,7 +263,7 @@ describe("api calls send the server nothing it must choose", () => {
     await listUsers(0, "APPROVED", "sari & co");
     await listAudit("");
     await listAudit("2026-03-04T05:06:07Z|e4");
-    await listAudit("", "admin.approve");
+    await listAudit("", "ada@ approve");
     await getUser(ID);
     const urls = (f.mock.calls as unknown as [string, RequestInit][]).map(([u]) => u);
     expect(urls).toEqual([
@@ -271,7 +271,7 @@ describe("api calls send the server nothing it must choose", () => {
       "/api/admin/users?limit=200&offset=0&status=APPROVED&q=sari+%26+co",
       "/api/admin/audit?limit=50",
       "/api/admin/audit?limit=50&before=2026-03-04T05%3A06%3A07Z%7Ce4",
-      "/api/admin/audit?limit=50&action=admin.approve",
+      "/api/admin/audit?limit=50&q=ada%40+approve",
       `/api/admin/users/${ID}`,
     ]);
   });

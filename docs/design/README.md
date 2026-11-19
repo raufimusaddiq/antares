@@ -107,7 +107,7 @@ variable mode); the minor state frames reuse the same components and are not dup
 - Admin / Users: the approval and tenant chips carry the same three tones as Posts (mint Approved/Ready, periwinkle
   Pending/Configuring/Not provisioned, salmon Failed/Rejected/Suspended), in both the light and the dark Users frames. A
   Pending row carries a small Approve button under its chip (both frames).
-- Admin / Audit: the page's h1 and the Export button share one header row, above the feed and its action filter.
+- Admin / Audit: the page's h1 and the Export button share one header row, above the feed and its search box (partial action, or actor/target name or email; a Search button, and Clear once a search is active).
 - Admin / Capabilities: opens with an h1 "Capabilities"; "Assistant tools" and "Assistant capabilities" are h2 (16 px bold).
   The three assistant tools use the shared Switch (46x26, mint on, rail off, ink knob), the same as Models.
 

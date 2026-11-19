@@ -686,8 +686,9 @@ type AuditEntry struct {
 // it, and an offset into a newest-first list shifts with every new row, so a
 // page would repeat entries already seen and hide others. A page starts strictly
 // after (beforeAt, beforeID) in the feed's own order; both empty means the
-// newest page. more reports whether older entries exist.
-func ListAudit(ctx context.Context, db *sql.DB, limit int, beforeAt, beforeID, action string) (out []AuditEntry, more bool, err error) {
+// newest page. search is a case-insensitive substring of the action or of the actor's or target's name or email.
+// more reports whether older entries exist.
+func ListAudit(ctx context.Context, db *sql.DB, limit int, beforeAt, beforeID, action, search string) (out []AuditEntry, more bool, err error) {
 	if limit < 1 || limit > 200 {
 		limit = 50
 	}
@@ -706,6 +707,12 @@ func ListAudit(ctx context.Context, db *sql.DB, limit int, beforeAt, beforeID, a
 	if action != "" {
 		where = append(where, `a.action = ?`)
 		args = append(args, action)
+	}
+	if search != "" {
+		// A substring match on the action and on identity metadata only; %, _ and the escape itself are literals.
+		like := "%" + likeEscaper.Replace(strings.ToLower(search)) + "%"
+		where = append(where, `(lower(a.action) LIKE ? ESCAPE '\' OR ulower(COALESCE(au.display_name,'')) LIKE ? ESCAPE '\' OR ulower(COALESCE(au.email,'')) LIKE ? ESCAPE '\' OR ulower(COALESCE(tu.display_name,'')) LIKE ? ESCAPE '\' OR ulower(COALESCE(tu.email,'')) LIKE ? ESCAPE '\')`)
+		args = append(args, like, like, like, like, like)
 	}
 	if len(where) > 0 {
 		q += ` WHERE ` + strings.Join(where, " AND ")

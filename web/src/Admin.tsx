@@ -533,31 +533,31 @@ function AuditPerson({ id, name, email }: { id: string; name: string; email: str
   );
 }
 
-export function AuditFilter({ action, onAction }: { action: string; onAction: (a: string) => void }) {
-  const [text, setText] = useState(action);
+export function AuditFilter({ query, onQuery }: { query: string; onQuery: (q: string) => void }) {
+  const [text, setText] = useState(query);
   return (
     <form
       className="search"
       role="search"
       onSubmit={(e) => {
         e.preventDefault();
-        onAction(text.trim());
+        onQuery(text.trim());
       }}
     >
-      <label htmlFor="audit-action" className="sr">
-        Filter by action
+      <label htmlFor="audit-search" className="sr">
+        Search the audit log
       </label>
-      <input id="audit-action" type="search" value={text} maxLength={100} placeholder="Filter by action (e.g. admin.approve)" onChange={(e) => setText(e.target.value)} />
+      <input id="audit-search" type="search" value={text} maxLength={100} placeholder="Search action, name or email (e.g. approve, ada@)" onChange={(e) => setText(e.target.value)} />
       <button type="submit" className="quiet">
-        Filter
+        Search
       </button>
-      {action && (
+      {query && (
         <button
           type="button"
           className="quiet"
           onClick={() => {
             setText("");
-            onAction("");
+            onQuery("");
           }}
         >
           Clear
@@ -567,7 +567,7 @@ export function AuditFilter({ action, onAction }: { action: string; onAction: (a
   );
 }
 
-export function AuditTable({ entries, hasOlder, hasNewer, onOlder, onNewer, action = "", onAction }: { entries: AuditEntry[]; hasOlder: boolean; hasNewer: boolean; onOlder: () => void; onNewer: () => void; action?: string; onAction?: (a: string) => void }) {
+export function AuditTable({ entries, hasOlder, hasNewer, onOlder, onNewer, query = "", onQuery }: { entries: AuditEntry[]; hasOlder: boolean; hasNewer: boolean; onOlder: () => void; onNewer: () => void; query?: string; onQuery?: (q: string) => void }) {
   const newest = entries[0]?.createdAt;
   const oldest = entries[entries.length - 1]?.createdAt;
   return (
@@ -577,8 +577,8 @@ export function AuditTable({ entries, hasOlder, hasNewer, onOlder, onNewer, acti
         <AuditExport />
       </div>
       <p className="label">Who did what to which account, and when. Metadata only: no conversation content is ever recorded here.</p>
-      {onAction && <AuditFilter action={action} onAction={onAction} />}
-      {entries.length === 0 && <p className="label">{action ? "No entries for that action." : hasNewer ? "No more entries." : "Nothing has been recorded yet."}</p>}
+      {onQuery && <AuditFilter query={query} onQuery={onQuery} />}
+      {entries.length === 0 && <p className="label">{query ? "No entries match that search." : hasNewer ? "No more entries." : "Nothing has been recorded yet."}</p>}
       {entries.length > 0 && (
         <div className="table-wrap">
           <table className="admin-table">
@@ -628,9 +628,9 @@ export function AuditScreen() {
   // The cursors of the pages already visited, newest page first. "Newer" pops one, so it re-reads
   // from the same position instead of guessing a backwards offset in a feed that keeps growing.
   const [trail, setTrail] = useState<string[]>([""]);
-  const [action, setAction] = useState("");
+  const [query, setQuery] = useState("");
   const before = trail[trail.length - 1];
-  const [state, reload] = useLoad((s) => listAudit(before, action, s), `audit-${trail.join(">")}|${action}`);
+  const [state, reload] = useLoad((s) => listAudit(before, query, s), `audit-${trail.join(">")}|${query}`);
   if (state.kind === "loading") return <Loading what="the audit log" />;
   if (state.kind === "forbidden") return <Forbidden />;
   if (state.kind === "error") return <Problem message={state.message} onRetry={reload} />;
@@ -642,9 +642,9 @@ export function AuditScreen() {
       hasNewer={trail.length > 1}
       onOlder={() => setTrail((t) => [...t, next])}
       onNewer={() => setTrail((t) => t.slice(0, -1))}
-      action={action}
-      onAction={(a) => {
-        setAction(a);
+      query={query}
+      onQuery={(q) => {
+        setQuery(q);
         setTrail([""]);
       }}
     />

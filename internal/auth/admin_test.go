@@ -737,6 +737,48 @@ func TestAuditFiltersByActionAndPages(t *testing.T) {
 	}
 }
 
+func TestAuditSearchMatchesActionAndPeopleAndPages(t *testing.T) {
+	h := newHarness(t)
+	admin, _, _ := h.adminWithKicks()
+	for i := 0; i < 3; i++ {
+		sub := "srch" + strconv.Itoa(i)
+		h.userIn(sub, "PENDING", "UNPROVISIONED", "USER", false)
+		admin.act(h.userID(sub), "reject", `{"reason":"r"}`)
+	}
+	h.userIn("other", "PENDING", "UNPROVISIONED", "USER", false)
+	admin.act(h.userID("other"), "reject", `{"reason":"r"}`)
+	for _, c := range []struct {
+		q    string
+		want int
+	}{{"ADMIN.rej", 4}, {"SRCH", 6}, {"srch1@EXAMPLE", 2}, {"no-such-thing", 0}, {"%", 0}} {
+		var seen int
+		before := ""
+		for pages := 0; pages < 20; pages++ {
+			w := admin.get("/api/admin/audit?limit=1&q=" + url.QueryEscape(c.q) + "&before=" + url.QueryEscape(before))
+			var out struct {
+				Entries []AuditView `json:"entries"`
+				Next    string      `json:"next"`
+			}
+			if w.Code != 200 || json.Unmarshal(w.Body.Bytes(), &out) != nil {
+				t.Fatalf("%q: %d %s", c.q, w.Code, w.Body.String())
+			}
+			seen += len(out.Entries)
+			if out.Next == "" {
+				break
+			}
+			before = out.Next
+		}
+		if seen != c.want {
+			t.Errorf("search %q paged through %d entries, want %d", c.q, seen, c.want)
+		}
+	}
+	for _, bad := range []string{"x\x00y", strings.Repeat("a", 101)} {
+		if w := admin.get("/api/admin/audit?q=" + url.QueryEscape(bad)); w.Code != 400 {
+			t.Errorf("a bad search %q: %d", bad, w.Code)
+		}
+	}
+}
+
 // #193 review: the revocation and its audit row commit together. When the audit insert fails, nothing is revoked.
 func TestAdminRevokeSessionsRollsBackWhenTheAuditFails(t *testing.T) {
 	h := newHarness(t)
