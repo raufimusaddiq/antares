@@ -78,3 +78,24 @@ func TestSkillsHelperIsNotAskedWhenHermesListsThem(t *testing.T) {
 		t.Fatalf("helper used although Hermes answered: %s", w.Body.String())
 	}
 }
+
+// Regression (T-16): the helper fallback used to run after the cache on every request, so a repeat call within
+// the TTL still cost an exec. A second call through the handler makes no Hermes or helper call.
+func TestCapabilitiesRepeatCallMakesNoHelperCallWhenSkillsFallBack(t *testing.T) {
+	src := &fakeSkills{list: []hermes.Skill{{Name: "deep-research"}}}
+	a := newApp(t, appOpts{skills: src})
+	alice := a.user("alice")
+	serveDiscovery(a, readFixture(t, "../../docs/hermes/fixtures/capabilities.body.json"))
+	a.hx.mu.Lock()
+	delete(a.hx.canned, "/v1/skills")
+	a.hx.mu.Unlock()
+
+	first := alice.get("/api/capabilities")
+	n := len(a.hx.requests())
+	second := alice.get("/api/capabilities")
+	src.mu.Lock()
+	defer src.mu.Unlock()
+	if len(src.slugs) != 1 || len(a.hx.requests()) != n || first.Body.String() != second.Body.String() || !strings.Contains(second.Body.String(), "deep-research") {
+		t.Fatalf("helper calls = %d, extra hermes calls = %d; want 1 and 0\n%s", len(src.slugs), len(a.hx.requests())-n, second.Body.String())
+	}
+}
