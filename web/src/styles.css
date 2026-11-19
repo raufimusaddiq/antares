@@ -786,6 +786,12 @@ textarea:where(:not(.openui-root *)) { font-family: var(--font-ui); color: var(-
   .side > button { background-color: var(--cobalt); color: var(--cobalt-ink); box-shadow: inset 0 0 0 2px var(--ink); }
   .side > button[data-icon]::before { width: 1.15rem; height: 1.15rem; margin-right: 0.3rem; }
   .chats-toggle { display: inline-flex; margin-left: auto; }
+  /* On the narrowest phones the three ways in give up a little padding so none is cut off. */
+  @media (max-width: 400px) {
+    .side { gap: 0.1rem; }
+    .side > button, .chats-toggle, .search-toggle { padding: 0 0.3rem; border-width: 3px; }
+    .side > button[data-icon]::before { margin-right: 0.2rem; }
+  }
   .side .label { flex: 1 1 0; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The conversation list is a drawer, not a sideways strip: a vertical list with its own scrolling, rows as on a
      wide screen. It is closed until Chats is pressed, and a chosen conversation closes it. */
