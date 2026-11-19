@@ -313,29 +313,29 @@ dd:where(:not(.openui-root *)):last-child { margin-bottom: 0; }
 .side > button.rail-blog { margin-top: 0.5rem; background: var(--card); color: var(--ink); box-shadow: none; }
 .side > button.rail-blog:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 8%, var(--card)); }
 /* A conversation: a numbered tile (three pastels in turn) and a title; the open one is a filled pill. */
-.side button.item {
+.side .item {
   counter-increment: chat; position: relative; display: block; width: 100%; min-height: 2.75rem; margin: 0.15rem 0; padding: 0.2rem 0.7rem 0.2rem 3.1rem;
   text-align: left; line-height: 2.25rem; font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  background: transparent; border: 0; border-radius: var(--r-md); color: var(--ink);
+  background: transparent; border: 0; border-radius: var(--r-md); color: var(--ink); text-decoration: none;
 }
-.side button.item::before {
+.side .item::before {
   content: counter(chat, decimal-leading-zero); position: absolute; left: 0.35rem; top: 50%; transform: translateY(-50%);
   display: grid; place-items: center; width: 2rem; height: 2rem; line-height: 1;
   font-family: var(--font-mono); font-size: 0.75rem; font-weight: 700; color: var(--mark-ink);
   background: var(--card); border: 2px solid var(--ink); border-radius: 9px; box-shadow: var(--hard-sm);
 }
-.side li:nth-child(3n + 1) button.item::before { background: var(--mark); }
-.side li:nth-child(3n + 2) button.item::before { background: var(--peri); color: var(--ink); }
-.side li:nth-child(3n) button.item::before { background: var(--mint); color: var(--ink); }
-.side button.item:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
-.side button.item.current { background: var(--ink); color: var(--canvas); font-weight: 700; border-radius: var(--r-pill); box-shadow: var(--hard-sm); }
-.side button.item.current::before { background: var(--mark); color: var(--mark-ink); border-color: var(--canvas); box-shadow: none; }
+.side li:nth-child(3n + 1) .item::before { background: var(--mark); }
+.side li:nth-child(3n + 2) .item::before { background: var(--peri); color: var(--ink); }
+.side li:nth-child(3n) .item::before { background: var(--mint); color: var(--ink); }
+.side .item:hover:not(:disabled) { background: color-mix(in srgb, var(--ink) 8%, transparent); color: var(--ink); }
+.side .item.current { background: var(--ink); color: var(--canvas); font-weight: 700; border-radius: var(--r-pill); box-shadow: var(--hard-sm); }
+.side .item.current::before { background: var(--mark); color: var(--mark-ink); border-color: var(--canvas); box-shadow: none; }
 .side .label { font-family: var(--font-mono); font-size: 0.75rem; color: var(--ink-2); margin: 0.3rem 0; }
 
 /* Managing a conversation: a row is the open button and its actions button; the menu and the dialogs are fixed over the page,
    so the phone strip's clipping never cuts them. */
 .side li { display: flex; align-items: center; gap: 0.1rem; }
-.side li > button.item { flex: 1 1 0; width: auto; min-width: 0; }
+.side li > .item { flex: 1 1 0; width: auto; min-width: 0; }
 .side button.row-more { flex: none; width: 2.75rem; min-width: 2.75rem; min-height: 2.75rem; margin: 0; padding: 0; justify-content: center; border-color: transparent; font-size: 1.2rem; line-height: 1; }
 .side .tag { margin-left: 0.4rem; font-family: var(--font-mono); font-size: 0.7rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; }
 .side .tag.warn { text-decoration: underline wavy; text-underline-offset: 3px; }
@@ -774,16 +774,16 @@ textarea:where(:not(.openui-root *)) { font-family: var(--font-ui); color: var(-
   /* Strip: New chat, Search and the conversation chips on one scrolling line; an open search takes the strip. */
   .side { display: flex; align-items: center; gap: 0.4rem; overflow: hidden; padding: 0 0.25rem 0.35rem; border-bottom: 1px solid var(--hair); }
   .side > .rail-blog, .side > .rail-blogs { display: none; } /* a phone reaches the blog from the Menu, where the strip has no room for it */
-  .side > button, .side button.item, .search-toggle { flex: none; width: auto; min-height: 2.75rem; margin: 0; padding: 0 0.6rem; border: 6px solid transparent; background-clip: padding-box; border-radius: var(--r-pill); }
+  .side > button, .side .item, .search-toggle { flex: none; width: auto; min-height: 2.75rem; margin: 0; padding: 0 0.6rem; border: 6px solid transparent; background-clip: padding-box; border-radius: var(--r-pill); }
   .side > button { background-color: var(--cobalt); color: var(--cobalt-ink); box-shadow: inset 0 0 0 2px var(--ink); }
   .side > button[data-icon]::before { width: 1.15rem; height: 1.15rem; margin-right: 0.3rem; }
   /* A conversation chip: 44px hit area, a 32px visible pill. */
   .side ul { display: flex; flex: 1 1 0; min-width: 0; gap: 0.4rem; margin: 0; overflow-x: auto; overflow-y: hidden; }
   .side ul::before { display: none; }
   .side > ul > li { flex: none; max-width: 100%; min-width: 0; }
-  .side button.item { display: block; max-width: 100%; font-size: 0.9rem; line-height: 1.9; padding-block: 0; }
-  .side button.item::before { display: none; }
-  .side button.item.current { box-shadow: none; }
+  .side .item { display: block; max-width: 100%; font-size: 0.9rem; line-height: 1.9; padding-block: 0; }
+  .side .item::before { display: none; }
+  .side .item.current { box-shadow: none; }
   .side .label { flex: 1 1 0; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The strip stays what it was: one line of chips, the open one whole. The main list's actions buttons are not in it; the open
      conversation's actions are in the Options panel ("Conversation actions"), and the archive list, where the strip gives way to a
@@ -896,7 +896,7 @@ textarea:where(:not(.openui-root *)) { font-family: var(--font-ui); color: var(-
 
 /* Touch targets: 44 CSS px on a phone or any coarse pointer. */
 @media (max-width: 40rem), (pointer: coarse) {
-  .chat-app button, .chat-app a.btn, .chat-app .side button.item, .chat-app .vstatus button, .chat-app .codehead button, .chat-app .composer .templates button, .chat-app .turn-control button { min-height: 2.75rem; min-width: 2.75rem; }
+  .chat-app button, .chat-app a.btn, .chat-app .side .item, .chat-app .vstatus button, .chat-app .codehead button, .chat-app .composer .templates button, .chat-app .turn-control button { min-height: 2.75rem; min-width: 2.75rem; }
   .chat-app .turn-control button { padding: 0 0.4rem; }
   .chat-app .turn-controls { gap: 0 0.25rem; }
   .chat-app summary { min-height: 2.75rem; padding-block: 0.65rem; }
@@ -1246,8 +1246,8 @@ details[open] > summary:where(:not(.openui-root *))::after { transform: none; }
 @media (min-width: 40.01rem) {
   .side li + li { margin-top: 0.3rem; }
   .side li.archive-toggle { margin-top: 0.9rem; }
-  .side button.item { padding-left: 3.25rem; }
-  .side button.item::before { left: 0.45rem; }
+  .side .item { padding-left: 3.25rem; }
+  .side .item::before { left: 0.45rem; }
 }
 @media (min-width: 40.01rem) {
   .side ul > li { animation: rise-in 0.5s var(--ease-out) both; }
@@ -1274,8 +1274,8 @@ a.btn, button:where(:not(.openui-root *)) {
 a.btn:hover, .composer button[type="submit"]:hover:not(:disabled), .vjump button:hover, .jump-slot button:hover, .dialog-actions button:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--ink); }
 a.btn:active, .composer button[type="submit"]:active:not(:disabled), .vjump button:active, .jump-slot button:active, .dialog-actions button:active:not(:disabled) { transform: translate(3px, 3px); box-shadow: none; }
 button:where(:not(.openui-root *)):active:not(:disabled) { transform: translate(1px, 1px); }
-.side button.item { transition: background-color 0.15s var(--ease-out), transform 0.15s var(--ease-out); }
-.side button.item:hover:not(.current) { transform: translateX(2px); }
+.side .item { transition: background-color 0.15s var(--ease-out), transform 0.15s var(--ease-out); }
+.side .item:hover:not(.current) { transform: translateX(2px); }
 /* New chat lifts like the other hard-shadow buttons in the rail; in the phone's strip it stays inside its row. */
 @media (min-width: 40.01rem) {
   .side > button:hover:not(:disabled) { transform: translate(-2px, -2px); box-shadow: 5px 5px 0 var(--ink); }

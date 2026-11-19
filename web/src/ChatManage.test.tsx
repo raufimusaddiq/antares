@@ -59,7 +59,7 @@ async function mount(chats: ChatSummary[], deleteAvailable = true) {
   await waitFor(() => expect(api.getCapabilities).toHaveBeenCalled());
 }
 
-const rows = () => Array.from(document.querySelectorAll("nav.side > ul > li button.item")).map((b) => b.textContent ?? "");
+const rows = () => Array.from(document.querySelectorAll("nav.side > ul > li a.item")).map((b) => b.textContent ?? "");
 const trigger = (title: string) => screen.getByRole("button", { name: `Actions for ${title}` });
 const openMenu = (title: string) => {
   fireEvent.click(trigger(title));
@@ -102,7 +102,7 @@ describe("the actions menu", () => {
 
   it("is also under Conversation actions for the open chat (the phone's home for it, in the Options panel)", async () => {
     await mount([chat("c1", "Talk")]);
-    await waitFor(() => expect(document.querySelector("nav.side button.item.current")).not.toBeNull());
+    await waitFor(() => expect(document.querySelector("nav.side a.item.current")).not.toBeNull());
     const slot = document.querySelector("#chat-extras .chat-actions-slot")!;
     const btn = within(slot as HTMLElement).getByRole("button", { name: "Conversation actions" });
     fireEvent.click(btn);
@@ -233,7 +233,7 @@ describe("delete", () => {
     await mount([chat("c2", "Newer"), chat("c1", "Older")]);
     saveDraft(EMAIL, "c2", "unsent words");
     saveDraft(EMAIL, "c1", "other draft");
-    await waitFor(() => expect(document.querySelector("nav.side button.item.current")?.textContent).toBe("Newer")); // opens the most recent
+    await waitFor(() => expect(document.querySelector("nav.side a.item.current")?.textContent).toBe("Newer")); // opens the most recent
     let release!: (v: unknown) => void;
     api.deleteChat.mockReturnValue(new Promise((r) => (release = r)));
     fireEvent.click(within(openMenu("Newer")).getByRole("menuitem", { name: "Delete…" }));
@@ -250,7 +250,7 @@ describe("delete", () => {
     expect(loadDraft(EMAIL, "c1")).toBe("other draft");
     expect(screen.queryByRole("alertdialog")).toBeNull();
     // The open chat was the deleted one: the conversation on screen is now the remaining one.
-    expect(document.querySelector("nav.side button.item.current")?.textContent).toBe("Older");
+    expect(document.querySelector("nav.side a.item.current")?.textContent).toBe("Older");
     expect(document.querySelector('[role="status"]')?.textContent).toBe("Deleted Newer.");
   });
 
@@ -371,7 +371,7 @@ describe("Visualize and sending", () => {
   for (const outcome of ["stored", "failed"] as const) {
     it(`a send during a pending Visualize save is held, then goes after the save (${outcome})`, async () => {
       await mount([chat("c1", "One")]);
-      fireEvent.click(screen.getByRole("button", { name: "One" }));
+      fireEvent.click(screen.getByRole("link", { name: "One" }));
       let saved!: (v: unknown) => void;
       api.changeChat.mockReturnValue(new Promise((r) => (saved = r)));
       api.sendMessage.mockResolvedValue(ok({ runId: "r1", status: "PENDING" }));
@@ -405,7 +405,7 @@ describe("Visualize and sending", () => {
     fireEvent.click(await within(archive).findByText("Old"));
     expect(((await screen.findByRole("checkbox", { name: /Visualize/ })) as HTMLInputElement).checked).toBe(true);
     // Archived while open.
-    fireEvent.click(screen.getByRole("button", { name: "One" }));
+    fireEvent.click(screen.getByRole("link", { name: "One" }));
     await waitFor(() => expect((screen.getByRole("checkbox", { name: /Visualize/ }) as HTMLInputElement).checked).toBe(false));
     api.changeChat.mockResolvedValue(ok(chat("c1", "One", { archived: true })));
     fireEvent.click(within(openMenu("One")).getByRole("menuitem", { name: "Archive" }));
@@ -419,7 +419,7 @@ describe("Visualize and sending", () => {
 describe("the page names itself", () => {
   it("has one h1, and it is the open conversation's title", async () => {
     await mount([chat("c1", "One"), chat("c2", "Two")]);
-    fireEvent.click(screen.getByRole("button", { name: "Two" }));
+    fireEvent.click(screen.getByRole("link", { name: "Two" }));
     await waitFor(() => expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1));
     expect(screen.getByRole("heading", { level: 1 }).textContent).toBe("Two");
   });
