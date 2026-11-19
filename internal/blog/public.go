@@ -183,6 +183,9 @@ func (s *Service) PublicGet(ctx context.Context, slug string) (PublicPost, error
 	if err != nil {
 		return PublicPost{}, err
 	}
+	if strings.TrimSpace(x.Summary) == "" { // the page shows the lede its card shows; the published version only
+		x.Summary = excerpt("", docText(doc))
+	}
 	x.CoverURL, x.AuthorName, x.Doc, x.Blocks = publicAssetURL(slug, cover), authorName(name), json.RawMessage(doc), blocks
 	return x, nil
 }
