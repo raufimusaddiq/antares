@@ -119,6 +119,21 @@ describe("image paste, chip and send (#108 image acceptance, MEDIA-EXT-001/002)"
     expect((await screen.findByRole("alert")).textContent).toMatch(/cannot be confirmed/);
   });
 
+  it("the empty new-chat screen refuses pasted and dropped images: no upload, no chip", async () => {
+    media.getImageInput.mockResolvedValue(verdict(true));
+    media.uploadImage.mockResolvedValue(ok({ id: ID }));
+    await mount();
+    await waitFor(() => expect(screen.getByText("Attach image")).toBeTruthy());
+    fireEvent.click(screen.getAllByRole("button", { name: "New chat" })[0]);
+    await waitFor(() => expect(screen.queryByText("Attach image")).toBeNull());
+
+    paste([png()]);
+    expect((await screen.findByRole("alert")).textContent).toBe("Open or start a chat first, then attach images.");
+    fireEvent.drop(box().closest("form") as HTMLFormElement, { dataTransfer: { files: [png()], items: [], types: ["Files"] } });
+    expect(media.uploadImage).not.toHaveBeenCalled();
+    expect(screen.queryByRole("list", { name: "Attached images" })).toBeNull();
+  });
+
   it("a dropped image works, a dropped non-image is ignored", async () => {
     media.getImageInput.mockResolvedValue(verdict(true));
     media.uploadImage.mockResolvedValue(ok({ id: ID }));
