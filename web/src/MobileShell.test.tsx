@@ -78,6 +78,16 @@ describe("phone layout toggles", () => {
     expect(screen.getByRole("link", { name: "Talk" }).getAttribute("title")).toBe("Talk");
   });
 
+  it("closes the chat drawer on Escape and returns focus to the Chats toggle", async () => {
+    await mount();
+    const toggle = screen.getByRole("button", { name: "Chats" });
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    fireEvent.keyDown(document.body, { key: "Escape" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(document.activeElement).toBe(toggle);
+  });
+
   it("puts the per-chat options behind a toggle", async () => {
     await mount();
     const toggle = screen.getByRole("button", { name: "Options" });

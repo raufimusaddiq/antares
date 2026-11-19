@@ -7,6 +7,7 @@ const api = vi.hoisted(() => ({
   listChats: vi.fn(),
   createChat: vi.fn(),
   changeChat: vi.fn(),
+  deleteChat: vi.fn(),
   getMessages: vi.fn(),
   sendMessage: vi.fn(),
   getRun: vi.fn(),
@@ -49,6 +50,7 @@ const newChatButton = () => screen.getAllByRole("button", { name: "New chat" })[
 const sidebarItems = () => Array.from(document.querySelectorAll("nav.side li a.item")).map((b) => b.getAttribute("aria-current") ?? "-");
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal("EventSource", FakeSource);
   api.getMessages.mockResolvedValue(page());
   api.getRun.mockResolvedValue({ ok: false, code: "NOT_FOUND" });
@@ -147,23 +149,25 @@ describe("New chat", () => {
     expect(FakeSource.all[1].url).toContain("r1");
   });
 
-  it("the first message goes into the new chat once, and a failed send retries with the same key", async () => {
-    await mount([]);
+  it("a first message the server refuses leaves no chat row, and the text goes back into the box", async () => {
+    await mount([chat("c1", { title: "Old talk" })]);
     api.createChat.mockResolvedValue(ok(chat("c2")));
+    api.deleteChat.mockResolvedValue(ok(true));
     fireEvent.click(newChatButton());
 
     api.sendMessage.mockResolvedValueOnce({ ok: false, code: "UPSTREAM_UNAVAILABLE" });
     fireEvent.change(document.getElementById("composer-input")!, { target: { value: "first" } });
     fireEvent.submit(document.querySelector("form.composer")!);
-    await screen.findByText("Send again");
-    expect(api.createChat).toHaveBeenCalledTimes(1);
-    const firstKey = api.sendMessage.mock.calls[0][2];
+    await waitFor(() => expect(api.deleteChat).toHaveBeenCalledWith("c2"));
+    await waitFor(() => expect(sidebarItems()).toEqual(["-"]));
+    expect(screen.getByText("Start a conversation below.")).toBeTruthy();
+    expect((document.getElementById("composer-input") as HTMLTextAreaElement).value).toBe("first");
 
-    api.sendMessage.mockResolvedValueOnce(ok({ runId: "r9", status: "PENDING" }));
-    fireEvent.click(screen.getByText("Send again"));
-    await waitFor(() => expect(api.sendMessage).toHaveBeenCalledTimes(2));
-    expect(api.sendMessage.mock.calls[1]).toEqual(["c2", "first", firstKey]);
-    expect(api.createChat).toHaveBeenCalledTimes(1);
+    // and it can be sent again
+    api.createChat.mockResolvedValue(ok(chat("c3")));
+    api.sendMessage.mockResolvedValue(ok({ runId: "r9", status: "PENDING" }));
+    fireEvent.submit(document.querySelector("form.composer")!);
+    await waitFor(() => expect(sidebarItems()).toEqual(["page", "-"]));
   });
 
   it("offers the saved templates as starters on the new-chat screen", async () => {

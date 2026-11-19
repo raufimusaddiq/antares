@@ -1118,7 +1118,9 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
       try {
         setBanner("");
         let chat = current;
+        let created = false;
         if (!chat) {
+          created = true;
           const c = await newChat();
           if (!c) {
             // Nothing was sent and no retry entry exists, so the message goes back into the box (ahead of anything typed
@@ -1150,6 +1152,27 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
         // Every outcome ends the hold: admitted deletes the server draft (and the reader's other devices lose it);
         // refused keeps it and resumes syncing whatever is typed next.
         hold.release(r.ok);
+        if (!r.ok && created && images.length === 0) {
+          // A first message the server refused leaves no chat behind: the row it created is removed (here and on the
+          // server), the screen goes back to the empty new chat, and the text returns to the box to be sent again.
+          void deleteChat(chat);
+          setChats((l) => l.filter((x) => x.id !== chat));
+          if (currentRef.current === chat) {
+            nav.current++;
+            detach();
+            writeUrl("/", "replace");
+            setCurrent(null);
+            currentRef.current = null;
+            setTurns([]);
+            setCursor("");
+            setPending(null);
+            dispatch({ k: "clear" });
+            const typed = draftNow.current;
+            if (hold.text.trim() !== "") onDraft(typed.trim() === "" ? hold.text : `${hold.text.replace(/\s*$/, "")}\n\n${typed}`);
+            setBanner(describeCode(r.code));
+          }
+          return;
+        }
         if (currentRef.current !== chat) {
           if (!r.ok && hold.text.trim() !== "" && loadDraft(email, chat) === "") {
             // Refused while the reader was elsewhere: the pending entry is gone, so keep the message in that chat's own

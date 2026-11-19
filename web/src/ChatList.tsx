@@ -52,6 +52,18 @@ export function ChatList(props: {
   const trigger = useRef<HTMLElement | null>(null);
   const toggleRef = useRef<HTMLButtonElement>(null);
   const toggled = useRef(false);
+  const chatsToggle = useRef<HTMLButtonElement>(null);
+  // Escape closes the phone drawer and hands focus back to the button that opened it.
+  useEffect(() => {
+    if (!listOpen) return;
+    const onKey = (e: globalThis.KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      setListOpen(false);
+      chatsToggle.current?.focus();
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [listOpen]);
   // The toggle moves between the end of the list and the archive's header, so keyboard focus follows it.
   useEffect(() => {
     if (toggled.current) toggleRef.current?.focus();
@@ -148,7 +160,7 @@ export function ChatList(props: {
           </button>,
           slot,
         )}
-      <button type="button" className="quiet chats-toggle" data-icon="chevron" aria-expanded={listOpen} aria-controls={listId} onClick={() => setListOpen((o) => !o)}>
+      <button ref={chatsToggle} type="button" className="quiet chats-toggle" data-icon="chevron" aria-expanded={listOpen} aria-controls={listId} onClick={() => setListOpen((o) => !o)}>
         Chats
       </button>
       <ul id={listId} className={listOpen ? "open" : undefined}>

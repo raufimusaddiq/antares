@@ -139,7 +139,7 @@ Blog: where the frames and the code still differ (kept honest; each is a gap to 
 
 - **Phone / Chats**: the rail is one row (New chat, Search, Chats) and the conversation list opens as a drawer under it:
   the full list, one row per conversation, the number badge and the actions button as on a wide screen, the page's own
-  scrollbar kept thin. The address is not in the phone header; it lives in the Menu.
+  scrollbar hidden (it still scrolls by touch). The address is not in the phone header; it lives in the Menu.
 - **Phone / New chat (starters)**: the new-chat card lists the reader's saved templates as starter buttons (none drawn
   when the account has saved none, because there is nothing to draw).
 - Wide-screen rows: the number badge is smaller and a row's actions button now sits over the row's end, shown on hover

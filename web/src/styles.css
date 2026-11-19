@@ -807,10 +807,9 @@ textarea:where(:not(.openui-root *)) { font-family: var(--font-ui); color: var(-
   .side .archive ul::before { display: block; }
   .side .archive li { flex: none; max-width: 100%; }
   .search-toggle { display: inline-flex; }
-  /* A phone keeps the system's overlay scrollbars out of the way: thin, themed, never the desktop chrome. */
-  .side::-webkit-scrollbar, .log::-webkit-scrollbar { width: 6px; height: 6px; }
-  .side::-webkit-scrollbar-thumb, .log::-webkit-scrollbar-thumb { background: var(--hair); border-radius: 3px; }
-  .log { scrollbar-width: thin; scrollbar-color: var(--hair) transparent; }
+  /* A phone shows no desktop-style scrollbars: the list and the log still scroll by touch. */
+  .side, .log { scrollbar-width: none; }
+  .side::-webkit-scrollbar, .log::-webkit-scrollbar { display: none; }
   .who-am-i { max-width: 9rem; }
   .search { flex: none; width: auto; margin: 0; }
   .search-body { display: none; }
