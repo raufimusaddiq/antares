@@ -38,8 +38,8 @@ Spec and plan: `specs/001-blog-cms-openui-publish/`. Two pages and one Admin fra
   and phone; also the frame for suspended and revoked), all four on the faint dot grid; the public List signed in ("Back to Antares",
   search box, "Yours" label, "Show more"), List with a search typed (count and a "Clear" button), List with no results, List error (signed out),
   List "Show more" loading, Post signed in ("Back to Antares", "More posts" button) and Phone List and Post; Chat menu and rail
-  (a round book-icon button beside the "Blog posts" pill, and a "Read the blog" row in the account menu), the same for a user
-  without writing (a full "Read the blog" pill in the rail, no "Blog posts"), and the Phone account menu for both
+  (a "Read the blog" pill in the rail and a "Read the blog" row in the account menu, with "Blog posts" in the menu), the same for a user
+  without writing (no "Blog posts"), and the Phone account menu for both
   kinds of user. All entries are buttons or rows, not text links: the secondary pill (white, ink border, hard shadow)
   for "More posts" and "Show more" (and "Back to Antares"), the cobalt filled pill for "Read the blog" on sign-in and status screens, the quiet pill for "Sign out" and "Clear".
 - **Admin / Suspended user (posts hidden)** on the Admin page: states that posts are hidden and no content is shown.

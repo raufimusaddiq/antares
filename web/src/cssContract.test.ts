@@ -142,6 +142,16 @@ describe("section headings sit flush with the text under them", () => {
   });
 });
 
+describe("the Settings dialog keeps one size across its tabs", () => {
+  it("gives the dialog a fixed height and lets the body fill it, so a short tab does not shrink it", () => {
+    expect(css.match(/\.settings-dialog \{[^}]*\}/)?.[0]).toMatch(/height:\s*min\(640px/);
+    expect(css.match(/\.settings-body \{[^}]*\}/)?.[0]).toMatch(/flex:\s*1/);
+  });
+  it("hides the closed dialog, which the flex display would otherwise keep on screen", () => {
+    expect(css.match(/\.settings-dialog:not\(\[open\]\) \{[^}]*\}/)?.[0]).toMatch(/display:\s*none/);
+  });
+});
+
 describe("the web app manifest is valid", () => {
   it("gives the share target an enctype, which a browser otherwise reports as missing", () => {
     const manifest = JSON.parse(readFileSync(join(pub, "manifest.webmanifest"), "utf8")) as { share_target?: { enctype?: string } };
