@@ -5,8 +5,8 @@ import { StoryDialog } from "./StoryDialog";
 import { renderPostCard, type PostCardData } from "./postCard";
 
 vi.mock("./postCard", () => ({ renderPostCard: vi.fn(async () => new Blob(["png"], { type: "image/png" })) }));
-vi.mock("../../exportChat", () => ({ saveBlob: vi.fn() }));
-import { saveBlob } from "../../exportChat";
+vi.mock("../../chatExport", () => ({ saveBlob: vi.fn() }));
+import { saveBlob } from "../../chatExport";
 
 const drawn = vi.mocked(renderPostCard);
 const DATA: PostCardData = { title: "Self-hosting", summary: "What it costs.", highlights: ["One"], authorName: "Maya R.", coverUrl: "", date: new Date(2026, 10, 9), address: "antares.example/b/self-hosting" };

@@ -4,8 +4,8 @@ import { join } from "node:path";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import { Artifacts } from "./Artifacts";
-import { artifactUrl, findArtifacts } from "./artifacts";
-import { fileName, toMarkdown } from "./exportChat";
+import { artifactUrl, findArtifacts } from "./artifactRefs";
+import { fileName, toMarkdown } from "./chatExport";
 
 const TEXT = "Look:\n```html\n<script>top.location='https://evil.example'</script>\n```\n```py\nx=1\n```\n```svg\n<svg onload='alert(1)'/>\n```\n```html\nstill streaming";
 

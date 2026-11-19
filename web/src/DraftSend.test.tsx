@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ChatSummary } from "./chatApi";
-import { loadDraft, saveDraft } from "./drafts";
+import { loadDraft, saveBaseRevision, saveDraft } from "./drafts";
 
 const api = vi.hoisted(() => ({
   listChats: vi.fn(),
@@ -45,6 +45,7 @@ const mount = async (chats: ChatSummary[]) => {
 };
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal("EventSource", FakeSource);
   api.getMessages.mockResolvedValue(page());
   api.getRun.mockResolvedValue({ ok: false, code: "NOT_FOUND" });
@@ -308,6 +309,7 @@ describe("a message is never lost to a failure before admission", () => {
     vi.stubGlobal("fetch", srv.f);
     srv.docs.set(NEW, { body: "older", revision: 1 });
     saveDraft("a@example.test", null, "older and then more that was never synced");
+    saveBaseRevision("a@example.test", null, 1); // this browser last synced revision 1: the tail is ours, not a conflict
     api.createChat.mockResolvedValueOnce(refusedCreate);
     await mount([]);
     await waitFor(() => expect(box().value).toBe("older and then more that was never synced"));

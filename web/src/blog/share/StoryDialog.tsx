@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { saveBlob } from "../../exportChat";
+import { saveBlob } from "../../chatExport";
 import { renderPostCard, type PostCardData } from "./postCard";
 
 type Made = { url: string; file: File };
