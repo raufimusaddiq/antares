@@ -1154,10 +1154,11 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
         hold.release(r.ok);
         // Only a definite refusal (a 4xx) rolls back. A network failure, timeout, unreadable 2xx or 5xx may still have
         // started a run on the server, so those keep the row and 'Send again' with the same key.
-        if (!r.ok && created && images.length === 0 && r.status >= 400 && r.status < 500) {
+        if (!r.ok && created && r.status >= 400 && r.status < 500) {
           // A first message the server refused leaves no chat behind: the row it created is removed (here and on the
           // server), the screen goes back to the empty new chat, and the text returns to the box to be sent again.
-          // If the delete fails the row stays listed, so the list matches the server.
+          // Attached images are never lost: the strip is not released or discarded here, so they stay in the composer
+          // with their staged assets. If the delete fails the row stays listed, so the list matches the server.
           const d = await deleteChat(chat);
           if (d.ok) setChats((l) => l.filter((x) => x.id !== chat));
           if (currentRef.current === chat) {
@@ -1172,7 +1173,7 @@ export function Chat({ email, onSignOut, canAdmin = false, onAdmin, onBlog, onRe
             dispatch({ k: "clear" });
             const typed = draftNow.current;
             if (hold.text.trim() !== "") onDraft(typed.trim() === "" ? hold.text : `${hold.text.replace(/\s*$/, "")}\n\n${typed}`);
-            setBanner(describeCode(r.code));
+            setBanner(images.length > 0 ? describeImageSend(r.code) : describeCode(r.code));
           }
           return;
         }

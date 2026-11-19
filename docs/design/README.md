@@ -156,8 +156,8 @@ Blog: where the frames and the code still differ (kept honest; each is a gap to 
   or keyboard focus, so the title gets the whole row; its full text is also the row's tooltip.
 - **Refused first send**: a first message the server definitely refuses (a 4xx) removes the chat row it created and
   puts the text back in the box. A network failure, timeout or 5xx keeps the row and offers "Send again" with the same
-  key (the server may have started a run). Known gap: a first send *with images* skips the rollback, so a refused one
-  leaves the empty row.
+  key (the server may have started a run). A first send with images rolls back the same way and keeps the attached
+  images in the composer along with the text.
 
 ## Addresses and titles (built, and tested)
 
