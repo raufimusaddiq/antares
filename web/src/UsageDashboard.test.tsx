@@ -13,7 +13,7 @@ const range = (days: number) => ({
   total: t({ runs: 3, unreported: 1, unpriced: 1, input: 1000, output: 2000, estimate: 5500 }),
   byModel: [{ model: "deepseek-v4-1-flash", ...t({ runs: 1, output: 1000, estimate: 5500 }) }, { model: "other", ...t({ runs: 1, unpriced: 1, output: 1000 }) }],
   byChat: [{ chatId: "", title: "", deleted: true, ...t({ runs: 1, output: 500 }) }],
-  byDay: Array.from({ length: days }, (_, i) => ({ day: `2026-10-${String(21 + (i % 7)).padStart(2, "0")}`, ...t() })),
+  byDay: Array.from({ length: days }, (_, i) => ({ day: `2026-10-${String(21 + (i % 7)).padStart(2, "0")}`, ...t(i === 0 ? { runs: 1, input: 1000, output: 2000 } : {}) })),
 });
 const open = (c: HTMLElement) => {
   const d = c.querySelector("details")!;
@@ -62,5 +62,19 @@ describe("usage dashboard", () => {
     fireEvent.click(screen.getByRole("button", { name: "30 days" }));
     await waitFor(() => expect(container.querySelectorAll(".usage-bar")).toHaveLength(30));
     expect(asked).toContain("/api/me/usage?days=30");
+  });
+
+  // A range with no replies is a real answer: say so, and say why a chat's chip can be larger, instead of a blank chart.
+  it("an empty range says so and charts nothing", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response(JSON.stringify({ ...range(7), total: t(), byModel: [], byChat: [], byDay: Array.from({ length: 7 }, (_, i) => ({ day: `2026-11-${String(12 + i).padStart(2, "0")}`, ...t() })) }), { status: 200 })),
+    );
+    const { container } = render(<UsageDashboard page />);
+    await screen.findByText(/No replies in the last 7 days/);
+    const text = container.textContent ?? "";
+    expect(text).toContain("lifetime total");
+    expect(text).toContain("nothing to chart");
+    expect(container.querySelectorAll(".usage-bar")).toHaveLength(0);
   });
 });

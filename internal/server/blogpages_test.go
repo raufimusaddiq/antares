@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io/fs"
 	"log"
 	"net/http"
 	"net/http/httptest"
@@ -12,14 +13,17 @@ import (
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/raufimusaddiq/antares/internal/webui"
 )
 
 // A shell as the build ships it: noindex, the app's own title and description, its canonical address and card tags.
-const testShell = `<!doctype html><html><head>
+const testShell = `<!doctype html><html lang="en"><head>
     <meta name="robots" content="noindex" />
     <title>Antares</title>
     <meta name="description" content="A private chat, by invitation." />
     <link rel="canonical" href="https://antares.example/" />
+    <meta property="og:type" content="website" />
     <meta property="og:title" content="Antares" />
     <meta property="og:description" content="A private chat, by invitation." />
     <meta property="og:url" content="https://antares.example/" />
@@ -30,8 +34,12 @@ const testShell = `<!doctype html><html><head>
   </head><body><div id="root"></div></body></html>`
 
 func blogServer(t *testing.T, m PostMeta, limit Limit) http.Handler {
+	return blogServerShell(t, testShell, m, limit)
+}
+
+func blogServerShell(t *testing.T, shell string, m PostMeta, limit Limit) http.Handler {
 	t.Helper()
-	assets := fstest.MapFS{"index.html": {Data: []byte(testShell)}}
+	assets := fstest.MapFS{"index.html": {Data: []byte(shell)}}
 	return New(func(context.Context) error { return nil }, t.TempDir()).WithAssets(assets).WithBlog(m, limit).Routes()
 }
 
@@ -56,6 +64,8 @@ func TestTheBlogIndexIsTheShellWithItsOwnTitleAndIsFindable(t *testing.T) {
 		}
 		for _, want := range []string{
 			"<title>Blog · Antares</title>",
+			`<html lang="en">`,
+			`<meta property="og:type" content="website" />`,
 			`<meta name="description" content="Posts written on Antares." />`,
 			`<meta property="og:title" content="Blog · Antares" />`,
 			`<link rel="canonical" href="https://antares.example/b" />`,
@@ -68,6 +78,9 @@ func TestTheBlogIndexIsTheShellWithItsOwnTitleAndIsFindable(t *testing.T) {
 		}
 		if has(b, "noindex") {
 			t.Errorf("%s still says noindex: a blog is meant to be found", path)
+		}
+		if has(b, "article:published_time") {
+			t.Errorf("%s is an index, not an article", path)
 		}
 		if has(b, "A private chat") {
 			t.Errorf("%s keeps the app's own description", path)
@@ -111,6 +124,67 @@ func TestAPostsOwnWordsAreWrittenInAsTextAndNothingElse(t *testing.T) {
 	}
 	if has(b, "og.png") {
 		t.Errorf("the app's own card image stayed when the post has a cover")
+	}
+}
+
+// The article tags follow the og:type match, not the tag's exact bytes: a reformatted tag (no slash, extra spacing)
+// still gets them, where a fixed-string replace silently drops them.
+func TestTheArticleTagsFollowTheOGTypeTagNotItsExactBytes(t *testing.T) {
+	byFormat := map[string]string{
+		"no self-closing slash": `<meta property="og:type" content="website">`,
+		"extra spacing":         `<meta property="og:type" content="website"    />`,
+	}
+	for name, tag := range byFormat {
+		shell := strings.Replace(testShell, `<meta property="og:type" content="website" />`, tag, 1)
+		h := blogServerShell(t, shell, func(context.Context, string) (PageMeta, error) {
+			return PageMeta{Title: "T", PublishedAt: "2026-11-08T01:00:00Z", Author: "Maya R."}, nil
+		}, nil)
+		b := page(h, http.MethodGet, "/b/some-post").Body.String()
+		for _, want := range []string{
+			`<meta property="og:type" content="article"`,
+			`<meta property="article:published_time" content="2026-11-08T01:00:00Z" />`,
+			`<meta property="article:author" content="Maya R." />`,
+		} {
+			if !has(b, want) {
+				t.Errorf("%s: lacks %s:\n%s", name, want, b)
+			}
+		}
+	}
+}
+
+// The article tags hang on the shell the build actually ships, not on the hand-written copy above: if a bundle rebuild
+// reformats the og:type tag so the match stops finding it, this fails here rather than silently in production.
+func TestTheRealBundleGetsTheArticleTags(t *testing.T) {
+	shell, err := fs.ReadFile(webui.FS(), "index.html")
+	if err != nil {
+		t.Fatalf("the embedded shell: %v", err)
+	}
+	b := string(withMeta(shell, "/b/real-post", PageMeta{Title: "T", Lang: "id", PublishedAt: "2026-11-08T01:00:00Z", Author: "Maya R."}))
+	for _, want := range []string{
+		`<meta property="og:type" content="article"`,
+		`<meta property="article:published_time" content="2026-11-08T01:00:00Z" />`,
+		`<meta property="article:author" content="Maya R." />`,
+	} {
+		if !has(b, want) {
+			t.Errorf("the embedded shell lacks %s:\n%s", want, b)
+		}
+	}
+}
+
+func TestAPostPageIsAnArticleInItsOwnLanguage(t *testing.T) {
+	h := blogServer(t, func(context.Context, string) (PageMeta, error) {
+		return PageMeta{Title: "T", Lang: "id", PublishedAt: "2026-11-08T01:00:00Z", Author: "Maya R."}, nil
+	}, nil)
+	b := page(h, http.MethodGet, "/b/some-post").Body.String()
+	for _, want := range []string{
+		`<html lang="id">`,
+		`<meta property="og:type" content="article" />`,
+		`<meta property="article:published_time" content="2026-11-08T01:00:00Z" />`,
+		`<meta property="article:author" content="Maya R." />`,
+	} {
+		if !has(b, want) {
+			t.Errorf("lacks %s:\n%s", want, b)
+		}
 	}
 }
 
