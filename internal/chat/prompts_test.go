@@ -536,3 +536,18 @@ func (f *fakeHermes) hidFor(r *fakeRun) string {
 	}
 	return ""
 }
+
+// A person may take longer than the stall limit to decide: Hermes is waiting, not stalled (T-153).
+func TestOpenPromptIsNotAStall(t *testing.T) {
+	a := newApp(t, appOpts{stall: 200 * time.Millisecond})
+	serveRunControls(t, a, false)
+	u := a.user("alice")
+	run, fr, s := promptRun(t, a, u, "clean up scratch")
+	a.hx.block(fr, "approval", "req-1", nil)
+	a.hx.push(fr, "approval.request", approvalFrame)
+	s.waitFor(t, "run.prompt")
+	time.Sleep(700 * time.Millisecond) // several stall limits, nothing but silence
+	if st := u.runStatus(run); st != store.RunRunning || s.has("run.failed") || a.hx.runStopped(fr) {
+		t.Fatalf("a run waiting for a decision was ended: status %s events %v", st, s.names())
+	}
+}

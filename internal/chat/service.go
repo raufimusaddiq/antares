@@ -336,10 +336,18 @@ func (s *Service) follow(ctx context.Context, l *liveRun, userID, runID string, 
 		// A stream can stay open (keep-alives) while a tool never returns; the run then ends TIMED_OUT rather than hanging.
 		sctx, scancel := context.WithCancel(ctx)
 		var stalled atomic.Bool
-		quiet := time.AfterFunc(s.stall, func() { stalled.Store(true); scancel() })
+		var quiet *time.Timer
+		quiet = time.AfterFunc(s.stall, func() {
+			// Hermes is legitimately silent while a person decides: an open prompt is not a stall.
+			if open, perr := store.OpenPrompts(s.base, s.db, userID, runID); perr == nil && len(open) > 0 {
+				quiet.Reset(s.stall)
+				return
+			}
+			stalled.Store(true)
+			scancel()
+		})
 		err := s.hx.StreamEvents(sctx, b, hid, func(ev hermes.Event) error {
-			quiet.Stop() // a prompt waits for a person: only Hermes' silence counts
-			defer quiet.Reset(s.stall)
+			quiet.Reset(s.stall)
 			n := hermes.Normalize(ev)
 			switch n.Kind {
 			case hermes.KindDelta:
