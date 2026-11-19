@@ -786,7 +786,7 @@ export function CapabilitiesScreen() {
 }
 
 /**
- * Admin → Assistant tools: which tools every account's assistant has. Offered tools are checkboxes; the rest are
+ * Admin → Assistant tools: which tools every account's assistant has. Offered tools are switches; the rest are
  * listed, locked, with the reason. Saving re-checks every account so the change takes effect.
  */
 export function AssistantTools({ policy, onSave }: { policy: ToolPolicy; onSave: (allowed: string[]) => Promise<AdminResult<ToolPolicy>> }) {

@@ -108,7 +108,7 @@ variable mode); the minor state frames reuse the same components and are not dup
   Pending row carries a small Approve button under its chip (both frames).
 - Admin / Audit: the page's h1 and the Export button share one header row, above the feed and its action filter.
 - Admin / Capabilities: opens with an h1 "Capabilities"; "Assistant tools" and "Assistant capabilities" are h2 (16 px bold).
-  The frame still draws the three tools as checkboxes, where the code's on/off control is the Models switch.
+  The three assistant tools use the shared Switch (46x26, mint on, rail off, ink knob), the same as Models.
 
 ## Writing rules (designed for spec `specs/005-antislop-writing/`, not built yet)
 
