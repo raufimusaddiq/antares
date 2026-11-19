@@ -101,6 +101,15 @@ variable mode); the minor state frames reuse the same components and are not dup
 - New components: none. Switch (46 x 26, mint on / rail off, ink knob) and the state chips are drawn here for the first time;
   both are built from existing variables.
 
+## T-6 admin polish (built)
+
+- Admin / Users: the approval and tenant chips carry the same three tones as Posts (mint Approved/Ready, periwinkle
+  Pending/Configuring/Not provisioned, salmon Failed/Rejected/Suspended), in both the light and the dark Users frames. A
+  Pending row carries a small Approve button under its chip (both frames).
+- Admin / Audit: the page's h1 and the Export button share one header row, above the feed and its action filter.
+- Admin / Capabilities: opens with an h1 "Capabilities"; "Assistant tools" and "Assistant capabilities" are h2 (16 px bold).
+  The three assistant tools use the shared Switch (46x26, mint on, rail off, ink knob), the same as Models.
+
 ## Writing rules (designed for spec `specs/005-antislop-writing/`, not built yet)
 
 Page **Writing rules**. Light frames; dark copies of the Capabilities (on, not applied), Check result and phone frames sit to the right (Dark mode).
