@@ -56,7 +56,7 @@ class FakeSource {
 }
 
 const box = () => screen.getByRole("textbox", { name: "Message" }) as HTMLTextAreaElement;
-const panel = () => screen.getByRole("region", { name: "Queued messages" });
+const panel = () => screen.findByRole("region", { name: "Queued messages" });
 
 const mount = async (c: ChatSummary) => {
   api.listChats.mockResolvedValue(ok({ chats: [c], nextCursor: "" }));
@@ -86,12 +86,12 @@ describe("queue a message behind a running reply (#110)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Queue" }));
     await waitFor(() => expect(api.enqueueMessage).toHaveBeenCalledWith("c1", "and then this"));
     await waitFor(() => expect(box().value).toBe(""));
-    expect(within(panel()).getByText("and then this")).toBeTruthy();
-    expect(within(panel()).getByRole("listitem", { name: "Queued message 1 of 1" })).toBeTruthy();
+    expect(within(await panel()).getByText("and then this")).toBeTruthy();
+    expect(within(await panel()).getByRole("listitem", { name: "Queued message 1 of 1" })).toBeTruthy();
     expect(api.sendMessage).not.toHaveBeenCalled();
     expect(api.steerRun).not.toHaveBeenCalled();
     // Send next waits for the reply to end.
-    expect((within(panel()).getByRole("button", { name: "Send next" }) as HTMLButtonElement).disabled).toBe(true);
+    expect((within(await panel()).getByRole("button", { name: "Send next" }) as HTMLButtonElement).disabled).toBe(true);
   });
 
   it("keeps the text and says why when the queue is full", async () => {
@@ -113,7 +113,7 @@ describe("queue a message behind a running reply (#110)", () => {
     api.getQueue.mockResolvedValue(ok(queued(["queued follow-up"])));
     await mount(chat({ activeRunId: "r1" }));
     await screen.findByText("Working…");
-    await within(panel()).findByText("queued follow-up");
+    await within(await panel()).findByText("queued follow-up");
     api.getChat.mockResolvedValue(ok(chat({ activeRunId: "r2" })));
     api.getQueue.mockResolvedValue(ok(queued([])));
     const first = FakeSource.all.find((s) => s.url.includes("/r1/"))!;
@@ -128,11 +128,11 @@ describe("the queue panel", () => {
   it("states why a paused queue is paused and resumes on request", async () => {
     api.getQueue.mockResolvedValue(ok(queued(["waiting"], "FAILED")));
     await mount(chat());
-    expect(await within(panel()).findByText("Paused because the last reply did not finish.")).toBeTruthy();
+    expect(await within(await panel()).findByText("Paused because the last reply did not finish.")).toBeTruthy();
     api.pauseQueue.mockResolvedValue(ok(queued(["waiting"])));
-    fireEvent.click(within(panel()).getByRole("button", { name: "Resume queue" }));
+    fireEvent.click(within(await panel()).getByRole("button", { name: "Resume queue" }));
     await waitFor(() => expect(api.pauseQueue).toHaveBeenCalledWith("c1", false));
-    expect(await within(panel()).findByRole("button", { name: "Pause queue" })).toBeTruthy();
+    expect(await within(await panel()).findByRole("button", { name: "Pause queue" })).toBeTruthy();
   });
 
   it("follows the reply a resume started", async () => {
@@ -140,7 +140,7 @@ describe("the queue panel", () => {
     await mount(chat());
     api.pauseQueue.mockResolvedValue(ok(queued([], "", { runId: "r5", input: "resumed message" })));
     api.getQueue.mockResolvedValue(ok(queued([])));
-    fireEvent.click(await within(panel()).findByRole("button", { name: "Resume queue" }));
+    fireEvent.click(await within(await panel()).findByRole("button", { name: "Resume queue" }));
     await waitFor(() => expect(FakeSource.all.some((s) => s.url.includes("/r5/"))).toBe(true));
     expect(await screen.findByText("resumed message")).toBeTruthy();
     expect(await screen.findByText("Working…")).toBeTruthy();
@@ -150,7 +150,7 @@ describe("the queue panel", () => {
     api.getQueue.mockResolvedValue(ok(queued(["by hand"], "USER")));
     await mount(chat());
     api.sendQueuedNext.mockResolvedValue(ok({ runId: "r9", status: "PENDING" }));
-    fireEvent.click(await within(panel()).findByRole("button", { name: "Send next" }));
+    fireEvent.click(await within(await panel()).findByRole("button", { name: "Send next" }));
     await waitFor(() => expect(api.sendQueuedNext).toHaveBeenCalledWith("c1"));
     await waitFor(() => expect(FakeSource.all.some((s) => s.url.includes("/r9/"))).toBe(true));
     expect(screen.getAllByText("by hand").length).toBeGreaterThan(0);
@@ -159,17 +159,17 @@ describe("the queue panel", () => {
   it("edits and removes a queued message through the server", async () => {
     api.getQueue.mockResolvedValue(ok(queued(["first", "second"], "USER")));
     await mount(chat());
-    const second = await within(panel()).findByRole("listitem", { name: "Queued message 2 of 2" });
+    const second = await within(await panel()).findByRole("listitem", { name: "Queued message 2 of 2" });
     fireEvent.click(within(second).getByRole("button", { name: "Edit" }));
     fireEvent.change(within(second).getByRole("textbox"), { target: { value: "second, better" } });
     api.editQueued.mockResolvedValue(ok(queued(["first", "second, better"], "USER")));
     fireEvent.click(within(second).getByRole("button", { name: "Save" }));
     await waitFor(() => expect(api.editQueued).toHaveBeenCalledWith("c1", "q2", "second, better"));
-    expect(await within(panel()).findByText("second, better")).toBeTruthy();
+    expect(await within(await panel()).findByText("second, better")).toBeTruthy();
     api.removeQueued.mockResolvedValue(ok({ items: [{ id: "q2", position: 1, input: "second, better", sending: false }], paused: "USER", started: null }));
-    fireEvent.click(within(within(panel()).getByRole("listitem", { name: "Queued message 1 of 2" })).getByRole("button", { name: "Remove" }));
+    fireEvent.click(within(within(await panel()).getByRole("listitem", { name: "Queued message 1 of 2" })).getByRole("button", { name: "Remove" }));
     await waitFor(() => expect(api.removeQueued).toHaveBeenCalledWith("c1", "q1"));
-    expect(await within(panel()).findByRole("listitem", { name: "Queued message 1 of 1" })).toBeTruthy();
+    expect(await within(await panel()).findByRole("listitem", { name: "Queued message 1 of 1" })).toBeTruthy();
   });
 
   it("names every pause reason in words, and an unknown one through the error vocabulary", () => {
