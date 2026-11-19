@@ -27,6 +27,10 @@ export const publishPath = (id: string) => `/blog/${id}/publish`;
 
 /** `caps` is what the server said about the blog (null until it has answered); the app asks once and passes it down. */
 export function BlogApp({ caps, email, name, route, onNavigate, onChats }: { caps: Capabilities | null; email: string; name?: string; route: BlogRoute; onNavigate: (to: string) => void; onChats: () => void }) {
+  // Each blog screen names its own tab.
+  useEffect(() => {
+    document.title = `${route.kind === "list" ? "My posts" : route.kind === "publish" ? "Publish post" : "Post editor"} · Antares`;
+  }, [route.kind]);
   if (caps === null) return <main className="blog-flow" aria-busy="true"><p>Loading…</p></main>;
   if (!caps.writing)
     return (

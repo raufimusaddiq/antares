@@ -2,7 +2,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ChatSummary } from "./chatApi";
-import { loadDraft, saveDraft } from "./drafts";
+import { loadDraft, saveBaseRevision, saveDraft } from "./drafts";
 
 const api = vi.hoisted(() => ({
   listChats: vi.fn(),
@@ -45,6 +45,7 @@ const mount = async (chats: ChatSummary[]) => {
 };
 
 beforeEach(() => {
+  localStorage.clear();
   vi.stubGlobal("EventSource", FakeSource);
   api.getMessages.mockResolvedValue(page());
   api.getRun.mockResolvedValue({ ok: false, code: "NOT_FOUND" });
@@ -212,7 +213,7 @@ describe("overlapping sends in different chats", () => {
   const C1 = "/api/chats/c1/draft";
   const C2 = "/api/chats/c2/draft";
   const text = () => (document.getElementById("composer-input") as HTMLTextAreaElement).value;
-  const openSecond = () => fireEvent.click(document.querySelectorAll("nav.side li button.item")[1]);
+  const openSecond = () => fireEvent.click(document.querySelectorAll("nav.side li a.item")[1]);
 
   const setup = async () => {
     const srv = draftServer();
@@ -257,7 +258,7 @@ describe("overlapping sends in different chats", () => {
       expect(srv.docs.get(C1)).toEqual({ body: "draft one", revision: 1 });
       expect(srv.calls.filter((c) => c.startsWith("DELETE") && c.includes("/c1/")).length).toBe(0);
       // A's hold ended too: go back to c1 and type; it reaches the server.
-      fireEvent.click(document.querySelectorAll("nav.side li button.item")[0]);
+      fireEvent.click(document.querySelectorAll("nav.side li a.item")[0]);
       await waitFor(() => expect(text()).toBe("draft one"));
       fireEvent.change(document.getElementById("composer-input")!, { target: { value: "back in one" } });
       await waitFor(() => expect(srv.docs.get(C1)).toEqual({ body: "back in one", revision: 2 }), { timeout: 3000 });
@@ -308,6 +309,7 @@ describe("a message is never lost to a failure before admission", () => {
     vi.stubGlobal("fetch", srv.f);
     srv.docs.set(NEW, { body: "older", revision: 1 });
     saveDraft("a@example.test", null, "older and then more that was never synced");
+    saveBaseRevision("a@example.test", null, 1); // this browser last synced revision 1: the tail is ours, not a conflict
     api.createChat.mockResolvedValueOnce(refusedCreate);
     await mount([]);
     await waitFor(() => expect(box().value).toBe("older and then more that was never synced"));
@@ -341,11 +343,11 @@ describe("a message is never lost to a failure before admission", () => {
     await waitFor(() => expect(box().value).toBe("typed in one"));
     fireEvent.submit(document.querySelector("form.composer")!);
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
-    fireEvent.click(document.querySelectorAll("nav.side li button.item")[1]); // away before the answer
+    fireEvent.click(document.querySelectorAll("nav.side li a.item")[1]); // away before the answer
     await waitFor(() => expect(box().value).toBe(""));
     await act(async () => answer(refusedCreate));
     expect(loadDraft("a@example.test", "c1")).toBe("typed in one"); // not lost
-    fireEvent.click(document.querySelectorAll("nav.side li button.item")[0]);
+    fireEvent.click(document.querySelectorAll("nav.side li a.item")[0]);
     await waitFor(() => expect(box().value).toBe("typed in one"));
   });
 
@@ -359,7 +361,7 @@ describe("a message is never lost to a failure before admission", () => {
     await waitFor(() => expect(box().value).toBe("typed in one"));
     fireEvent.submit(document.querySelector("form.composer")!);
     await waitFor(() => expect(api.sendMessage).toHaveBeenCalled());
-    fireEvent.click(document.querySelectorAll("nav.side li button.item")[1]);
+    fireEvent.click(document.querySelectorAll("nav.side li a.item")[1]);
     await waitFor(() => expect(box().value).toBe(""));
     saveDraft("a@example.test", "c1", "something newer typed elsewhere");
     await act(async () => answer(refusedCreate));

@@ -1,4 +1,4 @@
-// @vitest-environment jsdom
+﻿// @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { render, screen, waitFor } from "@testing-library/react";
 import type { ChatSummary } from "./chatApi";
@@ -33,7 +33,7 @@ describe("a notification link", () => {
     api.getChat.mockResolvedValue(ok(chat(THEIRS)));
     render(<Chat email="a@example.test" onSignOut={() => {}} initialChatId={THEIRS} />);
     await waitFor(() => expect(api.getMessages).toHaveBeenCalledWith(THEIRS));
-    expect(window.location.pathname).toBe("/");
+    expect(window.location.pathname).toBe(`/chat/${THEIRS}`);
   });
 
   it("opens nothing of someone else's chat: the server says not found, the reader is told, and no history is requested for it", async () => {
@@ -43,7 +43,7 @@ describe("a notification link", () => {
     expect(api.getChat).toHaveBeenCalledWith(THEIRS);
     await waitFor(() => expect(api.getMessages).toHaveBeenCalledWith(MINE));
     expect(api.getMessages.mock.calls.map((c) => c[0])).not.toContain(THEIRS);
-    expect(document.querySelector('nav.side [aria-current="true"]')).not.toBeNull();
+    expect(document.querySelector('nav.side [aria-current="page"]')).not.toBeNull();
     expect(window.location.pathname).toBe("/");
   });
 });

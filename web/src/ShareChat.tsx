@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { createShare, describeCode, getShare, shareUrl, stopShare, type ApiResult } from "./chatApi";
-import { saveBlob } from "./exportChat";
+import { saveBlob } from "./chatExport";
 import { renderShareImage } from "./shareImage";
 
 type LinkState =
