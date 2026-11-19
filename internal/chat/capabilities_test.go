@@ -1,11 +1,13 @@
 package chat
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/raufimusaddiq/antares/internal/hermes"
 )
@@ -154,6 +156,128 @@ func TestCapabilitiesEmptyCatalogsMatchTheClientGolden(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("server answer differs from the client golden:\n got  %s\n want %s", w.Body.String(), readFixture(t, "../../web/src/testdata/capabilities-empty.test.json"))
+	}
+}
+
+// A second page load within capsTTL must not repeat the discovery round trips.
+func TestCapabilitiesRepeatCallIsServedFromTheCache(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	serveDiscovery(a, readFixture(t, "../../docs/hermes/fixtures/capabilities.body.json"))
+
+	first := alice.get("/api/capabilities")
+	if first.Code != 200 {
+		t.Fatalf("%d %s", first.Code, first.Body.String())
+	}
+	n := len(a.hx.requests())
+	second := alice.get("/api/capabilities")
+	if second.Code != 200 {
+		t.Fatalf("%d %s", second.Code, second.Body.String())
+	}
+	if got := len(a.hx.requests()); got != n {
+		t.Errorf("second call made %d more Hermes request(s); want the cached inventory", got-n)
+	}
+	if first.Body.String() != second.Body.String() {
+		t.Error("the cached answer differs from the first")
+	}
+}
+
+// The cached inventory is not shared with callers: an edit to the returned copy, nested slices
+// included, must not reach the next answer.
+func TestCapabilitiesCachedInventoryIsNotSharedWithCallers(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	serveDiscovery(a, readFixture(t, "../../docs/hermes/fixtures/capabilities.body.json"))
+	b := hermes.Binding{Profile: alice.profile, Key: alice.key}
+
+	first, err := a.svc.discover(context.Background(), b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(first.Capabilities) == 0 || len(first.Toolsets) == 0 || len(first.Toolsets[0].Tools) == 0 || len(first.Providers) == 0 || len(first.Providers[0].Models) == 0 {
+		t.Fatalf("fixture has nothing nested to mutate: %+v", first)
+	}
+	wantCap, wantName := first.Capabilities[0].Status, first.Toolsets[0].Name
+	wantTool, wantModel := first.Toolsets[0].Tools[0], first.Providers[0].Models[0]
+	first.Capabilities[0].Status = hermes.StatusUnsupported
+	first.Toolsets[0].Name = "edited"
+	first.Toolsets[0].Tools[0] = "edited"
+	first.Providers[0].Models[0] = "edited"
+
+	n := len(a.hx.requests())
+	second, err := a.svc.discover(context.Background(), b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := len(a.hx.requests()); got != n {
+		t.Fatal("a second discovery ran; want the cached answer")
+	}
+	if second.Capabilities[0].Status != wantCap || second.Toolsets[0].Name != wantName || second.Toolsets[0].Tools[0] != wantTool || second.Providers[0].Models[0] != wantModel {
+		t.Errorf("a caller's edits reached the cache: %+v", second)
+	}
+}
+
+// The cache is bounded: once capsTTL has passed, discovery runs again.
+func TestCapabilitiesCacheExpires(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	serveDiscovery(a, readFixture(t, "../../docs/hermes/fixtures/capabilities.body.json"))
+
+	alice.get("/api/capabilities")
+	n := len(a.hx.requests())
+	a.svc.now = func() time.Time { return time.Now().Add(capsTTL) }
+	if w := alice.get("/api/capabilities"); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	if got := len(a.hx.requests()); got == n {
+		t.Error("an expired cache was reused; want a fresh discovery")
+	}
+}
+
+// The gate runs before the cache: an account that loses its right to ask never sees a cached inventory.
+func TestCapabilitiesCacheNeverOutlivesTheRightToAsk(t *testing.T) {
+	for name, lose := range map[string]string{
+		"suspended":       `UPDATE users SET approval_status = 'SUSPENDED' WHERE id = ?`,
+		"binding revoked": `UPDATE tenant_bindings SET status = 'DISABLED' WHERE user_id = ?`,
+		"unbound":         `DELETE FROM tenant_bindings WHERE user_id = ?`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			a := newApp(t)
+			alice := a.user("alice")
+			serveDiscovery(a, readFixture(t, "../../docs/hermes/fixtures/capabilities.body.json"))
+			if w := alice.get("/api/capabilities"); w.Code != 200 {
+				t.Fatalf("%d %s", w.Code, w.Body.String())
+			}
+			if _, err := a.db.Exec(lose, alice.id); err != nil {
+				t.Fatal(err)
+			}
+			if w := alice.get("/api/capabilities"); w.Code < 400 || w.Code >= 500 || strings.Contains(w.Body.String(), `"capabilities"`) {
+				t.Errorf("%s: got %d %s", name, w.Code, w.Body.String())
+			}
+		})
+	}
+}
+
+// A cached inventory belongs to one profile: another account's call still reads under its own binding.
+func TestCapabilitiesCacheIsPerProfile(t *testing.T) {
+	a := newApp(t)
+	alice := a.user("alice")
+	bob := a.user("bob")
+	serveDiscovery(a, readFixture(t, "../../docs/hermes/fixtures/capabilities.body.json"))
+
+	alice.get("/api/capabilities")
+	n := len(a.hx.requests())
+	if w := bob.get("/api/capabilities"); w.Code != 200 {
+		t.Fatalf("%d %s", w.Code, w.Body.String())
+	}
+	fresh := a.hx.requests()[n:]
+	if len(fresh) == 0 {
+		t.Fatal("bob was served alice's cached inventory")
+	}
+	for _, r := range fresh {
+		if !strings.HasPrefix(r.Path, "/p/"+bob.profile+"/") {
+			t.Errorf("bob's discovery used %s", r.Path)
+		}
 	}
 }
 
