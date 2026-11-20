@@ -236,3 +236,67 @@ func TestOutageRefreshesAreThrottledAndStaleSticks(t *testing.T) {
 		t.Fatalf("recovery: err %v stale %v hits %d", err, stale, hits.Load())
 	}
 }
+
+// Production outage 2026-11-20: one row carried sunset_at as a number and took the whole catalogue down.
+func TestOddRowsNeverTakeTheCatalogueDown(t *testing.T) {
+	body, err := os.ReadFile("testdata/models_odd_rows.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(body) }))
+	t.Cleanup(srv.Close)
+	c := New(srv.URL, nil)
+	now := time.Date(2026, 11, 20, 0, 0, 0, 0, time.UTC)
+	tests := []struct {
+		id     string
+		listed bool
+		sunset string
+		pastAt time.Time // when the model counts as sunset; zero = never
+		bad    bool
+	}{
+		{"sunset-number", true, "2026-11-23T12:00:00Z", time.Date(2026, 11, 23, 12, 0, 0, 0, time.UTC), false},
+		{"sunset-string", true, "2030-01-01T00:00:00Z", time.Date(2030, 1, 1, 0, 0, 0, 0, time.UTC), false},
+		{"sunset-null", true, "", time.Time{}, false},
+		{"sunset-absent", true, "", time.Time{}, false},
+		{"sunset-garbage-type", true, "", now, true},
+		{"sunset-garbage-string", true, "", now, true},
+		{"bad-endpoints", false, "", time.Time{}, false},
+		{"bad-context", false, "", time.Time{}, false},
+		{"good-after-bad", true, "", time.Time{}, false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.id, func(t *testing.T) {
+			m, found, err := c.Get(context.Background(), tc.id)
+			if err != nil {
+				t.Fatalf("catalogue must stay available: %v", err)
+			}
+			if found != tc.listed {
+				t.Fatalf("listed = %v, want %v", found, tc.listed)
+			}
+			if !found {
+				return
+			}
+			if m.SunsetAt != tc.sunset || m.SunsetInvalid != tc.bad {
+				t.Fatalf("sunset = %q invalid=%v, want %q invalid=%v", m.SunsetAt, m.SunsetInvalid, tc.sunset, tc.bad)
+			}
+			if got := m.PastSunset(now); got != (!tc.pastAt.IsZero() && !tc.pastAt.After(now)) {
+				t.Fatalf("PastSunset(now) = %v", got)
+			}
+			if !tc.pastAt.IsZero() && !m.PastSunset(tc.pastAt) {
+				t.Fatalf("not sunset at %v", tc.pastAt)
+			}
+		})
+	}
+}
+
+func TestUnreadableBodyStillMakesCatalogueUnavailable(t *testing.T) {
+	for name, body := range map[string]string{"not json": "<html>", "no data": `{"object":"list"}`, "data not array": `{"data":5}`} {
+		t.Run(name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(body)) }))
+			t.Cleanup(srv.Close)
+			if _, err := New(srv.URL, nil).List(context.Background()); !errors.Is(err, ErrUnavailable) {
+				t.Fatalf("err = %v", err)
+			}
+		})
+	}
+}

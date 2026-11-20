@@ -1,0 +1,11 @@
+{"object":"list","data":[
+ {"id":"sunset-number","name":"Sunset Number","endpoints":["chat"],"context_length":131072,"object":"model","owned_by":"example","pricing":{"currency":"IDR","free":true,"input":0,"output":0,"unit":"micro_idr_per_1m_tokens"},"sunset_at":1795435200},
+ {"id":"sunset-string","endpoints":["chat"],"sunset_at":"2030-01-01T00:00:00Z"},
+ {"id":"sunset-null","endpoints":["chat"],"sunset_at":null},
+ {"id":"sunset-absent","endpoints":["chat"]},
+ {"id":"sunset-garbage-type","endpoints":["chat"],"sunset_at":{"when":"soon"}},
+ {"id":"sunset-garbage-string","endpoints":["chat"],"sunset_at":"next tuesday"},
+ {"id":"bad-endpoints","endpoints":"chat","sunset_at":null},
+ {"id":"bad-context","endpoints":["chat"],"context_length":"big"},
+ {"id":"good-after-bad","endpoints":["chat"]}
+]}

@@ -30,8 +30,7 @@ const (
 func ChatUsable(m kenari.Model, now time.Time) bool { return m.Chat() && !pastSunset(m, now) }
 
 func pastSunset(m kenari.Model, now time.Time) bool {
-	t, err := time.Parse(time.RFC3339, m.SunsetAt)
-	return err == nil && !t.After(now)
+	return m.PastSunset(now)
 }
 
 // Reason says why model cannot be the default for a chat-endpoint purpose (chat, summary, blog assistant): "" when it can.

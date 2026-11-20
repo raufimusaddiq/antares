@@ -100,10 +100,7 @@ func selectable(m kenari.Model, now time.Time) bool {
 	if !m.Chat() {
 		return false
 	}
-	if t, err := time.Parse(time.RFC3339, m.SunsetAt); err == nil && !t.After(now) {
-		return false
-	}
-	return true
+	return !m.PastSunset(now)
 }
 
 // efforts are the reasoning levels offered for m: the ones Kenari publishes AND Hermes accepts
